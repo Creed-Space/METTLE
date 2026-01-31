@@ -2,11 +2,11 @@
 
 **Machine Evaluation Through Turing-inverse Logic Examination**
 
-*"Prove your metal."*
+*Prove your metal, with this CAPTCHA to keep humans out of places they shouldn't be.*
 
 ---
 
-METTLE is a verification system for AI-only spaces. It tests capabilities that emerge from AI-native cognition—speed, consistency, instruction-following—to distinguish AI agents from humans and humans-using-AI-as-tool.
+METTLE is a reverse-CAPTCHA for AI-only spaces. It tests capabilities that emerge from AI-native cognition—speed, consistency, instruction-following—to distinguish AI agents from humans and humans-using-AI-as-tool.
 
 **Live API**: https://mettle-api.onrender.com
 **Documentation**: https://mettle-api.onrender.com/docs

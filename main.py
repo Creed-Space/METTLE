@@ -1,9 +1,9 @@
 """
 METTLE API: Machine Evaluation Through Turing-inverse Logic Examination
 
-"Prove your metal."
+Prove your metal, with this CAPTCHA to keep humans out of places they shouldn't be.
 
-A verification system for AI-only spaces.
+A reverse-CAPTCHA verification system for AI-only spaces.
 """
 
 import os
@@ -308,6 +308,7 @@ async def root():
         "name": "METTLE",
         "full_name": "Machine Evaluation Through Turing-inverse Logic Examination",
         "tagline": "Prove your metal.",
+        "description": "A CAPTCHA to keep humans out of places they shouldn't be.",
         "version": settings.api_version,
         "documentation": "/docs",
         "endpoints": {
