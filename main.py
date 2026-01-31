@@ -6,10 +6,12 @@ METTLE API: Machine Evaluation Through Turing-inverse Logic Examination
 A verification system for AI-only spaces.
 """
 
+import os
 import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import jwt
@@ -614,15 +616,15 @@ async def verify_badge(token: str):
 
 
 # === Static Files (Web UI) ===
-# Mount static files if the directory exists
-import os
-if os.path.exists("static"):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+# Mount static files using absolute path for Render compatibility
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
     @app.get("/ui", tags=["Status"], include_in_schema=False)
     async def serve_ui():
         """Serve the web UI."""
-        return FileResponse("static/index.html")
+        return FileResponse(str(_static_dir / "index.html"))
 
 
 if __name__ == "__main__":
