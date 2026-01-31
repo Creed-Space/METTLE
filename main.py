@@ -19,7 +19,7 @@ import jwt
 import structlog
 from fastapi import APIRouter, FastAPI, HTTPException, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -682,6 +682,37 @@ async def serve_ui():
 async def redirect_legacy_ui():
     """Redirect legacy /ui to root."""
     return RedirectResponse(url="/", status_code=301)
+
+
+# === SEO Endpoints ===
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap():
+    """Generate sitemap for search engines."""
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://mettle.sh/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mettle.sh/docs</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>"""
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots():
+    """Serve robots.txt for search engine crawlers."""
+    if _static_dir.exists():
+        return FileResponse(str(_static_dir / "robots.txt"), media_type="text/plain")
+    return Response(
+        content="User-agent: *\nAllow: /\nSitemap: https://mettle.sh/sitemap.xml",
+        media_type="text/plain",
+    )
 
 
 if __name__ == "__main__":

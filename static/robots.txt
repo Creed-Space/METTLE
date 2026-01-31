@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Disallow: /api/session/
+Sitemap: https://mettle.sh/sitemap.xml
