@@ -1,7 +1,7 @@
 """Tests for METTLE response verification."""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from mettle.models import ChallengeType
 from mettle.verifier import (
@@ -299,4 +299,4 @@ class TestComputeMettleResult:
         assert result.badge is not None
         assert result.badge.startswith("METTLE-verified-")
         # Should contain date
-        assert datetime.utcnow().strftime("%Y%m%d") in result.badge
+        assert datetime.now(timezone.utc).strftime("%Y%m%d") in result.badge

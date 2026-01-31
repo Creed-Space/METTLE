@@ -1,6 +1,6 @@
 """METTLE: Pydantic models for challenge/response protocol."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -27,7 +27,7 @@ class Challenge(BaseModel):
     type: ChallengeType
     prompt: str = Field(..., description="The challenge prompt/question")
     data: dict[str, Any] = Field(default_factory=dict, description="Additional challenge data")
-    issued_at: datetime = Field(default_factory=datetime.utcnow)
+    issued_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime
     time_limit_ms: int = Field(..., description="Maximum allowed response time in ms")
 
@@ -67,7 +67,7 @@ class MettleResult(BaseModel):
     total: int
     pass_rate: float
     results: list[VerificationResult]
-    issued_at: datetime = Field(default_factory=datetime.utcnow)
+    issued_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     badge: str | None = Field(None, description="Verification badge if passed")
 
 

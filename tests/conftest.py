@@ -1,7 +1,7 @@
 """Pytest fixtures for METTLE tests."""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
@@ -42,7 +42,7 @@ def sample_speed_math_challenge():
         type=ChallengeType.SPEED_MATH,
         prompt="Calculate: 25 + 17",
         data={"expected_answer": 42, "a": 25, "b": 17, "op": "+"},
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=5000,
     )
 
@@ -55,7 +55,7 @@ def sample_token_challenge():
         type=ChallengeType.TOKEN_PREDICTION,
         prompt="Complete: The quick brown ___ jumps over the lazy dog",
         data={"expected_answer": "fox"},
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=5000,
     )
 
@@ -71,7 +71,7 @@ def sample_instruction_challenge():
             "instruction": "Start your response with 'Indeed,'",
             "validator_id": "abc123",
         },
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=10000,
     )
 
@@ -84,7 +84,7 @@ def sample_chained_challenge():
         type=ChallengeType.CHAINED_REASONING,
         prompt="Follow these steps and give the final number:\n1. Start with 10\n2. Double it\n3. Add 10",
         data={"expected_answer": 30, "chain": [10, 20, 30], "instructions": ["Start with 10", "Double it", "Add 10"]},
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=10000,
     )
 
@@ -97,7 +97,7 @@ def sample_consistency_challenge():
         type=ChallengeType.CONSISTENCY,
         prompt="Answer this question THREE times, separated by '|':\nWhat is 2 + 2?",
         data={"question": "What is 2 + 2?", "num_responses": 3},
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=15000,
     )
 
@@ -110,7 +110,7 @@ def expired_challenge():
         type=ChallengeType.SPEED_MATH,
         prompt="Calculate: 1 + 1",
         data={"expected_answer": 2, "a": 1, "b": 1, "op": "+"},
-        expires_at=datetime.utcnow() - timedelta(minutes=1),  # Already expired
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),  # Already expired
         time_limit_ms=5000,
     )
 

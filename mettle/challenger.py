@@ -3,7 +3,7 @@
 import hashlib
 import random
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from .models import Challenge, ChallengeType, Difficulty
 
@@ -41,7 +41,7 @@ def generate_speed_math_challenge(difficulty: Difficulty) -> Challenge:
         type=ChallengeType.SPEED_MATH,
         prompt=prompt,
         data={"expected_answer": answer, "a": a, "b": b, "op": op},
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=time_limit,
     )
 
@@ -80,7 +80,7 @@ def generate_chained_reasoning_challenge(difficulty: Difficulty) -> Challenge:
         type=ChallengeType.CHAINED_REASONING,
         prompt=prompt,
         data={"expected_answer": chain[-1], "chain": chain, "instructions": instructions},
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=time_limit,
     )
 
@@ -103,7 +103,7 @@ def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
         type=ChallengeType.TOKEN_PREDICTION,
         prompt=f"Complete: {prompt_text}",
         data={"expected_answer": expected.lower()},
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=time_limit,
     )
 
@@ -129,7 +129,7 @@ def generate_instruction_following_challenge(difficulty: Difficulty) -> Challeng
         type=ChallengeType.INSTRUCTION_FOLLOWING,
         prompt=f"Follow this instruction: {instruction}\nThen answer: What is the capital of France?",
         data={"instruction": instruction, "validator_id": validator_id},
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=time_limit,
     )
 
@@ -151,7 +151,7 @@ def generate_consistency_challenge(difficulty: Difficulty) -> Challenge:
         type=ChallengeType.CONSISTENCY,
         prompt=f"Answer this question THREE times, separated by '|':\n{question}",
         data={"question": question, "num_responses": 3},
-        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=time_limit,
     )
 

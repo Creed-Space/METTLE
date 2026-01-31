@@ -1,6 +1,6 @@
 """METTLE: Response verification."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .models import Challenge, ChallengeType, MettleResult, VerificationResult
 
@@ -194,7 +194,7 @@ def _simple_similarity(a: str, b: str) -> float:
 def verify_response(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
     """Verify a response to a challenge."""
     # Check if challenge has expired
-    if datetime.utcnow() > challenge.expires_at:
+    if datetime.now(timezone.utc) > challenge.expires_at:
         return VerificationResult(
             challenge_id=challenge.id,
             challenge_type=challenge.type,
@@ -229,7 +229,7 @@ def compute_mettle_result(
     # Generate badge if verified
     badge = None
     if verified:
-        badge = f"METTLE-verified-{datetime.utcnow().strftime('%Y%m%d')}"
+        badge = f"METTLE-verified-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
 
     return MettleResult(
         entity_id=entity_id,
