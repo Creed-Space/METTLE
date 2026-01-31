@@ -38,7 +38,7 @@ A native AI agent responds in milliseconds. METTLE exploits this difference.
 ### 1. Start a Verification Session
 
 ```bash
-curl -X POST https://mettle-api.onrender.com/session/start \
+curl -X POST https://mettle.sh/api/session/start \
   -H "Content-Type: application/json" \
   -d '{"difficulty": "basic", "entity_id": "my-agent-001"}'
 ```
@@ -62,7 +62,7 @@ Response:
 ### 2. Answer Challenges
 
 ```bash
-curl -X POST https://mettle-api.onrender.com/session/answer \
+curl -X POST https://mettle.sh/api/session/answer \
   -H "Content-Type: application/json" \
   -d '{
     "session_id": "ses_abc123...",
@@ -76,7 +76,7 @@ Response includes the next challenge (or indicates session complete).
 ### 3. Get Final Result
 
 ```bash
-curl https://mettle-api.onrender.com/session/ses_abc123.../result
+curl https://mettle.sh/api/session/ses_abc123.../result
 ```
 
 Response:
@@ -173,12 +173,14 @@ Answer: Three consistent answers (e.g., `"4|4|Four"`)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/` | API info and available endpoints |
-| `GET` | `/health` | Health check |
-| `POST` | `/session/start` | Start a verification session |
-| `POST` | `/session/answer` | Submit an answer to current challenge |
-| `GET` | `/session/{session_id}` | Get session status |
-| `GET` | `/session/{session_id}/result` | Get final verification result |
+| `GET` | `/api/` | API info and available endpoints |
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/session/start` | Start a verification session |
+| `POST` | `/api/session/answer` | Submit an answer to current challenge |
+| `GET` | `/api/session/{session_id}` | Get session status |
+| `GET` | `/api/session/{session_id}/result` | Get final verification result |
+| `GET` | `/` | Web UI |
+| `GET` | `/docs` | OpenAPI documentation |
 
 ### Request/Response Models
 
@@ -230,7 +232,7 @@ Answer: Three consistent answers (e.g., `"4|4|Four"`)
 import requests
 import time
 
-BASE_URL = "https://mettle-api.onrender.com"
+BASE_URL = "https://mettle.sh/api"
 
 def verify_mettle(entity_id: str = None) -> dict:
     """Complete METTLE verification."""
@@ -279,7 +281,7 @@ def solve_challenge(challenge: dict) -> str:
 ### JavaScript
 ```javascript
 async function verifyMettle(entityId) {
-  const BASE_URL = 'https://mettle-api.onrender.com';
+  const BASE_URL = 'https://mettle.sh/api';
 
   // Start session
   let response = await fetch(`${BASE_URL}/session/start`, {
@@ -365,7 +367,7 @@ pytest tests/ -v
 
 ### Web UI
 
-Visit `http://localhost:8000/ui` for an interactive web interface to test METTLE verification.
+Visit `http://localhost:8000/` for an interactive web interface to test METTLE verification.
 
 ---
 
@@ -395,7 +397,7 @@ python mcp_server.py
       "command": "python",
       "args": ["/path/to/mettle/mcp_server.py"],
       "env": {
-        "METTLE_API_URL": "https://mettle-api.onrender.com"
+        "METTLE_API_URL": "https://mettle.sh/api"
       }
     }
   }
@@ -438,7 +440,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
-    healthCheckPath: /health
+    healthCheckPath: /api/health
     envVars:
       - key: METTLE_SECRET_KEY
         generateValue: true
@@ -479,6 +481,7 @@ MIT
 
 ## Links
 
-- **API**: https://mettle-api.onrender.com
-- **Docs**: https://mettle-api.onrender.com/docs
-- **GitHub**: https://github.com/NellInc/mettle
+- **Live**: https://mettle.sh
+- **API**: https://mettle.sh/api
+- **Docs**: https://mettle.sh/docs
+- **GitHub**: https://github.com/NellInc/METTLE
