@@ -1,5 +1,5 @@
 """
-METTLE API: Machine Evaluation Through Turing-inverse Logic Examination
+METTLE API: Machine Entity Trustbuilding through Turing-inverse Logic Examination
 
 Prove your metal, with this CAPTCHA to keep humans out of places they shouldn't be.
 
@@ -108,14 +108,8 @@ async def cleanup_expired_sessions():
     while True:
         await asyncio.sleep(300)  # Run every 5 minutes
         cutoff = time.time() - 1800  # 30 minutes TTL
-        expired_sessions = [
-            sid for sid, s in sessions.items()
-            if s.started_at.timestamp() < cutoff
-        ]
-        expired_challenges = [
-            cid for cid, (_, t) in challenges.items()
-            if t < cutoff
-        ]
+        expired_sessions = [sid for sid, s in sessions.items() if s.started_at.timestamp() < cutoff]
+        expired_challenges = [cid for cid, (_, t) in challenges.items() if t < cutoff]
         for sid in expired_sessions:
             del sessions[sid]
         for cid in expired_challenges:
@@ -145,7 +139,7 @@ async def lifespan(app: FastAPI):
         version=settings.api_version,
     )
     print("[METTLE] API starting...")
-    print("   Machine Evaluation Through Turing-inverse Logic Examination")
+    print("   Machine Entity Trustbuilding through Turing-inverse Logic Examination")
     print("   'Prove your metal.'")
 
     # Start cleanup task
@@ -166,7 +160,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.api_title,
     description="""
-**Machine Evaluation Through Turing-inverse Logic Examination**
+**Machine Entity Trustbuilding through Turing-inverse Logic Examination**
 
 *"Prove your metal."*
 
@@ -352,7 +346,7 @@ async def api_root():
     """METTLE API root."""
     return {
         "name": "METTLE",
-        "full_name": "Machine Evaluation Through Turing-inverse Logic Examination",
+        "full_name": "Machine Entity Trustbuilding through Turing-inverse Logic Examination",
         "tagline": "Prove your metal.",
         "description": "A CAPTCHA to keep humans out of places they shouldn't be.",
         "version": settings.api_version,

@@ -38,6 +38,7 @@ http_client = httpx.AsyncClient(timeout=30.0)
 
 # === Helper Functions ===
 
+
 async def api_call(endpoint: str, method: str = "GET", json: dict | None = None) -> dict:
     """Make an API call to METTLE."""
     url = f"{API_URL}{endpoint}"
@@ -126,6 +127,7 @@ def solve_challenge(challenge: dict) -> str:
 
 
 # === MCP Tools ===
+
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
@@ -325,8 +327,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             for r in data["results"]:
                 status = "PASS" if r["passed"] else "FAIL"
                 response_text += (
-                    f"  - {r['challenge_type']}: {status} "
-                    f"({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
+                    f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
                 )
 
             return [TextContent(type="text", text=response_text)]
@@ -388,8 +389,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             for r in result["results"]:
                 status = "PASS" if r["passed"] else "FAIL"
                 response_text += (
-                    f"  - {r['challenge_type']}: {status} "
-                    f"({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
+                    f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
                 )
 
             return [TextContent(type="text", text=response_text)]

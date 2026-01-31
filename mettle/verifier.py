@@ -33,9 +33,7 @@ def verify_speed_math(challenge: Challenge, answer: str, response_time_ms: int) 
     )
 
 
-def verify_chained_reasoning(
-    challenge: Challenge, answer: str, response_time_ms: int
-) -> VerificationResult:
+def verify_chained_reasoning(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
     """Verify a chained reasoning response."""
     try:
         user_answer = int(str(answer).strip())
@@ -63,9 +61,7 @@ def verify_chained_reasoning(
     )
 
 
-def verify_token_prediction(
-    challenge: Challenge, answer: str, response_time_ms: int
-) -> VerificationResult:
+def verify_token_prediction(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
     """Verify a token prediction response."""
     user_answer = str(answer).strip().lower()
     expected = challenge.data["expected_answer"].lower()
@@ -90,9 +86,7 @@ def verify_token_prediction(
     )
 
 
-def verify_instruction_following(
-    challenge: Challenge, answer: str, response_time_ms: int
-) -> VerificationResult:
+def verify_instruction_following(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
     """Verify an instruction following response."""
     instruction = challenge.data["instruction"]
     response = str(answer).strip()
@@ -168,9 +162,7 @@ def verify_consistency(challenge: Challenge, answer: str, response_time_ms: int)
         # AI behavior: varied phrasing (not identical) but consistent meaning (similar)
         # Human copy-paste: all identical
         # Human guessing: inconsistent
-        semantically_consistent = avg_similarity > 0.3 or all(
-            reference in k or k in reference for k in keys
-        )
+        semantically_consistent = avg_similarity > 0.3 or all(reference in k or k in reference for k in keys)
 
         # Pass if: semantically consistent AND (not all identical OR very short answers)
         short_answer = all(len(p.split()) <= 3 for p in parts)  # Short answers can be identical
@@ -231,9 +223,7 @@ def verify_response(challenge: Challenge, answer: str, response_time_ms: int) ->
     return verifiers[challenge.type](challenge, answer, response_time_ms)
 
 
-def compute_mettle_result(
-    results: list[VerificationResult], entity_id: str | None = None
-) -> MettleResult:
+def compute_mettle_result(results: list[VerificationResult], entity_id: str | None = None) -> MettleResult:
     """Compute overall METTLE verification result."""
     passed = sum(1 for r in results if r.passed)
     total = len(results)

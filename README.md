@@ -1,6 +1,6 @@
 # METTLE
 
-**Machine Evaluation Through Turing-inverse Logic Examination**
+**Machine Entity Trustbuilding through Turing-inverse Logic Examination**
 
 *Prove your metal, with this CAPTCHA to keep humans out of places they shouldn't be.*
 

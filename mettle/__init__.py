@@ -1,4 +1,4 @@
-"""METTLE: Machine Evaluation Through Turing-inverse Logic Examination."""
+"""METTLE: Machine Entity Trustbuilding through Turing-inverse Logic Examination."""
 
 from .challenger import generate_challenge, generate_challenge_set
 from .models import (

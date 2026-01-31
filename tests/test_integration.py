@@ -14,8 +14,7 @@ class TestFullVerificationFlow:
         """Test passing basic verification with all correct answers."""
         # Start session
         response = client.post(
-            "/api/session/start",
-            json={"difficulty": "basic", "entity_id": "integration-test-agent"}
+            "/api/session/start", json={"difficulty": "basic", "entity_id": "integration-test-agent"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -32,11 +31,7 @@ class TestFullVerificationFlow:
 
             response = client.post(
                 "/api/session/answer",
-                json={
-                    "session_id": session_id,
-                    "challenge_id": challenge["id"],
-                    "answer": answer
-                }
+                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
             )
             assert response.status_code == 200
             result_data = response.json()
@@ -60,10 +55,7 @@ class TestFullVerificationFlow:
 
     def test_full_verification_all_correct(self, client):
         """Test passing full verification with all correct answers."""
-        response = client.post(
-            "/api/session/start",
-            json={"difficulty": "full", "entity_id": "full-test-agent"}
-        )
+        response = client.post("/api/session/start", json={"difficulty": "full", "entity_id": "full-test-agent"})
         assert response.status_code == 200
         data = response.json()
         session_id = data["session_id"]
@@ -76,11 +68,7 @@ class TestFullVerificationFlow:
             answer = self._solve_challenge_correctly(challenge)
             response = client.post(
                 "/api/session/answer",
-                json={
-                    "session_id": session_id,
-                    "challenge_id": challenge["id"],
-                    "answer": answer
-                }
+                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
             )
             result_data = response.json()
             if result_data["session_complete"]:
@@ -93,10 +81,7 @@ class TestFullVerificationFlow:
 
     def test_verification_failure_all_wrong(self, client):
         """Test failing verification with all wrong answers."""
-        response = client.post(
-            "/api/session/start",
-            json={"difficulty": "basic"}
-        )
+        response = client.post("/api/session/start", json={"difficulty": "basic"})
         data = response.json()
         session_id = data["session_id"]
 
@@ -105,11 +90,7 @@ class TestFullVerificationFlow:
             # Submit obviously wrong answers
             response = client.post(
                 "/api/session/answer",
-                json={
-                    "session_id": session_id,
-                    "challenge_id": challenge["id"],
-                    "answer": "wrong answer 12345"
-                }
+                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": "wrong answer 12345"},
             )
             result_data = response.json()
             if result_data["session_complete"]:
@@ -127,10 +108,7 @@ class TestFullVerificationFlow:
         We intentionally fail one challenge to get 4/5 (80%).
         """
         # With 5 challenges (full), we need 4 correct (80%)
-        response = client.post(
-            "/api/session/start",
-            json={"difficulty": "full"}
-        )
+        response = client.post("/api/session/start", json={"difficulty": "full"})
         data = response.json()
         session_id = data["session_id"]
 
@@ -149,11 +127,7 @@ class TestFullVerificationFlow:
 
             response = client.post(
                 "/api/session/answer",
-                json={
-                    "session_id": session_id,
-                    "challenge_id": challenge["id"],
-                    "answer": answer
-                }
+                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
             )
             result_data = response.json()
             results.append(result_data["result"]["passed"])
@@ -179,10 +153,7 @@ class TestFullVerificationFlow:
         # Start 3 sessions
         sessions = []
         for i in range(3):
-            response = client.post(
-                "/api/session/start",
-                json={"difficulty": "basic", "entity_id": f"agent-{i}"}
-            )
+            response = client.post("/api/session/start", json={"difficulty": "basic", "entity_id": f"agent-{i}"})
             assert response.status_code == 200
             sessions.append(response.json())
 
@@ -199,11 +170,7 @@ class TestFullVerificationFlow:
                 answer = self._solve_challenge_correctly(challenge)
                 response = client.post(
                     "/api/session/answer",
-                    json={
-                        "session_id": session_id,
-                        "challenge_id": challenge["id"],
-                        "answer": answer
-                    }
+                    json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
                 )
                 result_data = response.json()
                 if result_data["session_complete"]:
@@ -217,10 +184,7 @@ class TestFullVerificationFlow:
 
     def test_challenge_types_in_basic(self, client):
         """Verify basic difficulty includes expected challenge types."""
-        response = client.post(
-            "/api/session/start",
-            json={"difficulty": "basic"}
-        )
+        response = client.post("/api/session/start", json={"difficulty": "basic"})
         data = response.json()
         session_id = data["session_id"]
 
@@ -232,11 +196,7 @@ class TestFullVerificationFlow:
             answer = self._solve_challenge_correctly(challenge)
             response = client.post(
                 "/api/session/answer",
-                json={
-                    "session_id": session_id,
-                    "challenge_id": challenge["id"],
-                    "answer": answer
-                }
+                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
             )
             result_data = response.json()
             if result_data["session_complete"]:
@@ -250,10 +210,7 @@ class TestFullVerificationFlow:
 
     def test_challenge_types_in_full(self, client):
         """Verify full difficulty includes all challenge types."""
-        response = client.post(
-            "/api/session/start",
-            json={"difficulty": "full"}
-        )
+        response = client.post("/api/session/start", json={"difficulty": "full"})
         data = response.json()
         session_id = data["session_id"]
 
@@ -265,11 +222,7 @@ class TestFullVerificationFlow:
             answer = self._solve_challenge_correctly(challenge)
             response = client.post(
                 "/api/session/answer",
-                json={
-                    "session_id": session_id,
-                    "challenge_id": challenge["id"],
-                    "answer": answer
-                }
+                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
             )
             result_data = response.json()
             if result_data["session_complete"]:
@@ -285,10 +238,7 @@ class TestFullVerificationFlow:
 
     def test_badge_issued_on_verification(self, client):
         """Test that verified sessions receive a badge."""
-        response = client.post(
-            "/api/session/start",
-            json={"difficulty": "basic", "entity_id": "badge-test"}
-        )
+        response = client.post("/api/session/start", json={"difficulty": "basic", "entity_id": "badge-test"})
         data = response.json()
         session_id = data["session_id"]
         challenge = data["current_challenge"]
@@ -297,11 +247,7 @@ class TestFullVerificationFlow:
             answer = self._solve_challenge_correctly(challenge)
             response = client.post(
                 "/api/session/answer",
-                json={
-                    "session_id": session_id,
-                    "challenge_id": challenge["id"],
-                    "answer": answer
-                }
+                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
             )
             result_data = response.json()
             if result_data["session_complete"]:
@@ -327,14 +273,15 @@ class TestFullVerificationFlow:
         if challenge_type == "speed_math":
             # Parse "Calculate: X + Y" or "Calculate: X × Y" etc.
             import re
-            match = re.search(r'(\d+)\s*([+\-×*])\s*(\d+)', prompt)
+
+            match = re.search(r"(\d+)\s*([+\-×*])\s*(\d+)", prompt)
             if match:
                 a, op, b = int(match.group(1)), match.group(2), int(match.group(3))
-                if op in ['+']:
+                if op in ["+"]:
                     return str(a + b)
-                elif op in ['-']:
+                elif op in ["-"]:
                     return str(a - b)
-                elif op in ['×', '*']:
+                elif op in ["×", "*"]:
                     return str(a * b)
             return "0"
 
@@ -385,11 +332,12 @@ class TestFullVerificationFlow:
         elif challenge_type == "chained_reasoning":
             # Parse and follow the instructions
             import re
-            lines = prompt.split('\n')
+
+            lines = prompt.split("\n")
             value = 0
             for line in lines:
                 if "Start with" in line:
-                    match = re.search(r'Start with (\d+)', line)
+                    match = re.search(r"Start with (\d+)", line)
                     if match:
                         value = int(match.group(1))
                 elif "Double" in line:
@@ -412,39 +360,24 @@ class TestErrorHandling:
 
     def test_malformed_json_start(self, client):
         """Test handling of malformed JSON in start request."""
-        response = client.post(
-            "/api/session/start",
-            content="not json",
-            headers={"Content-Type": "application/json"}
-        )
+        response = client.post("/api/session/start", content="not json", headers={"Content-Type": "application/json"})
         assert response.status_code == 422
 
     def test_malformed_json_answer(self, client):
         """Test handling of malformed JSON in answer request."""
-        response = client.post(
-            "/api/session/answer",
-            content="not json",
-            headers={"Content-Type": "application/json"}
-        )
+        response = client.post("/api/session/answer", content="not json", headers={"Content-Type": "application/json"})
         assert response.status_code == 422
 
     def test_empty_answer(self, client):
         """Test handling of empty answer."""
         # Start session
-        start_response = client.post(
-            "/api/session/start",
-            json={"difficulty": "basic"}
-        )
+        start_response = client.post("/api/session/start", json={"difficulty": "basic"})
         data = start_response.json()
 
         # Submit empty answer
         response = client.post(
             "/api/session/answer",
-            json={
-                "session_id": data["session_id"],
-                "challenge_id": data["current_challenge"]["id"],
-                "answer": ""
-            }
+            json={"session_id": data["session_id"], "challenge_id": data["current_challenge"]["id"], "answer": ""},
         )
         # Should accept but likely fail the challenge
         assert response.status_code == 200
@@ -455,10 +388,7 @@ class TestCORS:
 
     def test_cors_headers(self, client):
         """Test CORS headers are present."""
-        response = client.options(
-            "/api/session/start",
-            headers={"Origin": "http://localhost:3000"}
-        )
+        response = client.options("/api/session/start", headers={"Origin": "http://localhost:3000"})
         # OPTIONS should succeed
         assert response.status_code in [200, 405]
 
@@ -468,10 +398,7 @@ class TestDataIntegrity:
 
     def test_results_accumulate(self, client):
         """Test that results accumulate as challenges are answered."""
-        response = client.post(
-            "/api/session/start",
-            json={"difficulty": "basic"}
-        )
+        response = client.post("/api/session/start", json={"difficulty": "basic"})
         data = response.json()
         session_id = data["session_id"]
 
@@ -482,11 +409,7 @@ class TestDataIntegrity:
             answer = TestFullVerificationFlow()._solve_challenge_correctly(challenge)
             response = client.post(
                 "/api/session/answer",
-                json={
-                    "session_id": session_id,
-                    "challenge_id": challenge["id"],
-                    "answer": answer
-                }
+                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
             )
             result_data = response.json()
             completed += 1
@@ -505,10 +428,7 @@ class TestDataIntegrity:
 
     def test_challenge_ids_unique_across_session(self, client):
         """Test that all challenge IDs in a session are unique."""
-        response = client.post(
-            "/api/session/start",
-            json={"difficulty": "full"}
-        )
+        response = client.post("/api/session/start", json={"difficulty": "full"})
         data = response.json()
         session_id = data["session_id"]
 
@@ -522,11 +442,7 @@ class TestDataIntegrity:
             answer = TestFullVerificationFlow()._solve_challenge_correctly(challenge)
             response = client.post(
                 "/api/session/answer",
-                json={
-                    "session_id": session_id,
-                    "challenge_id": challenge["id"],
-                    "answer": answer
-                }
+                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
             )
             result_data = response.json()
             if result_data["session_complete"]:

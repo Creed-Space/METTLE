@@ -72,7 +72,7 @@ def generate_chained_reasoning_challenge(difficulty: Difficulty) -> Challenge:
         chain.append(result)
 
     prompt = "Follow these steps and give the final number:\n" + "\n".join(
-        f"{i+1}. {inst}" for i, inst in enumerate(instructions)
+        f"{i + 1}. {inst}" for i, inst in enumerate(instructions)
     )
 
     return Challenge(

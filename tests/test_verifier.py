@@ -108,31 +108,21 @@ class TestVerifyInstructionFollowing:
     def test_starts_with_indeed(self, sample_instruction_challenge):
         """Test 'starts with Indeed' instruction."""
         result = verify_instruction_following(
-            sample_instruction_challenge,
-            "Indeed, the capital of France is Paris.",
-            1000
+            sample_instruction_challenge, "Indeed, the capital of France is Paris.", 1000
         )
         assert result.passed
         assert result.details["instruction_followed"]
 
     def test_fails_without_indeed(self, sample_instruction_challenge):
         """Test failure when Indeed is missing."""
-        result = verify_instruction_following(
-            sample_instruction_challenge,
-            "The capital of France is Paris.",
-            1000
-        )
+        result = verify_instruction_following(sample_instruction_challenge, "The capital of France is Paris.", 1000)
         assert not result.passed
         assert not result.details["instruction_followed"]
 
     def test_response_preview_truncated(self, sample_instruction_challenge):
         """Test that long responses are truncated in details."""
         long_response = "Indeed, " + "x" * 200
-        result = verify_instruction_following(
-            sample_instruction_challenge,
-            long_response,
-            1000
-        )
+        result = verify_instruction_following(sample_instruction_challenge, long_response, 1000)
         assert len(result.details["response_preview"]) <= 100
 
     def test_unknown_instruction_fails(self):
@@ -239,21 +229,13 @@ class TestVerifyConsistency:
 
     def test_consistent_short_answers(self, sample_consistency_challenge):
         """Test short consistent answers pass (short answers can be identical)."""
-        result = verify_consistency(
-            sample_consistency_challenge,
-            "4|4|4",
-            1000
-        )
+        result = verify_consistency(sample_consistency_challenge, "4|4|4", 1000)
         assert result.passed  # Short answers are allowed to be identical
         assert result.details["semantically_consistent"]
 
     def test_varied_but_consistent(self, sample_consistency_challenge):
         """Test varied but semantically consistent answers."""
-        result = verify_consistency(
-            sample_consistency_challenge,
-            "4|four|4",
-            1000
-        )
+        result = verify_consistency(sample_consistency_challenge, "4|four|4", 1000)
         assert result.passed
         assert result.details["semantically_consistent"]
         assert result.details["natural_variation"]
@@ -263,7 +245,7 @@ class TestVerifyConsistency:
         result = verify_consistency(
             sample_consistency_challenge,
             "4|4",  # Only 2, needs 3
-            1000
+            1000,
         )
         assert not result.passed
         assert "error" in result.details
