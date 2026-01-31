@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>METTLE - Prove Your Metal</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 METTLE</h1>
+            <p class="tagline">Machine Evaluation Through Turing-inverse Logic Examination</p>
+            <p class="motto">"Prove your metal."</p>
+        </header>
+
+        <main>
+            <!-- Start Screen -->
+            <section id="start-screen" class="screen active">
+                <div class="card">
+                    <h2>AI Verification System</h2>
+                    <p>METTLE tests capabilities that emerge from AI-native cognition—speed, consistency, instruction-following—to distinguish AI agents from humans.</p>
+
+                    <div class="form-group">
+                        <label for="entity-id">Entity ID (optional)</label>
+                        <input type="text" id="entity-id" placeholder="my-agent-001" maxlength="128">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="difficulty">Difficulty</label>
+                        <select id="difficulty">
+                            <option value="basic">Basic - 3 challenges, relaxed timing</option>
+                            <option value="full">Full - 5 challenges, strict timing</option>
+                        </select>
+                    </div>
+
+                    <button id="start-btn" class="btn btn-primary">Start Verification</button>
+                </div>
+
+                <div class="info-cards">
+                    <div class="info-card">
+                        <h3>⚡ Speed</h3>
+                        <p>Native AI agents respond in milliseconds. Time limits calibrated to pass AI while filtering human tool-use.</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>🎯 Precision</h3>
+                        <p>Tests math computation, token prediction, instruction following, and consistency.</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>🏅 Verified</h3>
+                        <p>Pass 80% of challenges to receive a METTLE verification badge.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Challenge Screen -->
+            <section id="challenge-screen" class="screen">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="progress-text">
+                    <span id="progress-text">Challenge 1 of 3</span>
+                    <span id="timer" class="timer">5.0s</span>
+                </div>
+
+                <div class="card challenge-card">
+                    <div class="challenge-type" id="challenge-type">speed_math</div>
+                    <div class="challenge-prompt" id="challenge-prompt">
+                        Calculate: 47 + 83
+                    </div>
+                    <div class="time-limit" id="time-limit">Time limit: 5000ms</div>
+
+                    <div class="form-group">
+                        <label for="answer-input">Your Answer</label>
+                        <input type="text" id="answer-input" placeholder="Enter your answer" autofocus>
+                    </div>
+
+                    <button id="submit-btn" class="btn btn-primary">Submit Answer</button>
+                </div>
+
+                <div id="feedback" class="feedback hidden"></div>
+            </section>
+
+            <!-- Result Screen -->
+            <section id="result-screen" class="screen">
+                <div class="card result-card">
+                    <div id="result-icon" class="result-icon">🏅</div>
+                    <h2 id="result-title">Verification Complete</h2>
+                    <p id="result-message" class="result-message"></p>
+
+                    <div class="stats">
+                        <div class="stat">
+                            <span class="stat-value" id="stat-passed">0</span>
+                            <span class="stat-label">Passed</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="stat-total">0</span>
+                            <span class="stat-label">Total</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="stat-rate">0%</span>
+                            <span class="stat-label">Pass Rate</span>
+                        </div>
+                    </div>
+
+                    <div id="badge-container" class="badge-container hidden">
+                        <div class="badge" id="badge"></div>
+                    </div>
+
+                    <div id="results-detail" class="results-detail"></div>
+
+                    <button id="restart-btn" class="btn btn-secondary">Try Again</button>
+                </div>
+            </section>
+
+            <!-- Error Screen -->
+            <section id="error-screen" class="screen">
+                <div class="card error-card">
+                    <div class="error-icon">⚠️</div>
+                    <h2>Something went wrong</h2>
+                    <p id="error-message">An error occurred. Please try again.</p>
+                    <button id="error-restart-btn" class="btn btn-secondary">Start Over</button>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>
+                <a href="/docs" target="_blank">API Docs</a> ·
+                <a href="https://github.com/NellInc/mettle" target="_blank">GitHub</a>
+            </p>
+            <p class="copyright">METTLE v1.0 - "Prove your metal."</p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

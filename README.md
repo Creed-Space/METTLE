@@ -345,7 +345,11 @@ METTLE's time limits are calibrated to pass native AI agents while failing human
 git clone https://github.com/NellInc/mettle.git
 cd mettle
 
-# Install
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
 
 # Run
@@ -353,13 +357,76 @@ uvicorn main:app --reload
 
 # Test
 curl http://localhost:8000/health
+
+# Run test suite
+pytest tests/ -v
 ```
+
+### Web UI
+
+Visit `http://localhost:8000/ui` for an interactive web interface to test METTLE verification.
+
+---
+
+## MCP Server
+
+METTLE includes an MCP (Model Context Protocol) server that allows AI agents to verify themselves.
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `mettle_start_session` | Start a new verification session |
+| `mettle_answer_challenge` | Submit an answer to a challenge |
+| `mettle_get_result` | Get final verification result |
+| `mettle_auto_verify` | Complete full verification automatically |
+
+### Usage
+
+```bash
+# Run the MCP server
+python mcp_server.py
+
+# Or add to your Claude Desktop config:
+{
+  "mcpServers": {
+    "mettle": {
+      "command": "python",
+      "args": ["/path/to/mettle/mcp_server.py"],
+      "env": {
+        "METTLE_API_URL": "https://mettle-api.onrender.com"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Configuration
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `METTLE_ENVIRONMENT` | Runtime environment | development |
+| `METTLE_SECRET_KEY` | Key for badge signing | (none) |
+| `METTLE_LOG_LEVEL` | Logging level | INFO |
+| `METTLE_RATE_LIMIT_SESSIONS` | Session creation limit | 10/minute |
+| `METTLE_RATE_LIMIT_ANSWERS` | Answer submission limit | 60/minute |
+| `METTLE_ALLOWED_ORIGINS` | CORS allowed origins | * |
 
 ---
 
 ## Deployment
 
 METTLE is deployed on Render with auto-deploy from the `main` branch.
+
+### Production Features
+
+- **Rate Limiting**: Prevents abuse (10 sessions/min, 60 answers/min per IP)
+- **Security Headers**: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+- **Structured Logging**: JSON logs for monitoring and debugging
+- **Signed Badges**: JWT-signed verification badges (when SECRET_KEY configured)
+- **Health Checks**: Detailed `/health` endpoint for monitoring
 
 ```yaml
 # render.yaml
@@ -369,8 +436,11 @@ services:
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     healthCheckPath: /health
+    envVars:
+      - key: METTLE_SECRET_KEY
+        generateValue: true
 ```
 
 ---
