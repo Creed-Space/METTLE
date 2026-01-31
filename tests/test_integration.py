@@ -121,7 +121,11 @@ class TestFullVerificationFlow:
         assert result["pass_rate"] < 0.8
 
     def test_verification_at_threshold(self, client):
-        """Test verification at exactly 80% threshold."""
+        """Test verification at exactly 80% threshold.
+
+        This test verifies that 80% is the pass threshold.
+        We intentionally fail one challenge to get 4/5 (80%).
+        """
         # With 5 challenges (full), we need 4 correct (80%)
         response = client.post(
             "/api/session/start",
@@ -132,13 +136,16 @@ class TestFullVerificationFlow:
 
         challenge = data["current_challenge"]
         challenge_num = 0
+        results = []
+
         while challenge:
             challenge_num += 1
             # Get wrong on the last challenge only (4/5 = 80%)
             if challenge_num <= 4:
                 answer = self._solve_challenge_correctly(challenge)
             else:
-                answer = "intentionally wrong"
+                # Use a clearly wrong answer that can't accidentally be correct
+                answer = "XYZZY_INTENTIONALLY_WRONG_12345"
 
             response = client.post(
                 "/api/session/answer",
@@ -149,16 +156,23 @@ class TestFullVerificationFlow:
                 }
             )
             result_data = response.json()
+            results.append(result_data["result"]["passed"])
+
             if result_data["session_complete"]:
                 break
             challenge = result_data["next_challenge"]
 
         result = client.get(f"/api/session/{session_id}/result").json()
-        assert result["passed"] >= 4
-        # If we got 4/5 correct, we should pass
-        if result["passed"] == 4:
-            assert result["verified"]
-            assert result["pass_rate"] == 0.8
+
+        # We should have answered 5 challenges
+        assert result["total"] == 5
+
+        # At least 4 should pass (our solver handles all challenge types)
+        # The 5th should definitely fail with our gibberish answer
+        assert result["passed"] >= 4, f"Expected at least 4 passed, got {result['passed']}. Results: {results}"
+
+        # 80% threshold: 4/5 = 0.8, should verify
+        assert result["verified"], f"Expected verified with {result['passed']}/5 ({result['pass_rate']})"
 
     def test_multiple_concurrent_sessions(self, client):
         """Test multiple sessions can run concurrently."""

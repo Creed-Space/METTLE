@@ -429,7 +429,8 @@ METTLE is deployed on Render with auto-deploy from the `main` branch.
 - **Security Headers**: X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
 - **Structured Logging**: JSON logs for monitoring and debugging
 - **Signed Badges**: JWT-signed verification badges (when SECRET_KEY configured)
-- **Health Checks**: Detailed `/health` endpoint for monitoring
+- **Health Checks**: Detailed `/api/health` endpoint for monitoring
+- **Ephemeral Sessions**: Sessions stored in-memory (cleared on redeploy). This is by design—verification sessions are short-lived and don't need persistence.
 
 ```yaml
 # render.yaml
