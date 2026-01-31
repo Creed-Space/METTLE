@@ -17,9 +17,9 @@ from typing import Any
 
 import jwt
 import structlog
-from fastapi import FastAPI, HTTPException, Request, Body
+from fastapi import APIRouter, FastAPI, HTTPException, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -214,6 +214,9 @@ to distinguish AI agents from humans and humans-using-AI-as-tool.
     },
 )
 
+# API Router - all API endpoints go under /api
+api_router = APIRouter(prefix="/api")
+
 # Add rate limit handler
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -338,14 +341,14 @@ class BadgeVerifyResponse(BaseModel):
     error: str | None = Field(default=None, description="Error message if invalid")
 
 
-# === Endpoints ===
-@app.get(
+# === API Endpoints (mounted at /api) ===
+@api_router.get(
     "/",
     tags=["Status"],
     summary="API Information",
     description="Get basic API information and available endpoints.",
 )
-async def root():
+async def api_root():
     """METTLE API root."""
     return {
         "name": "METTLE",
@@ -355,17 +358,17 @@ async def root():
         "version": settings.api_version,
         "documentation": "/docs",
         "endpoints": {
-            "POST /session/start": "Start a verification session",
-            "POST /session/answer": "Submit an answer to current challenge",
-            "GET /session/{session_id}": "Get session status",
-            "GET /session/{session_id}/result": "Get final verification result",
-            "GET /badge/verify/{token}": "Verify a METTLE badge",
-            "GET /health": "Health check",
+            "POST /api/session/start": "Start a verification session",
+            "POST /api/session/answer": "Submit an answer to current challenge",
+            "GET /api/session/{session_id}": "Get session status",
+            "GET /api/session/{session_id}/result": "Get final verification result",
+            "GET /api/badge/verify/{token}": "Verify a METTLE badge",
+            "GET /api/health": "Health check",
         },
     }
 
 
-@app.get(
+@api_router.get(
     "/health",
     tags=["Status"],
     summary="Health Check",
@@ -387,7 +390,7 @@ async def health():
     }
 
 
-@app.post(
+@api_router.post(
     "/session/start",
     response_model=StartSessionResponse,
     tags=["Session"],
@@ -461,7 +464,7 @@ async def start_session(
     )
 
 
-@app.post(
+@api_router.post(
     "/session/answer",
     response_model=SubmitAnswerResponse,
     tags=["Session"],
@@ -550,7 +553,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
     )
 
 
-@app.get(
+@api_router.get(
     "/session/{session_id}",
     tags=["Session"],
     summary="Get Session Status",
@@ -583,7 +586,7 @@ async def get_session(session_id: str):
         }
 
 
-@app.get(
+@api_router.get(
     "/session/{session_id}/result",
     response_model=MettleResult,
     tags=["Session"],
@@ -626,7 +629,7 @@ def generate_signed_badge(entity_id: str | None, difficulty: str, pass_rate: flo
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
 
 
-@app.get(
+@api_router.get(
     "/badge/verify/{token}",
     response_model=BadgeVerifyResponse,
     tags=["Badge"],
@@ -665,10 +668,26 @@ _static_dir = Path(__file__).parent / "static"
 if _static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
-    @app.get("/ui", tags=["Status"], include_in_schema=False)
-    async def serve_ui():
-        """Serve the web UI."""
+
+# === Mount API Router ===
+app.include_router(api_router)
+
+
+# === Root serves UI ===
+@app.get("/", include_in_schema=False)
+async def serve_ui():
+    """Serve the web UI at root."""
+    if _static_dir.exists():
         return FileResponse(str(_static_dir / "index.html"))
+    # Fallback to API redirect if no static files
+    return RedirectResponse(url="/api")
+
+
+# Legacy /ui redirect for backwards compatibility
+@app.get("/ui", include_in_schema=False)
+async def redirect_legacy_ui():
+    """Redirect legacy /ui to root."""
+    return RedirectResponse(url="/", status_code=301)
 
 
 if __name__ == "__main__":

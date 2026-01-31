@@ -14,7 +14,7 @@ class TestFullVerificationFlow:
         """Test passing basic verification with all correct answers."""
         # Start session
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "basic", "entity_id": "integration-test-agent"}
         )
         assert response.status_code == 200
@@ -31,7 +31,7 @@ class TestFullVerificationFlow:
             answer = self._solve_challenge_correctly(challenge)
 
             response = client.post(
-                "/session/answer",
+                "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],
@@ -49,7 +49,7 @@ class TestFullVerificationFlow:
             challenge = result_data["next_challenge"]
 
         # Verify final result
-        result_response = client.get(f"/session/{session_id}/result")
+        result_response = client.get(f"/api/session/{session_id}/result")
         assert result_response.status_code == 200
         result = result_response.json()
 
@@ -61,7 +61,7 @@ class TestFullVerificationFlow:
     def test_full_verification_all_correct(self, client):
         """Test passing full verification with all correct answers."""
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "full", "entity_id": "full-test-agent"}
         )
         assert response.status_code == 200
@@ -75,7 +75,7 @@ class TestFullVerificationFlow:
         while challenge:
             answer = self._solve_challenge_correctly(challenge)
             response = client.post(
-                "/session/answer",
+                "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],
@@ -87,14 +87,14 @@ class TestFullVerificationFlow:
                 break
             challenge = result_data["next_challenge"]
 
-        result = client.get(f"/session/{session_id}/result").json()
+        result = client.get(f"/api/session/{session_id}/result").json()
         assert result["verified"]
         assert result["total"] == 5
 
     def test_verification_failure_all_wrong(self, client):
         """Test failing verification with all wrong answers."""
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "basic"}
         )
         data = response.json()
@@ -104,7 +104,7 @@ class TestFullVerificationFlow:
         while challenge:
             # Submit obviously wrong answers
             response = client.post(
-                "/session/answer",
+                "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],
@@ -116,7 +116,7 @@ class TestFullVerificationFlow:
                 break
             challenge = result_data["next_challenge"]
 
-        result = client.get(f"/session/{session_id}/result").json()
+        result = client.get(f"/api/session/{session_id}/result").json()
         assert not result["verified"]
         assert result["pass_rate"] < 0.8
 
@@ -124,7 +124,7 @@ class TestFullVerificationFlow:
         """Test verification at exactly 80% threshold."""
         # With 5 challenges (full), we need 4 correct (80%)
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "full"}
         )
         data = response.json()
@@ -141,7 +141,7 @@ class TestFullVerificationFlow:
                 answer = "intentionally wrong"
 
             response = client.post(
-                "/session/answer",
+                "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],
@@ -153,7 +153,7 @@ class TestFullVerificationFlow:
                 break
             challenge = result_data["next_challenge"]
 
-        result = client.get(f"/session/{session_id}/result").json()
+        result = client.get(f"/api/session/{session_id}/result").json()
         assert result["passed"] >= 4
         # If we got 4/5 correct, we should pass
         if result["passed"] == 4:
@@ -166,7 +166,7 @@ class TestFullVerificationFlow:
         sessions = []
         for i in range(3):
             response = client.post(
-                "/session/start",
+                "/api/session/start",
                 json={"difficulty": "basic", "entity_id": f"agent-{i}"}
             )
             assert response.status_code == 200
@@ -184,7 +184,7 @@ class TestFullVerificationFlow:
             while challenge:
                 answer = self._solve_challenge_correctly(challenge)
                 response = client.post(
-                    "/session/answer",
+                    "/api/session/answer",
                     json={
                         "session_id": session_id,
                         "challenge_id": challenge["id"],
@@ -198,13 +198,13 @@ class TestFullVerificationFlow:
 
         # All should have results
         for session_id in session_ids:
-            result = client.get(f"/session/{session_id}/result").json()
+            result = client.get(f"/api/session/{session_id}/result").json()
             assert "verified" in result
 
     def test_challenge_types_in_basic(self, client):
         """Verify basic difficulty includes expected challenge types."""
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "basic"}
         )
         data = response.json()
@@ -217,7 +217,7 @@ class TestFullVerificationFlow:
             types_seen.add(challenge["type"])
             answer = self._solve_challenge_correctly(challenge)
             response = client.post(
-                "/session/answer",
+                "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],
@@ -237,7 +237,7 @@ class TestFullVerificationFlow:
     def test_challenge_types_in_full(self, client):
         """Verify full difficulty includes all challenge types."""
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "full"}
         )
         data = response.json()
@@ -250,7 +250,7 @@ class TestFullVerificationFlow:
             types_seen.add(challenge["type"])
             answer = self._solve_challenge_correctly(challenge)
             response = client.post(
-                "/session/answer",
+                "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],
@@ -272,7 +272,7 @@ class TestFullVerificationFlow:
     def test_badge_issued_on_verification(self, client):
         """Test that verified sessions receive a badge."""
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "basic", "entity_id": "badge-test"}
         )
         data = response.json()
@@ -282,7 +282,7 @@ class TestFullVerificationFlow:
         while challenge:
             answer = self._solve_challenge_correctly(challenge)
             response = client.post(
-                "/session/answer",
+                "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],
@@ -294,7 +294,7 @@ class TestFullVerificationFlow:
                 break
             challenge = result_data["next_challenge"]
 
-        result = client.get(f"/session/{session_id}/result").json()
+        result = client.get(f"/api/session/{session_id}/result").json()
         if result["verified"]:
             assert result["badge"] is not None
             assert "METTLE-verified" in result["badge"]
@@ -399,7 +399,7 @@ class TestErrorHandling:
     def test_malformed_json_start(self, client):
         """Test handling of malformed JSON in start request."""
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             content="not json",
             headers={"Content-Type": "application/json"}
         )
@@ -408,7 +408,7 @@ class TestErrorHandling:
     def test_malformed_json_answer(self, client):
         """Test handling of malformed JSON in answer request."""
         response = client.post(
-            "/session/answer",
+            "/api/session/answer",
             content="not json",
             headers={"Content-Type": "application/json"}
         )
@@ -418,14 +418,14 @@ class TestErrorHandling:
         """Test handling of empty answer."""
         # Start session
         start_response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "basic"}
         )
         data = start_response.json()
 
         # Submit empty answer
         response = client.post(
-            "/session/answer",
+            "/api/session/answer",
             json={
                 "session_id": data["session_id"],
                 "challenge_id": data["current_challenge"]["id"],
@@ -442,7 +442,7 @@ class TestCORS:
     def test_cors_headers(self, client):
         """Test CORS headers are present."""
         response = client.options(
-            "/session/start",
+            "/api/session/start",
             headers={"Origin": "http://localhost:3000"}
         )
         # OPTIONS should succeed
@@ -455,7 +455,7 @@ class TestDataIntegrity:
     def test_results_accumulate(self, client):
         """Test that results accumulate as challenges are answered."""
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "basic"}
         )
         data = response.json()
@@ -467,7 +467,7 @@ class TestDataIntegrity:
         while challenge:
             answer = TestFullVerificationFlow()._solve_challenge_correctly(challenge)
             response = client.post(
-                "/session/answer",
+                "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],
@@ -478,7 +478,7 @@ class TestDataIntegrity:
             completed += 1
 
             # Check session status
-            status_response = client.get(f"/session/{session_id}")
+            status_response = client.get(f"/api/session/{session_id}")
             status = status_response.json()
 
             if not result_data["session_complete"]:
@@ -492,7 +492,7 @@ class TestDataIntegrity:
     def test_challenge_ids_unique_across_session(self, client):
         """Test that all challenge IDs in a session are unique."""
         response = client.post(
-            "/session/start",
+            "/api/session/start",
             json={"difficulty": "full"}
         )
         data = response.json()
@@ -507,7 +507,7 @@ class TestDataIntegrity:
 
             answer = TestFullVerificationFlow()._solve_challenge_correctly(challenge)
             response = client.post(
-                "/session/answer",
+                "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],

@@ -3,7 +3,7 @@
  * Interactive AI verification interface
  */
 
-const API_BASE = '';
+const API_BASE = '/api';
 
 // State
 let state = {
