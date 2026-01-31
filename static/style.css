@@ -120,6 +120,68 @@ main {
     margin-bottom: 0;
 }
 
+/* API Banner */
+.api-banner {
+    margin-top: 2rem;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0.05));
+    border: 1px solid var(--primary);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+}
+
+.api-banner-content {
+    text-align: center;
+}
+
+.api-banner h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+    color: var(--primary);
+}
+
+.api-banner p {
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.api-links {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.btn-small {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    width: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+}
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--primary);
+    color: var(--primary);
+}
+
+.btn-outline:hover {
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.api-example {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: var(--bg);
+    border-radius: 6px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 0.875rem;
+    color: var(--success);
+}
+
 /* Form */
 .form-group {
     margin-bottom: 1.5rem;
