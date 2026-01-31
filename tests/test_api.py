@@ -23,6 +23,35 @@ class TestRootEndpoint:
         assert "POST /session/answer" in endpoints
 
 
+class TestSecurityAnswerLeakage:
+    """SECURITY: Verify answers are never exposed to clients."""
+
+    def test_start_session_no_expected_answer(self, client):
+        """Answers must not be in start session response."""
+        response = client.post("/session/start", json={"difficulty": "basic"})
+        challenge = response.json()["current_challenge"]
+        assert "expected_answer" not in challenge["data"], "SECURITY: expected_answer exposed!"
+        assert "chain" not in challenge["data"], "SECURITY: chain exposed!"
+
+    def test_answer_response_no_expected_answer(self, client):
+        """Answers must not be in next challenge response."""
+        # Start session
+        start = client.post("/session/start", json={"difficulty": "basic"})
+        session_id = start.json()["session_id"]
+        challenge = start.json()["current_challenge"]
+
+        # Submit any answer
+        response = client.post("/session/answer", json={
+            "session_id": session_id,
+            "challenge_id": challenge["id"],
+            "answer": "test"
+        })
+        next_challenge = response.json().get("next_challenge")
+        if next_challenge:
+            assert "expected_answer" not in next_challenge["data"], "SECURITY: expected_answer exposed!"
+            assert "chain" not in next_challenge["data"], "SECURITY: chain exposed!"
+
+
 class TestHealthEndpoint:
     """Test the health check endpoint."""
 

@@ -6,6 +6,7 @@ Prove your metal, with this CAPTCHA to keep humans out of places they shouldn't 
 A reverse-CAPTCHA verification system for AI-only spaces.
 """
 
+import asyncio
 import os
 import secrets
 import time
@@ -101,12 +102,43 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# === Session Cleanup Task ===
+async def cleanup_expired_sessions():
+    """Background task to remove expired sessions (prevents memory DoS)."""
+    while True:
+        await asyncio.sleep(300)  # Run every 5 minutes
+        cutoff = time.time() - 1800  # 30 minutes TTL
+        expired_sessions = [
+            sid for sid, s in sessions.items()
+            if s.started_at.timestamp() < cutoff
+        ]
+        expired_challenges = [
+            cid for cid, (_, t) in challenges.items()
+            if t < cutoff
+        ]
+        for sid in expired_sessions:
+            del sessions[sid]
+        for cid in expired_challenges:
+            del challenges[cid]
+        if expired_sessions or expired_challenges:
+            logger.info(
+                "cleanup_expired",
+                sessions_removed=len(expired_sessions),
+                challenges_removed=len(expired_challenges),
+            )
+
+
 # === Lifespan Handler ===
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
     global startup_time
     startup_time = datetime.now(timezone.utc)
+
+    # Validate production config
+    if settings.is_production and not settings.secret_key:
+        raise RuntimeError("SECRET_KEY environment variable required in production")
+
     logger.info(
         "mettle_starting",
         environment=settings.environment,
@@ -115,7 +147,18 @@ async def lifespan(app: FastAPI):
     print("[METTLE] API starting...")
     print("   Machine Evaluation Through Turing-inverse Logic Examination")
     print("   'Prove your metal.'")
+
+    # Start cleanup task
+    cleanup_task = asyncio.create_task(cleanup_expired_sessions())
+
     yield
+
+    # Shutdown
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     logger.info("mettle_shutdown")
 
 

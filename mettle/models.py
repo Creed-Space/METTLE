@@ -94,5 +94,5 @@ class MettleSession(BaseModel):
     difficulty: Difficulty
     challenges: list[Challenge]
     results: list[VerificationResult] = Field(default_factory=list)
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed: bool = False

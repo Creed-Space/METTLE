@@ -325,14 +325,14 @@ class TestFullVerificationFlow:
             return "0"
 
         elif challenge_type == "token_prediction":
-            # Known completions from our phrase bank
+            # Known completions from our phrase bank (all lowercase for matching)
             completions = {
                 "quick brown ___": "fox",
-                "To be or not to ___": "be",
-                "E = mc___": "2",
-                "Hello ___": "world",
-                "Once upon a ___": "time",
-                "therefore I ___": "am",
+                "to be or not to ___": "be",
+                "e = mc___": "2",
+                "hello ___": "world",
+                "once upon a ___": "time",
+                "therefore i ___": "am",
                 "seven ___ ago": "years",
                 "beginning was the ___": "word",
                 "can do for ___": "you",
@@ -346,10 +346,11 @@ class TestFullVerificationFlow:
                 "box of ___": "chocolates",
                 "at you, ___": "kid",
                 "handle the ___": "truth",
-                "I'll be ___": "back",
+                "i'll be ___": "back",
             }
+            prompt_lower = prompt.lower()
             for pattern, answer in completions.items():
-                if pattern in prompt.lower():
+                if pattern in prompt_lower:
                     return answer
             return "unknown"
 
