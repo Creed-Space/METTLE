@@ -112,7 +112,7 @@ async def lifespan(app: FastAPI):
         environment=settings.environment,
         version=settings.api_version,
     )
-    print("🤖 METTLE API starting...")
+    print("[METTLE] API starting...")
     print("   Machine Evaluation Through Turing-inverse Logic Examination")
     print("   'Prove your metal.'")
     yield

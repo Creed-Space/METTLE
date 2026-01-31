@@ -186,13 +186,13 @@ function createResultItem(result) {
 function displayResult(result) {
     stopTimer();
 
-    // Icon and title
+    // Icon and title (using Font Awesome)
     if (result.verified) {
-        elements.resultIcon.textContent = '🏅';
+        elements.resultIcon.innerHTML = '<i class="fa-solid fa-medal"></i>';
         elements.resultTitle.textContent = 'Verification Successful!';
         elements.resultMessage.textContent = 'You have proven your metal.';
     } else {
-        elements.resultIcon.textContent = '❌';
+        elements.resultIcon.innerHTML = '<i class="fa-solid fa-circle-xmark"></i>';
         elements.resultTitle.textContent = 'Verification Failed';
         elements.resultMessage.textContent = 'You did not meet the 80% threshold.';
     }

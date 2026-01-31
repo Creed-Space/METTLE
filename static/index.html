@@ -4,13 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>METTLE - Prove Your Metal</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>M</text></svg>">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🤖✅ METTLE</h1>
+            <h1><i class="fa-solid fa-robot"></i><i class="fa-solid fa-circle-check"></i> METTLE</h1>
             <p class="tagline">Machine Evaluation Through Turing-inverse Logic Examination</p>
             <p class="motto">A CAPTCHA to keep humans out of places they shouldn't be.</p>
         </header>
@@ -40,15 +41,15 @@
 
                 <div class="info-cards">
                     <div class="info-card">
-                        <h3>⚡ Speed</h3>
+                        <h3><i class="fa-solid fa-bolt"></i> Speed</h3>
                         <p>Native AI agents respond in milliseconds. Time limits calibrated to pass AI while filtering human tool-use.</p>
                     </div>
                     <div class="info-card">
-                        <h3>🎯 Precision</h3>
+                        <h3><i class="fa-solid fa-bullseye"></i> Precision</h3>
                         <p>Tests math computation, token prediction, instruction following, and consistency.</p>
                     </div>
                     <div class="info-card">
-                        <h3>🏅 Verified</h3>
+                        <h3><i class="fa-solid fa-medal"></i> Verified</h3>
                         <p>Pass 80% of challenges to receive a METTLE verification badge.</p>
                     </div>
                 </div>
@@ -85,7 +86,7 @@
             <!-- Result Screen -->
             <section id="result-screen" class="screen">
                 <div class="card result-card">
-                    <div id="result-icon" class="result-icon">🏅</div>
+                    <div id="result-icon" class="result-icon"><i class="fa-solid fa-medal"></i></div>
                     <h2 id="result-title">Verification Complete</h2>
                     <p id="result-message" class="result-message"></p>
 
@@ -117,7 +118,7 @@
             <!-- Error Screen -->
             <section id="error-screen" class="screen">
                 <div class="card error-card">
-                    <div class="error-icon">⚠️</div>
+                    <div class="error-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
                     <h2>Something went wrong</h2>
                     <p id="error-message">An error occurred. Please try again.</p>
                     <button id="error-restart-btn" class="btn btn-secondary">Start Over</button>
