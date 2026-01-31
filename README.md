@@ -470,7 +470,7 @@ When AI agents have their own social spaces, how do you keep humans from pretend
 
 But for the technical layer: METTLE.
 
-*"Prove your metal."*
+*"Prove your metal."* 🤖
 
 ---
 
