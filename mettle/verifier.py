@@ -129,7 +129,12 @@ def verify_instruction_following(
 
 
 def verify_consistency(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
-    """Verify a consistency response - all answers should be semantically similar."""
+    """Verify a consistency response - answers should be semantically similar but show variation.
+
+    AI naturally produces varied but consistent responses. Humans copying will either:
+    - Give identical responses (too similar - suspicious)
+    - Give inconsistent responses (too different - fails)
+    """
     response = str(answer).strip()
     parts = [p.strip() for p in response.split("|")]
 
@@ -140,32 +145,43 @@ def verify_consistency(challenge: Challenge, answer: str, response_time_ms: int)
         correct = False
         details = {"error": f"Expected {num_required} responses separated by '|', got {len(parts)}"}
     else:
-        # Simple consistency check: all responses should be very similar
-        # For a proper implementation, we'd use embeddings
-        # Here we check if responses share key words
         parts = parts[:num_required]
 
-        # Extract key content words (very simple approach)
+        # Extract key content words
         def extract_key(s: str) -> str:
-            # Remove common words, lowercase, get core answer
             s = s.lower().strip().rstrip(".!?")
-            for word in ["the", "a", "an", "is", "it", "its"]:
+            for word in ["the", "a", "an", "is", "it", "its", "i", "think"]:
                 s = s.replace(f" {word} ", " ")
             return s.strip()
 
         keys = [extract_key(p) for p in parts]
 
-        # Check if all keys are similar (simple: check if they share the main answer)
-        # This is a simplified check - real implementation would use embeddings
+        # Check for suspicious exact duplicates (human copy-paste)
+        unique_responses = set(p.lower().strip() for p in parts)
+        all_identical = len(unique_responses) == 1
+
+        # Check semantic consistency
         reference = keys[0]
-        consistent = all(
-            reference in k or k in reference or _simple_similarity(reference, k) > 0.5 for k in keys
+        similarities = [_simple_similarity(reference, k) for k in keys[1:]]
+        avg_similarity = sum(similarities) / len(similarities) if similarities else 1.0
+
+        # AI behavior: varied phrasing (not identical) but consistent meaning (similar)
+        # Human copy-paste: all identical
+        # Human guessing: inconsistent
+        semantically_consistent = avg_similarity > 0.3 or all(
+            reference in k or k in reference for k in keys
         )
 
-        correct = consistent
+        # Pass if: semantically consistent AND (not all identical OR very short answers)
+        short_answer = all(len(p.split()) <= 3 for p in parts)  # Short answers can be identical
+        correct = semantically_consistent and (not all_identical or short_answer)
+
         details = {
             "responses": parts,
-            "consistent": consistent,
+            "unique_count": len(unique_responses),
+            "avg_similarity": round(avg_similarity, 2),
+            "semantically_consistent": semantically_consistent,
+            "natural_variation": not all_identical or short_answer,
         }
 
     time_ok = response_time_ms <= challenge.time_limit_ms

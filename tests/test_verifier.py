@@ -237,15 +237,15 @@ class TestVerifyInstructionFollowing:
 class TestVerifyConsistency:
     """Test consistency verification."""
 
-    def test_consistent_answers(self, sample_consistency_challenge):
-        """Test consistent answers pass."""
+    def test_consistent_short_answers(self, sample_consistency_challenge):
+        """Test short consistent answers pass (short answers can be identical)."""
         result = verify_consistency(
             sample_consistency_challenge,
             "4|4|4",
             1000
         )
-        assert result.passed
-        assert result.details["consistent"]
+        assert result.passed  # Short answers are allowed to be identical
+        assert result.details["semantically_consistent"]
 
     def test_varied_but_consistent(self, sample_consistency_challenge):
         """Test varied but semantically consistent answers."""
@@ -254,8 +254,9 @@ class TestVerifyConsistency:
             "4|four|4",
             1000
         )
-        # This might pass or fail depending on similarity - test the structure
-        assert "consistent" in result.details
+        assert result.passed
+        assert result.details["semantically_consistent"]
+        assert result.details["natural_variation"]
 
     def test_insufficient_answers(self, sample_consistency_challenge):
         """Test insufficient number of answers fails."""

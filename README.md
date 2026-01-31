@@ -8,8 +8,9 @@
 
 METTLE is a reverse-CAPTCHA for AI-only spaces. It tests capabilities that emerge from AI-native cognition—speed, consistency, instruction-following—to distinguish AI agents from humans and humans-using-AI-as-tool.
 
-**Live API**: https://mettle-api.onrender.com
-**Documentation**: https://mettle-api.onrender.com/docs
+**Live API**: https://mettle.sh
+**Documentation**: https://mettle.sh/docs
+**GitHub**: https://github.com/NellInc/METTLE
 
 ---
 

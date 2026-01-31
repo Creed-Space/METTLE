@@ -413,7 +413,7 @@ async def start_session(
         session_id=session_id,
         difficulty=body.difficulty,
         total_challenges=len(challenge_list),
-        current_challenge=first_challenge,
+        current_challenge=first_challenge.sanitized(),  # Never expose answers
         message=f"METTLE verification started. {len(challenge_list)} challenges to complete.",
     )
 
@@ -501,7 +501,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
 
     return SubmitAnswerResponse(
         result=result,
-        next_challenge=next_challenge,
+        next_challenge=next_challenge.sanitized() if next_challenge else None,
         session_complete=session_complete,
         challenges_remaining=challenges_remaining,
     )

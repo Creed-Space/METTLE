@@ -31,6 +31,21 @@ class Challenge(BaseModel):
     expires_at: datetime
     time_limit_ms: int = Field(..., description="Maximum allowed response time in ms")
 
+    def sanitized(self) -> "Challenge":
+        """Return a copy with sensitive data (answers) removed for client response."""
+        # Keys that contain answers - never expose to client
+        secret_keys = {"expected_answer", "chain", "instructions"}
+        clean_data = {k: v for k, v in self.data.items() if k not in secret_keys}
+        return Challenge(
+            id=self.id,
+            type=self.type,
+            prompt=self.prompt,
+            data=clean_data,
+            issued_at=self.issued_at,
+            expires_at=self.expires_at,
+            time_limit_ms=self.time_limit_ms,
+        )
+
 
 class ChallengeRequest(BaseModel):
     """Request for a new challenge."""

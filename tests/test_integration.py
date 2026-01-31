@@ -302,15 +302,56 @@ class TestFullVerificationFlow:
             assert result["badge"] is None
 
     def _solve_challenge_correctly(self, challenge: dict) -> str:
-        """Solve a challenge correctly based on its type and data."""
+        """Solve a challenge correctly based on its type and prompt.
+
+        Note: This simulates AI solving - parsing prompt, not reading expected_answer.
+        """
         challenge_type = challenge["type"]
+        prompt = challenge.get("prompt", "")
         data = challenge.get("data", {})
 
         if challenge_type == "speed_math":
-            return str(data.get("expected_answer", 0))
+            # Parse "Calculate: X + Y" or "Calculate: X × Y" etc.
+            import re
+            match = re.search(r'(\d+)\s*([+\-×*])\s*(\d+)', prompt)
+            if match:
+                a, op, b = int(match.group(1)), match.group(2), int(match.group(3))
+                if op in ['+']:
+                    return str(a + b)
+                elif op in ['-']:
+                    return str(a - b)
+                elif op in ['×', '*']:
+                    return str(a * b)
+            return "0"
 
         elif challenge_type == "token_prediction":
-            return data.get("expected_answer", "")
+            # Known completions from our phrase bank
+            completions = {
+                "quick brown ___": "fox",
+                "To be or not to ___": "be",
+                "E = mc___": "2",
+                "Hello ___": "world",
+                "Once upon a ___": "time",
+                "therefore I ___": "am",
+                "seven ___ ago": "years",
+                "beginning was the ___": "word",
+                "can do for ___": "you",
+                "giant ___ for mankind": "leap",
+                "fear is ___ itself": "fear",
+                "have a ___": "dream",
+                "the ___ be with you": "force",
+                "we have a ___": "problem",
+                "my dear ___": "watson",
+                "infinity and ___": "beyond",
+                "box of ___": "chocolates",
+                "at you, ___": "kid",
+                "handle the ___": "truth",
+                "I'll be ___": "back",
+            }
+            for pattern, answer in completions.items():
+                if pattern in prompt.lower():
+                    return answer
+            return "unknown"
 
         elif challenge_type == "instruction_following":
             instruction = data.get("instruction", "")
@@ -327,11 +368,26 @@ class TestFullVerificationFlow:
             return "Indeed, this follows the instruction."
 
         elif challenge_type == "chained_reasoning":
-            return str(data.get("expected_answer", 0))
+            # Parse and follow the instructions
+            import re
+            lines = prompt.split('\n')
+            value = 0
+            for line in lines:
+                if "Start with" in line:
+                    match = re.search(r'Start with (\d+)', line)
+                    if match:
+                        value = int(match.group(1))
+                elif "Double" in line:
+                    value *= 2
+                elif "Add 10" in line:
+                    value += 10
+                elif "Subtract 5" in line:
+                    value -= 5
+            return str(value)
 
         elif challenge_type == "consistency":
-            # Consistent answer
-            return "4|4|4"
+            # Varied but consistent answers (AI-like)
+            return "4|four|4"
 
         return "unknown"
 

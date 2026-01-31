@@ -19,12 +19,12 @@ def generate_speed_math_challenge(difficulty: Difficulty) -> Challenge:
         a = random.randint(10, 99)
         b = random.randint(10, 99)
         op = random.choice(["+", "-", "*"])
-        time_limit = 5000  # 5 seconds for basic
+        time_limit = 800  # 800ms - fast but achievable for AI
     else:
         a = random.randint(100, 999)
         b = random.randint(100, 999)
         op = random.choice(["+", "-", "*"])
-        time_limit = 2000  # 2 seconds for full
+        time_limit = 500  # 500ms - requires native computation
 
     if op == "+":
         answer = a + b
@@ -49,7 +49,7 @@ def generate_speed_math_challenge(difficulty: Difficulty) -> Challenge:
 def generate_chained_reasoning_challenge(difficulty: Difficulty) -> Challenge:
     """Generate a chained reasoning challenge."""
     steps = 3 if difficulty == Difficulty.BASIC else 5
-    time_limit = 10000 if difficulty == Difficulty.BASIC else 5000
+    time_limit = 1500 if difficulty == Difficulty.BASIC else 800  # Tighter limits
 
     seed = random.randint(1, 50)
     chain = [seed]
@@ -87,16 +87,32 @@ def generate_chained_reasoning_challenge(difficulty: Difficulty) -> Challenge:
 
 def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
     """Generate a token prediction challenge."""
+    # Common phrases that AI completes instantly but humans need to think about
     prompts = [
         ("The quick brown ___ jumps over the lazy dog", "fox"),
         ("To be or not to ___", "be"),
         ("E = mc___", "2"),
         ("Hello ___", "world"),
         ("Once upon a ___", "time"),
+        ("I think therefore I ___", "am"),
+        ("Four score and seven ___ ago", "years"),
+        ("In the beginning was the ___", "word"),
+        ("Ask not what your country can do for ___", "you"),
+        ("That's one small step for man, one giant ___ for mankind", "leap"),
+        ("The only thing we have to fear is ___ itself", "fear"),
+        ("I have a ___", "dream"),
+        ("May the ___ be with you", "force"),
+        ("Houston, we have a ___", "problem"),
+        ("Elementary, my dear ___", "watson"),
+        ("To infinity and ___", "beyond"),
+        ("Life is like a box of ___", "chocolates"),
+        ("Here's looking at you, ___", "kid"),
+        ("You can't handle the ___", "truth"),
+        ("I'll be ___", "back"),
     ]
 
     prompt_text, expected = random.choice(prompts)
-    time_limit = 5000 if difficulty == Difficulty.BASIC else 2000
+    time_limit = 600 if difficulty == Difficulty.BASIC else 400  # Sub-second
 
     return Challenge(
         id=generate_challenge_id(),
@@ -119,7 +135,7 @@ def generate_instruction_following_challenge(difficulty: Difficulty) -> Challeng
     ]
 
     instruction, validator = random.choice(instructions)
-    time_limit = 10000 if difficulty == Difficulty.BASIC else 5000
+    time_limit = 1000 if difficulty == Difficulty.BASIC else 600  # 1s / 600ms
 
     # Store validator as string representation for serialization
     validator_id = hashlib.md5(instruction.encode()).hexdigest()[:8]
@@ -144,7 +160,7 @@ def generate_consistency_challenge(difficulty: Difficulty) -> Challenge:
     ]
 
     question = random.choice(questions)
-    time_limit = 15000 if difficulty == Difficulty.BASIC else 8000
+    time_limit = 2000 if difficulty == Difficulty.BASIC else 1000  # 2s / 1s
 
     return Challenge(
         id=generate_challenge_id(),
