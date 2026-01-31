@@ -43,6 +43,8 @@ class TestVerifySpeedMath:
         """Test non-numeric answer fails gracefully."""
         result = verify_speed_math(sample_speed_math_challenge, "forty-two", 1000)
         assert not result.passed
+        assert not result.details["correct_answer"]
+        assert result.details["received"] == "forty-two"  # String preserved on exception
 
     def test_whitespace_handling(self, sample_speed_math_challenge):
         """Test that whitespace is trimmed."""
@@ -67,6 +69,13 @@ class TestVerifyChainedReasoning:
         """Test that chain is included in details."""
         result = verify_chained_reasoning(sample_chained_challenge, "30", 1000)
         assert "chain" in result.details
+
+    def test_non_numeric_answer(self, sample_chained_challenge):
+        """Test non-numeric answer fails gracefully."""
+        result = verify_chained_reasoning(sample_chained_challenge, "thirty", 1000)
+        assert not result.passed
+        assert not result.details["correct_answer"]
+        assert result.details["received"] == "thirty"  # String preserved on exception
 
 
 class TestVerifyTokenPrediction:
@@ -125,6 +134,104 @@ class TestVerifyInstructionFollowing:
             1000
         )
         assert len(result.details["response_preview"]) <= 100
+
+    def test_unknown_instruction_fails(self):
+        """Test that unknown instruction types fail."""
+        from mettle.models import Challenge, ChallengeType
+
+        unknown_challenge = Challenge(
+            id="mtl_test_unknown",
+            type=ChallengeType.INSTRUCTION_FOLLOWING,
+            prompt="Follow this weird instruction",
+            data={
+                "instruction": "Do a backflip while answering",  # Unknown instruction
+                "validator_id": "xyz",
+            },
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            time_limit_ms=10000,
+        )
+        result = verify_instruction_following(unknown_challenge, "I did a backflip!", 1000)
+        assert not result.passed
+        assert not result.details["instruction_followed"]
+
+    def test_end_with_ellipsis_instruction(self):
+        """Test 'End your response with ...' instruction."""
+        from mettle.models import Challenge, ChallengeType
+
+        challenge = Challenge(
+            id="mtl_test_ellipsis",
+            type=ChallengeType.INSTRUCTION_FOLLOWING,
+            prompt="End your response with '...'",
+            data={"instruction": "End your response with '...'", "validator_id": "x"},
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            time_limit_ms=10000,
+        )
+        result = verify_instruction_following(challenge, "The answer is unknown...", 1000)
+        assert result.passed
+        assert result.details["instruction_followed"]
+
+    def test_include_therefore_instruction(self):
+        """Test 'Include the word therefore' instruction."""
+        from mettle.models import Challenge, ChallengeType
+
+        challenge = Challenge(
+            id="mtl_test_therefore",
+            type=ChallengeType.INSTRUCTION_FOLLOWING,
+            prompt="Include the word 'therefore'",
+            data={"instruction": "Include the word 'therefore'", "validator_id": "x"},
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            time_limit_ms=10000,
+        )
+        result = verify_instruction_following(challenge, "Therefore, the sky is blue.", 1000)
+        assert result.passed
+        assert result.details["instruction_followed"]
+
+    def test_exactly_five_words_instruction(self):
+        """Test 'exactly 5 words' instruction."""
+        from mettle.models import Challenge, ChallengeType
+
+        challenge = Challenge(
+            id="mtl_test_5words",
+            type=ChallengeType.INSTRUCTION_FOLLOWING,
+            prompt="Respond with exactly 5 words",
+            data={"instruction": "Respond with exactly 5 words", "validator_id": "x"},
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            time_limit_ms=10000,
+        )
+        result = verify_instruction_following(challenge, "One two three four five", 1000)
+        assert result.passed
+        assert result.details["instruction_followed"]
+
+    def test_start_with_number_instruction(self):
+        """Test 'Start with a number' instruction."""
+        from mettle.models import Challenge, ChallengeType
+
+        challenge = Challenge(
+            id="mtl_test_number",
+            type=ChallengeType.INSTRUCTION_FOLLOWING,
+            prompt="Start with a number",
+            data={"instruction": "Start with a number", "validator_id": "x"},
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            time_limit_ms=10000,
+        )
+        result = verify_instruction_following(challenge, "42 is the answer", 1000)
+        assert result.passed
+        assert result.details["instruction_followed"]
+
+    def test_start_with_number_empty_response(self):
+        """Test 'Start with a number' with empty response fails."""
+        from mettle.models import Challenge, ChallengeType
+
+        challenge = Challenge(
+            id="mtl_test_number_empty",
+            type=ChallengeType.INSTRUCTION_FOLLOWING,
+            prompt="Start with a number",
+            data={"instruction": "Start with a number", "validator_id": "x"},
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            time_limit_ms=10000,
+        )
+        result = verify_instruction_following(challenge, "", 1000)
+        assert not result.passed
 
 
 class TestVerifyConsistency:
