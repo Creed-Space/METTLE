@@ -1,0 +1,363 @@
+/* METTLE Documentation Styles */
+
+.docs-container {
+    max-width: 1200px;
+}
+
+/* Navigation */
+.docs-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2rem;
+}
+
+.docs-nav .logo {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.nav-links {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.nav-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+
+.nav-links a:hover,
+.nav-links a.active {
+    color: var(--primary);
+}
+
+/* Main Layout */
+.docs-main {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 3rem;
+}
+
+@media (max-width: 900px) {
+    .docs-main {
+        grid-template-columns: 1fr;
+    }
+    .docs-sidebar {
+        display: none;
+    }
+}
+
+/* Sidebar */
+.docs-sidebar {
+    position: sticky;
+    top: 2rem;
+    height: fit-content;
+}
+
+.docs-sidebar h3 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    margin-top: 1.5rem;
+}
+
+.docs-sidebar h3:first-child {
+    margin-top: 0;
+}
+
+.docs-sidebar ul {
+    list-style: none;
+    margin-bottom: 1rem;
+}
+
+.docs-sidebar li {
+    margin-bottom: 0.25rem;
+}
+
+.docs-sidebar a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.9rem;
+    display: block;
+    padding: 0.25rem 0;
+    transition: color 0.2s;
+}
+
+.docs-sidebar a:hover {
+    color: var(--primary);
+}
+
+/* Content */
+.docs-content {
+    max-width: 800px;
+}
+
+.docs-content h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.docs-content .lead {
+    font-size: 1.25rem;
+    color: var(--text-muted);
+    margin-bottom: 3rem;
+    line-height: 1.6;
+}
+
+.docs-content h2 {
+    font-size: 1.75rem;
+    margin-top: 3rem;
+    margin-bottom: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.docs-content h2:first-of-type {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 0;
+}
+
+.docs-content h3 {
+    font-size: 1.25rem;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+}
+
+.docs-content p {
+    margin-bottom: 1rem;
+    line-height: 1.7;
+}
+
+/* Code blocks */
+.docs-content pre {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 1.25rem;
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border);
+}
+
+.docs-content code {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 0.875rem;
+}
+
+.docs-content pre code {
+    color: var(--text);
+}
+
+.docs-content p code,
+.docs-content li code,
+.docs-content td code {
+    background: var(--bg-card);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+    color: var(--primary);
+}
+
+/* Tables */
+.docs-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+}
+
+.docs-content th,
+.docs-content td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.docs-content th {
+    background: var(--bg-card);
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.docs-content td {
+    font-size: 0.9rem;
+}
+
+.endpoint-table td:first-child {
+    width: 60px;
+}
+
+.endpoint-table td:first-child code {
+    font-weight: 600;
+}
+
+.endpoint-table td:nth-child(2) {
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 0.85rem;
+}
+
+/* Lists */
+.docs-content ul,
+.docs-content ol {
+    margin-bottom: 1.5rem;
+    padding-left: 1.5rem;
+}
+
+.docs-content li {
+    margin-bottom: 0.5rem;
+    line-height: 1.6;
+}
+
+/* Questions list */
+.questions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.question-item-doc {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-card);
+    border-radius: 8px;
+}
+
+.question-item-doc .q-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.question-item-doc strong {
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.question-item-doc p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+/* Challenge types */
+.challenge-type-doc {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.challenge-type-doc h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+}
+
+.challenge-type-doc p {
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+}
+
+.challenge-type-doc pre {
+    margin-bottom: 0;
+    font-size: 0.8rem;
+}
+
+/* Suite list */
+.suite-list {
+    counter-reset: suite;
+    list-style: none;
+    padding-left: 0;
+}
+
+.suite-list li {
+    counter-increment: suite;
+    padding: 1rem;
+    background: var(--bg-card);
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    position: relative;
+    padding-left: 3.5rem;
+}
+
+.suite-list li::before {
+    content: counter(suite);
+    position: absolute;
+    left: 1rem;
+    top: 1rem;
+    width: 1.75rem;
+    height: 1.75rem;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.875rem;
+}
+
+.suite-list li strong {
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.suite-list li p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+/* Callout */
+.callout {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid var(--primary);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+}
+
+.callout i {
+    color: var(--primary);
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.callout p {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+/* Footer */
+.docs-footer {
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+    text-align: center;
+}
+
+.docs-footer a {
+    color: var(--primary);
+}

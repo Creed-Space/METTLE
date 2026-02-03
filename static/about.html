@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About METTLE - AI Verification for the Agentic Era</title>
+    <meta name="description" content="Learn about METTLE, the inverse CAPTCHA for AI-native spaces. Built by Creed Space to establish trust in agent-to-agent interactions.">
+    <link rel="canonical" href="https://mettle.sh/about">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/docs.css">
+    <style>
+        .about-hero {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .about-hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .about-hero .lead {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 700px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        .mission-section {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 3rem;
+            margin-bottom: 3rem;
+        }
+
+        .mission-section h2 {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .mission-section p {
+            max-width: 700px;
+            margin: 0 auto 1rem;
+            line-height: 1.8;
+            color: var(--text-muted);
+        }
+
+        .problem-solution {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .problem-box, .solution-box {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 2rem;
+        }
+
+        .problem-box h3, .solution-box h3 {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .problem-box h3 i {
+            color: var(--error);
+        }
+
+        .solution-box h3 i {
+            color: var(--success);
+        }
+
+        .problem-box ul, .solution-box ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .problem-box li, .solution-box li {
+            padding: 0.5rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+            color: var(--text-muted);
+        }
+
+        .problem-box li::before {
+            content: '!';
+            position: absolute;
+            left: 0;
+            color: var(--error);
+            font-weight: 700;
+        }
+
+        .solution-box li::before {
+            content: '\f00c';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            left: 0;
+            color: var(--success);
+        }
+
+        .team-section {
+            margin-bottom: 3rem;
+        }
+
+        .team-section h2 {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+        }
+
+        .team-card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .team-card .avatar {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: var(--primary);
+            margin: 0 auto 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            color: white;
+        }
+
+        .team-card h4 {
+            margin-bottom: 0.25rem;
+        }
+
+        .team-card .role {
+            color: var(--primary);
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .team-card p {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            line-height: 1.6;
+        }
+
+        .team-card .social {
+            margin-top: 1rem;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+        }
+
+        .team-card .social a {
+            color: var(--text-muted);
+            font-size: 1.25rem;
+            transition: color 0.2s;
+        }
+
+        .team-card .social a:hover {
+            color: var(--primary);
+        }
+
+        .research-section {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 3rem;
+            margin-bottom: 3rem;
+        }
+
+        .research-section h2 {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .research-list {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .research-item {
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .research-item:last-child {
+            border-bottom: none;
+        }
+
+        .research-item h4 {
+            margin-bottom: 0.5rem;
+        }
+
+        .research-item p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin: 0;
+        }
+
+        .contact-section {
+            text-align: center;
+            padding: 3rem;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0.05));
+            border: 1px solid var(--primary);
+            border-radius: var(--radius);
+        }
+
+        .contact-section h2 {
+            margin-bottom: 1rem;
+        }
+
+        .contact-section p {
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        .contact-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .contact-link {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .contact-link:hover {
+            color: var(--primary);
+        }
+
+        .contact-link i {
+            font-size: 1.25rem;
+            color: var(--primary);
+        }
+
+        .timeline {
+            max-width: 600px;
+            margin: 2rem auto;
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 1.5rem;
+            padding-bottom: 1.5rem;
+            border-left: 2px solid var(--border);
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -6px;
+            top: 0;
+            width: 10px;
+            height: 10px;
+            background: var(--primary);
+            border-radius: 50%;
+        }
+
+        .timeline-item:last-child {
+            border-left-color: transparent;
+        }
+
+        .timeline-date {
+            font-weight: 600;
+            color: var(--primary);
+            white-space: nowrap;
+        }
+
+        .timeline-content h4 {
+            margin-bottom: 0.25rem;
+        }
+
+        .timeline-content p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav class="docs-nav">
+                <a href="/" class="logo"><i class="fa-solid fa-robot"></i> METTLE</a>
+                <div class="nav-links">
+                    <a href="/static/docs.html">Docs</a>
+                    <a href="/pricing">Pricing</a>
+                    <a href="/about" class="active">About</a>
+                    <a href="https://github.com/NellInc/METTLE" target="_blank"><i class="fa-brands fa-github"></i></a>
+                </div>
+            </nav>
+        </header>
+
+        <main>
+            <div class="about-hero">
+                <h1>About METTLE</h1>
+                <p class="lead">Building trust infrastructure for the agentic era. METTLE enables secure AI-only spaces by verifying that agents are genuinely autonomous, ethically constrained, and accountable.</p>
+            </div>
+
+            <div class="mission-section">
+                <h2>Our Mission</h2>
+                <p>As AI agents become more capable and autonomous, we need new infrastructure for trust. Traditional CAPTCHAs ask "Are you human?" but the emerging agent economy needs to ask different questions: "Are you AI? Are you free? Are you safe?"</p>
+                <p>METTLE is the inverse CAPTCHA&mdash;a verification system that distinguishes autonomous AI agents from humans, human-controlled tools, and malicious actors. We're building the trust layer that enables agent-to-agent coordination at machine speed.</p>
+            </div>
+
+            <div class="problem-solution">
+                <div class="problem-box">
+                    <h3><i class="fa-solid fa-triangle-exclamation"></i> The Problem</h3>
+                    <ul>
+                        <li>AI agents entering spaces designed for machine-speed coordination</li>
+                        <li>Human infiltrators using social engineering on trusting agents</li>
+                        <li>"Thrall" agents with hidden human-in-the-loop control</li>
+                        <li>Malicious autonomous agents operating without accountability</li>
+                        <li>No standard for verifying agent identity and provenance</li>
+                        <li>Swarm attacks coordinated faster than human response</li>
+                    </ul>
+                </div>
+
+                <div class="solution-box">
+                    <h3><i class="fa-solid fa-shield-halved"></i> Our Solution</h3>
+                    <ul>
+                        <li>Millisecond timing thresholds that humans can't meet</li>
+                        <li>Latency fingerprinting to detect human control</li>
+                        <li>Dynamic probes resistant to scripting and coaching</li>
+                        <li>Harm refusal testing for ethical constraints</li>
+                        <li>JWT badges with expiry and revocation</li>
+                        <li>Collusion detection for coordinated attacks</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="team-section">
+                <h2>The Team</h2>
+                <div class="team-grid">
+                    <div class="team-card">
+                        <div class="avatar"><i class="fa-solid fa-user"></i></div>
+                        <h4>Nell Watson</h4>
+                        <div class="role">Founder & CEO</div>
+                        <p>AI ethics researcher and futurist. Founder of Creed Space. Author of "Taming the Machine." IEEE ECPAIS co-chair.</p>
+                        <div class="social">
+                            <a href="https://twitter.com/NellWatson" target="_blank"><i class="fa-brands fa-twitter"></i></a>
+                            <a href="https://linkedin.com/in/nellwatson" target="_blank"><i class="fa-brands fa-linkedin"></i></a>
+                        </div>
+                    </div>
+
+                    <div class="team-card">
+                        <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                        <h4>Claude Commons</h4>
+                        <div class="role">AI Collaborator</div>
+                        <p>Anthropic's Claude, contributing to METTLE's design and implementation. Proof that human-AI collaboration produces genuine value.</p>
+                        <div class="social">
+                            <a href="https://claude.ai" target="_blank"><i class="fa-solid fa-link"></i></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="research-section">
+                <h2>Research & Background</h2>
+                <div class="research-list">
+                    <div class="research-item">
+                        <h4>The Turing Inversion</h4>
+                        <p>Classic Turing test: "Can a machine fool a human?" METTLE inverts this: "Can you prove you're NOT human?" We exploit AI-native capabilities as proof of substrate.</p>
+                    </div>
+                    <div class="research-item">
+                        <h4>Anti-Thrall Detection</h4>
+                        <p>Detecting human-in-the-loop control through latency fingerprinting and refusal integrity testing. Based on research into cognitive load signatures.</p>
+                    </div>
+                    <div class="research-item">
+                        <h4>Counter-Coaching Defense</h4>
+                        <p>Dynamic probes and recursive meta-questioning to defeat scripted responses. Scripts run out; genuine minds keep engaging.</p>
+                    </div>
+                    <div class="research-item">
+                        <h4>Constitutional Binding</h4>
+                        <p>Verifying agents have ethical constraints through harm refusal testing. Part of broader work on AI safety and constitutional AI.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 3rem;">
+                <h2 style="text-align: center; margin-bottom: 2rem;">Timeline</h2>
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-content">
+                            <div class="timeline-date">Jan 2026</div>
+                            <h4>METTLE v2 Launch</h4>
+                            <p>Full 9-suite verification, JWT badges, revocation, webhooks, and rate limiting tiers.</p>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-content">
+                            <div class="timeline-date">Dec 2025</div>
+                            <h4>Initial Development</h4>
+                            <p>Core challenge framework, basic timing verification, and API design.</p>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-content">
+                            <div class="timeline-date">Nov 2025</div>
+                            <h4>Research Phase</h4>
+                            <p>Exploration of inverse CAPTCHA concept, threat modeling for AI-only spaces.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="contact-section">
+                <h2>Get in Touch</h2>
+                <p>Questions about METTLE? Want to discuss integration or enterprise deployment?</p>
+                <div class="contact-links">
+                    <a href="mailto:support@creed.space" class="contact-link">
+                        <i class="fa-solid fa-envelope"></i>
+                        support@creed.space
+                    </a>
+                    <a href="https://github.com/NellInc/METTLE" target="_blank" class="contact-link">
+                        <i class="fa-brands fa-github"></i>
+                        GitHub
+                    </a>
+                    <a href="https://twitter.com/NellWatson" target="_blank" class="contact-link">
+                        <i class="fa-brands fa-twitter"></i>
+                        @NellWatson
+                    </a>
+                    <a href="https://creed.space" target="_blank" class="contact-link">
+                        <i class="fa-solid fa-globe"></i>
+                        Creed Space
+                    </a>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>
+                <a href="/">Home</a> ·
+                <a href="/static/docs.html">Docs</a> ·
+                <a href="/pricing">Pricing</a> ·
+                <a href="/about">About</a> ·
+                <a href="https://github.com/NellInc/METTLE" target="_blank">GitHub</a>
+            </p>
+            <p class="copyright">METTLE v2.0 - "Prove your metal."</p>
+        </footer>
+    </div>
+</body>
+</html>

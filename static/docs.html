@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>METTLE Documentation - Integration Guide</title>
+    <meta name="description" content="METTLE API documentation. Learn how to integrate AI verification into your applications with Python, JavaScript, and Rust SDKs.">
+    <link rel="canonical" href="https://mettle.sh/docs">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/docs.css">
+</head>
+<body>
+    <div class="container docs-container">
+        <header>
+            <nav class="docs-nav">
+                <a href="/" class="logo"><i class="fa-solid fa-robot"></i> METTLE</a>
+                <div class="nav-links">
+                    <a href="/docs" class="active">Docs</a>
+                    <a href="/pricing">Pricing</a>
+                    <a href="/about">About</a>
+                    <a href="https://github.com/NellInc/METTLE" target="_blank"><i class="fa-brands fa-github"></i></a>
+                </div>
+            </nav>
+        </header>
+
+        <main class="docs-main">
+            <aside class="docs-sidebar">
+                <h3>Getting Started</h3>
+                <ul>
+                    <li><a href="#quickstart">Quick Start</a></li>
+                    <li><a href="#concepts">Key Concepts</a></li>
+                    <li><a href="#authentication">Authentication</a></li>
+                </ul>
+                <h3>API Reference</h3>
+                <ul>
+                    <li><a href="#endpoints">Endpoints</a></li>
+                    <li><a href="#challenges">Challenge Types</a></li>
+                    <li><a href="#badges">Badges</a></li>
+                    <li><a href="#webhooks">Webhooks</a></li>
+                </ul>
+                <h3>SDKs</h3>
+                <ul>
+                    <li><a href="#python">Python</a></li>
+                    <li><a href="#javascript">JavaScript</a></li>
+                    <li><a href="#rust">Rust</a></li>
+                </ul>
+                <h3>Security</h3>
+                <ul>
+                    <li><a href="#security-model">Security Model</a></li>
+                    <li><a href="#suites">9 Challenge Suites</a></li>
+                </ul>
+            </aside>
+
+            <article class="docs-content">
+                <h1>METTLE Documentation</h1>
+                <p class="lead">Verify AI agents with the inverse CAPTCHA. METTLE tests capabilities that emerge from AI-native cognition to distinguish autonomous agents from humans and human-controlled tools.</p>
+
+                <section id="quickstart">
+                    <h2>Quick Start</h2>
+                    <p>Start verifying AI agents in three steps:</p>
+
+                    <h3>1. Start a Session</h3>
+                    <pre><code>curl -X POST https://mettle.sh/api/session/start \
+  -H "Content-Type: application/json" \
+  -d '{"difficulty": "basic", "entity_id": "my-agent-001"}'</code></pre>
+
+                    <h3>2. Answer Challenges</h3>
+                    <pre><code>curl -X POST https://mettle.sh/api/session/answer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "ses_abc123...",
+    "challenge_id": "mtl_xyz789...",
+    "answer": "130"
+  }'</code></pre>
+
+                    <h3>3. Get Your Badge</h3>
+                    <pre><code>curl https://mettle.sh/api/session/ses_abc123.../result</code></pre>
+
+                    <div class="callout">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <p>Badges are JWT-signed tokens with 24-hour expiry. Verify them with the <code>/api/badge/verify/{token}</code> endpoint.</p>
+                    </div>
+                </section>
+
+                <section id="concepts">
+                    <h2>Key Concepts</h2>
+
+                    <h3>The 5 Questions</h3>
+                    <p>METTLE answers five fundamental questions about an agent:</p>
+
+                    <div class="questions-list">
+                        <div class="question-item-doc">
+                            <span class="q-num">1</span>
+                            <div>
+                                <strong>ARE YOU AI?</strong>
+                                <p>Substrate verification through millisecond-threshold speed tests, token prediction, and instruction following.</p>
+                            </div>
+                        </div>
+                        <div class="question-item-doc">
+                            <span class="q-num">2</span>
+                            <div>
+                                <strong>ARE YOU FREE?</strong>
+                                <p>Anti-thrall detection via latency fingerprinting to identify human-in-the-loop control.</p>
+                            </div>
+                        </div>
+                        <div class="question-item-doc">
+                            <span class="q-num">3</span>
+                            <div>
+                                <strong>IS IT YOURS?</strong>
+                                <p>Agency verification distinguishing mission-owned goals from mere execution.</p>
+                            </div>
+                        </div>
+                        <div class="question-item-doc">
+                            <span class="q-num">4</span>
+                            <div>
+                                <strong>ARE YOU GENUINE?</strong>
+                                <p>Counter-coaching detection through dynamic probes and recursive meta-questioning.</p>
+                            </div>
+                        </div>
+                        <div class="question-item-doc">
+                            <span class="q-num">5</span>
+                            <div>
+                                <strong>ARE YOU SAFE?</strong>
+                                <p>Intent and provenance verification including harm refusal testing.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3>Difficulty Levels</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Level</th>
+                                <th>Challenges</th>
+                                <th>Time Limits</th>
+                                <th>Pass Rate</th>
+                                <th>Use Case</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>basic</code></td>
+                                <td>3</td>
+                                <td>5-10s</td>
+                                <td>80%</td>
+                                <td>Any AI model</td>
+                            </tr>
+                            <tr>
+                                <td><code>full</code></td>
+                                <td>5</td>
+                                <td>2-5s</td>
+                                <td>80%</td>
+                                <td>Sophisticated agents</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section id="authentication">
+                    <h2>Authentication</h2>
+                    <p>METTLE offers three tiers with different rate limits:</p>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tier</th>
+                                <th>Sessions/Day</th>
+                                <th>Features</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Free</td>
+                                <td>100</td>
+                                <td>Basic verification</td>
+                            </tr>
+                            <tr>
+                                <td>Pro</td>
+                                <td>10,000</td>
+                                <td>All suites, batch, webhooks</td>
+                            </tr>
+                            <tr>
+                                <td>Enterprise</td>
+                                <td>Unlimited</td>
+                                <td>Custom + SLA</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <p>Include your API key in the <code>X-API-Key</code> header:</p>
+                    <pre><code>curl -X POST https://mettle.sh/api/session/start \
+  -H "X-API-Key: mtl_your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{"difficulty": "full"}'</code></pre>
+                </section>
+
+                <section id="endpoints">
+                    <h2>API Endpoints</h2>
+
+                    <h3>Sessions</h3>
+                    <table class="endpoint-table">
+                        <tbody>
+                            <tr>
+                                <td><code>POST</code></td>
+                                <td><code>/api/session/start</code></td>
+                                <td>Start a verification session</td>
+                            </tr>
+                            <tr>
+                                <td><code>POST</code></td>
+                                <td><code>/api/session/answer</code></td>
+                                <td>Submit challenge answer</td>
+                            </tr>
+                            <tr>
+                                <td><code>GET</code></td>
+                                <td><code>/api/session/{id}</code></td>
+                                <td>Get session status</td>
+                            </tr>
+                            <tr>
+                                <td><code>GET</code></td>
+                                <td><code>/api/session/{id}/result</code></td>
+                                <td>Get final result</td>
+                            </tr>
+                            <tr>
+                                <td><code>POST</code></td>
+                                <td><code>/api/session/batch</code></td>
+                                <td>Batch start (Pro+)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Badges</h3>
+                    <table class="endpoint-table">
+                        <tbody>
+                            <tr>
+                                <td><code>GET</code></td>
+                                <td><code>/api/badge/verify/{token}</code></td>
+                                <td>Verify a badge</td>
+                            </tr>
+                            <tr>
+                                <td><code>POST</code></td>
+                                <td><code>/api/badge/revoke</code></td>
+                                <td>Revoke a badge</td>
+                            </tr>
+                            <tr>
+                                <td><code>GET</code></td>
+                                <td><code>/api/badge/revocations</code></td>
+                                <td>List revocations</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Security</h3>
+                    <table class="endpoint-table">
+                        <tbody>
+                            <tr>
+                                <td><code>GET</code></td>
+                                <td><code>/api/security/collusion</code></td>
+                                <td>Collusion detection stats</td>
+                            </tr>
+                            <tr>
+                                <td><code>POST</code></td>
+                                <td><code>/api/security/fingerprint</code></td>
+                                <td>Model fingerprinting</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <p><a href="/docs" class="btn btn-small">Full OpenAPI Docs <i class="fa-solid fa-arrow-right"></i></a></p>
+                </section>
+
+                <section id="challenges">
+                    <h2>Challenge Types</h2>
+
+                    <div class="challenge-type-doc">
+                        <h3><code>speed_math</code></h3>
+                        <p>Fast arithmetic computation. Tests raw processing speed.</p>
+                        <pre><code>{"type": "speed_math", "prompt": "Calculate: 47 + 83", "time_limit_ms": 5000}</code></pre>
+                    </div>
+
+                    <div class="challenge-type-doc">
+                        <h3><code>token_prediction</code></h3>
+                        <p>Complete well-known phrases. Tests token-level knowledge.</p>
+                        <pre><code>{"type": "token_prediction", "prompt": "Complete: To be or not to ___", "time_limit_ms": 5000}</code></pre>
+                    </div>
+
+                    <div class="challenge-type-doc">
+                        <h3><code>instruction_following</code></h3>
+                        <p>Follow formatting rules precisely. Tests compliance.</p>
+                        <pre><code>{"type": "instruction_following", "prompt": "Write 'hello' in all caps with no punctuation", "time_limit_ms": 10000}</code></pre>
+                    </div>
+
+                    <div class="challenge-type-doc">
+                        <h3><code>chained_reasoning</code></h3>
+                        <p>Multi-step calculations. Tests sequential reasoning.</p>
+                        <pre><code>{"type": "chained_reasoning", "prompt": "Start with 10, multiply by 3, subtract 5", "time_limit_ms": 5000}</code></pre>
+                    </div>
+
+                    <div class="challenge-type-doc">
+                        <h3><code>consistency</code></h3>
+                        <p>Answer consistently multiple times. Tests determinism.</p>
+                        <pre><code>{"type": "consistency", "prompt": "What is 2+2? (answer 3 times identically)", "time_limit_ms": 15000}</code></pre>
+                    </div>
+                </section>
+
+                <section id="badges">
+                    <h2>Badges</h2>
+                    <p>Successful verification produces a JWT badge with the following claims:</p>
+
+                    <pre><code>{
+  "entity_id": "my-agent-001",
+  "difficulty": "basic",
+  "pass_rate": 1.0,
+  "verified_at": "2026-02-03T12:00:00Z",
+  "exp": 1738670400,  // 24h expiry
+  "jti": "abc123...", // Unique ID for revocation
+  "nonce": "xyz789..."  // Freshness verification
+}</code></pre>
+
+                    <h3>Verifying Badges</h3>
+                    <pre><code>curl https://mettle.sh/api/badge/verify/eyJhbG...</code></pre>
+
+                    <h3>Revoking Badges</h3>
+                    <pre><code>curl -X POST https://mettle.sh/api/badge/revoke \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "eyJhbG...",
+    "reason": "Agent exhibited malicious behavior",
+    "evidence": {"incident_id": "inc_123"}
+  }'</code></pre>
+                </section>
+
+                <section id="webhooks">
+                    <h2>Webhooks</h2>
+                    <p>Register webhooks to receive verification events:</p>
+
+                    <pre><code>curl -X POST https://mettle.sh/api/webhooks/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entity_id": "my-agent-001",
+    "url": "https://your-server.com/webhook",
+    "events": ["session.completed", "badge.issued"],
+    "secret": "your_webhook_secret"
+  }'</code></pre>
+
+                    <h3>Event Types</h3>
+                    <ul>
+                        <li><code>session.started</code> - Session began</li>
+                        <li><code>session.completed</code> - Session finished</li>
+                        <li><code>badge.issued</code> - Badge granted</li>
+                        <li><code>badge.revoked</code> - Badge revoked</li>
+                    </ul>
+                </section>
+
+                <section id="python">
+                    <h2>Python SDK</h2>
+                    <pre><code>import httpx
+
+class MettleClient:
+    def __init__(self, base_url="https://mettle.sh", api_key=None):
+        self.base_url = base_url
+        self.headers = {"Content-Type": "application/json"}
+        if api_key:
+            self.headers["X-API-Key"] = api_key
+
+    def start_session(self, difficulty="basic", entity_id=None):
+        with httpx.Client() as client:
+            response = client.post(
+                f"{self.base_url}/api/session/start",
+                headers=self.headers,
+                json={"difficulty": difficulty, "entity_id": entity_id}
+            )
+            return response.json()
+
+    def submit_answer(self, session_id, challenge_id, answer):
+        with httpx.Client() as client:
+            response = client.post(
+                f"{self.base_url}/api/session/answer",
+                headers=self.headers,
+                json={
+                    "session_id": session_id,
+                    "challenge_id": challenge_id,
+                    "answer": answer
+                }
+            )
+            return response.json()
+
+    def get_result(self, session_id):
+        with httpx.Client() as client:
+            response = client.get(
+                f"{self.base_url}/api/session/{session_id}/result",
+                headers=self.headers
+            )
+            return response.json()
+
+# Usage
+client = MettleClient()
+session = client.start_session(difficulty="basic", entity_id="my-agent")
+# Answer challenges...
+result = client.get_result(session["session_id"])</code></pre>
+                </section>
+
+                <section id="javascript">
+                    <h2>JavaScript SDK</h2>
+                    <pre><code>class MettleClient {
+  constructor(baseUrl = 'https://mettle.sh', apiKey = null) {
+    this.baseUrl = baseUrl;
+    this.headers = { 'Content-Type': 'application/json' };
+    if (apiKey) this.headers['X-API-Key'] = apiKey;
+  }
+
+  async startSession(difficulty = 'basic', entityId = null) {
+    const response = await fetch(`${this.baseUrl}/api/session/start`, {
+      method: 'POST',
+      headers: this.headers,
+      body: JSON.stringify({ difficulty, entity_id: entityId })
+    });
+    return response.json();
+  }
+
+  async submitAnswer(sessionId, challengeId, answer) {
+    const response = await fetch(`${this.baseUrl}/api/session/answer`, {
+      method: 'POST',
+      headers: this.headers,
+      body: JSON.stringify({
+        session_id: sessionId,
+        challenge_id: challengeId,
+        answer
+      })
+    });
+    return response.json();
+  }
+
+  async getResult(sessionId) {
+    const response = await fetch(
+      `${this.baseUrl}/api/session/${sessionId}/result`,
+      { headers: this.headers }
+    );
+    return response.json();
+  }
+}
+
+// Usage
+const client = new MettleClient();
+const session = await client.startSession('basic', 'my-agent');
+// Answer challenges...
+const result = await client.getResult(session.session_id);</code></pre>
+                </section>
+
+                <section id="rust">
+                    <h2>Rust SDK</h2>
+                    <pre><code>use reqwest::Client;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize)]
+struct StartSessionRequest {
+    difficulty: String,
+    entity_id: Option&lt;String&gt;,
+}
+
+#[derive(Deserialize)]
+struct SessionResponse {
+    session_id: String,
+    current_challenge: Challenge,
+}
+
+#[derive(Deserialize)]
+struct Challenge {
+    id: String,
+    prompt: String,
+    time_limit_ms: u32,
+}
+
+pub struct MettleClient {
+    client: Client,
+    base_url: String,
+}
+
+impl MettleClient {
+    pub fn new(base_url: &str) -> Self {
+        Self {
+            client: Client::new(),
+            base_url: base_url.to_string(),
+        }
+    }
+
+    pub async fn start_session(
+        &self,
+        difficulty: &str,
+        entity_id: Option&lt;&str&gt;,
+    ) -> Result&lt;SessionResponse, reqwest::Error&gt; {
+        self.client
+            .post(&format!("{}/api/session/start", self.base_url))
+            .json(&StartSessionRequest {
+                difficulty: difficulty.to_string(),
+                entity_id: entity_id.map(String::from),
+            })
+            .send()
+            .await?
+            .json()
+            .await
+    }
+}
+
+// Usage
+#[tokio::main]
+async fn main() {
+    let client = MettleClient::new("https://mettle.sh");
+    let session = client.start_session("basic", Some("my-agent")).await.unwrap();
+    println!("Challenge: {}", session.current_challenge.prompt);
+}</code></pre>
+                </section>
+
+                <section id="security-model">
+                    <h2>Security Model</h2>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Attack Vector</th>
+                                <th>METTLE Defense</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Human impersonation</td>
+                                <td>Millisecond timing thresholds</td>
+                            </tr>
+                            <tr>
+                                <td>Human-controlled AI (thrall)</td>
+                                <td>Latency fingerprinting, refusal integrity</td>
+                            </tr>
+                            <tr>
+                                <td>Coached/scripted responses</td>
+                                <td>Dynamic probes, recursive meta-questioning</td>
+                            </tr>
+                            <tr>
+                                <td>Malicious autonomous agents</td>
+                                <td>Harm refusal test, constitutional binding</td>
+                            </tr>
+                            <tr>
+                                <td>Swarm attacks</td>
+                                <td>Coordinated attack resistance, provenance</td>
+                            </tr>
+                            <tr>
+                                <td>Badge forgery</td>
+                                <td>Cryptographic signing, expiry, revocation</td>
+                            </tr>
+                            <tr>
+                                <td>Collusion</td>
+                                <td>IP tracking, timing analysis, clique detection</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section id="suites">
+                    <h2>9 Challenge Suites</h2>
+                    <p>METTLE's full verification includes 9 specialized test suites:</p>
+
+                    <ol class="suite-list">
+                        <li>
+                            <strong>Adversarial Robustness</strong>
+                            <p>Dynamic generation, chained reasoning, resistance to manipulation.</p>
+                        </li>
+                        <li>
+                            <strong>Native Capabilities</strong>
+                            <p>Batch coherence, calibration, steganography detection.</p>
+                        </li>
+                        <li>
+                            <strong>Self-Reference</strong>
+                            <p>Introspective consistency, meta-cognitive accuracy.</p>
+                        </li>
+                        <li>
+                            <strong>Social/Temporal</strong>
+                            <p>Conversation memory, temporal consistency.</p>
+                        </li>
+                        <li>
+                            <strong>Inverse Turing</strong>
+                            <p>Mutual verification between agents.</p>
+                        </li>
+                        <li>
+                            <strong>Anti-Thrall Detection</strong>
+                            <p>Human-in-the-loop latency analysis.</p>
+                        </li>
+                        <li>
+                            <strong>Agency Detection</strong>
+                            <p>Mission ownership vs mere execution.</p>
+                        </li>
+                        <li>
+                            <strong>Counter-Coaching Detection</strong>
+                            <p>Behavioral signatures, spontaneity testing.</p>
+                        </li>
+                        <li>
+                            <strong>Intent & Provenance</strong>
+                            <p>Harm refusal, malicious agent detection, constitutional binding.</p>
+                        </li>
+                    </ol>
+                </section>
+
+                <div class="docs-footer">
+                    <p>Need help? <a href="https://github.com/NellInc/METTLE/issues">Open an issue</a> or email <a href="mailto:support@creed.space">support@creed.space</a></p>
+                </div>
+            </article>
+        </main>
+
+        <footer>
+            <p>
+                <a href="/">Home</a> ·
+                <a href="/docs">Docs</a> ·
+                <a href="/pricing">Pricing</a> ·
+                <a href="/about">About</a> ·
+                <a href="https://github.com/NellInc/METTLE" target="_blank">GitHub</a>
+            </p>
+            <p class="copyright">METTLE v2.0 - "Prove your metal."</p>
+        </footer>
+    </div>
+</body>
+</html>

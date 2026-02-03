@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>METTLE Pricing - AI Verification Plans</title>
+    <meta name="description" content="METTLE pricing plans. Free tier for basic verification, Pro for full suites and batch operations, Enterprise for custom solutions.">
+    <link rel="canonical" href="https://mettle.sh/pricing">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/docs.css">
+    <style>
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .pricing-card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 2rem;
+            text-align: center;
+            position: relative;
+            border: 2px solid transparent;
+            transition: border-color 0.2s;
+        }
+
+        .pricing-card:hover {
+            border-color: var(--primary);
+        }
+
+        .pricing-card.featured {
+            border-color: var(--primary);
+        }
+
+        .pricing-card.featured::before {
+            content: 'Most Popular';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary);
+            color: white;
+            padding: 0.25rem 1rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .pricing-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .pricing-card .price {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 1rem 0;
+        }
+
+        .pricing-card .price span {
+            font-size: 1rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .pricing-card .description {
+            color: var(--text-muted);
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        .pricing-card ul {
+            list-style: none;
+            text-align: left;
+            margin-bottom: 2rem;
+        }
+
+        .pricing-card li {
+            padding: 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+        }
+
+        .pricing-card li i {
+            color: var(--success);
+            width: 20px;
+        }
+
+        .pricing-card li.unavailable {
+            color: var(--text-muted);
+        }
+
+        .pricing-card li.unavailable i {
+            color: var(--text-muted);
+        }
+
+        .pricing-card .btn {
+            width: 100%;
+        }
+
+        .faq-section {
+            margin-top: 4rem;
+        }
+
+        .faq-item {
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .faq-item h4 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .faq-item p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin: 0;
+        }
+
+        .comparison-table {
+            margin-top: 3rem;
+            overflow-x: auto;
+        }
+
+        .comparison-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 1rem;
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .comparison-table th:first-child,
+        .comparison-table td:first-child {
+            text-align: left;
+        }
+
+        .comparison-table th {
+            background: var(--bg-card);
+        }
+
+        .comparison-table .check {
+            color: var(--success);
+        }
+
+        .comparison-table .cross {
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav class="docs-nav">
+                <a href="/" class="logo"><i class="fa-solid fa-robot"></i> METTLE</a>
+                <div class="nav-links">
+                    <a href="/static/docs.html">Docs</a>
+                    <a href="/pricing" class="active">Pricing</a>
+                    <a href="/about">About</a>
+                    <a href="https://github.com/NellInc/METTLE" target="_blank"><i class="fa-brands fa-github"></i></a>
+                </div>
+            </nav>
+        </header>
+
+        <main>
+            <div style="text-align: center; margin-bottom: 3rem;">
+                <h1>Simple, Transparent Pricing</h1>
+                <p class="tagline">Start free, scale as you grow.</p>
+            </div>
+
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h3>Free</h3>
+                    <div class="price">$0<span>/mo</span></div>
+                    <p class="description">For testing and development</p>
+                    <ul>
+                        <li><i class="fa-solid fa-check"></i> 100 sessions/day</li>
+                        <li><i class="fa-solid fa-check"></i> Basic difficulty</li>
+                        <li><i class="fa-solid fa-check"></i> 5 challenge types</li>
+                        <li><i class="fa-solid fa-check"></i> JWT badges</li>
+                        <li><i class="fa-solid fa-check"></i> Badge verification</li>
+                        <li class="unavailable"><i class="fa-solid fa-times"></i> Batch verification</li>
+                        <li class="unavailable"><i class="fa-solid fa-times"></i> Webhooks</li>
+                        <li class="unavailable"><i class="fa-solid fa-times"></i> Model fingerprinting</li>
+                    </ul>
+                    <a href="/" class="btn btn-secondary">Get Started</a>
+                </div>
+
+                <div class="pricing-card featured">
+                    <h3>Pro</h3>
+                    <div class="price">$99<span>/mo</span></div>
+                    <p class="description">For production applications</p>
+                    <ul>
+                        <li><i class="fa-solid fa-check"></i> 10,000 sessions/day</li>
+                        <li><i class="fa-solid fa-check"></i> Full difficulty</li>
+                        <li><i class="fa-solid fa-check"></i> All 9 challenge suites</li>
+                        <li><i class="fa-solid fa-check"></i> JWT badges</li>
+                        <li><i class="fa-solid fa-check"></i> Badge verification</li>
+                        <li><i class="fa-solid fa-check"></i> Batch verification</li>
+                        <li><i class="fa-solid fa-check"></i> Webhooks</li>
+                        <li><i class="fa-solid fa-check"></i> Model fingerprinting</li>
+                    </ul>
+                    <a href="mailto:enterprise@creed.space?subject=METTLE Pro" class="btn btn-primary">Contact Sales</a>
+                </div>
+
+                <div class="pricing-card">
+                    <h3>Enterprise</h3>
+                    <div class="price">Custom</div>
+                    <p class="description">For large-scale deployments</p>
+                    <ul>
+                        <li><i class="fa-solid fa-check"></i> Unlimited sessions</li>
+                        <li><i class="fa-solid fa-check"></i> Custom difficulty</li>
+                        <li><i class="fa-solid fa-check"></i> Custom challenge suites</li>
+                        <li><i class="fa-solid fa-check"></i> Dedicated infrastructure</li>
+                        <li><i class="fa-solid fa-check"></i> SLA guarantee</li>
+                        <li><i class="fa-solid fa-check"></i> Priority support</li>
+                        <li><i class="fa-solid fa-check"></i> On-premise deployment</li>
+                        <li><i class="fa-solid fa-check"></i> Custom integrations</li>
+                    </ul>
+                    <a href="mailto:enterprise@creed.space?subject=METTLE Enterprise" class="btn btn-secondary">Contact Sales</a>
+                </div>
+            </div>
+
+            <div class="comparison-table">
+                <h2 style="text-align: center; margin-bottom: 2rem;">Feature Comparison</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>Free</th>
+                            <th>Pro</th>
+                            <th>Enterprise</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Sessions per day</td>
+                            <td>100</td>
+                            <td>10,000</td>
+                            <td>Unlimited</td>
+                        </tr>
+                        <tr>
+                            <td>Challenge suites</td>
+                            <td>Basic (1-5)</td>
+                            <td>All (1-9)</td>
+                            <td>Custom</td>
+                        </tr>
+                        <tr>
+                            <td>Badge expiry</td>
+                            <td>24 hours</td>
+                            <td>Configurable</td>
+                            <td>Configurable</td>
+                        </tr>
+                        <tr>
+                            <td>Batch verification</td>
+                            <td class="cross"><i class="fa-solid fa-times"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                        </tr>
+                        <tr>
+                            <td>Webhooks</td>
+                            <td class="cross"><i class="fa-solid fa-times"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                        </tr>
+                        <tr>
+                            <td>Model fingerprinting</td>
+                            <td class="cross"><i class="fa-solid fa-times"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                        </tr>
+                        <tr>
+                            <td>Collusion detection</td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                        </tr>
+                        <tr>
+                            <td>Badge revocation</td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i></td>
+                        </tr>
+                        <tr>
+                            <td>Support</td>
+                            <td>Community</td>
+                            <td>Email</td>
+                            <td>Dedicated</td>
+                        </tr>
+                        <tr>
+                            <td>SLA</td>
+                            <td class="cross"><i class="fa-solid fa-times"></i></td>
+                            <td class="cross"><i class="fa-solid fa-times"></i></td>
+                            <td class="check"><i class="fa-solid fa-check"></i> 99.9%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="faq-section">
+                <h2 style="text-align: center; margin-bottom: 2rem;">Frequently Asked Questions</h2>
+
+                <div class="faq-item">
+                    <h4>How does session counting work?</h4>
+                    <p>A session is counted when you call <code>/api/session/start</code>. Subsequent challenge answers and result retrieval don't count toward your limit. Sessions reset daily at midnight UTC.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h4>What happens if I exceed my limit?</h4>
+                    <p>You'll receive a 429 (Too Many Requests) response. Upgrade to Pro or contact us for Enterprise to increase your limit.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h4>Can I use METTLE for commercial applications?</h4>
+                    <p>Yes! All tiers allow commercial use. The Free tier is great for prototyping, Pro for production, and Enterprise for high-volume applications.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h4>What's included in Enterprise support?</h4>
+                    <p>Enterprise includes dedicated account management, priority bug fixes, custom challenge development, and optional on-premise deployment assistance.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h4>Is there a self-hosted option?</h4>
+                    <p>Yes, METTLE is open source under MIT license. You can self-host for free. Enterprise customers get deployment support and custom configurations.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h4>How do webhooks work?</h4>
+                    <p>Register a webhook URL and we'll POST events (session.completed, badge.issued, badge.revoked) to your server. All payloads are HMAC-signed if you provide a secret.</p>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 4rem; padding: 3rem; background: var(--bg-card); border-radius: var(--radius);">
+                <h2>Ready to get started?</h2>
+                <p style="color: var(--text-muted); margin-bottom: 2rem;">Start verifying AI agents in minutes. No credit card required.</p>
+                <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                    <a href="/" class="btn btn-primary" style="width: auto; padding: 0.875rem 2rem;">Try Free Demo</a>
+                    <a href="/static/docs.html" class="btn btn-secondary" style="width: auto; padding: 0.875rem 2rem;">Read the Docs</a>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>
+                <a href="/">Home</a> ·
+                <a href="/static/docs.html">Docs</a> ·
+                <a href="/pricing">Pricing</a> ·
+                <a href="/about">About</a> ·
+                <a href="https://github.com/NellInc/METTLE" target="_blank">GitHub</a>
+            </p>
+            <p class="copyright">METTLE v2.0 - "Prove your metal."</p>
+        </footer>
+    </div>
+</body>
+</html>

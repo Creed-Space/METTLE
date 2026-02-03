@@ -1540,6 +1540,23 @@ async def redirect_legacy_ui():
     return RedirectResponse(url="/", status_code=301)
 
 
+# === Static Page Routes ===
+@app.get("/pricing", include_in_schema=False)
+async def serve_pricing():
+    """Serve the pricing page."""
+    if _static_dir.exists():
+        return FileResponse(str(_static_dir / "pricing.html"))
+    return RedirectResponse(url="/")
+
+
+@app.get("/about", include_in_schema=False)
+async def serve_about():
+    """Serve the about page."""
+    if _static_dir.exists():
+        return FileResponse(str(_static_dir / "about.html"))
+    return RedirectResponse(url="/")
+
+
 # === SEO Endpoints ===
 @app.get("/sitemap.xml", include_in_schema=False)
 async def sitemap():
@@ -1550,6 +1567,21 @@ async def sitemap():
     <loc>https://mettle.sh/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mettle.sh/static/docs.html</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://mettle.sh/pricing</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mettle.sh/about</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mettle.sh/docs</loc>
