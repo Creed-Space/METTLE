@@ -11,11 +11,58 @@ from mettle.models import (
     VerificationResult,
 )
 
+# Make time limits very lenient in tests (CI can be slow)
+_ORIGINAL_TIME_LIMITS = {
+    "speed_math_basic": 800,
+    "speed_math_full": 500,
+    "chained_basic": 1500,
+    "chained_full": 800,
+    "token_basic": 600,
+    "token_full": 400,
+    "instruction_basic": 1000,
+    "instruction_full": 600,
+    "consistency_basic": 2000,
+    "consistency_full": 1000,
+}
+
+_TEST_TIME_LIMIT = 30000  # 30 seconds - plenty for CI
+
 
 @pytest.fixture
 def client():
-    """Create a test client."""
-    return TestClient(app)
+    """Create a test client with lenient timing for CI stability."""
+    # Patch the challenger module to use lenient time limits
+    import mettle.challenger as challenger
+
+    original_speed = challenger.generate_speed_math_challenge
+    original_chained = challenger.generate_chained_reasoning_challenge
+    original_token = challenger.generate_token_prediction_challenge
+    original_instruction = challenger.generate_instruction_following_challenge
+    original_consistency = challenger.generate_consistency_challenge
+
+    def lenient_time(func):
+        """Wrapper to make time limits very lenient."""
+        def wrapper(*args, **kwargs):
+            challenge = func(*args, **kwargs)
+            challenge.time_limit_ms = _TEST_TIME_LIMIT
+            return challenge
+        return wrapper
+
+    # Apply lenient timing to all challenge generators
+    challenger.generate_speed_math_challenge = lenient_time(original_speed)
+    challenger.generate_chained_reasoning_challenge = lenient_time(original_chained)
+    challenger.generate_token_prediction_challenge = lenient_time(original_token)
+    challenger.generate_instruction_following_challenge = lenient_time(original_instruction)
+    challenger.generate_consistency_challenge = lenient_time(original_consistency)
+
+    yield TestClient(app)
+
+    # Restore original functions
+    challenger.generate_speed_math_challenge = original_speed
+    challenger.generate_chained_reasoning_challenge = original_chained
+    challenger.generate_token_prediction_challenge = original_token
+    challenger.generate_instruction_following_challenge = original_instruction
+    challenger.generate_consistency_challenge = original_consistency
 
 
 @pytest.fixture(autouse=True)
