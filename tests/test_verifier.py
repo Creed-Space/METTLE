@@ -1,6 +1,5 @@
 """Tests for METTLE response verification."""
 
-import pytest
 from datetime import datetime, timedelta, timezone
 
 from mettle.models import ChallengeType

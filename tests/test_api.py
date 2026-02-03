@@ -1,8 +1,5 @@
 """Tests for METTLE API endpoints."""
 
-import pytest
-from fastapi.testclient import TestClient
-
 
 class TestRootEndpoint:
     """Test the root endpoint."""

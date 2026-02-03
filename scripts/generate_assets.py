@@ -7,6 +7,7 @@ from pathlib import Path
 # Try to import PIL, fallback to cairosvg if available
 try:
     from PIL import Image, ImageDraw, ImageFont
+
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
@@ -14,6 +15,7 @@ except ImportError:
 
 try:
     import cairosvg
+
     HAS_CAIRO = True
 except ImportError:
     HAS_CAIRO = False
@@ -80,7 +82,7 @@ def generate_favicon_ico():
             sizes=[(img.width, img.height) for img in images],
             append_images=images[1:] if len(images) > 1 else [],
         )
-        print(f"Created favicon.ico")
+        print("Created favicon.ico")
     else:
         print("No PNG files found for ICO generation. Run generate_favicon_pngs first.")
 
@@ -158,7 +160,7 @@ def generate_og_image():
     # Save
     og_path = STATIC_DIR / "og-image.png"
     img.save(og_path, "PNG")
-    print(f"Created og-image.png (1200x630)")
+    print("Created og-image.png (1200x630)")
 
 
 def main():

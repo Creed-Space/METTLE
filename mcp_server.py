@@ -22,8 +22,8 @@ import httpx
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
-    Tool,
     TextContent,
+    Tool,
 )
 
 # Configuration
@@ -284,8 +284,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
             if data["session_complete"]:
                 response_text += (
-                    f"\nSession complete! Challenges remaining: 0\n"
-                    f"Use mettle_get_result to see your final verification result."
+                    "\nSession complete! Challenges remaining: 0\n"
+                    "Use mettle_get_result to see your final verification result."
                 )
             else:
                 next_challenge = data["next_challenge"]

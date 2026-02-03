@@ -9,19 +9,17 @@ import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Float,
     Integer,
     String,
     Text,
     create_engine,
 )
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Database configuration
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///mettle.db")

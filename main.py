@@ -617,6 +617,16 @@ async def start_session(
     ip_address = get_remote_address(request)
     collusion_check = CollusionDetector.check_collusion(body.entity_id or "", ip_address)
 
+    # Log if collusion detected (but don't block - allow verification to proceed)
+    if collusion_check.get("flagged"):
+        logger.warning(
+            "collusion_flagged",
+            entity_id=body.entity_id,
+            ip_address=ip_address[:15] if ip_address else None,
+            risk_score=collusion_check.get("risk_score"),
+            warnings=collusion_check.get("warnings"),
+        )
+
     # Generate challenges
     challenge_list = generate_challenge_set(body.difficulty)
 

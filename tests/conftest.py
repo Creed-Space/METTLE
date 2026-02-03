@@ -1,16 +1,13 @@
 """Pytest fixtures for METTLE tests."""
 
-import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
-from fastapi.testclient import TestClient
 
-from main import app, sessions, challenges, limiter
+import pytest
+from fastapi.testclient import TestClient
+from main import app, challenges, limiter, sessions
 from mettle.models import (
     Challenge,
     ChallengeType,
-    Difficulty,
-    MettleSession,
     VerificationResult,
 )
 

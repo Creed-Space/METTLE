@@ -1,19 +1,18 @@
 """Tests for METTLE Pydantic models."""
 
-import pytest
 from datetime import datetime, timedelta, timezone
-from pydantic import ValidationError
 
+import pytest
 from mettle.models import (
     Challenge,
     ChallengeRequest,
-    ChallengeResponse,
     ChallengeType,
     Difficulty,
     MettleResult,
     MettleSession,
     VerificationResult,
 )
+from pydantic import ValidationError
 
 
 class TestChallengeType:

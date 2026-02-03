@@ -10,8 +10,9 @@ Usage:
     python python_example.py
 """
 
-import httpx
 import re
+
+import httpx
 
 # Configuration
 METTLE_API = "https://mettle-api.onrender.com/api"

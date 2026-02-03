@@ -1,13 +1,12 @@
 """Tests for METTLE challenge generation."""
 
-import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from mettle.challenger import (
+    generate_chained_reasoning_challenge,
     generate_challenge,
     generate_challenge_id,
     generate_challenge_set,
-    generate_chained_reasoning_challenge,
     generate_consistency_challenge,
     generate_instruction_following_challenge,
     generate_speed_math_challenge,

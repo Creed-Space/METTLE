@@ -1,11 +1,5 @@
 """Integration tests for METTLE - full verification flows."""
 
-import pytest
-import time
-from datetime import datetime, timedelta
-
-from fastapi.testclient import TestClient
-
 
 class TestFullVerificationFlow:
     """Test complete verification scenarios."""
