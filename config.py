@@ -45,6 +45,12 @@ class Settings(BaseSettings):
         description="Badge expiry time in seconds (default: 24 hours)",
     )
 
+    # API Key for admin operations
+    admin_api_key: str = Field(
+        default="",
+        description="Admin API key for tier management and admin operations",
+    )
+
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
 

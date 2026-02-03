@@ -193,6 +193,88 @@ main {
     margin-bottom: 0;
 }
 
+/* API Flow Visualization */
+.api-flow {
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+}
+
+.api-flow h3 {
+    text-align: center;
+    margin-bottom: 1.25rem;
+    font-size: 1.25rem;
+}
+
+.flow-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: var(--bg);
+    padding: 1rem;
+    border-radius: 8px;
+    min-width: 160px;
+}
+
+.step-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.step-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.step-content strong {
+    font-size: 0.9rem;
+}
+
+.step-content code {
+    font-size: 0.7rem;
+    color: var(--success);
+    font-family: 'SF Mono', Monaco, monospace;
+}
+
+.step-content span {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.flow-arrow {
+    color: var(--primary);
+    font-size: 1.25rem;
+}
+
+@media (max-width: 600px) {
+    .flow-steps {
+        flex-direction: column;
+    }
+
+    .flow-arrow {
+        transform: rotate(90deg);
+    }
+}
+
 /* Use Cases */
 .use-cases {
     margin-top: 1.5rem;
@@ -234,6 +316,29 @@ main {
     font-size: 0.875rem;
     color: var(--text-muted);
     margin: 0;
+}
+
+/* Trust Signals */
+.trust-signals {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+    padding: 1rem;
+}
+
+.trust-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.trust-item i {
+    color: var(--success);
+    font-size: 1rem;
 }
 
 /* API Banner */

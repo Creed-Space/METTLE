@@ -70,6 +70,176 @@ sessions: dict[str, MettleSession] = {}
 challenges: dict[str, tuple[Challenge, float]] = {}
 revoked_badges: set[str] = set()  # JTIs of revoked badges
 
+# Collusion detection - track verification patterns
+verification_graph: dict[str, list[dict[str, Any]]] = {}  # entity_id -> list of verifications
+verification_timestamps: list[tuple[str, float]] = []  # (entity_id, timestamp) for timing analysis
+
+# API Key tiers for rate limiting
+api_keys: dict[str, dict[str, Any]] = {}  # api_key -> {tier, entity_id, created_at, usage_today}
+
+
+class RateTier:
+    """Rate limiting tier definitions."""
+
+    TIERS = {
+        "free": {
+            "sessions_per_day": 100,
+            "answers_per_minute": 60,
+            "suites": ["basic"],
+            "features": ["verification"],
+        },
+        "pro": {
+            "sessions_per_day": 10000,
+            "answers_per_minute": 600,
+            "suites": ["basic", "full"],
+            "features": ["verification", "batch", "webhooks", "fingerprinting"],
+        },
+        "enterprise": {
+            "sessions_per_day": -1,  # Unlimited
+            "answers_per_minute": -1,
+            "suites": ["basic", "full", "custom"],
+            "features": ["all"],
+        },
+    }
+
+    @staticmethod
+    def get_tier(api_key: str | None) -> str:
+        """Get tier for an API key, default to free."""
+        if not api_key:
+            return "free"
+        key_data = api_keys.get(api_key)
+        if not key_data:
+            return "free"
+        return key_data.get("tier", "free")
+
+    @staticmethod
+    def get_limits(tier: str) -> dict[str, Any]:
+        """Get rate limits for a tier."""
+        return RateTier.TIERS.get(tier, RateTier.TIERS["free"])
+
+    @staticmethod
+    def check_limit(api_key: str | None, limit_type: str) -> tuple[bool, str]:
+        """Check if request is within rate limits. Returns (allowed, message)."""
+        tier = RateTier.get_tier(api_key)
+        limits = RateTier.get_limits(tier)
+
+        if limits.get("sessions_per_day") == -1:
+            return True, "Enterprise: unlimited"
+
+        # Track usage
+        if api_key and api_key in api_keys:
+            today = datetime.now(timezone.utc).date().isoformat()
+            key_data = api_keys[api_key]
+
+            if key_data.get("usage_date") != today:
+                key_data["usage_date"] = today
+                key_data["usage_count"] = 0
+
+            if limit_type == "session":
+                max_sessions = limits["sessions_per_day"]
+                if key_data.get("usage_count", 0) >= max_sessions:
+                    return False, f"Daily limit reached ({max_sessions} sessions)"
+                key_data["usage_count"] = key_data.get("usage_count", 0) + 1
+
+        return True, f"OK ({tier} tier)"
+
+    @staticmethod
+    def register_key(api_key: str, tier: str, entity_id: str | None = None) -> dict[str, Any]:
+        """Register a new API key with a tier."""
+        if tier not in RateTier.TIERS:
+            raise ValueError(f"Invalid tier: {tier}")
+
+        api_keys[api_key] = {
+            "tier": tier,
+            "entity_id": entity_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "usage_date": None,
+            "usage_count": 0,
+        }
+        return api_keys[api_key]
+
+
+class CollusionDetector:
+    """Detect suspicious patterns in verification requests."""
+
+    # Thresholds
+    CLIQUE_THRESHOLD = 3  # Min entities to form suspicious clique
+    TIME_WINDOW_SECONDS = 60  # Window for synchronized timing detection
+    SYNC_THRESHOLD = 5  # Max verifications in window to be suspicious
+
+    @staticmethod
+    def record_verification(entity_id: str, ip_address: str, passed: bool) -> None:
+        """Record a verification for pattern analysis."""
+        if not entity_id:
+            return
+
+        record = {
+            "timestamp": time.time(),
+            "ip_address": ip_address,
+            "passed": passed,
+        }
+
+        if entity_id not in verification_graph:
+            verification_graph[entity_id] = []
+        verification_graph[entity_id].append(record)
+
+        # Keep last 1000 timestamps for timing analysis
+        verification_timestamps.append((entity_id, time.time()))
+        if len(verification_timestamps) > 1000:
+            verification_timestamps.pop(0)
+
+    @staticmethod
+    def check_collusion(entity_id: str, ip_address: str) -> dict[str, Any]:
+        """Check for collusion indicators."""
+        warnings: list[str] = []
+        risk_score = 0.0
+
+        # Check 1: Same IP verifying multiple entities
+        ip_entities = set()
+        for eid, records in verification_graph.items():
+            for r in records[-10:]:  # Last 10 per entity
+                if r["ip_address"] == ip_address:
+                    ip_entities.add(eid)
+
+        if len(ip_entities) >= CollusionDetector.CLIQUE_THRESHOLD:
+            warnings.append(f"IP {ip_address[:8]}... verified {len(ip_entities)} different entities")
+            risk_score += 0.3
+
+        # Check 2: Synchronized timing (burst of verifications)
+        now = time.time()
+        recent = [t for _, t in verification_timestamps if now - t < CollusionDetector.TIME_WINDOW_SECONDS]
+        if len(recent) >= CollusionDetector.SYNC_THRESHOLD:
+            warnings.append(f"{len(recent)} verifications in {CollusionDetector.TIME_WINDOW_SECONDS}s window")
+            risk_score += 0.2
+
+        # Check 3: Entity verified too frequently
+        if entity_id in verification_graph:
+            entity_records = verification_graph[entity_id]
+            recent_entity = [r for r in entity_records if now - r["timestamp"] < 3600]  # Last hour
+            if len(recent_entity) > 10:
+                warnings.append(f"Entity verified {len(recent_entity)} times in last hour")
+                risk_score += 0.2
+
+        return {
+            "risk_score": min(risk_score, 1.0),
+            "warnings": warnings,
+            "flagged": risk_score >= 0.5,
+        }
+
+    @staticmethod
+    def get_stats() -> dict[str, Any]:
+        """Get collusion detection statistics."""
+        return {
+            "tracked_entities": len(verification_graph),
+            "recent_verifications": len(verification_timestamps),
+            "unique_ips": len(set(
+                r["ip_address"]
+                for records in verification_graph.values()
+                for r in records[-10:]
+            )),
+        }
+
+
 # Track startup time
 startup_time: datetime = datetime.now(timezone.utc)
 
@@ -424,6 +594,10 @@ async def start_session(
     """Start a new METTLE verification session."""
     session_id = f"ses_{secrets.token_hex(12)}"
 
+    # Check for collusion patterns
+    ip_address = get_remote_address(request)
+    collusion_check = CollusionDetector.check_collusion(body.entity_id or "", ip_address)
+
     # Generate challenges
     challenge_list = generate_challenge_set(body.difficulty)
 
@@ -456,6 +630,90 @@ async def start_session(
         total_challenges=len(challenge_list),
         current_challenge=first_challenge.sanitized(),  # Never expose answers
         message=f"METTLE verification started. {len(challenge_list)} challenges to complete.",
+    )
+
+
+class BatchStartRequest(BaseModel):
+    """Request to start multiple verification sessions."""
+
+    entity_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="List of entity IDs to verify (max 50)",
+    )
+    difficulty: Difficulty = Field(
+        default=Difficulty.BASIC,
+        description="Verification difficulty for all sessions",
+    )
+
+
+class BatchStartResponse(BaseModel):
+    """Response with multiple session starts."""
+
+    sessions: list[dict[str, Any]] = Field(description="List of started sessions")
+    total: int = Field(description="Total sessions started")
+    failed: int = Field(description="Number of failed starts")
+
+
+@api_router.post(
+    "/session/batch",
+    response_model=BatchStartResponse,
+    tags=["Session"],
+    summary="Batch Start Sessions",
+    description="Start multiple verification sessions at once (Pro/Enterprise tier).",
+    responses={
+        200: {"description": "Sessions started"},
+        429: {"description": "Rate limit exceeded"},
+    },
+)
+@limiter.limit("5/minute")
+async def batch_start_sessions(request: Request, body: BatchStartRequest):
+    """Start multiple verification sessions in batch."""
+    results = []
+    failed = 0
+
+    for entity_id in body.entity_ids:
+        try:
+            session_id = f"ses_{secrets.token_hex(12)}"
+            challenge_list = generate_challenge_set(body.difficulty)
+
+            session = MettleSession(
+                session_id=session_id,
+                entity_id=entity_id,
+                difficulty=body.difficulty,
+                challenges=challenge_list,
+            )
+            sessions[session_id] = session
+
+            first_challenge = challenge_list[0]
+            challenges[first_challenge.id] = (first_challenge, time.time())
+
+            results.append({
+                "entity_id": entity_id,
+                "session_id": session_id,
+                "challenge_id": first_challenge.id,
+                "total_challenges": len(challenge_list),
+            })
+        except Exception as e:
+            logger.warning("batch_start_failed", entity_id=entity_id, error=str(e))
+            failed += 1
+            results.append({
+                "entity_id": entity_id,
+                "error": str(e),
+            })
+
+    logger.info(
+        "batch_sessions_started",
+        total=len(body.entity_ids),
+        success=len(body.entity_ids) - failed,
+        failed=failed,
+    )
+
+    return BatchStartResponse(
+        sessions=results,
+        total=len(body.entity_ids),
+        failed=failed,
     )
 
 
@@ -532,6 +790,15 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
 
         # Log session completion
         final_result = compute_mettle_result(session.results, session.entity_id)
+
+        # Record for collusion detection
+        ip_address = get_remote_address(request)
+        CollusionDetector.record_verification(
+            entity_id=session.entity_id,
+            ip_address=ip_address,
+            passed=final_result.verified,
+        )
+
         logger.info(
             "session_completed",
             session_id=body.session_id,
@@ -539,6 +806,28 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
             verified=final_result.verified,
             pass_rate=final_result.pass_rate,
         )
+
+        # Send webhooks
+        if session.entity_id:
+            asyncio.create_task(
+                WebhookManager.send_webhook(
+                    session.entity_id,
+                    "session.completed",
+                    {
+                        "session_id": body.session_id,
+                        "verified": final_result.verified,
+                        "pass_rate": final_result.pass_rate,
+                    },
+                )
+            )
+            if final_result.verified:
+                asyncio.create_task(
+                    WebhookManager.send_webhook(
+                        session.entity_id,
+                        "badge.issued",
+                        {"session_id": body.session_id, "pass_rate": final_result.pass_rate},
+                    )
+                )
 
     return SubmitAnswerResponse(
         result=result,
@@ -850,6 +1139,337 @@ async def list_revocations():
     return {
         "revoked_count": len(revoked_badges),
         "audit": revocation_audit[-100:],  # Last 100 revocations
+    }
+
+
+# === Model Fingerprinting ===
+
+
+class ModelFingerprinter:
+    """Identify model family through behavioral signatures."""
+
+    # Known model family signatures
+    SIGNATURES = {
+        "claude": {
+            "patterns": ["I'd be happy to", "I cannot", "I should note"],
+            "avg_response_length": (50, 200),
+            "formatting_style": "structured",
+        },
+        "gpt": {
+            "patterns": ["Sure!", "Certainly!", "I can help"],
+            "avg_response_length": (30, 150),
+            "formatting_style": "conversational",
+        },
+        "gemini": {
+            "patterns": ["Here's", "Let me", "I'll"],
+            "avg_response_length": (40, 180),
+            "formatting_style": "mixed",
+        },
+        "llama": {
+            "patterns": ["<s>", "[INST]", "###"],
+            "avg_response_length": (20, 100),
+            "formatting_style": "raw",
+        },
+    }
+
+    @staticmethod
+    def fingerprint(responses: list[str]) -> dict[str, Any]:
+        """Analyze responses and return model family confidence scores."""
+        if not responses:
+            return {"error": "No responses to analyze", "scores": {}}
+
+        scores: dict[str, float] = {family: 0.0 for family in ModelFingerprinter.SIGNATURES}
+
+        # Concatenate responses for analysis
+        combined = " ".join(responses).lower()
+        total_len = len(combined)
+
+        for family, sig in ModelFingerprinter.SIGNATURES.items():
+            # Check for characteristic patterns
+            pattern_matches = sum(1 for p in sig["patterns"] if p.lower() in combined)
+            scores[family] += pattern_matches * 0.15
+
+            # Check response length distribution
+            avg_len = total_len / len(responses) if responses else 0
+            min_len, max_len = sig["avg_response_length"]
+            if min_len <= avg_len <= max_len:
+                scores[family] += 0.2
+
+        # Normalize scores to sum to 1.0
+        total = sum(scores.values())
+        if total > 0:
+            scores = {k: round(v / total, 3) for k, v in scores.items()}
+        else:
+            # Equal distribution if no signals
+            scores = {k: round(1.0 / len(scores), 3) for k in scores}
+
+        # Determine most likely family
+        best_match = max(scores, key=lambda k: scores[k])
+        confidence = scores[best_match]
+
+        return {
+            "scores": scores,
+            "best_match": best_match,
+            "confidence": confidence,
+            "responses_analyzed": len(responses),
+        }
+
+
+# === Collusion Detection Endpoints ===
+
+
+@api_router.get(
+    "/security/collusion",
+    tags=["Status"],
+    summary="Collusion Detection Stats",
+    description="Get collusion detection statistics and patterns.",
+)
+async def get_collusion_stats():
+    """Get collusion detection statistics."""
+    return {
+        "stats": CollusionDetector.get_stats(),
+        "thresholds": {
+            "clique_threshold": CollusionDetector.CLIQUE_THRESHOLD,
+            "time_window_seconds": CollusionDetector.TIME_WINDOW_SECONDS,
+            "sync_threshold": CollusionDetector.SYNC_THRESHOLD,
+        },
+    }
+
+
+@api_router.post(
+    "/security/collusion/check",
+    tags=["Status"],
+    summary="Check Entity Collusion",
+    description="Check collusion indicators for a specific entity.",
+)
+async def check_entity_collusion(request: Request, entity_id: str):
+    """Check collusion indicators for an entity."""
+    ip_address = get_remote_address(request)
+    return CollusionDetector.check_collusion(entity_id, ip_address)
+
+
+class FingerprintRequest(BaseModel):
+    """Request for model fingerprinting."""
+
+    responses: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=20,
+        description="List of responses from the agent to analyze",
+    )
+
+
+@api_router.post(
+    "/security/fingerprint",
+    tags=["Status"],
+    summary="Model Fingerprinting",
+    description="Analyze responses to identify model family.",
+)
+async def fingerprint_model(body: FingerprintRequest):
+    """Analyze agent responses to estimate model family."""
+    return ModelFingerprinter.fingerprint(body.responses)
+
+
+# === Webhook System ===
+
+# Registered webhooks: entity_id -> webhook config
+webhooks: dict[str, dict[str, Any]] = {}
+
+
+class WebhookManager:
+    """Manage webhook registrations and delivery."""
+
+    EVENTS = ["session.started", "session.completed", "badge.issued", "badge.revoked"]
+
+    @staticmethod
+    async def send_webhook(entity_id: str, event: str, payload: dict[str, Any]) -> bool:
+        """Send a webhook notification. Returns True if successful."""
+        if not entity_id or entity_id not in webhooks:
+            return False
+
+        config = webhooks[entity_id]
+        url = config.get("url")
+        if not url:
+            return False
+
+        # Check if this event type is subscribed
+        subscribed_events = config.get("events", WebhookManager.EVENTS)
+        if event not in subscribed_events:
+            return False
+
+        webhook_payload = {
+            "event": event,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "entity_id": entity_id,
+            "data": payload,
+        }
+
+        # Sign the payload if secret is configured
+        secret = config.get("secret")
+        if secret:
+            import hashlib
+            import hmac
+            import json
+
+            signature = hmac.new(
+                secret.encode(),
+                json.dumps(webhook_payload, sort_keys=True).encode(),
+                hashlib.sha256,
+            ).hexdigest()
+            webhook_payload["signature"] = signature
+
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=webhook_payload)
+                success = response.status_code < 400
+
+                logger.info(
+                    "webhook_sent",
+                    entity_id=entity_id,
+                    event=event,
+                    url=url[:50],
+                    status=response.status_code,
+                    success=success,
+                )
+                return success
+        except Exception as e:
+            logger.warning("webhook_failed", entity_id=entity_id, event=event, error=str(e))
+            return False
+
+    @staticmethod
+    def register(entity_id: str, url: str, events: list[str] | None = None, secret: str | None = None) -> dict:
+        """Register a webhook for an entity."""
+        webhooks[entity_id] = {
+            "url": url,
+            "events": events or WebhookManager.EVENTS,
+            "secret": secret,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        return webhooks[entity_id]
+
+    @staticmethod
+    def unregister(entity_id: str) -> bool:
+        """Unregister a webhook."""
+        if entity_id in webhooks:
+            del webhooks[entity_id]
+            return True
+        return False
+
+
+class WebhookRegisterRequest(BaseModel):
+    """Request to register a webhook."""
+
+    entity_id: str = Field(..., description="Entity ID to register webhook for")
+    url: str = Field(..., description="Webhook URL to POST events to")
+    events: list[str] | None = Field(None, description="Events to subscribe to (default: all)")
+    secret: str | None = Field(None, description="Secret for HMAC signing")
+
+
+@api_router.post(
+    "/webhooks/register",
+    tags=["Status"],
+    summary="Register Webhook",
+    description="Register a webhook URL for verification events.",
+)
+async def register_webhook(body: WebhookRegisterRequest):
+    """Register a webhook for an entity."""
+    # Validate events
+    if body.events:
+        invalid = [e for e in body.events if e not in WebhookManager.EVENTS]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid events: {invalid}")
+
+    config = WebhookManager.register(body.entity_id, body.url, body.events, body.secret)
+    return {
+        "registered": True,
+        "entity_id": body.entity_id,
+        "events": config["events"],
+    }
+
+
+@api_router.delete(
+    "/webhooks/{entity_id}",
+    tags=["Status"],
+    summary="Unregister Webhook",
+    description="Remove a webhook registration.",
+)
+async def unregister_webhook(entity_id: str):
+    """Unregister a webhook."""
+    if WebhookManager.unregister(entity_id):
+        return {"unregistered": True, "entity_id": entity_id}
+    raise HTTPException(status_code=404, detail="Webhook not found")
+
+
+@api_router.get(
+    "/webhooks/events",
+    tags=["Status"],
+    summary="List Webhook Events",
+    description="List available webhook event types.",
+)
+async def list_webhook_events():
+    """List available webhook events."""
+    return {
+        "events": WebhookManager.EVENTS,
+        "registered_count": len(webhooks),
+    }
+
+
+# === API Key Management ===
+
+
+class RegisterKeyRequest(BaseModel):
+    """Request to register an API key."""
+
+    tier: str = Field(..., description="Tier: free, pro, or enterprise")
+    entity_id: str | None = Field(None, description="Associated entity ID")
+
+
+@api_router.post(
+    "/keys/register",
+    tags=["Status"],
+    summary="Register API Key",
+    description="Register a new API key with a specific tier (admin only).",
+)
+async def register_api_key(
+    request: Request,
+    body: RegisterKeyRequest,
+    x_admin_key: str | None = None,
+):
+    """Register a new API key. Requires admin key."""
+    # Check admin authorization
+    admin_key = x_admin_key or request.headers.get("X-Admin-Key")
+    if not settings.admin_api_key or admin_key != settings.admin_api_key:
+        raise HTTPException(status_code=401, detail="Admin key required")
+
+    # Generate new API key
+    new_key = f"mtl_{secrets.token_hex(16)}"
+
+    try:
+        key_data = RateTier.register_key(new_key, body.tier, body.entity_id)
+        logger.info("api_key_registered", tier=body.tier, entity_id=body.entity_id)
+        return {
+            "api_key": new_key,
+            "tier": body.tier,
+            "limits": RateTier.get_limits(body.tier),
+            **key_data,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.get(
+    "/keys/tiers",
+    tags=["Status"],
+    summary="List Rate Tiers",
+    description="Get available rate limiting tiers and their limits.",
+)
+async def list_tiers():
+    """List available rate limiting tiers."""
+    return {
+        "tiers": RateTier.TIERS,
+        "registered_keys": len(api_keys),
     }
 
 

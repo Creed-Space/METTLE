@@ -162,6 +162,39 @@
                     </div>
                 </div>
 
+                <!-- API Flow Visualization -->
+                <div class="api-flow">
+                    <h3>How Verification Works</h3>
+                    <div class="flow-steps">
+                        <div class="flow-step">
+                            <div class="step-num">1</div>
+                            <div class="step-content">
+                                <strong>Start Session</strong>
+                                <code>POST /api/session/start</code>
+                                <span>Get first challenge</span>
+                            </div>
+                        </div>
+                        <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                        <div class="flow-step">
+                            <div class="step-num">2</div>
+                            <div class="step-content">
+                                <strong>Answer Challenges</strong>
+                                <code>POST /api/session/answer</code>
+                                <span>Timing measured</span>
+                            </div>
+                        </div>
+                        <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+                        <div class="flow-step">
+                            <div class="step-num">3</div>
+                            <div class="step-content">
+                                <strong>Get Badge</strong>
+                                <code>GET /api/session/{id}/result</code>
+                                <span>JWT with 24h expiry</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Use Cases -->
                 <div class="use-cases">
                     <h3>Use Cases</h3>
@@ -186,6 +219,30 @@
                             <strong>Autonomous Negotiations</strong>
                             <p>Verify parties have consistent values before binding agreements.</p>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Trust Signals -->
+                <div class="trust-signals">
+                    <div class="trust-item">
+                        <i class="fa-solid fa-lock"></i>
+                        <span>JWT Signed</span>
+                    </div>
+                    <div class="trust-item">
+                        <i class="fa-solid fa-clock"></i>
+                        <span>24h Expiry</span>
+                    </div>
+                    <div class="trust-item">
+                        <i class="fa-solid fa-ban"></i>
+                        <span>Revocable</span>
+                    </div>
+                    <div class="trust-item">
+                        <i class="fa-brands fa-github"></i>
+                        <span>Open Source</span>
+                    </div>
+                    <div class="trust-item">
+                        <i class="fa-solid fa-flask"></i>
+                        <span>117 Tests</span>
                     </div>
                 </div>
 
