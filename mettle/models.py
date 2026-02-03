@@ -73,6 +73,16 @@ class VerificationResult(BaseModel):
     time_limit_ms: int
 
 
+class BadgeInfo(BaseModel):
+    """METTLE verification badge with expiry."""
+
+    token: str = Field(..., description="The badge token (JWT or simple)")
+    expires_at: datetime = Field(..., description="When the badge expires")
+    freshness_nonce: str | None = Field(None, description="Nonce for freshness verification")
+    signed: bool = Field(False, description="Whether the badge is cryptographically signed")
+    jti: str | None = Field(None, description="Unique badge ID for revocation")
+
+
 class MettleResult(BaseModel):
     """Overall METTLE verification result."""
 
@@ -83,7 +93,8 @@ class MettleResult(BaseModel):
     pass_rate: float
     results: list[VerificationResult]
     issued_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    badge: str | None = Field(None, description="Verification badge if passed")
+    badge: str | None = Field(None, description="Simple verification badge string (deprecated)")
+    badge_info: BadgeInfo | None = Field(None, description="Full badge info with expiry")
 
 
 class MettleSession(BaseModel):

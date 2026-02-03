@@ -1,6 +1,5 @@
 """METTLE configuration management."""
 
-import os
 from functools import lru_cache
 
 from pydantic import Field
@@ -16,7 +15,7 @@ class Settings(BaseSettings):
 
     # API
     api_title: str = Field(default="METTLE", description="API title")
-    api_version: str = Field(default="1.0.0", description="API version")
+    api_version: str = Field(default="2.0.0", description="API version")
 
     # CORS
     allowed_origins: str = Field(
@@ -38,6 +37,12 @@ class Settings(BaseSettings):
     secret_key: str = Field(
         default="",
         description="Secret key for badge signing. Required in production.",
+    )
+
+    # Badge settings
+    badge_expiry_seconds: int = Field(
+        default=86400,
+        description="Badge expiry time in seconds (default: 24 hours)",
     )
 
     # Logging

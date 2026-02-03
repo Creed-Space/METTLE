@@ -7,7 +7,6 @@ A reverse-CAPTCHA verification system for AI-only spaces.
 """
 
 import asyncio
-import os
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -17,21 +16,13 @@ from typing import Any
 
 import jwt
 import structlog
-from fastapi import APIRouter, FastAPI, HTTPException, Request, Body
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-from starlette.middleware.base import BaseHTTPMiddleware
-
-from config import get_settings
 from mettle import (
+    BadgeInfo,
     Challenge,
-    ChallengeRequest,
-    ChallengeType,
     Difficulty,
     MettleResult,
     MettleSession,
@@ -40,6 +31,13 @@ from mettle import (
     generate_challenge_set,
     verify_response,
 )
+from pydantic import BaseModel, Field, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from config import get_settings
 
 # Configuration
 settings = get_settings()
@@ -70,6 +68,7 @@ limiter = Limiter(key_func=get_remote_address)
 # In-memory storage
 sessions: dict[str, MettleSession] = {}
 challenges: dict[str, tuple[Challenge, float]] = {}
+revoked_badges: set[str] = set()  # JTIs of revoked badges
 
 # Track startup time
 startup_time: datetime = datetime.now(timezone.utc)
@@ -333,6 +332,8 @@ class BadgeVerifyResponse(BaseModel):
         description="Badge payload if valid",
     )
     error: str | None = Field(default=None, description="Error message if invalid")
+    expires_at: str | None = Field(default=None, description="When the badge expires (ISO format)")
+    revoked: bool = Field(default=False, description="Whether the badge has been revoked")
 
 
 # === API Endpoints (mounted at /api) ===
@@ -564,11 +565,27 @@ async def get_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
 
     if session.completed:
-        final_result = compute_mettle_result(session.results, session.entity_id)
+        result = compute_mettle_result(session.results, session.entity_id)
+        # Generate proper badge with expiry if verified
+        if result.verified:
+            badge_data = generate_signed_badge(
+                entity_id=session.entity_id,
+                difficulty=session.difficulty.value,
+                pass_rate=result.pass_rate,
+                session_id=session_id,
+            )
+            result.badge = badge_data["token"]
+            result.badge_info = BadgeInfo(
+                token=badge_data["token"],
+                expires_at=datetime.fromisoformat(badge_data["expires_at"]),
+                freshness_nonce=badge_data.get("freshness_nonce"),
+                signed=badge_data.get("signed", False),
+                jti=badge_data.get("jti"),
+            )
         return {
             "session_id": session_id,
             "status": "completed",
-            "result": final_result,
+            "result": result,
         }
     else:
         return {
@@ -601,26 +618,77 @@ async def get_result(session_id: str):
     if not session.completed:
         raise HTTPException(status_code=400, detail="Session not yet completed")
 
-    return compute_mettle_result(session.results, session.entity_id)
+    result = compute_mettle_result(session.results, session.entity_id)
+
+    # Generate proper signed badge with expiry if verified
+    if result.verified:
+        badge_data = generate_signed_badge(
+            entity_id=session.entity_id,
+            difficulty=session.difficulty.value,
+            pass_rate=result.pass_rate,
+            session_id=session_id,
+        )
+        result.badge = badge_data["token"]
+        result.badge_info = BadgeInfo(
+            token=badge_data["token"],
+            expires_at=datetime.fromisoformat(badge_data["expires_at"]),
+            freshness_nonce=badge_data.get("freshness_nonce"),
+            signed=badge_data.get("signed", False),
+            jti=badge_data.get("jti"),
+        )
+
+    return result
 
 
 # === Badge Endpoints ===
-def generate_signed_badge(entity_id: str | None, difficulty: str, pass_rate: float) -> str | None:
-    """Generate a signed JWT badge for verified entities."""
+def generate_signed_badge(
+    entity_id: str | None,
+    difficulty: str,
+    pass_rate: float,
+    session_id: str | None = None,
+) -> dict[str, Any]:
+    """Generate a signed JWT badge for verified entities with expiry.
+
+    Returns dict with:
+        - token: The JWT badge token
+        - expires_at: ISO timestamp of expiry
+        - freshness_nonce: Nonce for freshness verification
+    """
+    now = datetime.now(timezone.utc)
+    expires_at = now.timestamp() + settings.badge_expiry_seconds
+    freshness_nonce = secrets.token_hex(8)
+
     if not settings.secret_key:
-        # No secret key configured - return simple badge
-        return f"METTLE-verified-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+        # No secret key configured - return simple badge with expiry info
+        return {
+            "token": f"METTLE-verified-{now.strftime('%Y%m%d')}",
+            "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
+            "freshness_nonce": freshness_nonce,
+            "signed": False,
+        }
 
     payload = {
         "entity_id": entity_id,
         "difficulty": difficulty,
         "pass_rate": pass_rate,
-        "verified_at": datetime.now(timezone.utc).isoformat(),
+        "verified_at": now.isoformat(),
         "version": settings.api_version,
         "iss": "mettle-api",
+        "exp": expires_at,  # JWT standard expiry claim
+        "iat": now.timestamp(),  # Issued at
+        "jti": secrets.token_hex(16),  # Unique token ID for revocation
+        "nonce": freshness_nonce,
+        "session_id": session_id,
     }
 
-    return jwt.encode(payload, settings.secret_key, algorithm="HS256")
+    token = jwt.encode(payload, settings.secret_key, algorithm="HS256")
+    return {
+        "token": token,
+        "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
+        "freshness_nonce": freshness_nonce,
+        "signed": True,
+        "jti": payload["jti"],
+    }
 
 
 @api_router.get(
@@ -649,11 +717,140 @@ async def verify_badge(token: str):
 
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
-        return BadgeVerifyResponse(valid=True, payload=payload)
+
+        # Check revocation (will be implemented in Task 3)
+        jti = payload.get("jti")
+        if jti and jti in revoked_badges:
+            return BadgeVerifyResponse(
+                valid=False,
+                error="Badge has been revoked",
+                revoked=True,
+            )
+
+        # Extract expiry info
+        exp = payload.get("exp")
+        expires_at = None
+        if exp:
+            expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).isoformat()
+
+        return BadgeVerifyResponse(
+            valid=True,
+            payload=payload,
+            expires_at=expires_at,
+        )
     except jwt.ExpiredSignatureError:
         return BadgeVerifyResponse(valid=False, error="Badge has expired")
     except jwt.InvalidTokenError:
         return BadgeVerifyResponse(valid=False, error="Invalid badge token")
+
+
+# === Revocation Endpoints ===
+
+# Audit trail for revocations
+revocation_audit: list[dict[str, Any]] = []
+
+
+class RevokeBadgeRequest(BaseModel):
+    """Request to revoke a badge."""
+
+    token: str = Field(..., description="The badge token to revoke")
+    reason: str = Field(..., min_length=10, max_length=500, description="Reason for revocation")
+    evidence: dict[str, Any] | None = Field(None, description="Optional evidence supporting revocation")
+
+
+class RevokeBadgeResponse(BaseModel):
+    """Response after revoking a badge."""
+
+    revoked: bool = Field(description="Whether the badge was revoked")
+    jti: str | None = Field(None, description="The badge ID that was revoked")
+    message: str = Field(description="Status message")
+
+
+@api_router.post(
+    "/badge/revoke",
+    response_model=RevokeBadgeResponse,
+    tags=["Badge"],
+    summary="Revoke Badge",
+    description="Revoke a METTLE badge. Revoked badges will fail verification.",
+    responses={
+        200: {"description": "Badge revoked successfully"},
+        400: {"description": "Invalid token or already revoked"},
+        401: {"description": "Unauthorized - requires API key"},
+    },
+)
+@limiter.limit("10/minute")
+async def revoke_badge(request: Request, body: RevokeBadgeRequest):
+    """Revoke a METTLE badge.
+
+    Once revoked, the badge will fail all future verification attempts.
+    Revocations are logged with an audit trail.
+    """
+    if not settings.secret_key:
+        raise HTTPException(status_code=400, detail="Badge signing not configured")
+
+    try:
+        # Decode without verification to get JTI even if expired
+        payload = jwt.decode(
+            body.token,
+            settings.secret_key,
+            algorithms=["HS256"],
+            options={"verify_exp": False},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Invalid badge token")
+
+    jti = payload.get("jti")
+    if not jti:
+        raise HTTPException(status_code=400, detail="Badge has no revocable ID (jti)")
+
+    if jti in revoked_badges:
+        return RevokeBadgeResponse(
+            revoked=False,
+            jti=jti,
+            message="Badge already revoked",
+        )
+
+    # Add to revocation set
+    revoked_badges.add(jti)
+
+    # Create audit record
+    audit_record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "jti": jti,
+        "entity_id": payload.get("entity_id"),
+        "reason": body.reason,
+        "evidence": body.evidence,
+        "badge_issued_at": payload.get("verified_at"),
+        "badge_difficulty": payload.get("difficulty"),
+    }
+    revocation_audit.append(audit_record)
+
+    logger.info(
+        "badge_revoked",
+        jti=jti,
+        entity_id=payload.get("entity_id"),
+        reason=body.reason,
+    )
+
+    return RevokeBadgeResponse(
+        revoked=True,
+        jti=jti,
+        message=f"Badge {jti[:8]}... has been revoked",
+    )
+
+
+@api_router.get(
+    "/badge/revocations",
+    tags=["Badge"],
+    summary="List Revocations",
+    description="List all badge revocations (audit trail).",
+)
+async def list_revocations():
+    """Get the audit trail of badge revocations."""
+    return {
+        "revoked_count": len(revoked_badges),
+        "audit": revocation_audit[-100:],  # Last 100 revocations
+    }
 
 
 # === Static Files (Web UI) ===
