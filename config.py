@@ -51,6 +51,16 @@ class Settings(BaseSettings):
         description="Admin API key for tier management and admin operations",
     )
 
+    # Database
+    database_url: str = Field(
+        default="sqlite:///mettle.db",
+        description="Database URL (sqlite:// or postgresql://)",
+    )
+    use_database: bool = Field(
+        default=False,
+        description="Enable database persistence (default: in-memory)",
+    )
+
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
 

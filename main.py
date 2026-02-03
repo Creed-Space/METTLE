@@ -42,6 +42,17 @@ from config import get_settings
 # Configuration
 settings = get_settings()
 
+# Database layer (optional)
+db = None
+if settings.use_database:
+    try:
+        import database as db
+
+        logger_temp = structlog.get_logger()
+        logger_temp.info("database_enabled", url=settings.database_url[:20] + "...")
+    except ImportError:
+        print("[METTLE] Database module not available, using in-memory storage")
+
 # Structured logging
 structlog.configure(
     processors=[
@@ -156,6 +167,9 @@ class RateTier:
             "usage_date": None,
             "usage_count": 0,
         }
+        # Persist to database if enabled
+        if db:
+            db.save_api_key(api_key, tier, entity_id)
         return api_keys[api_key]
 
 
@@ -179,6 +193,7 @@ class CollusionDetector:
             "passed": passed,
         }
 
+        # In-memory storage
         if entity_id not in verification_graph:
             verification_graph[entity_id] = []
         verification_graph[entity_id].append(record)
@@ -187,6 +202,10 @@ class CollusionDetector:
         verification_timestamps.append((entity_id, time.time()))
         if len(verification_timestamps) > 1000:
             verification_timestamps.pop(0)
+
+        # Persist to database if enabled
+        if db:
+            db.save_verification_record(entity_id, ip_address, passed)
 
     @staticmethod
     def check_collusion(entity_id: str, ip_address: str) -> dict[str, Any]:
@@ -1341,12 +1360,16 @@ class WebhookManager:
     @staticmethod
     def register(entity_id: str, url: str, events: list[str] | None = None, secret: str | None = None) -> dict:
         """Register a webhook for an entity."""
+        events_list = events or WebhookManager.EVENTS
         webhooks[entity_id] = {
             "url": url,
-            "events": events or WebhookManager.EVENTS,
+            "events": events_list,
             "secret": secret,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+        # Persist to database if enabled
+        if db:
+            db.save_webhook(entity_id, url, events_list, secret)
         return webhooks[entity_id]
 
     @staticmethod
@@ -1354,6 +1377,12 @@ class WebhookManager:
         """Unregister a webhook."""
         if entity_id in webhooks:
             del webhooks[entity_id]
+            # Remove from database if enabled
+            if db:
+                db.delete_webhook(entity_id)
+            return True
+        # Try database even if not in memory
+        if db and db.delete_webhook(entity_id):
             return True
         return False
 
