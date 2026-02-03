@@ -105,24 +105,55 @@ main {
 
 /* 5 Questions Framework */
 .questions-framework {
-    background: var(--bg-card);
+    background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.05) 100%);
     border-radius: var(--radius);
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
+    padding: 2rem;
+    margin-bottom: 2rem;
     border: 1px solid var(--primary);
+    position: relative;
+    overflow: hidden;
+}
+
+.questions-framework::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), #818cf8, var(--primary));
 }
 
 .questions-framework h3 {
     text-align: center;
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
     color: var(--primary);
-    font-size: 1.25rem;
+    font-size: 1.5rem;
+    font-weight: 700;
 }
 
 .questions-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1rem;
+}
+
+@media (max-width: 900px) {
+    .questions-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .questions-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 400px) {
+    .questions-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .question-item {
@@ -130,33 +161,52 @@ main {
     flex-direction: column;
     align-items: center;
     text-align: center;
-    padding: 0.75rem;
+    padding: 1.25rem 1rem;
     background: var(--bg);
-    border-radius: 8px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.question-item:hover {
+    border-color: var(--primary);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.15);
+}
+
+.question-item .question-icon {
+    font-size: 1.5rem;
+    color: var(--primary);
+    margin-bottom: 0.75rem;
+    opacity: 0.9;
 }
 
 .question-num {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    background: var(--primary);
+    width: 2rem;
+    height: 2rem;
+    background: linear-gradient(135deg, var(--primary), #818cf8);
     color: white;
     border-radius: 50%;
-    font-size: 0.75rem;
+    font-size: 0.875rem;
     font-weight: 700;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
 .question-item strong {
-    font-size: 0.8rem;
-    margin-bottom: 0.25rem;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    line-height: 1.3;
 }
 
 .question-desc {
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     color: var(--text-muted);
+    line-height: 1.4;
 }
 
 /* Info Cards */
@@ -277,45 +327,78 @@ main {
 
 /* Use Cases */
 .use-cases {
-    margin-top: 1.5rem;
-    margin-bottom: 1.5rem;
+    margin-top: 2rem;
+    margin-bottom: 2rem;
 }
 
 .use-cases h3 {
     text-align: center;
-    margin-bottom: 1rem;
-    font-size: 1.25rem;
+    margin-bottom: 1.5rem;
+    font-size: 1.5rem;
+    font-weight: 700;
 }
 
 .use-case-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+}
+
+@media (max-width: 600px) {
+    .use-case-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .use-case {
     background: var(--bg-card);
     border-radius: var(--radius);
-    padding: 1.25rem;
-    text-align: center;
+    padding: 1.75rem;
+    text-align: left;
+    display: flex;
+    gap: 1.25rem;
+    align-items: flex-start;
+    border: 1px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.use-case:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+.use-case .icon-wrapper {
+    width: 3rem;
+    height: 3rem;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(99, 102, 241, 0.1));
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .use-case i {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     color: var(--primary);
-    margin-bottom: 0.75rem;
-    display: block;
+}
+
+.use-case-content {
+    flex: 1;
 }
 
 .use-case strong {
     display: block;
     margin-bottom: 0.5rem;
+    font-size: 1.1rem;
 }
 
 .use-case p {
-    font-size: 0.875rem;
+    font-size: 0.9rem;
     color: var(--text-muted);
     margin: 0;
+    line-height: 1.5;
 }
 
 /* Trust Signals */
