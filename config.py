@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     # API
     api_title: str = Field(default="METTLE", description="API title")
-    api_version: str = Field(default="2.0.0", description="API version")
+    api_version: str = Field(default="0.2.0", description="API version")
 
     # CORS
     allowed_origins: str = Field(
