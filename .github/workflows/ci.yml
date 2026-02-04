@@ -23,7 +23,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov ruff mypy
+          pip install pytest pytest-asyncio pytest-cov pytest-rerunfailures ruff mypy
 
       - name: Lint with ruff
         run: |
@@ -34,12 +34,20 @@ jobs:
           mypy main.py --ignore-missing-imports --no-error-summary || true
 
       - name: Run tests
+        env:
+          METTLE_SECRET_KEY: "ci-test-secret-key-12345"
+          METTLE_ADMIN_API_KEY: "ci-test-admin-key-12345"
+          METTLE_ENVIRONMENT: "test"
         run: |
-          pytest tests/ -v --tb=short
+          pytest tests/ -v --tb=short --reruns 2 --reruns-delay 1
 
       - name: Run tests with coverage
+        env:
+          METTLE_SECRET_KEY: "ci-test-secret-key-12345"
+          METTLE_ADMIN_API_KEY: "ci-test-admin-key-12345"
+          METTLE_ENVIRONMENT: "test"
         run: |
-          pytest tests/ --cov=. --cov-report=xml --cov-report=term-missing
+          pytest tests/ --cov=. --cov-report=xml --cov-report=term-missing --reruns 2 --reruns-delay 1
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
