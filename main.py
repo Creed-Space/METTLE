@@ -46,10 +46,17 @@ settings = get_settings()
 db = None
 if settings.use_database:
     try:
+        from urllib.parse import urlparse
+
         import database as db
 
+        # SECURITY: Redact credentials from database URL before logging
         logger_temp = structlog.get_logger()
-        logger_temp.info("database_enabled", url=settings.database_url[:20] + "...")
+        parsed_url = urlparse(settings.database_url)
+        safe_url = f"{parsed_url.scheme}://{parsed_url.hostname}"
+        if parsed_url.port:
+            safe_url += f":{parsed_url.port}"
+        logger_temp.info("database_enabled", url=safe_url)
     except ImportError:
         print("[METTLE] Database module not available, using in-memory storage")
 
@@ -102,7 +109,7 @@ def add_with_limit(store: dict, key: str, value: Any, max_size: int) -> None:
 # In-memory storage
 sessions: dict[str, MettleSession] = {}
 challenges: dict[str, tuple[Challenge, float]] = {}
-revoked_badges: set[str] = set()  # JTIs of revoked badges
+revoked_badges: dict[str, float] = {}  # JTI -> revocation timestamp (bounded dict)
 revocation_audit: list[dict[str, Any]] = []  # Audit trail
 
 # Collusion detection - track verification patterns
@@ -372,6 +379,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+            "font-src 'self' https://cdnjs.cloudflare.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self'"
+        )
         if settings.is_production:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
@@ -574,11 +589,13 @@ class SubmitAnswerRequest(BaseModel):
         description="Session identifier from start response",
         min_length=1,
         max_length=64,
+        pattern=r"^ses_[a-f0-9]{24}$",
     )
     challenge_id: str = Field(
         description="Challenge identifier to answer",
         min_length=1,
         max_length=64,
+        pattern=r"^mtl_[a-f0-9]{24}$",
     )
     answer: str = Field(
         description="Your answer to the challenge",
@@ -862,14 +879,13 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
 @limiter.limit(settings.rate_limit_answers)
 async def submit_answer(request: Request, body: SubmitAnswerRequest):
     """Submit an answer to the current challenge."""
-    # Get session
+    # Get session - use generic error to prevent session enumeration
     session = sessions.get(body.session_id)
-    if not session:
-        logger.warning("session_not_found", session_id=body.session_id)
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if session.completed:
-        raise HTTPException(status_code=400, detail="Session already completed")
+    if not session or session.completed:
+        # SECURITY: Don't distinguish between "not found" and "completed"
+        # to prevent session ID enumeration via timing/error analysis
+        logger.warning("session_invalid", session_id=body.session_id)
+        raise HTTPException(status_code=404, detail="Session not found or invalid")
 
     # Get and remove challenge atomically to prevent race conditions
     # SECURITY: Using pop() instead of get()+del prevents double-submission attacks
@@ -1117,18 +1133,15 @@ def generate_signed_badge(
         200: {"description": "Badge verification result"},
     },
 )
-async def verify_badge(token: str):
+@limiter.limit("100/minute")
+async def verify_badge(request: Request, token: str):
     """Verify a METTLE badge is valid."""
     if not settings.secret_key:
-        # No signing configured - can't verify JWT badges
-        if token.startswith("METTLE-verified-"):
-            return BadgeVerifyResponse(
-                valid=True,
-                payload={"badge": token, "type": "simple"},
-            )
+        # SECURITY: Reject ALL badges when signing not configured
+        # Never accept simple tokens - they can be trivially forged
         return BadgeVerifyResponse(
             valid=False,
-            error="Badge verification not configured",
+            error="Badge verification not configured (no signing key)",
         )
 
     try:
@@ -1246,10 +1259,10 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
             message="Badge already revoked",
         )
 
-    # Add to revocation set
-    revoked_badges.add(jti)
+    # Add to revocation dict with memory limit
+    add_with_limit(revoked_badges, jti, time.time(), MAX_REVOKED_BADGES)
 
-    # Create audit record
+    # Create audit record with memory limit
     audit_record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "jti": jti,
@@ -1260,6 +1273,9 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
         "badge_difficulty": payload.get("difficulty"),
     }
     revocation_audit.append(audit_record)
+    # Keep audit bounded
+    if len(revocation_audit) > MAX_REVOCATION_AUDIT:
+        revocation_audit.pop(0)
 
     logger.info(
         "badge_revoked",
@@ -1575,10 +1591,18 @@ class WebhookManager:
 class WebhookRegisterRequest(BaseModel):
     """Request to register a webhook."""
 
-    entity_id: str = Field(..., description="Entity ID to register webhook for")
-    url: str = Field(..., description="Webhook URL to POST events to")
+    entity_id: str = Field(..., description="Entity ID to register webhook for", max_length=128)
+    url: str = Field(..., description="Webhook URL to POST events to", max_length=2048)
     events: list[str] | None = Field(None, description="Events to subscribe to (default: all)")
-    secret: str | None = Field(None, description="Secret for HMAC signing")
+    secret: str | None = Field(None, description="Secret for HMAC signing (min 32 chars)")
+
+    @field_validator("secret")
+    @classmethod
+    def validate_secret(cls, v: str | None) -> str | None:
+        """SECURITY: Ensure webhook secrets have minimum entropy."""
+        if v is not None and len(v) < 32:
+            raise ValueError("Webhook secret must be at least 32 characters for security")
+        return v
 
     @field_validator("url")
     @classmethod

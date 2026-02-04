@@ -1,11 +1,20 @@
 """METTLE: Challenge generation."""
 
 import hashlib
-import random
 import secrets
 from datetime import datetime, timedelta, timezone
 
 from .models import Challenge, ChallengeType, Difficulty
+
+
+def _secure_randint(a: int, b: int) -> int:
+    """Generate a cryptographically secure random integer in [a, b]."""
+    return a + secrets.randbelow(b - a + 1)
+
+
+def _secure_choice(seq: list) -> any:
+    """Select a random element from sequence using cryptographic randomness."""
+    return seq[secrets.randbelow(len(seq))]
 
 
 def generate_challenge_id() -> str:
@@ -16,14 +25,14 @@ def generate_challenge_id() -> str:
 def generate_speed_math_challenge(difficulty: Difficulty) -> Challenge:
     """Generate a speed math challenge."""
     if difficulty == Difficulty.BASIC:
-        a = random.randint(10, 99)
-        b = random.randint(10, 99)
-        op = random.choice(["+", "-", "*"])
+        a = _secure_randint(10, 99)
+        b = _secure_randint(10, 99)
+        op = _secure_choice(["+", "-", "*"])
         time_limit = 2500  # 2.5s - challenging for humans, easy for AI
     else:
-        a = random.randint(100, 999)
-        b = random.randint(100, 999)
-        op = random.choice(["+", "-", "*"])
+        a = _secure_randint(100, 999)
+        b = _secure_randint(100, 999)
+        op = _secure_choice(["+", "-", "*"])
         time_limit = 500  # 500ms - requires native computation
 
     if op == "+":
@@ -51,12 +60,12 @@ def generate_chained_reasoning_challenge(difficulty: Difficulty) -> Challenge:
     steps = 3 if difficulty == Difficulty.BASIC else 5
     time_limit = 3000 if difficulty == Difficulty.BASIC else 800  # Basic: 3s, Full: 800ms
 
-    seed = random.randint(1, 50)
+    seed = _secure_randint(1, 50)
     chain = [seed]
     instructions = [f"Start with {seed}"]
 
     for i in range(steps):
-        op = random.choice(["double", "add_10", "subtract_5"])
+        op = _secure_choice(["double", "add_10", "subtract_5"])
         current = chain[-1]
 
         if op == "double":
@@ -111,7 +120,7 @@ def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
         ("I'll be ___", "back"),
     ]
 
-    prompt_text, expected = random.choice(prompts)
+    prompt_text, expected = _secure_choice(prompts)
     time_limit = 2000 if difficulty == Difficulty.BASIC else 400  # Basic: 2s, Full: sub-second
 
     return Challenge(
@@ -134,7 +143,7 @@ def generate_instruction_following_challenge(difficulty: Difficulty) -> Challeng
         ("Start with a number", lambda r: r.strip()[0].isdigit() if r.strip() else False),
     ]
 
-    instruction, validator = random.choice(instructions)
+    instruction, validator = _secure_choice(instructions)
     time_limit = 3000 if difficulty == Difficulty.BASIC else 600  # Basic: 3s, Full: 600ms
 
     # Store validator as string representation for serialization
@@ -159,7 +168,7 @@ def generate_consistency_challenge(difficulty: Difficulty) -> Challenge:
         "What is the capital of France?",
     ]
 
-    question = random.choice(questions)
+    question = _secure_choice(questions)
     time_limit = 3500 if difficulty == Difficulty.BASIC else 1000  # Basic: 3.5s, Full: 1s
 
     return Challenge(

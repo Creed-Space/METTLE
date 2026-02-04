@@ -134,9 +134,10 @@ class TestSubmitAnswer:
 
     def test_submit_answer_invalid_session(self, client):
         """Test submitting to invalid session."""
+        # Use valid format IDs that don't exist
         response = client.post(
             "/api/session/answer",
-            json={"session_id": "ses_nonexistent", "challenge_id": "mtl_whatever", "answer": "test"},
+            json={"session_id": "ses_000000000000000000000000", "challenge_id": "mtl_000000000000000000000000", "answer": "test"},
         )
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
@@ -147,8 +148,9 @@ class TestSubmitAnswer:
         start_response = client.post("/api/session/start", json={"difficulty": "basic"})
         session_id = start_response.json()["session_id"]
 
+        # Use valid format ID that doesn't exist
         response = client.post(
-            "/api/session/answer", json={"session_id": session_id, "challenge_id": "mtl_nonexistent", "answer": "test"}
+            "/api/session/answer", json={"session_id": session_id, "challenge_id": "mtl_000000000000000000000000", "answer": "test"}
         )
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
@@ -332,9 +334,10 @@ class TestCompleteSessionFlow:
         """Test that completed session rejects new answers."""
         session_id = TestGetSession()._complete_session(client, "basic")
 
-        # Try to submit another answer
+        # Try to submit another answer (use valid format ID)
+        # SECURITY: Error message is intentionally generic to prevent session enumeration
         response = client.post(
-            "/api/session/answer", json={"session_id": session_id, "challenge_id": "mtl_fake", "answer": "test"}
+            "/api/session/answer", json={"session_id": session_id, "challenge_id": "mtl_000000000000000000000000", "answer": "test"}
         )
-        assert response.status_code == 400
-        assert "already completed" in response.json()["detail"].lower()
+        assert response.status_code == 404  # Generic "not found" for security
+        assert "not found" in response.json()["detail"].lower() or "invalid" in response.json()["detail"].lower()

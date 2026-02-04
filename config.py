@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -81,6 +81,19 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production."""
         return self.environment.lower() == "production"
+
+    @model_validator(mode="after")
+    def validate_production_config(self) -> "Settings":
+        """SECURITY: Validate security-critical settings in production."""
+        if self.is_production:
+            if self.allowed_origins == "*":
+                import warnings
+                warnings.warn(
+                    "SECURITY WARNING: CORS allows all origins (*) in production. "
+                    "Set METTLE_ALLOWED_ORIGINS to specific domains.",
+                    stacklevel=2,
+                )
+        return self
 
 
 @lru_cache
