@@ -1,15 +1,22 @@
 """Pytest fixtures for METTLE tests."""
 
+import os
 from datetime import datetime, timedelta, timezone
 
-import pytest
-from fastapi.testclient import TestClient
-from main import app, challenges, limiter, sessions
-from mettle.models import (
-    Challenge,
-    ChallengeType,
-    VerificationResult,
-)
+# Set test environment BEFORE importing app (note: METTLE_ prefix required)
+# These must be set before importing the app to avoid badge signing errors
+os.environ["METTLE_SECRET_KEY"] = "test-secret-key-for-mettle-testing-only"
+os.environ["METTLE_ADMIN_API_KEY"] = "test-admin-key-for-mettle-testing-only"
+
+# Clear the settings cache to pick up test env vars (must be before app import)
+from config import get_settings  # noqa: E402
+
+get_settings.cache_clear()
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from main import app, challenges, limiter, sessions  # noqa: E402
+from mettle.models import Challenge, ChallengeType, VerificationResult  # noqa: E402
 
 # Make time limits very lenient in tests (CI can be slow)
 _ORIGINAL_TIME_LIMITS = {

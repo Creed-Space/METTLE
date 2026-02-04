@@ -977,13 +977,12 @@ def generate_signed_badge(
     freshness_nonce = secrets.token_hex(8)
 
     if not settings.secret_key:
-        # No secret key configured - return simple badge with expiry info
-        return {
-            "token": f"METTLE-verified-{now.strftime('%Y%m%d')}",
-            "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
-            "freshness_nonce": freshness_nonce,
-            "signed": False,
-        }
+        # SECURITY: Never issue unsigned badges - they can be trivially forged
+        # In production, SECRET_KEY must be configured
+        raise ValueError(
+            "Cannot issue badge: SECRET_KEY not configured. "
+            "Unsigned badges are forgeable. Configure SECRET_KEY in production."
+        )
 
     payload = {
         "entity_id": entity_id,
@@ -1102,7 +1101,16 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
 
     Once revoked, the badge will fail all future verification attempts.
     Revocations are logged with an audit trail.
+
+    Requires admin API key for authorization.
     """
+    # SECURITY: Require admin authentication to prevent malicious revocation
+    admin_key = request.headers.get("X-Admin-Key")
+    if not settings.admin_api_key:
+        raise HTTPException(status_code=503, detail="Revocation service not configured (no admin key)")
+    if admin_key != settings.admin_api_key:
+        raise HTTPException(status_code=401, detail="Admin authorization required for badge revocation")
+
     if not settings.secret_key:
         raise HTTPException(status_code=400, detail="Badge signing not configured")
 
@@ -1161,10 +1169,15 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
     "/badge/revocations",
     tags=["Badge"],
     summary="List Revocations",
-    description="List all badge revocations (audit trail).",
+    description="List all badge revocations (audit trail). Requires admin key.",
 )
-async def list_revocations():
-    """Get the audit trail of badge revocations."""
+async def list_revocations(request: Request):
+    """Get the audit trail of badge revocations. Requires admin authorization."""
+    # SECURITY: Revocation audit contains sensitive info
+    admin_key = request.headers.get("X-Admin-Key")
+    if not settings.admin_api_key or admin_key != settings.admin_api_key:
+        raise HTTPException(status_code=401, detail="Admin authorization required")
+
     return {
         "revoked_count": len(revoked_badges),
         "audit": revocation_audit[-100:],  # Last 100 revocations
@@ -1251,10 +1264,21 @@ class ModelFingerprinter:
     "/security/collusion",
     tags=["Status"],
     summary="Collusion Detection Stats",
-    description="Get collusion detection statistics and patterns.",
+    description="Get collusion detection statistics and patterns. Requires admin key.",
 )
-async def get_collusion_stats():
-    """Get collusion detection statistics."""
+async def get_collusion_stats(request: Request):
+    """Get collusion detection statistics. Requires admin authorization.
+
+    SECURITY: Thresholds are security-sensitive - exposing them helps attackers evade.
+    """
+    admin_key = request.headers.get("X-Admin-Key")
+    if not settings.admin_api_key or admin_key != settings.admin_api_key:
+        # Return only non-sensitive stats for unauthenticated requests
+        return {
+            "stats": {"active_entities": len(verification_graph)},
+            "message": "Full stats require admin authorization",
+        }
+
     return {
         "stats": CollusionDetector.get_stats(),
         "thresholds": {
@@ -1404,6 +1428,53 @@ class WebhookRegisterRequest(BaseModel):
     url: str = Field(..., description="Webhook URL to POST events to")
     events: list[str] | None = Field(None, description="Events to subscribe to (default: all)")
     secret: str | None = Field(None, description="Secret for HMAC signing")
+
+    @field_validator("url")
+    @classmethod
+    def validate_webhook_url(cls, v: str) -> str:
+        """SECURITY: Block SSRF attacks via webhook URLs.
+
+        Prevents requests to:
+        - Cloud metadata endpoints (169.254.169.254)
+        - Localhost/loopback
+        - Private network ranges (10.x, 172.16-31.x, 192.168.x)
+        """
+        import ipaddress
+        from urllib.parse import urlparse
+
+        parsed = urlparse(v)
+
+        # Must be HTTPS in production for security
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("Webhook URL must use HTTP or HTTPS")
+
+        # Block common SSRF targets
+        host = parsed.hostname or ""
+        host_lower = host.lower()
+
+        # Block localhost
+        if host_lower in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+            raise ValueError("Webhook URL cannot target localhost")
+
+        # Block cloud metadata endpoints
+        if host_lower in ("169.254.169.254", "metadata.google.internal"):
+            raise ValueError("Webhook URL cannot target cloud metadata endpoints")
+
+        # Block private IP ranges
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                raise ValueError("Webhook URL cannot target private/internal IPs")
+        except ValueError:
+            # Not an IP address, check for suspicious hostnames
+            pass
+
+        # Block internal network patterns
+        internal_patterns = ["internal", ".local", ".localdomain", ".corp", ".lan"]
+        if any(pattern in host_lower for pattern in internal_patterns):
+            raise ValueError("Webhook URL cannot target internal hostnames")
+
+        return v
 
 
 @api_router.post(

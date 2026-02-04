@@ -260,7 +260,8 @@ class TestFullVerificationFlow:
         result = client.get(f"/api/session/{session_id}/result").json()
         if result["verified"]:
             assert result["badge"] is not None
-            assert "METTLE-verified" in result["badge"]
+            # Badge is now a signed JWT (starts with eyJ for the header)
+            assert result["badge"].startswith("eyJ"), "Badge should be a JWT"
         else:
             assert result["badge"] is None
 

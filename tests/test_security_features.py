@@ -100,9 +100,23 @@ class TestCollusionDetector:
 class TestCollusionEndpoints:
     """Tests for collusion detection API endpoints."""
 
-    def test_get_collusion_stats(self, client):
-        """Test GET /api/security/collusion."""
+    def test_get_collusion_stats_unauthenticated(self, client):
+        """Test GET /api/security/collusion without admin key returns limited info."""
         response = client.get("/api/security/collusion")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "stats" in data
+        # Thresholds should NOT be exposed without admin key (security)
+        assert "thresholds" not in data
+        assert "message" in data
+
+    def test_get_collusion_stats_authenticated(self, client):
+        """Test GET /api/security/collusion with admin key returns full info."""
+        response = client.get(
+            "/api/security/collusion",
+            headers={"X-Admin-Key": "test-admin-key-for-mettle-testing-only"},
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -478,8 +492,8 @@ class TestBatchVerification:
 class TestBadgeRevocation:
     """Tests for badge revocation functionality."""
 
-    def test_revoke_badge_no_secret(self, client):
-        """Test revoking badge when no secret key configured."""
+    def test_revoke_badge_no_admin_key(self, client):
+        """Test revoking badge without admin key fails with 401."""
         response = client.post(
             "/api/badge/revoke",
             json={
@@ -488,12 +502,22 @@ class TestBadgeRevocation:
             },
         )
 
-        # Should fail - no secret key in test env
-        assert response.status_code == 400
+        # SECURITY: Revocation requires admin authorization
+        assert response.status_code == 401
 
-    def test_list_revocations(self, client):
-        """Test GET /api/badge/revocations."""
+    def test_list_revocations_unauthenticated(self, client):
+        """Test GET /api/badge/revocations without admin key fails."""
         response = client.get("/api/badge/revocations")
+
+        # SECURITY: Revocation audit requires admin authorization
+        assert response.status_code == 401
+
+    def test_list_revocations_authenticated(self, client):
+        """Test GET /api/badge/revocations with admin key."""
+        response = client.get(
+            "/api/badge/revocations",
+            headers={"X-Admin-Key": "test-admin-key-for-mettle-testing-only"},
+        )
 
         assert response.status_code == 200
         data = response.json()
