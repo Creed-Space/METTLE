@@ -76,10 +76,34 @@ logger = structlog.get_logger()
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address)
 
+# Memory limits for in-memory stores (DoS protection)
+MAX_SESSIONS = 5000
+MAX_CHALLENGES = 10000
+MAX_VERIFICATION_GRAPH = 10000
+MAX_REVOKED_BADGES = 10000
+MAX_REVOCATION_AUDIT = 10000
+MAX_API_KEYS = 10000
+MAX_WEBHOOKS = 1000
+MAX_AUTH_FAILURES = 10000
+
+
+def add_with_limit(store: dict, key: str, value: Any, max_size: int) -> None:
+    """Add to dict with LRU-style eviction when full.
+
+    SECURITY: Prevents unbounded memory growth from DoS attacks.
+    """
+    if len(store) >= max_size:
+        # Remove oldest (first) item - Python 3.7+ dicts maintain insertion order
+        oldest_key = next(iter(store))
+        del store[oldest_key]
+    store[key] = value
+
+
 # In-memory storage
 sessions: dict[str, MettleSession] = {}
 challenges: dict[str, tuple[Challenge, float]] = {}
 revoked_badges: set[str] = set()  # JTIs of revoked badges
+revocation_audit: list[dict[str, Any]] = []  # Audit trail
 
 # Collusion detection - track verification patterns
 verification_graph: dict[str, list[dict[str, Any]]] = {}  # entity_id -> list of verifications
@@ -160,17 +184,18 @@ class RateTier:
         if tier not in RateTier.TIERS:
             raise ValueError(f"Invalid tier: {tier}")
 
-        api_keys[api_key] = {
+        key_data = {
             "tier": tier,
             "entity_id": entity_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "usage_date": None,
             "usage_count": 0,
         }
+        add_with_limit(api_keys, api_key, key_data, MAX_API_KEYS)
         # Persist to database if enabled
         if db:
             db.save_api_key(api_key, tier, entity_id)
-        return api_keys[api_key]
+        return key_data
 
 
 class CollusionDetector:
@@ -193,10 +218,17 @@ class CollusionDetector:
             "passed": passed,
         }
 
-        # In-memory storage
+        # In-memory storage with memory limits
         if entity_id not in verification_graph:
+            # Limit total entities tracked
+            if len(verification_graph) >= MAX_VERIFICATION_GRAPH:
+                oldest_key = next(iter(verification_graph))
+                del verification_graph[oldest_key]
             verification_graph[entity_id] = []
         verification_graph[entity_id].append(record)
+        # Keep only last 100 records per entity
+        if len(verification_graph[entity_id]) > 100:
+            verification_graph[entity_id] = verification_graph[entity_id][-100:]
 
         # Keep last 1000 timestamps for timing analysis
         verification_timestamps.append((entity_id, time.time()))
@@ -291,8 +323,15 @@ def check_admin_auth_rate_limit(ip_address: str) -> tuple[bool, int]:
 def record_admin_auth_failure(ip_address: str) -> None:
     """Record a failed admin auth attempt."""
     if ip_address not in _admin_auth_failures:
+        # Limit total IPs tracked to prevent memory DoS
+        if len(_admin_auth_failures) >= MAX_AUTH_FAILURES:
+            oldest_key = next(iter(_admin_auth_failures))
+            del _admin_auth_failures[oldest_key]
         _admin_auth_failures[ip_address] = []
     _admin_auth_failures[ip_address].append(time.time())
+    # Keep only last 100 failures per IP
+    if len(_admin_auth_failures[ip_address]) > 100:
+        _admin_auth_failures[ip_address] = _admin_auth_failures[ip_address][-100:]
 
 
 def verify_admin_key(provided_key: str | None, ip_address: str | None = None) -> bool:
@@ -698,11 +737,11 @@ async def start_session(
         challenges=challenge_list,
     )
 
-    sessions[session_id] = session
+    add_with_limit(sessions, session_id, session, MAX_SESSIONS)
 
     # Store first challenge with timestamp
     first_challenge = challenge_list[0]
-    challenges[first_challenge.id] = (first_challenge, time.time())
+    add_with_limit(challenges, first_challenge.id, (first_challenge, time.time()), MAX_CHALLENGES)
 
     # Log session start
     logger.info(
@@ -773,10 +812,10 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
                 difficulty=body.difficulty,
                 challenges=challenge_list,
             )
-            sessions[session_id] = session
+            add_with_limit(sessions, session_id, session, MAX_SESSIONS)
 
             first_challenge = challenge_list[0]
-            challenges[first_challenge.id] = (first_challenge, time.time())
+            add_with_limit(challenges, first_challenge.id, (first_challenge, time.time()), MAX_CHALLENGES)
 
             results.append({
                 "entity_id": entity_id,
@@ -870,7 +909,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
 
     if challenges_remaining > 0:
         next_challenge = session.challenges[current_index]
-        challenges[next_challenge.id] = (next_challenge, time.time())
+        add_with_limit(challenges, next_challenge.id, (next_challenge, time.time()), MAX_CHALLENGES)
         session_complete = False
     else:
         next_challenge = None
@@ -1506,16 +1545,17 @@ class WebhookManager:
     def register(entity_id: str, url: str, events: list[str] | None = None, secret: str | None = None) -> dict:
         """Register a webhook for an entity."""
         events_list = events or WebhookManager.EVENTS
-        webhooks[entity_id] = {
+        config = {
             "url": url,
             "events": events_list,
             "secret": secret,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+        add_with_limit(webhooks, entity_id, config, MAX_WEBHOOKS)
         # Persist to database if enabled
         if db:
             db.save_webhook(entity_id, url, events_list, secret)
-        return webhooks[entity_id]
+        return config
 
     @staticmethod
     def unregister(entity_id: str) -> bool:
@@ -1598,8 +1638,18 @@ class WebhookRegisterRequest(BaseModel):
     summary="Register Webhook",
     description="Register a webhook URL for verification events.",
 )
-async def register_webhook(body: WebhookRegisterRequest):
+async def register_webhook(body: WebhookRegisterRequest, request: Request):
     """Register a webhook for an entity."""
+    # SECURITY: Audit all webhook registrations
+    ip_address = get_remote_address(request)
+    logger.info(
+        "webhook_registered",
+        entity_id=body.entity_id,
+        url=body.url[:50] + "..." if len(body.url) > 50 else body.url,
+        events=body.events,
+        ip_address=ip_address,
+    )
+
     # Validate events
     if body.events:
         invalid = [e for e in body.events if e not in WebhookManager.EVENTS]
@@ -1620,9 +1670,17 @@ async def register_webhook(body: WebhookRegisterRequest):
     summary="Unregister Webhook",
     description="Remove a webhook registration.",
 )
-async def unregister_webhook(entity_id: str):
+async def unregister_webhook(entity_id: str, request: Request):
     """Unregister a webhook."""
+    ip_address = get_remote_address(request)
+
     if WebhookManager.unregister(entity_id):
+        # SECURITY: Audit all webhook deletions
+        logger.info(
+            "webhook_unregistered",
+            entity_id=entity_id,
+            ip_address=ip_address,
+        )
         return {"unregistered": True, "entity_id": entity_id}
     raise HTTPException(status_code=404, detail="Webhook not found")
 
