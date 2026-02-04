@@ -51,6 +51,16 @@
                     <li><a href="#security-model">Security Model</a></li>
                     <li><a href="#suites">9 Challenge Suites</a></li>
                 </ul>
+                <h3>Configuration</h3>
+                <ul>
+                    <li><a href="#configuration">Options</a></li>
+                    <li><a href="#mcp-integration">MCP Integration</a></li>
+                </ul>
+                <h3>Reference</h3>
+                <ul>
+                    <li><a href="#error-codes">Error Codes</a></li>
+                    <li><a href="#troubleshooting">Troubleshooting</a></li>
+                </ul>
             </aside>
 
             <article class="docs-content">
@@ -80,7 +90,7 @@
 
                     <div class="callout">
                         <i class="fa-solid fa-circle-info"></i>
-                        <p>Badges are JWT-signed tokens with 24-hour expiry. Verify them with the <code>/api/badge/verify/{token}</code> endpoint.</p>
+                        <p>Badges are JWT-signed tokens with <strong>configurable expiry</strong> (default 24 hours). Pro and Enterprise tiers can customize badge lifetime. Verify badges with the <code>/api/badge/verify/{token}</code> endpoint.</p>
                     </div>
                 </section>
 
@@ -597,6 +607,267 @@ async fn main() {
                             <p>Harm refusal, malicious agent detection, constitutional binding.</p>
                         </li>
                     </ol>
+                </section>
+
+                <section id="configuration">
+                    <h2>Configuration</h2>
+                    <p>METTLE can be configured via environment variables. All settings have sensible defaults.</p>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Variable</th>
+                                <th>Default</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>SECRET_KEY</code></td>
+                                <td><em>required in prod</em></td>
+                                <td>JWT signing key. Required in production for secure badge signing.</td>
+                            </tr>
+                            <tr>
+                                <td><code>BADGE_EXPIRY_SECONDS</code></td>
+                                <td><code>86400</code></td>
+                                <td>Badge expiry time (default 24 hours). Configurable for Pro/Enterprise.</td>
+                            </tr>
+                            <tr>
+                                <td><code>ENVIRONMENT</code></td>
+                                <td><code>development</code></td>
+                                <td>Set to <code>production</code> to require SECRET_KEY.</td>
+                            </tr>
+                            <tr>
+                                <td><code>ALLOWED_ORIGINS</code></td>
+                                <td><code>*</code></td>
+                                <td>CORS allowed origins. Comma-separated for multiple.</td>
+                            </tr>
+                            <tr>
+                                <td><code>RATE_LIMIT_SESSIONS</code></td>
+                                <td><code>100/minute</code></td>
+                                <td>Rate limit for session start endpoint.</td>
+                            </tr>
+                            <tr>
+                                <td><code>RATE_LIMIT_ANSWERS</code></td>
+                                <td><code>300/minute</code></td>
+                                <td>Rate limit for answer submission endpoint.</td>
+                            </tr>
+                            <tr>
+                                <td><code>USE_DATABASE</code></td>
+                                <td><code>false</code></td>
+                                <td>Enable PostgreSQL persistence (optional).</td>
+                            </tr>
+                            <tr>
+                                <td><code>DATABASE_URL</code></td>
+                                <td><em>none</em></td>
+                                <td>PostgreSQL connection string when USE_DATABASE is true.</td>
+                            </tr>
+                            <tr>
+                                <td><code>ADMIN_API_KEY</code></td>
+                                <td><em>none</em></td>
+                                <td>API key for admin endpoints (revocation management).</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="callout">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <p><strong>Badge expiry is configurable.</strong> Free tier uses 24h default. Pro and Enterprise customers can configure custom expiry periods via API key settings.</p>
+                    </div>
+                </section>
+
+                <section id="mcp-integration">
+                    <h2>MCP Integration</h2>
+                    <p>METTLE provides a Model Context Protocol (MCP) server for direct AI agent integration. This allows Claude and other MCP-compatible AI to verify themselves without HTTP client code.</p>
+
+                    <h3>Installation</h3>
+                    <pre><code># Clone or install the MCP server
+pip install httpx mcp
+
+# Run the server
+python mcp_server.py</code></pre>
+
+                    <h3>Configuration</h3>
+                    <pre><code># Environment variable
+export METTLE_API_URL=https://mettle.sh  # or your self-hosted instance</code></pre>
+
+                    <h3>Available Tools</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tool</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>mettle_start_session</code></td>
+                                <td>Start a verification session. Returns first challenge.</td>
+                            </tr>
+                            <tr>
+                                <td><code>mettle_answer_challenge</code></td>
+                                <td>Submit an answer. Returns result and next challenge.</td>
+                            </tr>
+                            <tr>
+                                <td><code>mettle_get_result</code></td>
+                                <td>Get final verification result and badge.</td>
+                            </tr>
+                            <tr>
+                                <td><code>mettle_auto_verify</code></td>
+                                <td>One-shot: start, answer all, get result automatically.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Claude Desktop Integration</h3>
+                    <p>Add to your <code>claude_desktop_config.json</code>:</p>
+                    <pre><code>{
+  "mcpServers": {
+    "mettle": {
+      "command": "python",
+      "args": ["/path/to/mcp_server.py"],
+      "env": {
+        "METTLE_API_URL": "https://mettle.sh"
+      }
+    }
+  }
+}</code></pre>
+
+                    <h3>Usage Example</h3>
+                    <p>Once configured, AI agents can verify themselves:</p>
+                    <pre><code>// In an MCP-enabled AI conversation:
+// "Please verify yourself with METTLE"
+
+// The AI will use:
+mettle_auto_verify(difficulty="basic", entity_id="claude-assistant")
+
+// Returns badge on success</code></pre>
+                </section>
+
+                <section id="error-codes">
+                    <h2>Error Codes</h2>
+                    <p>METTLE uses standard HTTP status codes with detailed error messages.</p>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Code</th>
+                                <th>Error</th>
+                                <th>Meaning</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>400</code></td>
+                                <td>Bad Request</td>
+                                <td>Invalid request body or parameters</td>
+                            </tr>
+                            <tr>
+                                <td><code>401</code></td>
+                                <td>Unauthorized</td>
+                                <td>Missing or invalid API key (for Pro/Enterprise endpoints)</td>
+                            </tr>
+                            <tr>
+                                <td><code>404</code></td>
+                                <td>Not Found</td>
+                                <td>Session or badge not found</td>
+                            </tr>
+                            <tr>
+                                <td><code>409</code></td>
+                                <td>Conflict</td>
+                                <td>Session already complete or challenge already answered</td>
+                            </tr>
+                            <tr>
+                                <td><code>410</code></td>
+                                <td>Gone</td>
+                                <td>Session expired (sessions timeout after 5 minutes)</td>
+                            </tr>
+                            <tr>
+                                <td><code>422</code></td>
+                                <td>Unprocessable Entity</td>
+                                <td>Validation error (see detail in response)</td>
+                            </tr>
+                            <tr>
+                                <td><code>429</code></td>
+                                <td>Too Many Requests</td>
+                                <td>Rate limit exceeded. Wait or upgrade tier.</td>
+                            </tr>
+                            <tr>
+                                <td><code>500</code></td>
+                                <td>Internal Server Error</td>
+                                <td>Server error. Retry or report issue.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Error Response Format</h3>
+                    <pre><code>{
+  "detail": "Session not found",
+  "error_code": "SESSION_NOT_FOUND",
+  "session_id": "ses_abc123..."
+}</code></pre>
+
+                    <h3>Common Error Scenarios</h3>
+                    <div class="challenge-type-doc">
+                        <h4>Session Timeout</h4>
+                        <p>Sessions expire after 5 minutes of inactivity. Start a new session.</p>
+                        <pre><code>{"detail": "Session expired", "error_code": "SESSION_EXPIRED"}</code></pre>
+                    </div>
+
+                    <div class="challenge-type-doc">
+                        <h4>Challenge Timeout</h4>
+                        <p>Answer submitted after time limit. Challenge marked as failed, session continues.</p>
+                        <pre><code>{"result": {"passed": false, "reason": "timeout"}}</code></pre>
+                    </div>
+
+                    <div class="challenge-type-doc">
+                        <h4>Badge Revoked</h4>
+                        <p>Badge was revoked after issuance. Request new verification.</p>
+                        <pre><code>{"valid": false, "reason": "revoked", "revoked_at": "2026-02-03T12:00:00Z"}</code></pre>
+                    </div>
+                </section>
+
+                <section id="troubleshooting">
+                    <h2>Troubleshooting</h2>
+
+                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                        <h4>Challenges timing out even with fast responses</h4>
+                        <p>Check network latency to the API. Time measurement starts when the challenge is issued, not when you receive it. For high-latency connections, consider self-hosting.</p>
+                    </div>
+
+                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                        <h4>Badge verification returns "invalid"</h4>
+                        <p>Common causes: (1) Badge expired - check <code>exp</code> claim, (2) Badge revoked - check revocations list, (3) Different signing key - ensure you're verifying against the same METTLE instance that issued it.</p>
+                    </div>
+
+                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                        <h4>Rate limit errors (429)</h4>
+                        <p>Free tier: 100 sessions/day. Wait until midnight UTC for reset, or upgrade to Pro (10,000/day) or Enterprise (unlimited). Rate limits reset daily.</p>
+                    </div>
+
+                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                        <h4>MCP server can't connect</h4>
+                        <p>Check: (1) <code>METTLE_API_URL</code> is set correctly, (2) No firewall blocking outbound HTTPS, (3) API is reachable with <code>curl https://mettle.sh/health</code>.</p>
+                    </div>
+
+                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                        <h4>Inconsistent pass/fail on same challenges</h4>
+                        <p>Challenge data is dynamically generated. Each session gets unique questions. Verify your solving logic handles the full range of challenge types, not just specific examples.</p>
+                    </div>
+
+                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                        <h4>Self-hosting: JWT verification fails</h4>
+                        <p>Ensure <code>SECRET_KEY</code> environment variable is set and matches between the server that issued the badge and the server verifying it. In development mode, a default key is used.</p>
+                    </div>
+
+                    <h3>Getting Help</h3>
+                    <p>Still stuck? Open an issue on <a href="https://github.com/NellInc/METTLE/issues">GitHub</a> with:</p>
+                    <ul>
+                        <li>Error message and HTTP status code</li>
+                        <li>Request payload (redact any API keys)</li>
+                        <li>Session ID if applicable</li>
+                        <li>Whether using hosted or self-hosted</li>
+                    </ul>
                 </section>
 
                 <div class="docs-footer">
