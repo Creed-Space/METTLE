@@ -259,6 +259,21 @@ class CollusionDetector:
         }
 
 
+def verify_admin_key(provided_key: str | None) -> bool:
+    """Verify admin API key using constant-time comparison.
+
+    SECURITY: Uses secrets.compare_digest to prevent timing attacks that could
+    leak information about the key value through response time differences.
+    """
+    if not settings.admin_api_key or not provided_key:
+        return False
+    # Both arguments must be the same type and length for proper comparison
+    return secrets.compare_digest(
+        provided_key.encode("utf-8"),
+        settings.admin_api_key.encode("utf-8"),
+    )
+
+
 # Track startup time
 startup_time: datetime = datetime.now(timezone.utc)
 
@@ -772,15 +787,16 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
     if session.completed:
         raise HTTPException(status_code=400, detail="Session already completed")
 
-    # Get challenge
-    challenge_data = challenges.get(body.challenge_id)
+    # Get and remove challenge atomically to prevent race conditions
+    # SECURITY: Using pop() instead of get()+del prevents double-submission attacks
+    challenge_data = challenges.pop(body.challenge_id, None)
     if not challenge_data:
         logger.warning(
             "challenge_not_found",
             session_id=body.session_id,
             challenge_id=body.challenge_id,
         )
-        raise HTTPException(status_code=404, detail="Challenge not found")
+        raise HTTPException(status_code=404, detail="Challenge not found or already answered")
 
     challenge, issued_at = challenge_data
 
@@ -801,8 +817,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
         response_time_ms=response_time_ms,
     )
 
-    # Clean up used challenge
-    del challenges[body.challenge_id]
+    # Challenge already removed via atomic pop() above
 
     # Determine next challenge or complete session
     current_index = len(session.results)
@@ -1108,7 +1123,7 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
     admin_key = request.headers.get("X-Admin-Key")
     if not settings.admin_api_key:
         raise HTTPException(status_code=503, detail="Revocation service not configured (no admin key)")
-    if admin_key != settings.admin_api_key:
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=401, detail="Admin authorization required for badge revocation")
 
     if not settings.secret_key:
@@ -1175,7 +1190,7 @@ async def list_revocations(request: Request):
     """Get the audit trail of badge revocations. Requires admin authorization."""
     # SECURITY: Revocation audit contains sensitive info
     admin_key = request.headers.get("X-Admin-Key")
-    if not settings.admin_api_key or admin_key != settings.admin_api_key:
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=401, detail="Admin authorization required")
 
     return {
@@ -1272,7 +1287,7 @@ async def get_collusion_stats(request: Request):
     SECURITY: Thresholds are security-sensitive - exposing them helps attackers evade.
     """
     admin_key = request.headers.get("X-Admin-Key")
-    if not settings.admin_api_key or admin_key != settings.admin_api_key:
+    if not verify_admin_key(admin_key):
         # Return only non-sensitive stats for unauthenticated requests
         return {
             "stats": {"active_entities": len(verification_graph)},
@@ -1372,7 +1387,34 @@ class WebhookManager:
             webhook_payload["signature"] = signature
 
         try:
+            import ipaddress
+            import socket
+            from urllib.parse import urlparse
+
             import httpx
+
+            # SECURITY: Validate resolved IP at request time to prevent DNS rebinding
+            # The URL was validated at registration, but DNS could change
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+            if hostname:
+                try:
+                    # Resolve hostname to IP
+                    resolved_ip = socket.gethostbyname(hostname)
+                    ip_obj = ipaddress.ip_address(resolved_ip)
+
+                    # Block private/internal IPs
+                    if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+                        logger.warning(
+                            "webhook_blocked_dns_rebind",
+                            entity_id=entity_id,
+                            url=url[:50],
+                            resolved_ip=resolved_ip,
+                        )
+                        return False
+                except (socket.gaierror, ValueError):
+                    # DNS resolution failed or invalid IP - allow (external hostname)
+                    pass
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(url, json=webhook_payload)
@@ -1444,9 +1486,13 @@ class WebhookRegisterRequest(BaseModel):
 
         parsed = urlparse(v)
 
-        # Must be HTTPS in production for security
+        # Must be HTTP or HTTPS
         if parsed.scheme not in ("http", "https"):
             raise ValueError("Webhook URL must use HTTP or HTTPS")
+
+        # SECURITY: Require HTTPS in production to prevent credential leakage
+        if settings.is_production and parsed.scheme != "https":
+            raise ValueError("Webhook URL must use HTTPS in production")
 
         # Block common SSRF targets
         host = parsed.hostname or ""
@@ -1550,7 +1596,7 @@ async def register_api_key(
     """Register a new API key. Requires admin key."""
     # Check admin authorization
     admin_key = x_admin_key or request.headers.get("X-Admin-Key")
-    if not settings.admin_api_key or admin_key != settings.admin_api_key:
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=401, detail="Admin key required")
 
     # Generate new API key
