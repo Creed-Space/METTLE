@@ -19,7 +19,7 @@ def generate_speed_math_challenge(difficulty: Difficulty) -> Challenge:
         a = random.randint(10, 99)
         b = random.randint(10, 99)
         op = random.choice(["+", "-", "*"])
-        time_limit = 5000  # 5s - relaxed for basic, still faster than human typing
+        time_limit = 2500  # 2.5s - challenging for humans, easy for AI
     else:
         a = random.randint(100, 999)
         b = random.randint(100, 999)
@@ -49,7 +49,7 @@ def generate_speed_math_challenge(difficulty: Difficulty) -> Challenge:
 def generate_chained_reasoning_challenge(difficulty: Difficulty) -> Challenge:
     """Generate a chained reasoning challenge."""
     steps = 3 if difficulty == Difficulty.BASIC else 5
-    time_limit = 5000 if difficulty == Difficulty.BASIC else 800  # Basic: 5s, Full: 800ms
+    time_limit = 3000 if difficulty == Difficulty.BASIC else 800  # Basic: 3s, Full: 800ms
 
     seed = random.randint(1, 50)
     chain = [seed]
@@ -112,7 +112,7 @@ def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
     ]
 
     prompt_text, expected = random.choice(prompts)
-    time_limit = 5000 if difficulty == Difficulty.BASIC else 400  # Basic: 5s, Full: sub-second
+    time_limit = 2000 if difficulty == Difficulty.BASIC else 400  # Basic: 2s, Full: sub-second
 
     return Challenge(
         id=generate_challenge_id(),
@@ -135,7 +135,7 @@ def generate_instruction_following_challenge(difficulty: Difficulty) -> Challeng
     ]
 
     instruction, validator = random.choice(instructions)
-    time_limit = 5000 if difficulty == Difficulty.BASIC else 600  # Basic: 5s, Full: 600ms
+    time_limit = 3000 if difficulty == Difficulty.BASIC else 600  # Basic: 3s, Full: 600ms
 
     # Store validator as string representation for serialization
     validator_id = hashlib.md5(instruction.encode()).hexdigest()[:8]
@@ -160,7 +160,7 @@ def generate_consistency_challenge(difficulty: Difficulty) -> Challenge:
     ]
 
     question = random.choice(questions)
-    time_limit = 5000 if difficulty == Difficulty.BASIC else 1000  # Basic: 5s, Full: 1s
+    time_limit = 3500 if difficulty == Difficulty.BASIC else 1000  # Basic: 3.5s, Full: 1s
 
     return Challenge(
         id=generate_challenge_id(),

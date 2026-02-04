@@ -130,7 +130,7 @@ def verify_instruction_following(challenge: Challenge, answer: str, response_tim
             "instruction_followed": correct,
             "time_ok": time_ok,
             "instruction": instruction,
-            "response_preview": response[:100],
+            "response_preview": response[:50],  # Truncated to limit info disclosure
         },
         response_time_ms=response_time_ms,
         time_limit_ms=challenge.time_limit_ms,

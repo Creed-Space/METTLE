@@ -259,19 +259,64 @@ class CollusionDetector:
         }
 
 
-def verify_admin_key(provided_key: str | None) -> bool:
+# Track failed admin auth attempts for exponential backoff
+_admin_auth_failures: dict[str, list[float]] = {}  # IP -> list of failure timestamps
+_ADMIN_AUTH_WINDOW = 300  # 5 minute window
+_ADMIN_AUTH_MAX_FAILURES = 5  # Max failures before blocking
+
+
+def check_admin_auth_rate_limit(ip_address: str) -> tuple[bool, int]:
+    """Check if IP is rate-limited due to failed admin auth attempts.
+
+    Returns (is_allowed, seconds_until_retry).
+    """
+    now = time.time()
+    failures = _admin_auth_failures.get(ip_address, [])
+
+    # Clean old failures outside window
+    failures = [f for f in failures if now - f < _ADMIN_AUTH_WINDOW]
+    _admin_auth_failures[ip_address] = failures
+
+    if len(failures) >= _ADMIN_AUTH_MAX_FAILURES:
+        # Exponential backoff: 2^(failures-max) seconds, capped at 5 minutes
+        backoff = min(2 ** (len(failures) - _ADMIN_AUTH_MAX_FAILURES + 1), 300)
+        last_failure = failures[-1] if failures else 0
+        time_since_last = now - last_failure
+        if time_since_last < backoff:
+            return False, int(backoff - time_since_last)
+
+    return True, 0
+
+
+def record_admin_auth_failure(ip_address: str) -> None:
+    """Record a failed admin auth attempt."""
+    if ip_address not in _admin_auth_failures:
+        _admin_auth_failures[ip_address] = []
+    _admin_auth_failures[ip_address].append(time.time())
+
+
+def verify_admin_key(provided_key: str | None, ip_address: str | None = None) -> bool:
     """Verify admin API key using constant-time comparison.
 
     SECURITY: Uses secrets.compare_digest to prevent timing attacks that could
     leak information about the key value through response time differences.
+
+    If ip_address is provided, also checks rate limiting and records failures.
     """
     if not settings.admin_api_key or not provided_key:
         return False
+
     # Both arguments must be the same type and length for proper comparison
-    return secrets.compare_digest(
+    is_valid = secrets.compare_digest(
         provided_key.encode("utf-8"),
         settings.admin_api_key.encode("utf-8"),
     )
+
+    # Record failure for rate limiting if IP provided
+    if not is_valid and ip_address:
+        record_admin_auth_failure(ip_address)
+
+    return is_valid
 
 
 # Track startup time
@@ -1121,9 +1166,20 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
     """
     # SECURITY: Require admin authentication to prevent malicious revocation
     admin_key = request.headers.get("X-Admin-Key")
+    ip_address = get_remote_address(request)
+
+    # Check rate limiting for brute force protection
+    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     if not settings.admin_api_key:
         raise HTTPException(status_code=503, detail="Revocation service not configured (no admin key)")
-    if not verify_admin_key(admin_key):
+    if not verify_admin_key(admin_key, ip_address):
         raise HTTPException(status_code=401, detail="Admin authorization required for badge revocation")
 
     if not settings.secret_key:
@@ -1190,7 +1246,18 @@ async def list_revocations(request: Request):
     """Get the audit trail of badge revocations. Requires admin authorization."""
     # SECURITY: Revocation audit contains sensitive info
     admin_key = request.headers.get("X-Admin-Key")
-    if not verify_admin_key(admin_key):
+    ip_address = get_remote_address(request)
+
+    # Check rate limiting
+    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if not verify_admin_key(admin_key, ip_address):
         raise HTTPException(status_code=401, detail="Admin authorization required")
 
     return {
@@ -1287,8 +1354,10 @@ async def get_collusion_stats(request: Request):
     SECURITY: Thresholds are security-sensitive - exposing them helps attackers evade.
     """
     admin_key = request.headers.get("X-Admin-Key")
-    if not verify_admin_key(admin_key):
+    ip_address = get_remote_address(request)
+    if not verify_admin_key(admin_key, ip_address):
         # Return only non-sensitive stats for unauthenticated requests
+        # Note: No rate limiting here since we don't fail on bad auth
         return {
             "stats": {"active_entities": len(verification_graph)},
             "message": "Full stats require admin authorization",
@@ -1596,7 +1665,18 @@ async def register_api_key(
     """Register a new API key. Requires admin key."""
     # Check admin authorization
     admin_key = x_admin_key or request.headers.get("X-Admin-Key")
-    if not verify_admin_key(admin_key):
+    ip_address = get_remote_address(request)
+
+    # Check rate limiting for brute force protection
+    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if not verify_admin_key(admin_key, ip_address):
         raise HTTPException(status_code=401, detail="Admin key required")
 
     # Generate new API key
