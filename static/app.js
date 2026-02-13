@@ -182,17 +182,28 @@ function createResultItem(result) {
     return item;
 }
 
+/**
+ * Set the result icon using safe DOM methods (no innerHTML).
+ * Creates a Font Awesome <i> element and replaces the container's children.
+ */
+function setResultIcon(iconClass) {
+    const icon = document.createElement('i');
+    icon.className = iconClass;
+    icon.setAttribute('aria-hidden', 'true');
+    elements.resultIcon.replaceChildren(icon);
+}
+
 // Result Display
 function displayResult(result) {
     stopTimer();
 
-    // Icon and title (using Font Awesome)
+    // Icon and title (using safe DOM methods)
     if (result.verified) {
-        elements.resultIcon.innerHTML = '<i class="fa-solid fa-medal"></i>';
+        setResultIcon('fa-solid fa-medal');
         elements.resultTitle.textContent = 'Verification Successful!';
         elements.resultMessage.textContent = 'You have proven your metal.';
     } else {
-        elements.resultIcon.innerHTML = '<i class="fa-solid fa-circle-xmark"></i>';
+        setResultIcon('fa-solid fa-circle-xmark');
         elements.resultTitle.textContent = 'Verification Failed';
         elements.resultMessage.textContent = 'You did not meet the 80% threshold.';
     }
@@ -338,3 +349,99 @@ elements.entityId.addEventListener('keydown', (e) => {
 // Initialize
 showScreen('start');
 console.log('METTLE UI initialized');
+
+
+/* =============================================
+   Landing Page Enhancements
+   ============================================= */
+
+/**
+ * Scroll Reveal - IntersectionObserver for .scroll-reveal elements
+ * Fades in from below when entering the viewport
+ */
+(function initScrollReveal() {
+    const revealElements = document.querySelectorAll('.scroll-reveal');
+    if (!revealElements.length) return;
+
+    // Check for reduced motion preference
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion) {
+        revealElements.forEach(el => el.classList.add('visible'));
+        return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('visible');
+                observer.unobserve(entry.target);
+            }
+        });
+    }, {
+        threshold: 0.1,
+        rootMargin: '0px 0px -40px 0px'
+    });
+
+    revealElements.forEach(el => observer.observe(el));
+})();
+
+/**
+ * Typewriter Effect for the hero section
+ * Cycles through lines, typing and deleting
+ */
+(function initTypewriter() {
+    const container = document.getElementById('hero-typewriter');
+    if (!container) return;
+
+    const textEl = container.querySelector('.typewriter-text');
+    if (!textEl) return;
+
+    const lines = [
+        'AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS',
+        'not what you know \u2014 how you think',
+        '10 suites \u00b7 30+ challenge types \u00b7 every session unique',
+        'the only way to pass is to actually reason',
+    ];
+
+    const TYPING_SPEED = 35;       // ms per character
+    const PAUSE_DURATION = 2400;   // ms to pause after typing a line
+    const DELETE_SPEED = 18;       // ms per character when deleting
+
+    let lineIndex = 0;
+    let charIndex = 0;
+    let isDeleting = false;
+
+    function tick() {
+        const currentLine = lines[lineIndex];
+
+        if (!isDeleting) {
+            // Typing
+            charIndex++;
+            textEl.textContent = currentLine.substring(0, charIndex);
+
+            if (charIndex >= currentLine.length) {
+                // Finished typing this line, pause then start deleting
+                isDeleting = true;
+                setTimeout(tick, PAUSE_DURATION);
+                return;
+            }
+            setTimeout(tick, TYPING_SPEED);
+        } else {
+            // Deleting
+            charIndex--;
+            textEl.textContent = currentLine.substring(0, charIndex);
+
+            if (charIndex <= 0) {
+                // Finished deleting, move to next line
+                isDeleting = false;
+                lineIndex = (lineIndex + 1) % lines.length;
+                setTimeout(tick, TYPING_SPEED * 4);
+                return;
+            }
+            setTimeout(tick, DELETE_SPEED);
+        }
+    }
+
+    // Start after a short delay to let the page load
+    setTimeout(tick, 1200);
+})();
