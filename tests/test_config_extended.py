@@ -3,7 +3,6 @@
 import warnings
 from unittest.mock import patch
 
-import pytest
 from config import Settings, get_settings
 
 
@@ -52,7 +51,7 @@ class TestProductionValidation:
         with patch.dict("os.environ", env, clear=True):
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
-                s = Settings(_env_file=None)
+                Settings(_env_file=None)
                 security_warnings = [x for x in w if "SECURITY WARNING" in str(x.message)]
                 assert len(security_warnings) == 0
 

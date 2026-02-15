@@ -15,21 +15,18 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from main import (
     CollusionDetector,
     ModelFingerprinter,
     RateTier,
     WebhookManager,
     _admin_auth_failures,
-    add_with_limit,
     api_keys,
     generate_signed_badge,
     lifespan,
     record_admin_auth_failure,
     revocation_audit,
     revoked_badges,
-    sessions,
     verification_graph,
     verification_timestamps,
     webhooks,
@@ -304,9 +301,8 @@ class TestAnswerValidation:
 
     def test_answer_exceeds_max_length(self):
         """Answer over 1024 characters raises ValidationError."""
-        from pydantic import ValidationError
-
         from main import SubmitAnswerRequest
+        from pydantic import ValidationError
 
         with pytest.raises(ValidationError, match="1024"):
             SubmitAnswerRequest(
@@ -412,7 +408,6 @@ class TestRevocationAuditOverflow:
     def test_audit_bounded(self, client):
         """Revocation audit pops oldest when exceeding MAX_REVOCATION_AUDIT."""
         import jwt as jwt_lib
-
         from main import MAX_REVOCATION_AUDIT
 
         # Fill audit to capacity

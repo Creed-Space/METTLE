@@ -1,9 +1,7 @@
 """Tests for mettle.vcp module - VCP integration, CSM-1 parsing, attestation, tier computation."""
 
-import hashlib
 import json
-from datetime import datetime, timezone
-from unittest.mock import patch
+from datetime import datetime
 
 import pytest
 from mettle.vcp import (
@@ -238,7 +236,8 @@ class TestBuildMettleAttestation:
         assert att["metadata"]["suites_failed"] == ["social"]
 
     def test_attestation_with_signing(self):
-        sign_fn = lambda data: "fake-base64-signature"
+        def sign_fn(data):
+            return "fake-base64-signature"
         att = build_mettle_attestation(
             session_id="ses-456",
             difficulty="full",

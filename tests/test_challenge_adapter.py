@@ -10,24 +10,18 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from mettle.challenge_adapter import (
     SUITE_REGISTRY,
     ChallengeAdapter,
     _evaluate_adversarial,
     _evaluate_agency,
     _evaluate_anti_thrall,
-    _evaluate_counter_coaching,
     _evaluate_intent_provenance,
     _evaluate_inverse_turing,
     _evaluate_native,
     _evaluate_novel_round,
-    _evaluate_self_reference,
-    _evaluate_social,
     _separate_novel_reasoning_task,
 )
-
 
 # ============================================================
 # SUITE_REGISTRY
