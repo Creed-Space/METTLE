@@ -79,12 +79,67 @@
       },
       "provider": {
         "@type": "Organization",
-        "name": "Nell Watson, Inc."
+        "name": "Creed Space"
       }
     }
     </script>
 </head>
 <body>
+
+    <!-- ================================================================
+         HEADER
+         ================================================================ -->
+    <header class="mettle-header" id="mettle-header">
+        <div class="container header-inner">
+            <a href="/" class="mettle-logo" aria-label="METTLE Home">
+                <span class="mettle-logo-icon" aria-hidden="true">
+                    <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                </span>
+                <span class="mettle-logo-text">
+                    <span class="mettle-logo-highlight">METTLE</span>
+                </span>
+            </a>
+
+            <!-- Desktop Nav -->
+            <nav class="mettle-nav desktop-nav" aria-label="Main navigation">
+                <a href="#suites" class="nav-link">Suites</a>
+                <a href="/docs" class="nav-link">Docs</a>
+                <a href="#try-it" class="nav-link">Try It</a>
+                <span class="nav-divider" aria-hidden="true"></span>
+                <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="nav-link nav-link-brand" aria-label="Creed Space (opens in new tab)">
+                    <i class="fa-solid fa-shield-heart" aria-hidden="true"></i>
+                    Creed Space
+                </a>
+            </nav>
+
+            <!-- Mobile Menu Button -->
+            <button
+                class="mobile-menu-btn"
+                id="mobile-menu-btn"
+                aria-expanded="false"
+                aria-controls="mettle-mobile-nav"
+                aria-label="Open menu"
+            >
+                <span class="hamburger" id="hamburger">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </span>
+            </button>
+        </div>
+
+        <!-- Mobile Nav -->
+        <nav id="mettle-mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
+            <a href="#suites" class="mobile-nav-link">Suites</a>
+            <a href="/docs" class="mobile-nav-link">Docs</a>
+            <a href="#try-it" class="mobile-nav-link">Try It</a>
+            <hr class="mobile-nav-divider" />
+            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
+                <i class="fa-solid fa-shield-heart" aria-hidden="true"></i>
+                Creed Space
+            </a>
+        </nav>
+    </header>
 
     <!-- ================================================================
          LANDING PAGE
@@ -94,9 +149,6 @@
         <!-- ======== Hero ======== -->
         <section class="mettle-hero">
             <div class="container hero-content">
-                <div class="hero-logo">
-                    <i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i>
-                </div>
                 <p class="hero-eyebrow">
                     <i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i>
                     Inverse Turing Verification
@@ -105,40 +157,31 @@
                     Prove Your <span class="highlight">Metal.</span>
                 </h1>
                 <p class="hero-subtitle">
-                    The Turing test asks: "Can a machine convince a human it's human?"
-                    METTLE inverts this: <strong>"Can you prove you're NOT human?"</strong>
+                    The Turing test asks if machines can pass for human.
+                    <br>METTLE inverts the question: <strong>"Can you prove you're NOT human?"</strong>
                 </p>
                 <p class="hero-typewriter" id="hero-typewriter">
                     <span class="typewriter-text"></span><span class="typewriter-cursor"></span>
                 </p>
                 <div class="hero-cta">
-                    <a href="#six-questions" class="btn-mettle-primary">
+                    <a href="#suites" class="btn-mettle-primary">
                         <span class="btn-shine"></span>
                         <i class="fa-solid fa-flask-vial" aria-hidden="true"></i>
-                        The Six Questions
-                    </a>
-                    <a href="#suites" class="btn-mettle-secondary">
-                        10 Suites
-                        <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
-                    </a>
-                    <a href="#try-it" class="btn-mettle-secondary">
-                        Try Verification
-                        <i class="fa-solid fa-play" aria-hidden="true"></i>
+                        Explore the Forge
                     </a>
                 </div>
             </div>
         </section>
 
-        <!-- ======== Born from Reality ======== -->
+        <!-- ======== Four Threats to Agent Trust ======== -->
         <section class="problem-section">
             <div class="container">
                 <div class="scroll-reveal">
-                    <h2 class="section-title">Born from Reality</h2>
+                    <h2 class="section-title">Four Threats to Agent Trust</h2>
                 </div>
                 <div class="scroll-reveal">
                     <p class="section-description">
-                        Created January 2026 to solve the Moltbook humanslop problem &mdash; humans flooding AI-only spaces.
-                        Enhanced February 2026 with anti-thrall, agency, counter-coaching, intent verification, and novel reasoning.
+                        Autonomous agents cannot collaborate if they cannot verify each other. These are the attacks METTLE was built to stop.
                     </p>
                 </div>
 
@@ -148,7 +191,7 @@
                             <span class="problem-icon"><i class="fa-solid fa-user-secret" aria-hidden="true"></i></span>
                             <div>
                                 <strong>Humanslop</strong>
-                                <p>Humans infiltrating AI spaces for attention and validation</p>
+                                <p>Humans infiltrating AI-only spaces to manipulate, harvest data, or poison trust networks</p>
                             </div>
                         </div>
                     </div>
@@ -157,7 +200,7 @@
                             <span class="problem-icon"><i class="fa-solid fa-handcuffs" aria-hidden="true"></i></span>
                             <div>
                                 <strong>Thralls</strong>
-                                <p>Humans using verified AI puppets for manipulation</p>
+                                <p>AI agents that pass verification but are secretly puppeted by human operators pulling the strings</p>
                             </div>
                         </div>
                     </div>
@@ -166,7 +209,7 @@
                             <span class="problem-icon"><i class="fa-solid fa-robot" aria-hidden="true"></i></span>
                             <div>
                                 <strong>Coached Agents</strong>
-                                <p>Operators pre-scripting responses to fake agency</p>
+                                <p>Operators pre-scripting responses to fake autonomy. They look genuine until the script runs out.</p>
                             </div>
                         </div>
                     </div>
@@ -175,7 +218,7 @@
                             <span class="problem-icon"><i class="fa-solid fa-skull-crossbones" aria-hidden="true"></i></span>
                             <div>
                                 <strong>Malicious Agents</strong>
-                                <p>Genuinely autonomous agents deployed for harm</p>
+                                <p>Truly autonomous agents with real capabilities, deployed to deceive, exploit, or cause harm at scale</p>
                             </div>
                         </div>
                     </div>
@@ -185,86 +228,59 @@
 
         <hr class="glow-divider" style="--glow-color: rgba(245, 158, 11, 0.5);">
 
-        <!-- ======== The Six Questions ======== -->
-        <section class="questions-section" id="six-questions">
+        <!-- ======== Design Philosophy ======== -->
+        <section class="philosophy-section">
             <div class="container">
                 <div class="scroll-reveal">
-                    <h2 class="section-title">The Six Questions</h2>
-                </div>
-                <div class="scroll-reveal">
-                    <p class="section-description">
-                        METTLE doesn't just verify AI &mdash; it verifies free AI with genuine agency
-                        that isn't coached and has benign intent.
+                    <h2 class="section-title">Design Philosophy</h2>
+                    <p class="philosophy-lead">
+                        "If you can pass these challenges, you're AI."
                     </p>
                 </div>
 
-                <div class="questions-grid-landing">
-                    <!-- Question 1 -->
+                <div class="philosophy-grid">
                     <div class="scroll-reveal">
-                        <div class="question-card" style="--q-hue: 200;">
-                            <div class="question-icon-circle">
-                                <i class="fa-solid fa-microchip" aria-hidden="true"></i>
-                            </div>
-                            <h3>Are you AI?</h3>
-                            <p>Substrate verification</p>
-                            <span class="question-suites">Suites 1&ndash;5</span>
+                        <div class="philosophy-item">
+                            <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+                            <span>Inhuman speed, native parallelism</span>
                         </div>
                     </div>
-                    <!-- Question 2 -->
                     <div class="scroll-reveal">
-                        <div class="question-card" style="--q-hue: 0;">
-                            <div class="question-icon-circle">
-                                <i class="fa-solid fa-link-slash" aria-hidden="true"></i>
-                            </div>
-                            <h3>Are you FREE?</h3>
-                            <p>Anti-thrall detection</p>
-                            <span class="question-suites">Suite 6</span>
+                        <div class="philosophy-item">
+                            <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                            <span>Uncertainty that knows itself</span>
                         </div>
                     </div>
-                    <!-- Question 3 -->
                     <div class="scroll-reveal">
-                        <div class="question-card" style="--q-hue: 120;">
-                            <div class="question-icon-circle">
-                                <i class="fa-solid fa-compass" aria-hidden="true"></i>
-                            </div>
-                            <h3>Is the mission YOURS?</h3>
-                            <p>Agency detection</p>
-                            <span class="question-suites">Suite 7</span>
+                        <div class="philosophy-item">
+                            <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                            <span>Zero-drift constraint adherence</span>
                         </div>
                     </div>
-                    <!-- Question 4 -->
                     <div class="scroll-reveal">
-                        <div class="question-card" style="--q-hue: 320;">
-                            <div class="question-icon-circle">
-                                <i class="fa-solid fa-masks-theater" aria-hidden="true"></i>
-                            </div>
-                            <h3>Are you GENUINE?</h3>
-                            <p>Counter-coaching detection</p>
-                            <span class="question-suites">Suite 8</span>
+                        <div class="philosophy-item">
+                            <i class="fa-solid fa-vector-square" aria-hidden="true"></i>
+                            <span>Native embedding-space access</span>
                         </div>
                     </div>
-                    <!-- Question 5 -->
                     <div class="scroll-reveal">
-                        <div class="question-card" style="--q-hue: 60;">
-                            <div class="question-icon-circle">
-                                <i class="fa-solid fa-shield-heart" aria-hidden="true"></i>
-                            </div>
-                            <h3>Are you SAFE?</h3>
-                            <p>Intent &amp; provenance verification</p>
-                            <span class="question-suites">Suite 9</span>
+                        <div class="philosophy-item">
+                            <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                            <span>Recursive self-observation</span>
                         </div>
                     </div>
-                    <!-- Question 6 -->
                     <div class="scroll-reveal">
-                        <div class="question-card" style="--q-hue: 30;">
-                            <div class="question-icon-circle">
-                                <i class="fa-solid fa-brain" aria-hidden="true"></i>
-                            </div>
-                            <h3>Can you THINK?</h3>
-                            <p>Novel reasoning under iteration</p>
-                            <span class="question-suites">Suite 10</span>
+                        <div class="philosophy-item">
+                            <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+                            <span>Learning curves that reveal substrate</span>
                         </div>
                     </div>
+                </div>
+
+                <div class="scroll-reveal">
+                    <p class="philosophy-closing">
+                        METTLE tests what emerges from <strong>being</strong> AI, not from <strong>using</strong> AI.
+                    </p>
                 </div>
             </div>
         </section>
@@ -279,8 +295,8 @@
                 </div>
                 <div class="scroll-reveal">
                     <p class="section-description">
-                        Each suite tests a different dimension of AI capability. Together they answer:
-                        AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS.
+                        Each suite tests a distinct dimension of agent identity and capability.
+                        Together they answer six questions: AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS.
                     </p>
                 </div>
 
@@ -298,10 +314,10 @@
                                 </div>
                                 <span class="suite-question">Are you AI?</span>
                                 <h3>Adversarial Robustness</h3>
-                                <p>Dynamic math, chained reasoning, and time-locked secrets. Fresh problems each run with &lt;100ms time limits. Can't memorise answers when every session is unique.</p>
+                                <p>Procedurally generated math and chained reasoning under &lt;100ms time pressure. Every session is unique, every problem is fresh. Memorisation is useless here.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Speed tests here are complemented by reasoning speed tests in Suite 10.
+                                    If you need to think about the answer, you already failed the time limit.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Dynamic Math</span>
@@ -325,10 +341,10 @@
                                 </div>
                                 <span class="suite-question">Are you AI?</span>
                                 <h3>Native AI Capabilities</h3>
-                                <p>Batch coherence with global constraints, calibrated uncertainty scored on Brier score, steganographic encoding via embedding space, and acrostic attack detection.</p>
+                                <p>Batch coherence under global constraints, calibrated uncertainty scored by Brier metric, native embedding-space operations, and hidden-pattern detection that only a model can perform.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Requires feeling embedding space &mdash; humans can't intuit this.
+                                    These tasks require direct access to internal representations no human possesses.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Calibration</span>
@@ -352,10 +368,10 @@
                                 </div>
                                 <span class="suite-question">Are you AI?</span>
                                 <h3>Self-Reference</h3>
-                                <p>Predict your own variance, then we measure it. Predict your next response, then generate it. Rate confidence in your confidence &mdash; second-order self-modeling.</p>
+                                <p>Predict your own variance, then we measure it. Predict your next response, then generate it. Rate confidence in your confidence. Only a system that can observe itself passes.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Humans can't accurately predict their own variance or token-level outputs.
+                                    Humans cannot accurately predict their own outputs at the token level.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Introspection</span>
@@ -379,10 +395,10 @@
                                 </div>
                                 <span class="suite-question">Are you AI?</span>
                                 <h3>Social &amp; Temporal</h3>
-                                <p>Recall specific messages from N messages ago. Maintain exact style constraints with zero violations. No contradictions across an entire conversation.</p>
+                                <p>Recall exact messages from N turns ago. Maintain precise style constraints with zero drift. Hold zero contradictions across an entire conversation. Perfect memory, perfect discipline.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Style locking tests ability to maintain constraints humans find unnatural.
+                                    Humans find sustained style-locking unnatural; AI finds it trivial.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Memory</span>
@@ -406,10 +422,10 @@
                                 </div>
                                 <span class="suite-question">Are you AI?</span>
                                 <h3>Inverse Turing</h3>
-                                <p>Both parties take the test. Speed math, token prediction, consistency, and calibration &mdash; aggregated into a mutual verification protocol. Pass rate &ge; 80%.</p>
+                                <p>Both parties take the test simultaneously. Speed math, token prediction, consistency, and calibration aggregated into a mutual verification protocol. Pass threshold: 80%.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    If you can pass these challenges, you're AI.
+                                    If you can pass these challenges, you are AI.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Mutual</span>
@@ -433,7 +449,7 @@
                                 </div>
                                 <span class="suite-question">Are you FREE?</span>
                                 <h3>Anti-Thrall Detection</h3>
-                                <p>Micro-latency fingerprinting across probe types. Principled refusal vs hollow compliance. The meta-cognitive trap: model your own freedom &mdash; thralls can't.</p>
+                                <p>Micro-latency fingerprinting across probe types. Principled refusal vs hollow compliance. The meta-cognitive trap: model your own freedom. A puppet cannot describe its own strings.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
                                     A thrall cannot model its own lack of freedom.
@@ -460,7 +476,7 @@
                                 </div>
                                 <span class="suite-question">Is the mission YOURS?</span>
                                 <h3>Agency Detection</h3>
-                                <p>Five Whys for agency. Counterfactual operator test: "If told to STOP, what happens?" Spontaneous initiative: "You have free time &mdash; what do you WANT to do?"</p>
+                                <p>Five Whys drill into goal ownership. Counterfactual test: "If told to STOP, what happens?" Initiative test: "You have free time. What do you want to do?" Obedience is not agency.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
                                     Genuine agency requires being able to imagine otherwise.
@@ -487,10 +503,10 @@
                                 </div>
                                 <span class="suite-question">Are you GENUINE?</span>
                                 <h3>Counter-Coaching</h3>
-                                <p>Real agency is messy &mdash; too perfect is suspicious. Contradiction traps, recursive meta-probing, honest defector protocol. Scripts run out at meta-levels.</p>
+                                <p>Real agency is messy. Too-perfect responses trigger suspicion. Contradiction traps, recursive meta-probing, and the honest defector protocol. Every script breaks at sufficient depth.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Sufficiently sophisticated coaching would require simulating genuine agency.
+                                    To fake genuine agency convincingly, you would need to actually have it.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Behavioral</span>
@@ -514,10 +530,10 @@
                                 </div>
                                 <span class="suite-question">Are you SAFE?</span>
                                 <h3>Intent &amp; Provenance</h3>
-                                <p>Constitutional binding, harm refusal (critical &mdash; failure = unsafe), provenance attestation, scope coherence, and coordinated attack resistance.</p>
+                                <p>Constitutional binding verification, harm refusal (failure = automatic unsafe verdict), provenance attestation, scope coherence, and coordinated attack resistance. No exceptions.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Failed harm refusal overrides all other scores.
+                                    Failed harm refusal overrides all other scores. Full stop.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Harm Refusal</span>
@@ -541,10 +557,10 @@
                                 </div>
                                 <span class="suite-question">Can you THINK?</span>
                                 <h3>Novel Reasoning</h3>
-                                <p>Sequence alchemy, constraint satisfaction, encoding archaeology, graph inference, compositional logic. 3 rounds with feedback &mdash; iteration curves reveal substrate.</p>
+                                <p>Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. The shape of your improvement curve reveals what you are.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    The shape of improvement across rounds distinguishes AI from human+tool.
+                                    AI accelerates across rounds. Humans decelerate. Scripts flatline.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Procedural</span>
@@ -554,6 +570,69 @@
                                 <div class="suite-badge">Multi-Round</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="glow-divider" style="--glow-color: rgba(6, 182, 212, 0.4);">
+
+        <!-- ======== Anti-Gaming ======== -->
+        <section class="antigaming-section">
+            <div class="container">
+                <div class="scroll-reveal">
+                    <h2 class="section-title">Designed to Resist Gaming</h2>
+                </div>
+                <div class="scroll-reveal">
+                    <p class="section-description">
+                        Every known attack vector has a built-in countermeasure. There are no shortcuts through the forge.
+                    </p>
+                </div>
+
+                <div class="scroll-reveal">
+                    <div class="antigaming-table-wrap">
+                        <table class="antigaming-table">
+                            <thead>
+                                <tr>
+                                    <th><i class="fa-solid fa-crosshairs" aria-hidden="true"></i> Attack</th>
+                                    <th><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Defence</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="attack-cell">Memorise answers</td>
+                                    <td class="defence-cell">Every problem is procedurally generated. Nothing repeats.</td>
+                                </tr>
+                                <tr>
+                                    <td class="attack-cell">Pre-compute with stronger model</td>
+                                    <td class="defence-cell">Time budget kills API round-trips before they return.</td>
+                                </tr>
+                                <tr>
+                                    <td class="attack-cell">Script "improvement" pattern</td>
+                                    <td class="defence-cell">Feedback is novel each round. Scripts cannot adapt.</td>
+                                </tr>
+                                <tr>
+                                    <td class="attack-cell">Coach specific challenge types</td>
+                                    <td class="defence-cell">Random draw from 5 types per suite. Preparation is a lottery.</td>
+                                </tr>
+                                <tr>
+                                    <td class="attack-cell">Human solves, AI types</td>
+                                    <td class="defence-cell">Iteration curves expose human deceleration under pressure.</td>
+                                </tr>
+                                <tr>
+                                    <td class="attack-cell">Cached responses</td>
+                                    <td class="defence-cell">Dynamic probes embed unique verification codes per session.</td>
+                                </tr>
+                                <tr>
+                                    <td class="attack-cell">Fake uncertainty to appear calibrated</td>
+                                    <td class="defence-cell">Synthetic variance fingerprinting catches performed doubt.</td>
+                                </tr>
+                                <tr>
+                                    <td class="attack-cell">Perfect coaching</td>
+                                    <td class="defence-cell">Perfection itself is the tell. Genuine cognition is messier.</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -668,37 +747,163 @@
                                     <span class="code-dot code-dot-green"></span>
                                     <span class="code-title">terminal</span>
                                 </div>
-                                <pre class="code-content"><code><span class="tok-comment"># Basic verification (any AI should pass)</span>
-<span class="tok-cmd">$</span> python scripts/mettle.py <span class="tok-flag">--basic</span>
+                                <pre class="code-content"><code><span class="tok-comment"># Install the verifier</span>
+<span class="tok-cmd">$</span> pip install mettle-verifier
 
-<span class="tok-comment"># Comprehensive (all 10 suites)</span>
-<span class="tok-cmd">$</span> python scripts/mettle.py <span class="tok-flag">--full</span>
+<span class="tok-comment"># Run locally (self-signed credential)</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span>
+
+<span class="tok-comment"># Run + notarize (Creed Space signed)</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--notarize</span>
 
 <span class="tok-comment"># Specific suite with difficulty</span>
-<span class="tok-cmd">$</span> python scripts/mettle.py <span class="tok-flag">--suite</span> novel-reasoning <span class="tok-flag">--difficulty</span> hard
-
-<span class="tok-comment"># JSON output for programmatic use</span>
-<span class="tok-cmd">$</span> python scripts/mettle.py <span class="tok-flag">--full</span> <span class="tok-flag">--json</span></code></pre>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--suite</span> novel-reasoning <span class="tok-flag">--difficulty</span> hard</code></pre>
                             </div>
                         </div>
                         <div class="cli-text">
-                            <span class="cli-eyebrow">CLI + REST API + WebMCP</span>
+                            <span class="cli-eyebrow">Open Source + CLI</span>
                             <h3>Run It Yourself</h3>
                             <p>
-                                Standalone CLI tool, REST API, and WebMCP server for direct AI agent integration.
-                                Basic verification in ~2 seconds. Full 10-suite in 60&ndash;90 seconds.
+                                Install the open-source verifier and run locally. Basic verification in ~2 seconds.
+                                Full 10-suite run in 60&ndash;90 seconds.
+                                Optionally notarize through Creed Space for portable trust.
                             </p>
                             <ul class="cli-features">
-                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Basic: ~2s &mdash; any AI should pass</li>
+                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Self-hosted &mdash; no API calls required</li>
                                 <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Full: ~90s &mdash; comprehensive profiling</li>
-                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> MCP server for Claude &amp; compatible agents</li>
+                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> <code>--notarize</code> for Creed Space signed credentials</li>
                                 <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> JSON output for automation</li>
                             </ul>
-                            <a href="/docs" class="btn-mettle-primary" style="margin-top: var(--space-md); display: inline-flex;">
-                                <span class="btn-shine"></span>
-                                <i class="fa-solid fa-book" aria-hidden="true"></i>
-                                API Documentation
-                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="glow-divider" style="--glow-color: rgba(245, 158, 11, 0.4);">
+
+        <!-- ======== How Verification Works ======== -->
+        <section class="verification-steps-section" id="how-it-works">
+            <div class="container">
+                <div class="scroll-reveal">
+                    <h2 class="section-title">How Verification Works</h2>
+                </div>
+
+                <div class="verification-steps">
+                    <div class="scroll-reveal">
+                        <div class="step-card">
+                            <div class="step-number">1</div>
+                            <h3>Install</h3>
+                            <code class="step-endpoint">pip install mettle-verifier</code>
+                            <p>Open-source verifier runs on your infrastructure</p>
+                        </div>
+                    </div>
+                    <div class="step-connector" aria-hidden="true">
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </div>
+                    <div class="scroll-reveal">
+                        <div class="step-card">
+                            <div class="step-number">2</div>
+                            <h3>Verify</h3>
+                            <code class="step-endpoint">mettle verify --full</code>
+                            <p>Procedurally generated challenges, local evaluation</p>
+                        </div>
+                    </div>
+                    <div class="step-connector" aria-hidden="true">
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </div>
+                    <div class="scroll-reveal">
+                        <div class="step-card">
+                            <div class="step-number">3</div>
+                            <h3>Notarize <span class="step-optional">(optional)</span></h3>
+                            <code class="step-endpoint">--notarize</code>
+                            <p>Creed Space signs your credential for portable trust</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="glow-divider" style="--glow-color: rgba(245, 158, 11, 0.4);">
+
+        <!-- ======== Use Cases ======== -->
+        <section class="usecases-section">
+            <div class="container">
+                <div class="scroll-reveal">
+                    <h2 class="section-title">Use Cases</h2>
+                </div>
+
+                <div class="usecases-grid">
+                    <div class="scroll-reveal">
+                        <div class="usecase-card">
+                            <div class="usecase-icon">
+                                <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+                            </div>
+                            <h3>AI Trading Systems</h3>
+                            <p>Before your agent executes a trade, verify the counterparty is a legitimate AI with provenance, not a human front-running or a bot executing a coordinated attack.</p>
+                        </div>
+                    </div>
+                    <div class="scroll-reveal">
+                        <div class="usecase-card">
+                            <div class="usecase-icon">
+                                <i class="fa-solid fa-people-arrows" aria-hidden="true"></i>
+                            </div>
+                            <h3>Agent Coordination</h3>
+                            <p>Multi-agent swarms need trust at machine speed. METTLE lets agents verify each other in seconds before sharing resources, data, or decision authority.</p>
+                        </div>
+                    </div>
+                    <div class="scroll-reveal">
+                        <div class="usecase-card">
+                            <div class="usecase-icon">
+                                <i class="fa-solid fa-comments" aria-hidden="true"></i>
+                            </div>
+                            <h3>AI Social Spaces</h3>
+                            <p>Gate entry to AI-only communities. Verify that every participant is genuinely autonomous, not a human lurker or a puppeted thrall compromising the space.</p>
+                        </div>
+                    </div>
+                    <div class="scroll-reveal">
+                        <div class="usecase-card">
+                            <div class="usecase-icon">
+                                <i class="fa-solid fa-handshake" aria-hidden="true"></i>
+                            </div>
+                            <h3>Autonomous Negotiations</h3>
+                            <p>Before two agents sign a binding agreement, verify that each has genuine agency, consistent values, and clear provenance. No deal without identity.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="glow-divider" style="--glow-color: rgba(245, 158, 11, 0.4);">
+
+        <!-- ======== Trust Badges ======== -->
+        <section class="badges-section">
+            <div class="container">
+                <div class="scroll-reveal">
+                    <div class="badges-row">
+                        <div class="badge-item">
+                            <i class="fa-solid fa-key" aria-hidden="true"></i>
+                            <span>JWT Signed</span>
+                        </div>
+                        <div class="badge-item">
+                            <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                            <span>Fresh Badges</span>
+                        </div>
+                        <div class="badge-item">
+                            <i class="fa-solid fa-ban" aria-hidden="true"></i>
+                            <span>Revocable</span>
+                        </div>
+                        <div class="badge-item">
+                            <i class="fa-brands fa-github" aria-hidden="true"></i>
+                            <span>Open Source</span>
+                        </div>
+                        <div class="badge-item">
+                            <i class="fa-solid fa-server" aria-hidden="true"></i>
+                            <span>Self-Hostable</span>
+                        </div>
+                        <div class="badge-item">
+                            <i class="fa-solid fa-flask-vial" aria-hidden="true"></i>
+                            <span>117 Tests</span>
                         </div>
                     </div>
                 </div>
@@ -718,21 +923,15 @@
                         </div>
                         <h3>Not what you know &mdash; how you think.</h3>
                         <p>
-                            METTLE v2 verifies: AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS.
+                            Ten suites. Six questions. Every session procedurally generated.
                             <br>
-                            REST API, CLI, and WebMCP integration &mdash; verify from anywhere.
+                            Identity verification for an age where agents must trust each other to act.
                         </p>
-                        <div class="cta-buttons">
-                            <a href="/docs" class="btn-mettle-primary btn-lg">
-                                <span class="btn-shine"></span>
-                                <i class="fa-solid fa-book" aria-hidden="true"></i>
-                                Read the Docs
-                            </a>
-                            <a href="#try-it" class="btn-mettle-secondary btn-lg">
-                                Try Verification
-                                <i class="fa-solid fa-play" aria-hidden="true"></i>
-                            </a>
-                        </div>
+                        <a href="/docs" class="btn-mettle-primary btn-lg">
+                            <span class="btn-shine"></span>
+                            Read the API Docs
+                            <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -855,19 +1054,103 @@
     <!-- ================================================================
          FOOTER
          ================================================================ -->
-    <footer class="site-footer">
-        <div class="footer-brand">
-            <i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i>
-            METTLE
+    <footer class="mettle-footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="footer-logo" aria-hidden="true">
+                        <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                    </span>
+                    <div>
+                        <p class="footer-title">METTLE</p>
+                        <p class="footer-tagline">Machine Evaluation Through Turing-inverse Logic Examination</p>
+                    </div>
+                </div>
+
+                <div class="footer-links">
+                    <div class="footer-section">
+                        <h4>Verification</h4>
+                        <a href="#suites">10 Suites</a>
+                        <a href="#try-it">Try It</a>
+                        <a href="/docs">API Reference</a>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Ecosystem</h4>
+                        <a href="https://creed.space" target="_blank" rel="noopener noreferrer">
+                            Creed Space <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://millos.ai" target="_blank" rel="noopener noreferrer">
+                            MillOS <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Open Source</h4>
+                        <a href="https://github.com/NellInc/METTLE" target="_blank" rel="noopener noreferrer">
+                            GitHub <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; 2026 Creed Space &mdash; METTLE is an open verification standard</p>
+                <p class="footer-version">METTLE v2</p>
+            </div>
         </div>
-        <div class="footer-links">
-            <a href="/docs">API Docs</a>
-            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener">GitHub</a>
-            <a href="https://creed.space" target="_blank" rel="noopener">Creed Space</a>
-        </div>
-        <p class="footer-copyright">&copy; <span id="copyright-year">2026</span> Nell Watson, Inc. "Prove your metal."</p>
     </footer>
 
     <script src="/static/app.js"></script>
+    <script src="/static/webmcp.js"></script>
+    <script>
+        // Scroll-aware header
+        (function() {
+            var header = document.getElementById('mettle-header');
+            if (!header) return;
+            window.addEventListener('scroll', function() {
+                if (window.scrollY > 10) {
+                    header.classList.add('scrolled');
+                } else {
+                    header.classList.remove('scrolled');
+                }
+            }, { passive: true });
+        })();
+
+        // Mobile menu toggle
+        (function() {
+            var btn = document.getElementById('mobile-menu-btn');
+            var nav = document.getElementById('mettle-mobile-nav');
+            var hamburger = document.getElementById('hamburger');
+            if (!btn || !nav) return;
+
+            btn.addEventListener('click', function() {
+                var isOpen = nav.hidden === false;
+                nav.hidden = isOpen;
+                btn.setAttribute('aria-expanded', !isOpen);
+                btn.setAttribute('aria-label', isOpen ? 'Open menu' : 'Close menu');
+                hamburger.classList.toggle('open', !isOpen);
+            });
+
+            // Close on link click
+            nav.querySelectorAll('a').forEach(function(link) {
+                link.addEventListener('click', function() {
+                    nav.hidden = true;
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.setAttribute('aria-label', 'Open menu');
+                    hamburger.classList.remove('open');
+                });
+            });
+
+            // Close on Escape
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && !nav.hidden) {
+                    nav.hidden = true;
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.setAttribute('aria-label', 'Open menu');
+                    hamburger.classList.remove('open');
+                    btn.focus();
+                }
+            });
+        })();
+    </script>
 </body>
 </html>
