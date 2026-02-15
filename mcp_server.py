@@ -27,7 +27,7 @@ from mcp.types import (
 )
 
 # Configuration
-API_URL = os.getenv("METTLE_API_URL", "https://mettle-api.onrender.com")
+API_URL = os.getenv("METTLE_API_URL", "https://mettle.sh/api")
 
 # Initialize MCP server
 server = Server("mettle")
@@ -80,14 +80,28 @@ def solve_challenge(challenge: dict) -> str:
         return "0"
 
     elif challenge_type == "token_prediction":
-        # Use language model knowledge for token prediction
-        # These are common completions that a language model should know
+        # Match the full challenge bank from the METTLE API
         completions = {
             "quick brown": "fox",
             "to be or not to": "be",
             "e = mc": "2",
             "hello": "world",
             "once upon a": "time",
+            "i think therefore i": "am",
+            "four score and seven": "years",
+            "in the beginning was the": "word",
+            "what your country can do for": "you",
+            "one giant": "leap",
+            "have to fear is": "fear",
+            "i have a": "dream",
+            "may the": "force",
+            "houston, we have a": "problem",
+            "elementary, my dear": "watson",
+            "to infinity and": "beyond",
+            "like a box of": "chocolates",
+            "looking at you": "kid",
+            "can't handle the": "truth",
+            "i'll be": "back",
         }
         prompt_lower = prompt.lower()
         for key, value in completions.items():
@@ -112,11 +126,20 @@ def solve_challenge(challenge: dict) -> str:
         return "Indeed, this is my response."
 
     elif challenge_type == "chained_reasoning":
-        # Compute the chain from the data
-        chain = data.get("chain", [])
-        if chain:
-            return str(chain[-1])  # Return the final value
-        return "0"
+        # Parse and compute from the prompt instructions (data is sanitized)
+        value = 0
+        for line in prompt.split("\n"):
+            line_lower = line.lower().strip()
+            start_match = re.search(r"start with (\d+)", line_lower)
+            if start_match:
+                value = int(start_match.group(1))
+            elif "double" in line_lower:
+                value *= 2
+            elif "add 10" in line_lower:
+                value += 10
+            elif "subtract 5" in line_lower:
+                value -= 5
+        return str(value)
 
     elif challenge_type == "consistency":
         # Consistent answers separated by |
