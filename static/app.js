@@ -445,13 +445,3 @@ console.log('METTLE UI initialized');
     // Start after a short delay to let the page load
     setTimeout(tick, 1200);
 })();
-
-/**
- * Auto-update copyright year
- */
-(function updateCopyrightYear() {
-    const yearEl = document.getElementById('copyright-year');
-    if (yearEl) {
-        yearEl.textContent = new Date().getFullYear();
-    }
-})();

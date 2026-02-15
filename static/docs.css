@@ -24,41 +24,6 @@
     gap: 0.5rem;
 }
 
-.docs-nav .logo:hover { text-decoration: none; }
-
-.logo-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(251, 146, 60, 0.08));
-    transition: all 0.3s ease;
-}
-
-.logo-icon img { display: block; }
-
-.logo:hover .logo-icon {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(251, 146, 60, 0.12));
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
-}
-
-.logo-wordmark {
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    background: linear-gradient(135deg, #fbbf24, #f59e0b);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-
-.logo:hover .logo-wordmark {
-    background: linear-gradient(135deg, #fde68a, #fbbf24);
-    -webkit-background-clip: text;
-    background-clip: text;
-}
-
 .nav-links {
     display: flex;
     gap: 1.5rem;

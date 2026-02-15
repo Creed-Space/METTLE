@@ -35,7 +35,7 @@
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
     <link rel="icon" href="/static/favicon.ico" sizes="48x48">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-    <meta name="theme-color" content="#6366f1">
+    <meta name="theme-color" content="#f59e0b">
 
     <!-- Preconnect -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -66,22 +66,50 @@
     </script>
 </head>
 <body>
-    <div class="container docs-container">
-        <header>
-            <nav class="docs-nav">
-                <a href="/" class="logo">
-                    <span class="logo-icon"><img src="/static/favicon.svg" alt="" width="24" height="24" /></span>
-                    <span class="logo-wordmark">METTLE</span>
+    <!-- Standard Header -->
+    <header class="mettle-header" id="mettle-header">
+        <div class="container header-inner">
+            <a href="/" class="mettle-logo" aria-label="METTLE Home">
+                <span class="mettle-logo-icon" aria-hidden="true">
+                    <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                </span>
+                <span class="mettle-logo-text">
+                    <span class="mettle-logo-highlight">METTLE</span>
+                </span>
+            </a>
+            <nav class="mettle-nav desktop-nav" aria-label="Main navigation">
+                <a href="/#suites" class="nav-link">Suites</a>
+                <a href="/static/docs.html" class="nav-link">Docs</a>
+                <a href="/#try-it" class="nav-link">Try It</a>
+                <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="nav-link" aria-label="GitHub (opens in new tab)">
+                    <i class="fa-brands fa-github" aria-hidden="true"></i>
                 </a>
-                <div class="nav-links">
-                    <a href="/docs" class="active">Docs</a>
-                    <a href="/pricing">Pricing</a>
-                    <a href="/about">About</a>
-                    <a href="https://github.com/Creed-Space/METTLE" target="_blank"><i class="fa-brands fa-github"></i></a>
-                </div>
+                <span class="nav-divider" aria-hidden="true"></span>
+                <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="nav-link nav-link-brand" aria-label="Creed Space (opens in new tab)">
+                    <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    Creed Space
+                </a>
             </nav>
-        </header>
+            <button class="mobile-menu-btn" id="mobile-menu-btn" aria-expanded="false" aria-controls="mettle-mobile-nav" aria-label="Open menu">
+                <span class="hamburger" id="hamburger"><span></span><span></span><span></span></span>
+            </button>
+        </div>
+        <nav id="mettle-mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
+            <a href="/#suites" class="mobile-nav-link">Suites</a>
+            <a href="/static/docs.html" class="mobile-nav-link">Docs</a>
+            <a href="/#try-it" class="mobile-nav-link">Try It</a>
+            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">
+                <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
+            </a>
+            <hr class="mobile-nav-divider" />
+            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
+                <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
+                Creed Space
+            </a>
+        </nav>
+    </header>
 
+    <div class="container docs-container">
         <main class="docs-main">
             <aside class="docs-sidebar">
                 <h3>Getting Started</h3>
@@ -937,16 +965,100 @@ mettle_auto_verify(difficulty="basic", entity_id="claude-assistant")
             </article>
         </main>
 
-        <footer>
-            <p>
-                <a href="/">Home</a> ·
-                <a href="/docs">Docs</a> ·
-                <a href="/pricing">Pricing</a> ·
-                <a href="/about">About</a> ·
-                <a href="https://github.com/Creed-Space/METTLE" target="_blank">GitHub</a>
-            </p>
-            <p class="copyright">METTLE v0.2 - "Prove your metal."</p>
-        </footer>
     </div>
+
+    <footer class="mettle-footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="footer-logo" aria-hidden="true">
+                        <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                    </span>
+                    <div>
+                        <p class="footer-title">METTLE</p>
+                        <p class="footer-tagline">Machine Evaluation Through Turing-inverse Logic Examination</p>
+                    </div>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-section">
+                        <h4>METTLE</h4>
+                        <a href="/#suites">Suites</a>
+                        <a href="/static/docs.html">Docs</a>
+                        <a href="/about">About</a>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Ecosystem</h4>
+                        <a href="https://creed.space" target="_blank" rel="noopener noreferrer">
+                            Creed Space <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://millos.net" target="_blank" rel="noopener noreferrer">
+                            MillOS <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Open Source</h4>
+                        <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer">
+                            GitHub <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 Creed Space &mdash; METTLE is an open verification standard</p>
+                <p class="footer-version">METTLE v2</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/webmcp.js"></script>
+    <script>
+        // Scroll-aware header
+        (function() {
+            var header = document.getElementById('mettle-header');
+            if (!header) return;
+            window.addEventListener('scroll', function() {
+                if (window.scrollY > 10) {
+                    header.classList.add('scrolled');
+                } else {
+                    header.classList.remove('scrolled');
+                }
+            }, { passive: true });
+        })();
+
+        // Mobile menu toggle
+        (function() {
+            var btn = document.getElementById('mobile-menu-btn');
+            var nav = document.getElementById('mettle-mobile-nav');
+            var hamburger = document.getElementById('hamburger');
+            if (!btn || !nav) return;
+
+            btn.addEventListener('click', function() {
+                var isOpen = nav.hidden === false;
+                nav.hidden = isOpen;
+                btn.setAttribute('aria-expanded', !isOpen);
+                btn.setAttribute('aria-label', isOpen ? 'Open menu' : 'Close menu');
+                hamburger.classList.toggle('open', !isOpen);
+            });
+
+            nav.querySelectorAll('a').forEach(function(link) {
+                link.addEventListener('click', function() {
+                    nav.hidden = true;
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.setAttribute('aria-label', 'Open menu');
+                    hamburger.classList.remove('open');
+                });
+            });
+
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && !nav.hidden) {
+                    nav.hidden = true;
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.setAttribute('aria-label', 'Open menu');
+                    hamburger.classList.remove('open');
+                    btn.focus();
+                }
+            });
+        })();
+    </script>
 </body>
 </html>
