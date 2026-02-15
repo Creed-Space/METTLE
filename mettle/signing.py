@@ -49,7 +49,15 @@ def init_signing() -> bool:
         _initialized = True
         return False
 
-    pem_key = os.environ.get("METTLE_VCP_SIGNING_KEY")
+    # Try settings first (.env support), fall back to raw env var
+    pem_key = None
+    try:
+        from mettle.app_config import settings
+        pem_key = settings.vcp_signing_key or None
+    except Exception:
+        pass
+    if not pem_key:
+        pem_key = os.environ.get("METTLE_VCP_SIGNING_KEY")
 
     if pem_key:
         try:

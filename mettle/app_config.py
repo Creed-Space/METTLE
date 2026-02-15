@@ -8,7 +8,8 @@ class MettleSettings(BaseSettings):
     api_keys: str = ""
     dev_mode: bool = False
     cors_origins: str = "*"
-    model_config = {"env_prefix": "METTLE_"}
+    vcp_signing_key: str = ""
+    model_config = {"env_prefix": "METTLE_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
 
 settings = MettleSettings()
