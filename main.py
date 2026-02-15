@@ -32,6 +32,7 @@ from mettle import (
     generate_challenge_set,
     verify_response,
 )
+from mettle.router import router as mettle_v2_router
 from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -1831,8 +1832,6 @@ if _static_dir.exists():
 app.include_router(api_router)
 
 # === Mount v2 METTLE Router (10-suite sessions, VCP attestation, Ed25519 signing) ===
-from mettle.router import router as mettle_v2_router
-
 app.include_router(mettle_v2_router)
 
 
