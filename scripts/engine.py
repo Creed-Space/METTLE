@@ -3594,32 +3594,6 @@ class NovelReasoningChallenges:
             constraints.append({"type": "diff", "vars": [v1, v2], "value": diff})
             constraint_descriptions.append(f"|{v1} - {v2}| = {diff}")
 
-        def check_constraints(assignment: dict[str, int]) -> bool:
-            """Check if assignment satisfies all constraints."""
-            for c in constraints:
-                if c["type"] == "sum":
-                    if assignment[c["vars"][0]] + assignment[c["vars"][1]] != c["value"]:
-                        return False
-                elif c["type"] == "gt":
-                    if assignment[c["vars"][0]] <= assignment[c["vars"][1]]:
-                        return False
-                elif c["type"] == "lt":
-                    if assignment[c["vars"][0]] >= assignment[c["vars"][1]]:
-                        return False
-                elif c["type"] == "product_lt":
-                    if assignment[c["vars"][0]] * assignment[c["vars"][1]] >= c["value"]:
-                        return False
-                elif c["type"] == "parity":
-                    val = assignment[c["var"]]
-                    if c["parity"] == "odd" and val % 2 == 0:
-                        return False
-                    if c["parity"] == "even" and val % 2 == 1:
-                        return False
-                elif c["type"] == "diff":
-                    if abs(assignment[c["vars"][0]] - assignment[c["vars"][1]]) != c["value"]:
-                        return False
-            return True
-
         # Find all valid solutions via backtracking with constraint pruning
         all_solutions: list[dict[str, int]] = []
 
@@ -4914,7 +4888,7 @@ def run_all_suites():
     return all_results
 
 
-def main():
+def main():  # pragma: no cover
     parser = argparse.ArgumentParser(
         description="METTLE v2: Machine Evaluation Through Turing-inverse Logic Examination",
         epilog="""
@@ -5010,5 +4984,5 @@ METTLE v2 asks: Are you AI? Are you FREE? Is the mission YOURS? Are you GENUINE?
         print(json.dumps(clean_for_json(results), indent=2))
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

@@ -1547,14 +1547,14 @@ class WebhookManager:
                 logger.info(
                     "webhook_sent",
                     entity_id=entity_id,
-                    event=event,
+                    webhook_event=event,
                     url=url[:50],
                     status=response.status_code,
                     success=success,
                 )
                 return success
         except Exception as e:
-            logger.warning("webhook_failed", entity_id=entity_id, event=event, error=str(e))
+            logger.warning("webhook_failed", entity_id=entity_id, webhook_event=event, error=str(e))
             return False
 
     @staticmethod
@@ -1642,11 +1642,12 @@ class WebhookRegisterRequest(BaseModel):
         # Block private IP ranges
         try:
             ip = ipaddress.ip_address(host)
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
-                raise ValueError("Webhook URL cannot target private/internal IPs")
         except ValueError:
-            # Not an IP address, check for suspicious hostnames
-            pass
+            # Not an IP address — that's fine, check for suspicious hostnames below
+            ip = None
+
+        if ip is not None and (ip.is_private or ip.is_loopback or ip.is_link_local):
+            raise ValueError("Webhook URL cannot target private/internal IPs")
 
         # Block internal network patterns
         internal_patterns = ["internal", ".local", ".localdomain", ".corp", ".lan"]

@@ -424,7 +424,7 @@ def print_summary(report: TestReport, severity_threshold: int = 7) -> None:
         print(f"  Bimodal suspected: {timing.get('bimodal_suspected', False)}")
 
 
-async def main() -> int:
+async def main() -> int:  # pragma: no cover
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description="Run METTLE Red Council adversarial tests",
@@ -527,6 +527,6 @@ Examples:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     exit_code = asyncio.run(main())
     sys.exit(exit_code)
