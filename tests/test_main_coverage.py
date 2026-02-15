@@ -5,7 +5,7 @@ Covers:
 - Badge revocation endpoint (/api/badge/revoke) with admin auth
 - Webhook delivery (WebhookManager.send_webhook)
 - API key management (/api/keys/register)
-- Static/SEO endpoints (/sitemap.xml, /robots.txt, /, /ui, /pricing, /about)
+- Static/SEO endpoints (/sitemap.xml, /robots.txt, /, /ui, /about)
 - Admin auth rate limiting (check_admin_auth_rate_limit, record_admin_auth_failure)
 - add_with_limit eviction
 - CollusionDetector memory bounding
@@ -507,7 +507,7 @@ class TestAPIKeyManagement:
 
 
 class TestStaticAndSEOEndpoints:
-    """Tests for sitemap.xml, robots.txt, root, /ui, /pricing, /about."""
+    """Tests for sitemap.xml, robots.txt, root, /ui, /about."""
 
     def test_sitemap_returns_xml(self, client):
         """GET /sitemap.xml should return valid XML."""
@@ -540,12 +540,6 @@ class TestStaticAndSEOEndpoints:
 
         assert response.status_code == 301
         assert response.headers["location"] == "/"
-
-    def test_pricing_serves_or_redirects(self, client):
-        """GET /pricing should serve pricing.html or redirect."""
-        response = client.get("/pricing", follow_redirects=False)
-
-        assert response.status_code in (200, 307)
 
     def test_about_serves_or_redirects(self, client):
         """GET /about should serve about.html or redirect."""
@@ -1151,13 +1145,6 @@ class TestStaticFileFallbacks:
             mock_dir.exists.return_value = False
             response = client.get("/", follow_redirects=False)
             # Should redirect to /api when no static files
-            assert response.status_code in (200, 307)
-
-    def test_pricing_redirects_when_no_static(self, client):
-        """Pricing should redirect to / when no static files."""
-        with patch("main._static_dir") as mock_dir:
-            mock_dir.exists.return_value = False
-            response = client.get("/pricing", follow_redirects=False)
             assert response.status_code in (200, 307)
 
     def test_about_redirects_when_no_static(self, client):
