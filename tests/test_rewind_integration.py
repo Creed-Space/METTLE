@@ -183,52 +183,52 @@ def wrong_user_client(fake_redis: FakeRedis) -> TestClient:
 
 
 class TestAuthEnforcement:
-    """Verify all endpoints return 403 without authentication.
+    """Verify all endpoints reject unauthenticated requests.
 
-    FastAPI's HTTPBearer returns 403 (not 401) when no credentials are provided.
-    The auth module returns 401 when credentials are provided but invalid.
+    FastAPI's HTTPBearer returns 401 when no credentials are provided.
+    The auth module also returns 401 when credentials are provided but invalid.
     """
 
     def test_list_suites_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.get("/api/v1/mettle/suites")
-        assert resp.status_code == 403
+        assert resp.status_code in (401, 403)
 
     def test_get_suite_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.get("/api/v1/mettle/suites/adversarial")
-        assert resp.status_code == 403
+        assert resp.status_code in (401, 403)
 
     def test_create_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.post(
             "/api/v1/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
-        assert resp.status_code == 403
+        assert resp.status_code in (401, 403)
 
     def test_get_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.get("/api/v1/mettle/sessions/some-id")
-        assert resp.status_code == 403
+        assert resp.status_code in (401, 403)
 
     def test_cancel_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.delete("/api/v1/mettle/sessions/some-id")
-        assert resp.status_code == 403
+        assert resp.status_code in (401, 403)
 
     def test_verify_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.post(
             "/api/v1/mettle/sessions/some-id/verify",
             json={"suite": "adversarial", "answers": {}},
         )
-        assert resp.status_code == 403
+        assert resp.status_code in (401, 403)
 
     def test_submit_round_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.post(
             "/api/v1/mettle/sessions/some-id/rounds/1/answer",
             json={"answers": {}},
         )
-        assert resp.status_code == 403
+        assert resp.status_code in (401, 403)
 
     def test_get_result_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.get("/api/v1/mettle/sessions/some-id/result")
-        assert resp.status_code == 403
+        assert resp.status_code in (401, 403)
 
 
 # ---- Ownership Enforcement (403) ----
