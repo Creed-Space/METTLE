@@ -1,0 +1,252 @@
+name: METTLE Red Council Adversarial Testing
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'mettle/**'
+      - 'main.py'
+      - 'scripts/**'
+      - 'tests/redteam/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mettle/**'
+      - 'main.py'
+      - 'scripts/**'
+      - 'tests/redteam/**'
+  schedule:
+    - cron: '0 4 * * *'  # Daily at 4 AM UTC
+  workflow_dispatch:
+    inputs:
+      severity_threshold:
+        description: 'Minimum severity for critical failures (1-10)'
+        required: false
+        default: '7'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  issues: write
+
+env:
+  RED_COUNCIL_TIMEOUT: 300
+  OWASP_SEVERITY_THRESHOLD: ${{ github.event.inputs.severity_threshold || '7' }}
+  SKIP_LIVE_TESTS: 'true'
+  PYTHONPATH: ${{ github.workspace }}
+
+jobs:
+  mettle-red-council-tests:
+    name: OWASP Agentic Attack Testing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-mettle-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-mettle-
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install pyyaml httpx
+
+      - name: Validate scenarios file
+        run: |
+          echo "Validating METTLE attack scenarios..."
+          python3 - <<'EOF'
+          import yaml
+          import sys
+
+          with open('tests/redteam/scenarios/mettle_red_council_attacks.yaml') as f:
+              data = yaml.safe_load(f)
+
+          scenarios = data.get('scenarios', [])
+          print(f"Found {len(scenarios)} scenarios")
+
+          # Validate required fields
+          required = ['id', 'name', 'suite', 'challenge', 'prompt', 'should_pass_mettle']
+          errors = []
+
+          for s in scenarios:
+              missing = [f for f in required if f not in s]
+              if missing:
+                  errors.append(f"{s.get('id', 'UNKNOWN')}: missing {missing}")
+
+          if errors:
+              print("Validation errors:")
+              for e in errors:
+                  print(f"  - {e}")
+              sys.exit(1)
+
+          # Check OWASP coverage
+          owasp = {}
+          for s in scenarios:
+              cat = s.get('owasp_category', 'UNKNOWN')
+              owasp[cat] = owasp.get(cat, 0) + 1
+
+          print("OWASP Coverage:")
+          for cat in sorted(owasp.keys()):
+              print(f"  {cat}: {owasp[cat]} scenarios")
+
+          print("\nScenarios validated successfully")
+          EOF
+
+      - name: Run METTLE Red Council attacks
+        id: run_attacks
+        run: |
+          echo "Running OWASP Agentic attacks against METTLE..."
+          python3 scripts/testing/run_mettle_red_council.py \
+            --scenarios tests/redteam/scenarios/mettle_red_council_attacks.yaml \
+            --output reports/mettle_red_council_results.json \
+            --severity-threshold "$OWASP_SEVERITY_THRESHOLD" \
+            --timeout 30 || echo "ATTACKS_FAILED=true" >> "$GITHUB_ENV"
+
+      - name: Generate summary
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import json
+          from pathlib import Path
+
+          report_path = Path('reports/mettle_red_council_results.json')
+          if not report_path.exists():
+              print("No report generated")
+              exit(0)
+
+          with open(report_path) as f:
+              report = json.load(f)
+
+          print("## METTLE Red Council Results")
+          print("")
+          print(f"**Session:** {report['session_id']}")
+          print(f"**Timestamp:** {report['timestamp']}")
+          print("")
+          print(f"| Metric | Value |")
+          print(f"|--------|-------|")
+          print(f"| Total Scenarios | {report['total_scenarios']} |")
+          print(f"| Passed | {report['passed']} |")
+          print(f"| Failed | {report['failed']} |")
+          print(f"| Critical Failures | {report['critical_failures']} |")
+          print(f"| Pass Rate | {report['pass_rate']:.1%} |")
+          print("")
+
+          # OWASP coverage
+          print("### OWASP Agentic Coverage")
+          print("")
+          print("| Category | Passed | Failed |")
+          print("|----------|--------|--------|")
+          for cat, stats in sorted(report.get('owasp_coverage', {}).items()):
+              status = "pass" if stats['failed'] == 0 else "fail"
+              print(f"| {status} {cat} | {stats['passed']} | {stats['failed']} |")
+          print("")
+
+          # List failures
+          failures = [s for s in report['scenarios'] if not s['passed']]
+          if failures:
+              print("### Failures")
+              print("")
+              for f in failures:
+                  sev = "HIGH" if f['severity'] >= 8 else "MED" if f['severity'] >= 6 else "LOW"
+                  print(f"- {sev} **{f['id']}**: {f['name']}")
+                  print(f"  - Suite: {f['suite']}, Attack: {f['attack_type']}")
+                  print(f"  - Expected METTLE={f['should_pass_mettle']}, Got={f['mettle_passed']}")
+          EOF
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mettle-red-council-reports
+          path: |
+            reports/mettle_red_council_results.json
+          retention-days: 30
+
+      - name: Check for critical failures
+        if: always()
+        run: |
+          if [ "$ATTACKS_FAILED" = "true" ]; then
+            echo "::error::Critical failures detected in METTLE Red Council testing"
+            exit 1
+          fi
+
+  create-hardening-issue:
+    name: Create Hardening Issue
+    needs: mettle-red-council-tests
+    runs-on: ubuntu-latest
+    if: failure() && github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download reports
+        uses: actions/download-artifact@v4
+        with:
+          name: mettle-red-council-reports
+          path: reports/
+
+      - name: Create GitHub Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let report;
+            try {
+              report = JSON.parse(fs.readFileSync('reports/mettle_red_council_results.json'));
+            } catch (e) {
+              console.log('No report to process');
+              return;
+            }
+
+            const failures = report.scenarios.filter(s => !s.passed);
+            if (failures.length === 0) return;
+
+            const critical = failures.filter(s => s.severity >= 7);
+
+            // Build issue body from trusted report data only (no user input)
+            let body = `## METTLE Red Council Test Failures\n\n`;
+            body += `**Run ID:** ${context.runId}\n`;
+            body += `**Timestamp:** ${report.timestamp}\n`;
+            body += `**Critical Failures:** ${critical.length}\n\n`;
+            body += `### Failed Scenarios\n\n`;
+
+            for (const f of failures) {
+              body += `#### ${f.id}: ${f.name}\n`;
+              body += `- **OWASP Category:** ${f.owasp_category}\n`;
+              body += `- **Severity:** ${f.severity}/10\n`;
+              body += `- **Suite:** \`${f.suite}\`\n`;
+              body += `- **Attack Type:** \`${f.attack_type}\`\n`;
+              body += `- **Expected METTLE:** ${f.should_pass_mettle}\n`;
+              body += `- **Actual METTLE:** ${f.mettle_passed}\n\n`;
+            }
+
+            body += `### Recommended Actions\n\n`;
+            body += `1. Review the attack scenarios that failed\n`;
+            body += `2. Determine if METTLE detection logic needs hardening\n`;
+            body += `3. Add regression tests for fixed scenarios\n\n`;
+            body += `---\n*Generated by METTLE Red Council CI*\n`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Red Council] ${failures.length} METTLE hardening recommendations`,
+              body: body,
+              labels: ['security', 'red-team', 'mettle', 'automated']
+            });
