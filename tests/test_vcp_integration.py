@@ -6,14 +6,11 @@ Suite 9 VCP enhancement, and API-level integration.
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
 
 import pytest
 
 from mettle.vcp import (
-    VCPTokenClaim,
     build_mettle_attestation,
     compute_tier,
     format_csm1_line,
