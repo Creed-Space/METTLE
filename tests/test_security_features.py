@@ -1,4 +1,4 @@
-"""Tests for METTLE v2 security features."""
+"""Tests for METTLE security features."""
 
 import pytest
 from fastapi.testclient import TestClient

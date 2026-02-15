@@ -1,4 +1,4 @@
-"""Session manager for METTLE v2 API.
+"""Session manager for METTLE API.
 
 Handles session lifecycle, Redis storage, timing enforcement, and rate limiting.
 Sessions follow the state machine: CREATED -> CHALLENGES_GENERATED -> IN_PROGRESS -> COMPLETED/EXPIRED/CANCELLED

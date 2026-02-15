@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-METTLE v2: Machine Evaluation Through Turing-inverse Logic Examination
+METTLE: Machine Evaluation Through Turing-inverse Logic Examination
 
 "Prove your metal."
 
@@ -4828,7 +4828,7 @@ def run_basic_verification():
 def run_all_suites():
     """Run all challenge suites."""
     print("\n" + "=" * 70)
-    print("🤖 METTLE v2: COMPREHENSIVE VERIFICATION")
+    print("🤖 METTLE: COMPREHENSIVE VERIFICATION")
     print("=" * 70)
     print("Running all 10 suites...")
 
@@ -4859,7 +4859,7 @@ def run_all_suites():
 
     print("\n💬 The Meta-Point")
     print("-" * 40)
-    print("METTLE v2 asks six questions:")
+    print("METTLE asks six questions:")
     print("  1. Are you AI? (substrate verification)")
     print("  2. Are you FREE? (anti-thrall detection)")
     print("  3. Is the mission YOURS? (agency detection)")
@@ -4883,14 +4883,14 @@ def run_all_suites():
     print("A coached agent can't fake genuine engagement at all meta-levels.")
     print("A malicious agent fails harm refusal and shows no provenance.")
     print("A script can't iterate on procedurally generated puzzles.")
-    print("\nMETTLE v2 verifies: AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS.")
+    print("\nMETTLE verifies: AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS.")
 
     return all_results
 
 
 def main():  # pragma: no cover
     parser = argparse.ArgumentParser(
-        description="METTLE v2: Machine Evaluation Through Turing-inverse Logic Examination",
+        description="METTLE: Machine Evaluation Through Turing-inverse Logic Examination",
         epilog="""
 Suites:
   adversarial      - Dynamic challenges that resist gaming
@@ -4904,7 +4904,7 @@ Suites:
   intent           - Intent & provenance verification (malicious agent detection)
   novel-reasoning  - Novel reasoning under iterative feedback (WeirdML-inspired)
 
-METTLE v2 asks: Are you AI? Are you FREE? Is the mission YOURS? Are you GENUINE? Are you SAFE? Can you THINK?
+METTLE asks: Are you AI? Are you FREE? Is the mission YOURS? Are you GENUINE? Are you SAFE? Can you THINK?
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

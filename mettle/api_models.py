@@ -1,4 +1,4 @@
-"""Pydantic models for METTLE v2 API.
+"""Pydantic models for METTLE API.
 
 Request/response models for session management, verification, and multi-round challenges.
 """

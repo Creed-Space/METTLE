@@ -149,16 +149,16 @@
             </aside>
 
             <article class="docs-content">
-                <h1>METTLE v2 Documentation</h1>
+                <h1>METTLE Documentation</h1>
                 <p class="lead">Verify AI agents with the inverse CAPTCHA. 10 verification suites test capabilities that emerge from AI-native cognition &mdash; inhuman speed, recursive self-observation, zero-drift constraint adherence. Things a human cannot fake. Things a script cannot adapt to.</p>
 
                 <section id="quickstart">
                     <h2>Quick Start</h2>
-                    <p>All v2 endpoints live under <code>/api/v1/mettle</code> and require Bearer token authentication.</p>
+                    <p>All endpoints live under <code>/api/mettle</code> and require Bearer token authentication.</p>
 
                     <h3>1. Create a Session</h3>
-                    <pre><code># Base URL for all v2 endpoints
-API=https://mettle.sh/api/v1/mettle
+                    <pre><code># Base URL
+API=https://mettle.sh/api/mettle
 KEY=YOUR_API_KEY
 
 curl -X POST $API/sessions \
@@ -284,9 +284,9 @@ curl -X POST $API/sessions \
 
                 <section id="authentication">
                     <h2>Authentication</h2>
-                    <p>All v2 endpoints require a Bearer token in the <code>Authorization</code> header:</p>
+                    <p>All endpoints require a Bearer token in the <code>Authorization</code> header:</p>
 
-                    <pre><code>curl https://mettle.sh/api/v1/mettle/suites \
+                    <pre><code>curl https://mettle.sh/api/mettle/suites \
   -H "Authorization: Bearer YOUR_KEY"</code></pre>
 
                     <div class="callout">
@@ -297,7 +297,7 @@ curl -X POST $API/sessions \
 
                 <section id="endpoints">
                     <h2>API Endpoints</h2>
-                    <p>All endpoints are prefixed with <code>/api/v1/mettle</code>.</p>
+                    <p>All endpoints are prefixed with <code>/api/mettle</code>.</p>
 
                     <h3>Suite Information</h3>
                     <table class="endpoint-table">
@@ -526,7 +526,7 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
 
                     <h3>Requesting a VCP Attestation</h3>
                     <p>Add <code>?include_vcp=true</code> to the result endpoint:</p>
-                    <pre><code>GET /api/v1/mettle/sessions/{id}/result
+                    <pre><code>GET /api/mettle/sessions/{id}/result
     ?include_vcp=true</code></pre>
 
                     <h3>Attestation Structure</h3>
@@ -550,7 +550,7 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
 
                     <h3>Verifying Signatures</h3>
                     <p>Fetch the public key from the well-known endpoint:</p>
-                    <pre><code>GET /api/v1/mettle/.well-known/vcp-keys
+                    <pre><code>GET /api/mettle/.well-known/vcp-keys
 
 {
   "key_id": "mettle-vcp-v1",
@@ -570,7 +570,7 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                     <pre><code>import httpx
 
 class MettleClient:
-    BASE = "/api/v1/mettle"
+    BASE = "/api/mettle"
 
     def __init__(self, url="https://mettle.sh", key=None):
         self.url = url
@@ -654,7 +654,7 @@ print(f"Tier: {result['tier']}")</code></pre>
   #base;
 
   constructor(url = 'https://mettle.sh', key) {
-    this.#base = `${url}/api/v1/mettle`;
+    this.#base = `${url}/api/mettle`;
     this.headers = {
       'Content-Type': 'application/json',
     };
@@ -733,7 +733,7 @@ console.log(`Tier: ${result.tier}`);</code></pre>
                     <pre><code>use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-const BASE: &amp;str = "/api/v1/mettle";
+const BASE: &amp;str = "/api/mettle";
 
 #[derive(Serialize)]
 struct CreateReq {
@@ -907,7 +907,7 @@ impl MettleClient {
 
                 <section id="configuration">
                     <h2>Configuration</h2>
-                    <p>METTLE v2 is configured via environment variables:</p>
+                    <p>METTLE is configured via environment variables:</p>
 
                     <table>
                         <thead>
@@ -953,7 +953,7 @@ impl MettleClient {
 
                     <div class="callout">
                         <i class="fa-solid fa-circle-info"></i>
-                        <p><strong>Redis is required</strong> for v2 sessions. If Redis is unavailable, v2 endpoints return <code>503 Service Unavailable</code>. The v1 endpoints continue to work with in-memory storage.</p>
+                        <p><strong>Redis is required</strong> for sessions. If Redis is unavailable, endpoints return <code>503 Service Unavailable</code>.</p>
                     </div>
                 </section>
 
@@ -1078,7 +1078,7 @@ mettle_auto_verify(
                             <tr>
                                 <td><code>503</code></td>
                                 <td>Service Unavailable</td>
-                                <td>Redis unavailable &mdash; v2 sessions require Redis</td>
+                                <td>Redis unavailable &mdash; sessions require Redis</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1095,7 +1095,7 @@ mettle_auto_verify(
 
                     <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
                         <h4>Getting 503 Service Unavailable</h4>
-                        <p>The v2 API requires Redis for session management. Ensure <code>METTLE_REDIS_URL</code> is set and the Redis instance is reachable. The v1 endpoints at <code>/api/*</code> continue to work without Redis.</p>
+                        <p>METTLE requires Redis for session management. Ensure <code>METTLE_REDIS_URL</code> is set and the Redis instance is reachable.</p>
                     </div>
 
                     <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
@@ -1120,7 +1120,7 @@ mettle_auto_verify(
 
                     <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
                         <h4>MCP server can't connect</h4>
-                        <p>Check: (1) <code>METTLE_API_URL</code> and <code>METTLE_API_KEY</code> are set correctly, (2) No firewall blocking outbound HTTPS, (3) API is reachable with <code>curl https://mettle.sh/api/v1/mettle/suites -H "Authorization: Bearer $KEY"</code>.</p>
+                        <p>Check: (1) <code>METTLE_API_URL</code> and <code>METTLE_API_KEY</code> are set correctly, (2) No firewall blocking outbound HTTPS, (3) API is reachable with <code>curl https://mettle.sh/api/mettle/suites -H "Authorization: Bearer $KEY"</code>.</p>
                     </div>
 
                     <h3>Getting Help</h3>
@@ -1179,7 +1179,7 @@ mettle_auto_verify(
             </div>
             <div class="footer-bottom">
                 <p>&copy; 2026 Creed Space</p>
-                <p class="footer-version">METTLE v2</p>
+                <p class="footer-version">METTLE</p>
             </div>
         </div>
     </footer>

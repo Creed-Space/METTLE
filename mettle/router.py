@@ -1,4 +1,4 @@
-"""METTLE v2 API Router - Machine Evaluation Through Turing-inverse Logic Examination.
+"""METTLE API Router - Machine Evaluation Through Turing-inverse Logic Examination.
 
 Exposes all 10 METTLE verification suites via REST API endpoints.
 Suite 10 (Novel Reasoning) supports multi-round sessions with feedback.
@@ -33,7 +33,7 @@ from mettle.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/mettle", tags=["mettle"])
+router = APIRouter(prefix="/api/mettle", tags=["mettle"])
 
 # Type alias for auth dependency
 AuthUser = Annotated[AuthenticatedUser, Depends(require_authenticated_user)]

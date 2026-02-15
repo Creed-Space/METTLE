@@ -32,7 +32,6 @@ from mettle import (
     generate_challenge_set,
     verify_response,
 )
-from mettle.router import router as mettle_v2_router
 from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -446,7 +445,7 @@ async def lifespan(app: FastAPI):
     print("   Machine Entity Trustbuilding through Turing-inverse Logic Examination")
     print("   'Prove your metal.'")
 
-    # Initialize Redis for v2 router (optional — v2 returns 503 if unavailable)
+    # Initialize Redis for METTLE router (optional — returns 503 if unavailable)
     redis_url = os.environ.get("METTLE_REDIS_URL")
     if redis_url:
         try:
@@ -1831,8 +1830,10 @@ if _static_dir.exists():
 # === Mount API Router ===
 app.include_router(api_router)
 
-# === Mount v2 METTLE Router (10-suite sessions, VCP attestation, Ed25519 signing) ===
-app.include_router(mettle_v2_router)
+# === Mount METTLE Router (10-suite sessions, VCP attestation, Ed25519 signing) ===
+from mettle.router import router as mettle_router
+
+app.include_router(mettle_router)
 
 
 # === Root serves UI ===
