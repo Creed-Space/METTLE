@@ -476,7 +476,8 @@ a:hover {
     font-size: var(--text-xl);
     font-style: italic;
     color: var(--mettle-primary-hover);
-    max-width: 480px;
+    max-width: none;
+    white-space: nowrap;
     margin: var(--space-sm) auto var(--space-xl);
 }
 
