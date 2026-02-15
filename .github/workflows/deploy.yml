@@ -13,8 +13,8 @@ jobs:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "RENDER_DEPLOY_HOOK_URL secret not set"
-            exit 1
+            echo "::warning::RENDER_DEPLOY_HOOK_URL secret not set — skipping deploy"
+            exit 0
           fi
           curl -X POST "$RENDER_DEPLOY_HOOK_URL"
           echo "Deploy triggered successfully"
