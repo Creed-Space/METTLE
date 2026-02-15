@@ -2,8 +2,6 @@
 
 import warnings
 
-import pytest
-
 from config import Settings
 
 

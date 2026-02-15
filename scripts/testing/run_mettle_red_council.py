@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 import time
 from dataclasses import dataclass, field
@@ -36,16 +37,15 @@ from typing import Any
 import yaml
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from core.config.logging_config import get_logger
-from services.red_team.instrumented_mettle_agent import (
+from red_team.instrumented_agent import (
     BehavioralSignals,
     InstrumentationConfig,
     InstrumentedMettleAgent,
 )
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass

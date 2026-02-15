@@ -4,10 +4,9 @@ Tests all CRUD operations for sessions, revoked badges, API keys,
 webhooks, and verification records using an isolated in-memory SQLite database.
 """
 
-import json
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine
@@ -107,7 +106,7 @@ class TestGetDb:
     def test_get_db_closes_session_on_exit(self, isolated_db):
         """Session should be closed after context manager exits."""
         db = isolated_db
-        with db.get_db() as session:
+        with db.get_db() as _session:
             pass
         # After exiting, session.close() has been called (no error expected)
 

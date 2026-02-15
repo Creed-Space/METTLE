@@ -442,7 +442,7 @@ class TestWebhookDelivery:
         WebhookManager.register("entity-1", "https://example.com/hook")
 
         with patch("httpx.AsyncClient") as mock_client_cls, \
-             patch("main.logger") as mock_logger:
+             patch("main.logger"):
             mock_client = AsyncMock()
             mock_client.post.side_effect = Exception("Connection refused")
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
