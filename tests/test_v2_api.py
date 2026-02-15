@@ -42,7 +42,7 @@ _mock_engine.IterationCurveAnalyzer.analyze_curve = MagicMock(
         "round1_suspicion": 0.0,
     }
 )
-sys.modules["scripts.engine"] = _mock_engine
+sys.modules.setdefault("scripts.engine", _mock_engine)
 
 from mettle.api_models import (  # noqa: E402
     MULTI_ROUND_SUITE,
@@ -177,6 +177,18 @@ def fake_redis() -> FakeRedis:
 @pytest.fixture()
 def mgr(fake_redis: FakeRedis) -> SessionManager:
     return SessionManager(fake_redis)
+
+
+@pytest.fixture(autouse=True)
+def _ensure_mock_engine():
+    """Ensure scripts.engine is mocked for this module's tests, restore after."""
+    saved = sys.modules.get("scripts.engine")
+    sys.modules["scripts.engine"] = _mock_engine
+    yield
+    if saved is not None:
+        sys.modules["scripts.engine"] = saved
+    else:
+        sys.modules.pop("scripts.engine", None)
 
 
 @pytest.fixture(autouse=True)
