@@ -39,6 +39,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import get_settings
+from mettle.router import router as mettle_router
 
 # Configuration
 settings = get_settings()
@@ -1831,8 +1832,6 @@ if _static_dir.exists():
 app.include_router(api_router)
 
 # === Mount METTLE Router (10-suite sessions, VCP attestation, Ed25519 signing) ===
-from mettle.router import router as mettle_router
-
 app.include_router(mettle_router)
 
 

@@ -50,9 +50,8 @@ from mettle.api_models import (  # noqa: E402
     SessionStatus,
 )
 from mettle.auth import AuthenticatedUser, require_authenticated_user  # noqa: E402
-from mettle.router import get_session_manager, router  # noqa: E402
+from mettle.router import router  # noqa: E402
 from mettle.session_manager import (  # noqa: E402
-    ACTIVE_SESSION_TTL,
     COMPLETED_SESSION_TTL,
     MAX_ACTIVE_SESSIONS_PER_USER,
     MAX_SESSIONS_PER_HOUR,
