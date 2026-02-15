@@ -9,7 +9,7 @@ Targets lines 203-216 and 277-289 in red_team/instrumented_agent.py:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest

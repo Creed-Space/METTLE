@@ -12,8 +12,7 @@ Covers:
 from __future__ import annotations
 
 import warnings
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -351,7 +350,7 @@ class TestSessionManagerVCPToken:
     @pytest.mark.asyncio
     async def test_create_session_intent_provenance_with_vcp_token(self) -> None:
         """Line 100-101: intent-provenance suite with vcp_token uses custom generator."""
-        from mettle.session_manager import SessionManager, _key
+        from mettle.session_manager import SessionManager
         from tests.test_session_manager import FakeRedis
 
         redis = FakeRedis()

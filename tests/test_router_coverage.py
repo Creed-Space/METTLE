@@ -14,9 +14,8 @@ Uses the same FakeRedis + dependency-override pattern as test_api_coverage.py.
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -240,8 +239,6 @@ class TestCreateSessionGenericException:
         async def mock_get_manager() -> SessionManager:
             mgr = SessionManager(fake_redis)
             # Monkey-patch create_session to raise a generic exception
-            original = mgr.create_session
-
             async def exploding(*args: Any, **kwargs: Any) -> Any:
                 raise RuntimeError("Redis connection lost")
 
@@ -277,9 +274,6 @@ class TestVerifySingleShotGenericException:
         app = FastAPI()
         app.include_router(router)
         app.dependency_overrides[require_authenticated_user] = lambda: user
-
-        # First, create a real session so get_session succeeds and ownership passes
-        real_mgr = SessionManager(fake_redis)
 
         async def mock_get_manager() -> SessionManager:
             mgr = SessionManager(fake_redis)
