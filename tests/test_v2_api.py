@@ -42,7 +42,7 @@ _mock_engine.IterationCurveAnalyzer.analyze_curve = MagicMock(
         "round1_suspicion": 0.0,
     }
 )
-sys.modules.setdefault("scripts.engine", _mock_engine)
+sys.modules["scripts.engine"] = _mock_engine
 
 from mettle.api_models import (  # noqa: E402
     MULTI_ROUND_SUITE,

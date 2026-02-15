@@ -126,7 +126,12 @@ def solve_challenge(challenge: dict) -> str:
         return "Indeed, this is my response."
 
     elif challenge_type == "chained_reasoning":
-        # Parse and compute from the prompt instructions (data is sanitized)
+        # Try data["chain"] first (direct chain result from server)
+        chain = data.get("chain", [])
+        if chain:
+            return str(chain[-1])
+
+        # Parse and compute from the prompt instructions
         value = 0
         for line in prompt.split("\n"):
             line_lower = line.lower().strip()
