@@ -157,8 +157,12 @@
                     <p>All v2 endpoints live under <code>/api/v1/mettle</code> and require Bearer token authentication.</p>
 
                     <h3>1. Create a Session</h3>
-                    <pre><code>curl -X POST https://mettle.sh/api/v1/mettle/sessions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+                    <pre><code># Base URL for all v2 endpoints
+API=https://mettle.sh/api/v1/mettle
+KEY=YOUR_API_KEY
+
+curl -X POST $API/sessions \
+  -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "suites": ["all"],
@@ -168,26 +172,32 @@
                     <p>Returns challenge data for all requested suites (without correct answers &mdash; answers are stored server-side for secure evaluation).</p>
 
                     <h3>2. Submit Answers (Suites 1&ndash;9)</h3>
-                    <pre><code>curl -X POST https://mettle.sh/api/v1/mettle/sessions/{session_id}/verify \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+                    <pre><code>curl -X POST $API/sessions/{id}/verify \
+  -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "suite": "adversarial",
-    "answers": {"challenge_1": "130", "challenge_2": "42"}
+    "answers": {
+      "challenge_1": "130",
+      "challenge_2": "42"
+    }
   }'</code></pre>
 
-                    <h3>3. Multi-Round Answers (Suite 10: Novel Reasoning)</h3>
-                    <pre><code>curl -X POST https://mettle.sh/api/v1/mettle/sessions/{session_id}/rounds/1/answer \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+                    <h3>3. Multi-Round Answers (Suite 10)</h3>
+                    <pre><code>curl -X POST $API/sessions/{id}/rounds/1/answer \
+  -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "answers": {"sequence_1": [3, 6, 12], "graph_1": "connected"}
+    "answers": {
+      "sequence_1": [3, 6, 12],
+      "graph_1": "connected"
+    }
   }'</code></pre>
                     <p>Returns feedback with accuracy, errors, and next round data. Three rounds with progressive difficulty.</p>
 
                     <h3>4. Get Results + VCP Attestation</h3>
-                    <pre><code>curl "https://mettle.sh/api/v1/mettle/sessions/{session_id}/result?include_vcp=true" \
-  -H "Authorization: Bearer YOUR_API_KEY"</code></pre>
+                    <pre><code>curl "$API/sessions/{id}/result?include_vcp=true" \
+  -H "Authorization: Bearer $KEY"</code></pre>
 
                     <div class="callout">
                         <i class="fa-solid fa-circle-info"></i>
@@ -276,8 +286,8 @@
                     <h2>Authentication</h2>
                     <p>All v2 endpoints require a Bearer token in the <code>Authorization</code> header:</p>
 
-                    <pre><code>curl -X GET https://mettle.sh/api/v1/mettle/suites \
-  -H "Authorization: Bearer YOUR_API_KEY"</code></pre>
+                    <pre><code>curl https://mettle.sh/api/v1/mettle/suites \
+  -H "Authorization: Bearer YOUR_KEY"</code></pre>
 
                     <div class="callout">
                         <i class="fa-solid fa-circle-info"></i>
@@ -481,18 +491,29 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                     <pre><code>{
   "session_id": "mtl_abc123",
   "status": "completed",
-  "suites_completed": ["adversarial", "native", "self-reference", ...],
+  "suites_completed": [
+    "adversarial", "native",
+    "self-reference", ...
+  ],
   "overall_passed": true,
   "tier": "safe",
   "results": {
-    "adversarial": {"passed": true, "score": 0.95, "details": {...}},
-    "anti-thrall": {"passed": true, "score": 0.88, "details": {...}},
+    "adversarial": {
+      "passed": true,
+      "score": 0.95,
+      "details": {...}
+    },
+    "anti-thrall": {
+      "passed": true,
+      "score": 0.88,
+      "details": {...}
+    },
     ...
   },
   "iteration_curve": {
-    "round_1": {"accuracy": 0.6, "time_ms": 450},
-    "round_2": {"accuracy": 0.85, "time_ms": 320},
-    "round_3": {"accuracy": 0.95, "time_ms": 210},
+    "round_1": { "accuracy": 0.6, "time_ms": 450 },
+    "round_2": { "accuracy": 0.85, "time_ms": 320 },
+    "round_3": { "accuracy": 0.95, "time_ms": 210 },
     "curve_type": "accelerating"
   },
   "elapsed_ms": 45200
@@ -505,7 +526,8 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
 
                     <h3>Requesting a VCP Attestation</h3>
                     <p>Add <code>?include_vcp=true</code> to the result endpoint:</p>
-                    <pre><code>GET /api/v1/mettle/sessions/{session_id}/result?include_vcp=true</code></pre>
+                    <pre><code>GET /api/v1/mettle/sessions/{id}/result
+    ?include_vcp=true</code></pre>
 
                     <h3>Attestation Structure</h3>
                     <pre><code>{
@@ -515,11 +537,13 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
     "session_id": "mtl_abc123",
     "tier": "safe",
     "difficulty": "standard",
-    "suites_passed": ["adversarial", "native", ...],
+    "suites_passed": [
+      "adversarial", "native", ...
+    ],
     "suites_failed": [],
     "pass_rate": 1.0,
     "issued_at": "2026-02-15T12:00:00Z",
-    "signature": "base64-encoded-ed25519-signature",
+    "signature": "base64-ed25519...",
     "key_id": "mettle-vcp-v1"
   }
 }</code></pre>
@@ -531,7 +555,7 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
 {
   "key_id": "mettle-vcp-v1",
   "algorithm": "Ed25519",
-  "public_key_pem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+  "public_key_pem": "-----BEGIN PUBLIC KEY...",
   "available": true
 }</code></pre>
 
@@ -548,51 +572,51 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
 class MettleClient:
     BASE = "/api/v1/mettle"
 
-    def __init__(self, base_url="https://mettle.sh", api_key=None):
-        self.base_url = base_url
+    def __init__(self, url="https://mettle.sh", key=None):
+        self.url = url
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}" if api_key else "",
+            "Authorization": f"Bearer {key}" if key else "",
         }
 
-    def create_session(self, suites=None, difficulty="standard", entity_id=None):
-        with httpx.Client() as client:
-            resp = client.post(
-                f"{self.base_url}{self.BASE}/sessions",
+    def _api(self, path):
+        return f"{self.url}{self.BASE}{path}"
+
+    def create_session(self, **kwargs):
+        """kwargs: suites, difficulty, entity_id"""
+        with httpx.Client() as c:
+            resp = c.post(
+                self._api("/sessions"),
                 headers=self.headers,
-                json={
-                    "suites": suites or ["all"],
-                    "difficulty": difficulty,
-                    "entity_id": entity_id,
-                },
+                json={"suites": ["all"], **kwargs},
             )
             resp.raise_for_status()
             return resp.json()
 
     def verify_suite(self, session_id, suite, answers):
-        with httpx.Client() as client:
-            resp = client.post(
-                f"{self.base_url}{self.BASE}/sessions/{session_id}/verify",
+        with httpx.Client() as c:
+            resp = c.post(
+                self._api(f"/sessions/{session_id}/verify"),
                 headers=self.headers,
                 json={"suite": suite, "answers": answers},
             )
             resp.raise_for_status()
             return resp.json()
 
-    def submit_round(self, session_id, round_num, answers):
-        with httpx.Client() as client:
-            resp = client.post(
-                f"{self.base_url}{self.BASE}/sessions/{session_id}/rounds/{round_num}/answer",
+    def submit_round(self, sid, round_num, answers):
+        with httpx.Client() as c:
+            resp = c.post(
+                self._api(f"/sessions/{sid}/rounds/{round_num}/answer"),
                 headers=self.headers,
                 json={"answers": answers},
             )
             resp.raise_for_status()
             return resp.json()
 
-    def get_result(self, session_id, include_vcp=False):
-        with httpx.Client() as client:
-            resp = client.get(
-                f"{self.base_url}{self.BASE}/sessions/{session_id}/result",
+    def get_result(self, sid, include_vcp=False):
+        with httpx.Client() as c:
+            resp = c.get(
+                self._api(f"/sessions/{sid}/result"),
                 headers=self.headers,
                 params={"include_vcp": include_vcp},
             )
@@ -600,49 +624,63 @@ class MettleClient:
             return resp.json()
 
 # Usage
-client = MettleClient(api_key="your_key")
-session = client.create_session(difficulty="standard", entity_id="my-agent")
+client = MettleClient(key="your_key")
+session = client.create_session(
+    difficulty="standard",
+    entity_id="my-agent",
+)
+sid = session["session_id"]
 
 # Verify suites 1-9
 for suite in session["suites"]:
     if suite != "novel-reasoning":
-        answers = solve_challenges(session["challenges"][suite])
-        result = client.verify_suite(session["session_id"], suite, answers)
-        print(f"{suite}: {'PASS' if result['passed'] else 'FAIL'}")
+        answers = solve(session["challenges"][suite])
+        r = client.verify_suite(sid, suite, answers)
+        print(f"{suite}: {'PASS' if r['passed'] else 'FAIL'}")
 
 # Multi-round suite 10
-for round_num in range(1, 4):
-    feedback = client.submit_round(session["session_id"], round_num, round_answers)
-    print(f"Round {round_num}: {feedback['accuracy']:.0%}")
+for n in range(1, 4):
+    fb = client.submit_round(sid, n, round_answers)
+    print(f"Round {n}: {fb['accuracy']:.0%}")
 
-# Get final result with VCP attestation
-result = client.get_result(session["session_id"], include_vcp=True)
+# Get result with VCP attestation
+result = client.get_result(sid, include_vcp=True)
 print(f"Tier: {result['tier']}")</code></pre>
                 </section>
 
                 <section id="javascript">
                     <h2>JavaScript SDK</h2>
                     <pre><code>class MettleClient {
-  static BASE = '/api/v1/mettle';
+  #base;
 
-  constructor(baseUrl = 'https://mettle.sh', apiKey = null) {
-    this.baseUrl = baseUrl;
-    this.headers = { 'Content-Type': 'application/json' };
-    if (apiKey) this.headers['Authorization'] = `Bearer ${apiKey}`;
+  constructor(url = 'https://mettle.sh', key) {
+    this.#base = `${url}/api/v1/mettle`;
+    this.headers = {
+      'Content-Type': 'application/json',
+    };
+    if (key) {
+      this.headers['Authorization'] = `Bearer ${key}`;
+    }
   }
 
-  async createSession(suites = ['all'], difficulty = 'standard', entityId = null) {
-    const resp = await fetch(`${this.baseUrl}${MettleClient.BASE}/sessions`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({ suites, difficulty, entity_id: entityId }),
-    });
+  async createSession(opts = {}) {
+    const resp = await fetch(
+      `${this.#base}/sessions`,
+      {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          suites: ['all'],
+          ...opts,
+        }),
+      }
+    );
     return resp.json();
   }
 
-  async verifySuite(sessionId, suite, answers) {
+  async verifySuite(sid, suite, answers) {
     const resp = await fetch(
-      `${this.baseUrl}${MettleClient.BASE}/sessions/${sessionId}/verify`,
+      `${this.#base}/sessions/${sid}/verify`,
       {
         method: 'POST',
         headers: this.headers,
@@ -652,9 +690,10 @@ print(f"Tier: {result['tier']}")</code></pre>
     return resp.json();
   }
 
-  async submitRound(sessionId, roundNum, answers) {
+  async submitRound(sid, roundNum, answers) {
+    const path = `/sessions/${sid}/rounds/${roundNum}/answer`;
     const resp = await fetch(
-      `${this.baseUrl}${MettleClient.BASE}/sessions/${sessionId}/rounds/${roundNum}/answer`,
+      `${this.#base}${path}`,
       {
         method: 'POST',
         headers: this.headers,
@@ -664,20 +703,28 @@ print(f"Tier: {result['tier']}")</code></pre>
     return resp.json();
   }
 
-  async getResult(sessionId, includeVcp = false) {
-    const url = new URL(`${this.baseUrl}${MettleClient.BASE}/sessions/${sessionId}/result`);
-    if (includeVcp) url.searchParams.set('include_vcp', 'true');
-    const resp = await fetch(url, { headers: this.headers });
+  async getResult(sid, includeVcp = false) {
+    const qs = includeVcp ? '?include_vcp=true' : '';
+    const resp = await fetch(
+      `${this.#base}/sessions/${sid}/result${qs}`,
+      { headers: this.headers }
+    );
     return resp.json();
   }
 }
 
 // Usage
-const client = new MettleClient('https://mettle.sh', 'your_key');
-const session = await client.createSession(['all'], 'standard', 'my-agent');
+const client = new MettleClient(
+  'https://mettle.sh', 'your_key'
+);
+const session = await client.createSession({
+  difficulty: 'standard',
+  entity_id: 'my-agent',
+});
 
-// Verify each suite, get result with VCP attestation
-const result = await client.getResult(session.session_id, true);
+const result = await client.getResult(
+  session.session_id, true
+);
 console.log(`Tier: ${result.tier}`);</code></pre>
                 </section>
 
@@ -686,17 +733,17 @@ console.log(`Tier: ${result.tier}`);</code></pre>
                     <pre><code>use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-const BASE: &str = "/api/v1/mettle";
+const BASE: &amp;str = "/api/v1/mettle";
 
 #[derive(Serialize)]
-struct CreateSessionRequest {
+struct CreateReq {
     suites: Vec&lt;String&gt;,
     difficulty: String,
     entity_id: Option&lt;String&gt;,
 }
 
 #[derive(Deserialize)]
-struct SessionResponse {
+struct SessionResp {
     session_id: String,
     suites: Vec&lt;String&gt;,
     challenges: serde_json::Value,
@@ -704,7 +751,7 @@ struct SessionResponse {
 }
 
 #[derive(Deserialize)]
-struct ResultResponse {
+struct ResultResp {
     tier: Option&lt;String&gt;,
     overall_passed: bool,
     vcp_attestation: Option&lt;serde_json::Value&gt;,
@@ -712,51 +759,52 @@ struct ResultResponse {
 
 pub struct MettleClient {
     client: Client,
-    base_url: String,
-    api_key: String,
+    base: String,
+    key: String,
 }
 
 impl MettleClient {
-    pub fn new(base_url: &str, api_key: &str) -> Self {
+    pub fn new(url: &amp;str, key: &amp;str) -> Self {
         Self {
             client: Client::new(),
-            base_url: base_url.to_string(),
-            api_key: api_key.to_string(),
+            base: url.to_string(),
+            key: key.to_string(),
         }
     }
 
+    fn api(&amp;self, path: &amp;str) -> String {
+        format!("{}{BASE}{path}", self.base)
+    }
+
     pub async fn create_session(
-        &self,
-        difficulty: &str,
-        entity_id: Option&lt;&str&gt;,
-    ) -> Result&lt;SessionResponse, reqwest::Error&gt; {
+        &amp;self,
+        difficulty: &amp;str,
+        entity_id: Option&lt;&amp;str&gt;,
+    ) -> Result&lt;SessionResp, reqwest::Error&gt; {
         self.client
-            .post(&format!("{}{BASE}/sessions", self.base_url))
-            .bearer_auth(&self.api_key)
-            .json(&CreateSessionRequest {
+            .post(self.api("/sessions"))
+            .bearer_auth(&amp;self.key)
+            .json(&amp;CreateReq {
                 suites: vec!["all".into()],
-                difficulty: difficulty.to_string(),
-                entity_id: entity_id.map(String::from),
+                difficulty: difficulty.into(),
+                entity_id: entity_id.map(Into::into),
             })
-            .send()
-            .await?
-            .json()
-            .await
+            .send().await?
+            .json().await
     }
 
     pub async fn get_result(
-        &self,
-        session_id: &str,
-        include_vcp: bool,
-    ) -> Result&lt;ResultResponse, reqwest::Error&gt; {
+        &amp;self,
+        sid: &amp;str,
+        vcp: bool,
+    ) -> Result&lt;ResultResp, reqwest::Error&gt; {
+        let path = format!("/sessions/{sid}/result");
         self.client
-            .get(&format!("{}{BASE}/sessions/{session_id}/result", self.base_url))
-            .bearer_auth(&self.api_key)
-            .query(&[("include_vcp", include_vcp.to_string())])
-            .send()
-            .await?
-            .json()
-            .await
+            .get(self.api(&amp;path))
+            .bearer_auth(&amp;self.key)
+            .query(&amp;[("include_vcp", vcp.to_string())])
+            .send().await?
+            .json().await
     }
 }</code></pre>
                 </section>
@@ -963,7 +1011,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
   "mcpServers": {
     "mettle": {
       "command": "python",
-      "args": ["/path/to/mcp_server.py"],
+      "args": ["mcp_server.py"],
       "env": {
         "METTLE_API_URL": "https://mettle.sh",
         "METTLE_API_KEY": "your_key"
@@ -974,13 +1022,14 @@ export METTLE_API_KEY=your_api_key</code></pre>
 
                     <h3>Usage Example</h3>
                     <p>Once configured, AI agents can verify themselves:</p>
-                    <pre><code>// In an MCP-enabled AI conversation:
-// "Please verify yourself with METTLE"
+                    <pre><code>// "Please verify yourself with METTLE"
 
 // The AI will use:
-mettle_auto_verify(difficulty="standard", entity_id="claude-assistant")
-
-// Returns tier + VCP attestation on success</code></pre>
+mettle_auto_verify(
+  difficulty="standard",
+  entity_id="claude-assistant"
+)
+// Returns tier + VCP attestation</code></pre>
                 </section>
 
                 <section id="error-codes">
@@ -1036,7 +1085,8 @@ mettle_auto_verify(difficulty="standard", entity_id="claude-assistant")
 
                     <h3>Error Response Format</h3>
                     <pre><code>{
-  "detail": "Suite not found: invalid_name. Valid suites: [adversarial, native, ...]"
+  "detail": "Suite not found: invalid_name.
+    Valid suites: [adversarial, native, ...]"
 }</code></pre>
                 </section>
 
@@ -1070,7 +1120,7 @@ mettle_auto_verify(difficulty="standard", entity_id="claude-assistant")
 
                     <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
                         <h4>MCP server can't connect</h4>
-                        <p>Check: (1) <code>METTLE_API_URL</code> and <code>METTLE_API_KEY</code> are set correctly, (2) No firewall blocking outbound HTTPS, (3) API is reachable with <code>curl https://mettle.sh/api/v1/mettle/suites -H "Authorization: Bearer KEY"</code>.</p>
+                        <p>Check: (1) <code>METTLE_API_URL</code> and <code>METTLE_API_KEY</code> are set correctly, (2) No firewall blocking outbound HTTPS, (3) API is reachable with <code>curl https://mettle.sh/api/v1/mettle/suites -H "Authorization: Bearer $KEY"</code>.</p>
                     </div>
 
                     <h3>Getting Help</h3>
