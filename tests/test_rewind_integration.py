@@ -191,44 +191,44 @@ class TestAuthEnforcement:
 
     def test_list_suites_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.get("/api/v1/mettle/suites")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_get_suite_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.get("/api/v1/mettle/suites/adversarial")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_create_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.post(
             "/api/v1/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_get_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.get("/api/v1/mettle/sessions/some-id")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_cancel_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.delete("/api/v1/mettle/sessions/some-id")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_verify_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.post(
             "/api/v1/mettle/sessions/some-id/verify",
             json={"suite": "adversarial", "answers": {}},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_submit_round_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.post(
             "/api/v1/mettle/sessions/some-id/rounds/1/answer",
             json={"answers": {}},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     def test_get_result_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.get("/api/v1/mettle/sessions/some-id/result")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
 
 # ---- Ownership Enforcement (403) ----
