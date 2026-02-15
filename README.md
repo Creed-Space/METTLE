@@ -406,6 +406,30 @@ python mcp_server.py
 
 ---
 
+## Claude Code Skill
+
+METTLE includes a skill for Claude Code that teaches Claude how to run METTLE verification.
+
+### Installation
+
+```bash
+# Copy the skill folder to your project's Claude Code skills directory
+cp -r skill/ /path/to/your/project/.claude/skills/mettle/
+```
+
+The skill activates automatically when you ask Claude to verify itself or run METTLE.
+
+### Skill vs MCP Server
+
+| | Skill | MCP Server |
+|---|---|---|
+| **Setup** | Copy folder | Configure in settings |
+| **How it works** | Teaches Claude the API | Provides native tools |
+| **Verification** | Claude calls API via curl | Direct tool calls |
+| **Best for** | Quick setup, any project | Deep integration |
+
+---
+
 ## Configuration
 
 | Environment Variable | Description | Default |
