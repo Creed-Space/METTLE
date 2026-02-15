@@ -249,7 +249,7 @@ class TestCreateSessionGenericException:
         test_client = TestClient(app)
 
         resp = test_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         assert resp.status_code == 500
@@ -292,7 +292,7 @@ class TestVerifySingleShotGenericException:
         create_app = _build_app(user, fake_redis)
         create_client = TestClient(create_app)
         create_resp = create_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         assert create_resp.status_code == 201
@@ -300,7 +300,7 @@ class TestVerifySingleShotGenericException:
 
         # Now try to verify using the patched manager that will explode
         resp = test_client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "adversarial", "answers": {}},
         )
         assert resp.status_code == 500
@@ -342,7 +342,7 @@ class TestSubmitRoundGenericException:
         create_app = _build_app(user, fake_redis)
         create_client = TestClient(create_app)
         create_resp = create_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         assert create_resp.status_code == 201
@@ -350,7 +350,7 @@ class TestSubmitRoundGenericException:
 
         # Try to submit round with the patched manager
         resp = test_client.post(
-            f"/api/v1/mettle/sessions/{session_id}/rounds/1/answer",
+            f"/api/mettle/sessions/{session_id}/rounds/1/answer",
             json={"answers": {}},
         )
         assert resp.status_code == 500
@@ -374,7 +374,7 @@ class TestGetSessionResultVCPAttestation:
 
         # Create session with a single suite
         create_resp = create_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         assert create_resp.status_code == 201
@@ -383,7 +383,7 @@ class TestGetSessionResultVCPAttestation:
 
         # Verify the suite to complete the session
         verify_resp = create_client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={
                 "suite": "adversarial",
                 "answers": challenges.get("adversarial", {}),
@@ -410,7 +410,7 @@ class TestGetSessionResultVCPAttestation:
         result_client = TestClient(result_app)
 
         resp = result_client.get(
-            f"/api/v1/mettle/sessions/{session_id}/result?include_vcp=true"
+            f"/api/mettle/sessions/{session_id}/result?include_vcp=true"
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -435,7 +435,7 @@ class TestGetSessionResultVCPAttestation:
         result_client = TestClient(result_app)
 
         resp = result_client.get(
-            f"/api/v1/mettle/sessions/{session_id}/result"
+            f"/api/mettle/sessions/{session_id}/result"
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -457,7 +457,7 @@ class TestGetSessionResultVCPAttestation:
         with patch("mettle.signing.is_available", return_value=True), \
              patch("mettle.signing.sign_attestation", return_value="fake_sig_base64"):
             resp = result_client.get(
-                f"/api/v1/mettle/sessions/{session_id}/result?include_vcp=true"
+                f"/api/mettle/sessions/{session_id}/result?include_vcp=true"
             )
 
         assert resp.status_code == 200
@@ -488,7 +488,7 @@ class TestGetSessionResultVCPAttestation:
 
         with patch("builtins.__import__", side_effect=import_blocker):
             resp = result_client.get(
-                f"/api/v1/mettle/sessions/{session_id}/result?include_vcp=true"
+                f"/api/mettle/sessions/{session_id}/result?include_vcp=true"
             )
 
         assert resp.status_code == 200
@@ -515,7 +515,7 @@ class TestWellKnownVCPKeys:
             "public_key_pem": "-----BEGIN PUBLIC KEY-----\nfake\n-----END PUBLIC KEY-----",
             "available": True,
         }):
-            resp = client.get("/api/v1/mettle/.well-known/vcp-keys")
+            resp = client.get("/api/mettle/.well-known/vcp-keys")
         assert resp.status_code == 200
         data = resp.json()
         assert data["available"] is True
@@ -533,7 +533,7 @@ class TestWellKnownVCPKeys:
             return original_import(name, *args, **kwargs)
 
         with patch("builtins.__import__", side_effect=import_blocker):
-            resp = client.get("/api/v1/mettle/.well-known/vcp-keys")
+            resp = client.get("/api/mettle/.well-known/vcp-keys")
 
         assert resp.status_code == 200
         data = resp.json()

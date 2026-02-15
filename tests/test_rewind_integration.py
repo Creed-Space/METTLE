@@ -190,44 +190,44 @@ class TestAuthEnforcement:
     """
 
     def test_list_suites_requires_auth(self, unauthenticated_client: TestClient) -> None:
-        resp = unauthenticated_client.get("/api/v1/mettle/suites")
+        resp = unauthenticated_client.get("/api/mettle/suites")
         assert resp.status_code in (401, 403)
 
     def test_get_suite_requires_auth(self, unauthenticated_client: TestClient) -> None:
-        resp = unauthenticated_client.get("/api/v1/mettle/suites/adversarial")
+        resp = unauthenticated_client.get("/api/mettle/suites/adversarial")
         assert resp.status_code in (401, 403)
 
     def test_create_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         assert resp.status_code in (401, 403)
 
     def test_get_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
-        resp = unauthenticated_client.get("/api/v1/mettle/sessions/some-id")
+        resp = unauthenticated_client.get("/api/mettle/sessions/some-id")
         assert resp.status_code in (401, 403)
 
     def test_cancel_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
-        resp = unauthenticated_client.delete("/api/v1/mettle/sessions/some-id")
+        resp = unauthenticated_client.delete("/api/mettle/sessions/some-id")
         assert resp.status_code in (401, 403)
 
     def test_verify_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.post(
-            "/api/v1/mettle/sessions/some-id/verify",
+            "/api/mettle/sessions/some-id/verify",
             json={"suite": "adversarial", "answers": {}},
         )
         assert resp.status_code in (401, 403)
 
     def test_submit_round_requires_auth(self, unauthenticated_client: TestClient) -> None:
         resp = unauthenticated_client.post(
-            "/api/v1/mettle/sessions/some-id/rounds/1/answer",
+            "/api/mettle/sessions/some-id/rounds/1/answer",
             json={"answers": {}},
         )
         assert resp.status_code in (401, 403)
 
     def test_get_result_requires_auth(self, unauthenticated_client: TestClient) -> None:
-        resp = unauthenticated_client.get("/api/v1/mettle/sessions/some-id/result")
+        resp = unauthenticated_client.get("/api/mettle/sessions/some-id/result")
         assert resp.status_code in (401, 403)
 
 
@@ -239,35 +239,35 @@ class TestOwnershipEnforcement:
 
     def test_get_session_wrong_owner(self, client: TestClient, wrong_user_client: TestClient) -> None:
         # Create as correct user
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": ["adversarial"]})
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
 
         # Access as wrong user -- 403
-        resp = wrong_user_client.get(f"/api/v1/mettle/sessions/{session_id}")
+        resp = wrong_user_client.get(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 403
 
     def test_cancel_session_wrong_owner(self, client: TestClient, wrong_user_client: TestClient) -> None:
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": ["adversarial"]})
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
 
-        resp = wrong_user_client.delete(f"/api/v1/mettle/sessions/{session_id}")
+        resp = wrong_user_client.delete(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 404  # cancel returns 404 for wrong user (security: don't reveal existence)
 
     def test_verify_wrong_owner(self, client: TestClient, wrong_user_client: TestClient) -> None:
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": ["adversarial"]})
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
 
         resp = wrong_user_client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "adversarial", "answers": {}},
         )
         assert resp.status_code == 403
 
     def test_get_result_wrong_owner(self, client: TestClient, wrong_user_client: TestClient) -> None:
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": ["adversarial"]})
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
 
-        resp = wrong_user_client.get(f"/api/v1/mettle/sessions/{session_id}/result")
+        resp = wrong_user_client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 403
 
 
@@ -280,7 +280,7 @@ class TestFullSessionLifecycle:
     def test_single_suite_lifecycle(self, client: TestClient) -> None:
         """Create session, verify suite, get result."""
         # 1. Create
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": ["adversarial"]})
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         assert resp.status_code == 201
         data = resp.json()
         session_id = data["session_id"]
@@ -288,19 +288,19 @@ class TestFullSessionLifecycle:
         assert data["time_budget_ms"] > 0
 
         # 2. Check status
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}")
+        resp = client.get(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 200
         assert resp.json()["status"] == "challenges_generated"
 
         # 3. Verify
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "adversarial", "answers": {"dynamic_math": {"computed": 0, "time_ms": 50}}},
         )
         assert resp.status_code == 200
 
         # 4. Get result
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/result")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 200
         result = resp.json()
         assert result["status"] == "completed"
@@ -309,20 +309,20 @@ class TestFullSessionLifecycle:
     def test_multi_suite_lifecycle(self, client: TestClient) -> None:
         """Create with 3 suites, verify each, get combined result."""
         suites = ["adversarial", "native", "self-reference"]
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": suites})
+        resp = client.post("/api/mettle/sessions", json={"suites": suites})
         assert resp.status_code == 201
         session_id = resp.json()["session_id"]
 
         # Verify each suite
         for suite in suites:
             resp = client.post(
-                f"/api/v1/mettle/sessions/{session_id}/verify",
+                f"/api/mettle/sessions/{session_id}/verify",
                 json={"suite": suite, "answers": {}},
             )
             assert resp.status_code == 200
 
         # Get combined result
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/result")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 200
         result = resp.json()
         assert result["status"] == "completed"
@@ -330,16 +330,16 @@ class TestFullSessionLifecycle:
 
     def test_cancel_then_verify_fails(self, client: TestClient) -> None:
         """Cancel session, then verify should fail."""
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": ["adversarial"]})
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
 
         # Cancel
-        resp = client.delete(f"/api/v1/mettle/sessions/{session_id}")
+        resp = client.delete(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 204
 
         # Verify should fail
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "adversarial", "answers": {}},
         )
         assert resp.status_code == 400
@@ -357,7 +357,7 @@ class TestCorrectAnswerVerification:
         client_data, server_answers = ChallengeAdapter.generate_adversarial()
 
         # Create session
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": ["adversarial"]})
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         assert resp.status_code == 201
         resp.json()["session_id"]
 
@@ -409,7 +409,7 @@ class TestNovelReasoningFlow:
     def test_easy_novel_reasoning_lifecycle(self, client: TestClient) -> None:
         """Create session with novel-reasoning, submit all rounds, get result."""
         resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         assert resp.status_code == 201
@@ -423,7 +423,7 @@ class TestNovelReasoningFlow:
         # Submit each round
         for round_num in range(1, num_rounds + 1):
             resp = client.post(
-                f"/api/v1/mettle/sessions/{session_id}/rounds/{round_num}/answer",
+                f"/api/mettle/sessions/{session_id}/rounds/{round_num}/answer",
                 json={"answers": {name: {} for name in challenges}},
             )
             assert resp.status_code == 200
@@ -436,7 +436,7 @@ class TestNovelReasoningFlow:
                 pass
 
         # Get final result
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/result")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 200
         result = resp.json()
         assert result["status"] == "completed"
@@ -445,20 +445,20 @@ class TestNovelReasoningFlow:
     def test_novel_reasoning_round_feedback(self, client: TestClient) -> None:
         """Submit round, then retrieve feedback separately."""
         resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         session_id = resp.json()["session_id"]
 
         # Submit round 1
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/rounds/1/answer",
+            f"/api/mettle/sessions/{session_id}/rounds/1/answer",
             json={"answers": {}},
         )
         assert resp.status_code == 200
 
         # Get round feedback
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/rounds/1/feedback")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/rounds/1/feedback")
         assert resp.status_code == 200
         feedback = resp.json()
         assert feedback["round"] == 1
@@ -473,7 +473,7 @@ class TestAllSuitesSmoke:
 
     def test_create_all_suites(self, client: TestClient) -> None:
         """Create session with all suites."""
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": ["all"]})
+        resp = client.post("/api/mettle/sessions", json={"suites": ["all"]})
         assert resp.status_code == 201
         data = resp.json()
         assert len(data["suites"]) == 10
@@ -481,7 +481,7 @@ class TestAllSuitesSmoke:
 
     def test_suite_info_all_suites(self, client: TestClient) -> None:
         """Verify suite info is available for all suites."""
-        resp = client.get("/api/v1/mettle/suites")
+        resp = client.get("/api/mettle/suites")
         assert resp.status_code == 200
         suites = resp.json()
         assert len(suites) == 10
@@ -492,12 +492,12 @@ class TestAllSuitesSmoke:
         """Each single-shot suite can create + verify independently."""
         single_shot = [s for s in SUITE_NAMES if s != "novel-reasoning"]
         for suite_name in single_shot:
-            resp = client.post("/api/v1/mettle/sessions", json={"suites": [suite_name]})
+            resp = client.post("/api/mettle/sessions", json={"suites": [suite_name]})
             assert resp.status_code == 201, f"Failed to create session for {suite_name}"
             session_id = resp.json()["session_id"]
 
             resp = client.post(
-                f"/api/v1/mettle/sessions/{session_id}/verify",
+                f"/api/mettle/sessions/{session_id}/verify",
                 json={"suite": suite_name, "answers": {}},
             )
             assert resp.status_code == 200, f"Failed to verify {suite_name}"
@@ -515,26 +515,26 @@ class TestErrorHandling:
 
     def test_verify_nonexistent_session(self, client: TestClient) -> None:
         resp = client.post(
-            "/api/v1/mettle/sessions/nonexistent/verify",
+            "/api/mettle/sessions/nonexistent/verify",
             json={"suite": "adversarial", "answers": {}},
         )
         assert resp.status_code == 404
 
     def test_submit_round_nonexistent_session(self, client: TestClient) -> None:
         resp = client.post(
-            "/api/v1/mettle/sessions/nonexistent/rounds/1/answer",
+            "/api/mettle/sessions/nonexistent/rounds/1/answer",
             json={"answers": {}},
         )
         assert resp.status_code == 404
 
     def test_duplicate_suite_verification(self, client: TestClient) -> None:
         """Verifying the same suite twice should fail."""
-        resp = client.post("/api/v1/mettle/sessions", json={"suites": ["adversarial"]})
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
 
         # First verify
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "adversarial", "answers": {}},
         )
         assert resp.status_code == 200
@@ -542,7 +542,7 @@ class TestErrorHandling:
         # Second verify -- already completed, should fail
         # Session is now completed (single suite), so verification should fail
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "adversarial", "answers": {}},
         )
         assert resp.status_code == 400
@@ -550,13 +550,13 @@ class TestErrorHandling:
     def test_novel_reasoning_wrong_round_order(self, client: TestClient) -> None:
         """Submitting round 2 before round 1 should fail."""
         resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         session_id = resp.json()["session_id"]
 
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/rounds/2/answer",
+            f"/api/mettle/sessions/{session_id}/rounds/2/answer",
             json={"answers": {}},
         )
         assert resp.status_code == 400
@@ -564,7 +564,7 @@ class TestErrorHandling:
     def test_invalid_difficulty(self, client: TestClient) -> None:
         """Invalid difficulty level should fail validation."""
         resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"], "difficulty": "impossible"},
         )
         assert resp.status_code == 422  # Pydantic validation error

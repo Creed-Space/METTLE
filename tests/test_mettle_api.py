@@ -508,7 +508,7 @@ class TestSuiteEndpoints:
     """Test suite information endpoints."""
 
     def test_list_suites(self, client: TestClient) -> None:
-        resp = client.get("/api/v1/mettle/suites")
+        resp = client.get("/api/mettle/suites")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 10
@@ -517,7 +517,7 @@ class TestSuiteEndpoints:
         assert "novel-reasoning" in names
 
     def test_list_suites_structure(self, client: TestClient) -> None:
-        resp = client.get("/api/v1/mettle/suites")
+        resp = client.get("/api/mettle/suites")
         suite = resp.json()[0]
         assert "name" in suite
         assert "display_name" in suite
@@ -527,7 +527,7 @@ class TestSuiteEndpoints:
         assert "difficulty_levels" in suite
 
     def test_get_suite_info(self, client: TestClient) -> None:
-        resp = client.get("/api/v1/mettle/suites/adversarial")
+        resp = client.get("/api/mettle/suites/adversarial")
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "adversarial"
@@ -535,14 +535,14 @@ class TestSuiteEndpoints:
         assert not data["is_multi_round"]
 
     def test_get_suite_info_novel_reasoning(self, client: TestClient) -> None:
-        resp = client.get("/api/v1/mettle/suites/novel-reasoning")
+        resp = client.get("/api/mettle/suites/novel-reasoning")
         assert resp.status_code == 200
         data = resp.json()
         assert data["is_multi_round"]
         assert data["suite_number"] == 10
 
     def test_get_suite_not_found(self, client: TestClient) -> None:
-        resp = client.get("/api/v1/mettle/suites/nonexistent")
+        resp = client.get("/api/mettle/suites/nonexistent")
         assert resp.status_code == 404
 
 
@@ -551,7 +551,7 @@ class TestSessionEndpoints:
 
     def test_create_session(self, client: TestClient) -> None:
         resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"], "difficulty": "standard"},
         )
         assert resp.status_code == 201
@@ -563,7 +563,7 @@ class TestSessionEndpoints:
 
     def test_create_session_all_suites(self, client: TestClient) -> None:
         resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["all"]},
         )
         assert resp.status_code == 201
@@ -572,7 +572,7 @@ class TestSessionEndpoints:
 
     def test_create_session_invalid_suite(self, client: TestClient) -> None:
         resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["fake"]},
         )
         assert resp.status_code == 400
@@ -580,34 +580,34 @@ class TestSessionEndpoints:
     def test_get_session_status(self, client: TestClient) -> None:
         # Create session
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
 
         # Get status
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}")
+        resp = client.get(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["session_id"] == session_id
         assert data["status"] == "challenges_generated"
 
     def test_get_session_not_found(self, client: TestClient) -> None:
-        resp = client.get("/api/v1/mettle/sessions/nonexistent")
+        resp = client.get("/api/mettle/sessions/nonexistent")
         assert resp.status_code == 404
 
     def test_cancel_session(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
 
-        resp = client.delete(f"/api/v1/mettle/sessions/{session_id}")
+        resp = client.delete(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 204
 
     def test_cancel_nonexistent_session(self, client: TestClient) -> None:
-        resp = client.delete("/api/v1/mettle/sessions/nonexistent")
+        resp = client.delete("/api/mettle/sessions/nonexistent")
         assert resp.status_code == 404
 
 
@@ -617,14 +617,14 @@ class TestVerificationEndpoints:
     def test_verify_single_shot(self, client: TestClient) -> None:
         # Create session
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
 
         # Verify
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={
                 "suite": "adversarial",
                 "answers": {"dynamic_math": {"computed": 0, "time_ms": 50}},
@@ -638,20 +638,20 @@ class TestVerificationEndpoints:
 
     def test_verify_wrong_suite(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
 
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "native", "answers": {}},
         )
         assert resp.status_code == 400
 
     def test_multi_round_submit(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         assert create_resp.status_code == 201
@@ -659,7 +659,7 @@ class TestVerificationEndpoints:
 
         # Submit round 1
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/rounds/1/answer",
+            f"/api/mettle/sessions/{session_id}/rounds/1/answer",
             json={"answers": {}},
         )
         assert resp.status_code == 200
@@ -669,42 +669,42 @@ class TestVerificationEndpoints:
 
     def test_multi_round_wrong_order(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         session_id = create_resp.json()["session_id"]
 
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/rounds/2/answer",
+            f"/api/mettle/sessions/{session_id}/rounds/2/answer",
             json={"answers": {}},
         )
         assert resp.status_code == 400
 
     def test_get_result_not_completed(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
 
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/result")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 400
 
     def test_get_result_after_completion(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
 
         # Complete the suite
         client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "adversarial", "answers": {}},
         )
 
         # Get result
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/result")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 200
         data = resp.json()
         assert data["session_id"] == session_id
@@ -717,29 +717,29 @@ class TestGetRoundFeedback:
 
     def test_get_feedback_not_found(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"]},
         )
         session_id = create_resp.json()["session_id"]
 
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/rounds/1/feedback")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/rounds/1/feedback")
         assert resp.status_code == 404
 
     def test_get_feedback_after_round(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         session_id = create_resp.json()["session_id"]
 
         # Submit round 1
         client.post(
-            f"/api/v1/mettle/sessions/{session_id}/rounds/1/answer",
+            f"/api/mettle/sessions/{session_id}/rounds/1/answer",
             json={"answers": {}},
         )
 
         # Get feedback
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/rounds/1/feedback")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/rounds/1/feedback")
         assert resp.status_code == 200
         data = resp.json()
         assert data["round"] == 1

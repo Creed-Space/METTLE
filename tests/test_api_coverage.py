@@ -224,7 +224,7 @@ class TestGetSessionStatus:
         owner_client = TestClient(app_owner)
 
         create_resp = owner_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         assert create_resp.status_code == 201
@@ -234,7 +234,7 @@ class TestGetSessionStatus:
         app_other = _app_with_user(other, fake_redis)
         other_client = TestClient(app_other)
 
-        resp = other_client.get(f"/api/v1/mettle/sessions/{session_id}")
+        resp = other_client.get(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 403
 
     def test_session_with_start_time_has_elapsed_ms(self, fake_redis: FakeRedis) -> None:
@@ -244,7 +244,7 @@ class TestGetSessionStatus:
 
         # Create session
         create_resp = test_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
@@ -258,7 +258,7 @@ class TestGetSessionStatus:
         session_data["start_time"] = time.time() - 2.0  # 2 seconds ago
         fake_redis._store[key] = json.dumps(session_data)
 
-        resp = test_client.get(f"/api/v1/mettle/sessions/{session_id}")
+        resp = test_client.get(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 200
         data = resp.json()
         # elapsed_ms should be at least 1000 (2s = 2000ms, with some tolerance)
@@ -274,7 +274,7 @@ class TestCancelSession:
     """Test cancel_session endpoint edge cases."""
 
     def test_session_not_found_returns_404(self, client: TestClient) -> None:
-        resp = client.delete("/api/v1/mettle/sessions/nonexistent-session-id")
+        resp = client.delete("/api/mettle/sessions/nonexistent-session-id")
         assert resp.status_code == 404
 
 
@@ -288,7 +288,7 @@ class TestVerifySingleShot:
 
     def test_session_not_found_returns_404(self, client: TestClient) -> None:
         resp = client.post(
-            "/api/v1/mettle/sessions/nonexistent-id/verify",
+            "/api/mettle/sessions/nonexistent-id/verify",
             json={"suite": "adversarial", "answers": {}},
         )
         assert resp.status_code == 404
@@ -301,7 +301,7 @@ class TestVerifySingleShot:
         owner_client = TestClient(app_owner)
 
         create_resp = owner_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
@@ -310,7 +310,7 @@ class TestVerifySingleShot:
         other_client = TestClient(app_other)
 
         resp = other_client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "adversarial", "answers": {}},
         )
         assert resp.status_code == 403
@@ -318,13 +318,13 @@ class TestVerifySingleShot:
     def test_value_error_from_manager_returns_400(self, client: TestClient) -> None:
         # Create session with adversarial, then try to verify 'native' (not in session)
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
 
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/verify",
+            f"/api/mettle/sessions/{session_id}/verify",
             json={"suite": "native", "answers": {}},
         )
         assert resp.status_code == 400
@@ -340,7 +340,7 @@ class TestSubmitRoundAnswer:
 
     def test_session_not_found_returns_404(self, client: TestClient) -> None:
         resp = client.post(
-            "/api/v1/mettle/sessions/nonexistent-id/rounds/1/answer",
+            "/api/mettle/sessions/nonexistent-id/rounds/1/answer",
             json={"answers": {}},
         )
         assert resp.status_code == 404
@@ -353,7 +353,7 @@ class TestSubmitRoundAnswer:
         owner_client = TestClient(app_owner)
 
         create_resp = owner_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         session_id = create_resp.json()["session_id"]
@@ -362,7 +362,7 @@ class TestSubmitRoundAnswer:
         other_client = TestClient(app_other)
 
         resp = other_client.post(
-            f"/api/v1/mettle/sessions/{session_id}/rounds/1/answer",
+            f"/api/mettle/sessions/{session_id}/rounds/1/answer",
             json={"answers": {}},
         )
         assert resp.status_code == 403
@@ -370,14 +370,14 @@ class TestSubmitRoundAnswer:
     def test_value_error_from_manager_returns_400(self, client: TestClient) -> None:
         # Create session with novel-reasoning, then submit wrong round order
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         session_id = create_resp.json()["session_id"]
 
         # Submit round 2 before round 1
         resp = client.post(
-            f"/api/v1/mettle/sessions/{session_id}/rounds/2/answer",
+            f"/api/mettle/sessions/{session_id}/rounds/2/answer",
             json={"answers": {}},
         )
         assert resp.status_code == 400
@@ -392,7 +392,7 @@ class TestGetRoundFeedback:
     """Test get_round_feedback endpoint edge cases."""
 
     def test_session_not_found_returns_404(self, client: TestClient) -> None:
-        resp = client.get("/api/v1/mettle/sessions/nonexistent-id/rounds/1/feedback")
+        resp = client.get("/api/mettle/sessions/nonexistent-id/rounds/1/feedback")
         assert resp.status_code == 404
 
     def test_different_user_returns_403(self, fake_redis: FakeRedis) -> None:
@@ -403,7 +403,7 @@ class TestGetRoundFeedback:
         owner_client = TestClient(app_owner)
 
         create_resp = owner_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         session_id = create_resp.json()["session_id"]
@@ -411,18 +411,18 @@ class TestGetRoundFeedback:
         app_other = _app_with_user(other, fake_redis)
         other_client = TestClient(app_other)
 
-        resp = other_client.get(f"/api/v1/mettle/sessions/{session_id}/rounds/1/feedback")
+        resp = other_client.get(f"/api/mettle/sessions/{session_id}/rounds/1/feedback")
         assert resp.status_code == 403
 
     def test_round_not_yet_completed_returns_404(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         session_id = create_resp.json()["session_id"]
 
         # Round 1 has not been submitted yet
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/rounds/1/feedback")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/rounds/1/feedback")
         assert resp.status_code == 404
 
 
@@ -435,7 +435,7 @@ class TestGetSessionResult:
     """Test get_session_result endpoint edge cases."""
 
     def test_session_not_found_returns_404(self, client: TestClient) -> None:
-        resp = client.get("/api/v1/mettle/sessions/nonexistent-id/result")
+        resp = client.get("/api/mettle/sessions/nonexistent-id/result")
         assert resp.status_code == 404
 
     def test_different_user_returns_403(self, fake_redis: FakeRedis) -> None:
@@ -446,7 +446,7 @@ class TestGetSessionResult:
         owner_client = TestClient(app_owner)
 
         create_resp = owner_client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
@@ -454,16 +454,16 @@ class TestGetSessionResult:
         app_other = _app_with_user(other, fake_redis)
         other_client = TestClient(app_other)
 
-        resp = other_client.get(f"/api/v1/mettle/sessions/{session_id}/result")
+        resp = other_client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 403
 
     def test_session_not_completed_returns_400(self, client: TestClient) -> None:
         create_resp = client.post(
-            "/api/v1/mettle/sessions",
+            "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         session_id = create_resp.json()["session_id"]
 
         # Session is in challenges_generated state, not completed
-        resp = client.get(f"/api/v1/mettle/sessions/{session_id}/result")
+        resp = client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 400
