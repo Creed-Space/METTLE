@@ -7,6 +7,7 @@ A reverse-CAPTCHA verification system for AI-only spaces.
 """
 
 import asyncio
+import os
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -444,12 +445,39 @@ async def lifespan(app: FastAPI):
     print("   Machine Entity Trustbuilding through Turing-inverse Logic Examination")
     print("   'Prove your metal.'")
 
+    # Initialize Redis for v2 router (optional — v2 returns 503 if unavailable)
+    redis_url = os.environ.get("METTLE_REDIS_URL")
+    if redis_url:
+        try:
+            import redis.asyncio as redis_client
+
+            app.state.redis = redis_client.from_url(redis_url)
+            await app.state.redis.ping()
+            logger.info("redis_connected", url=redis_url[:20] + "...")
+        except Exception as e:
+            logger.warning("redis_unavailable", error=str(e))
+            app.state.redis = None
+    else:
+        app.state.redis = None
+
+    # Init VCP signing (Ed25519 for attestations)
+    try:
+        from mettle.signing import init_signing
+
+        init_signing()
+    except ImportError:
+        pass
+
     # Start cleanup task
     cleanup_task = asyncio.create_task(cleanup_expired_sessions())
 
     yield
 
-    # Shutdown
+    # Shutdown Redis
+    if getattr(app.state, "redis", None):
+        await app.state.redis.aclose()
+
+    # Shutdown cleanup task
     cleanup_task.cancel()
     try:
         await cleanup_task
@@ -1802,6 +1830,11 @@ if _static_dir.exists():
 # === Mount API Router ===
 app.include_router(api_router)
 
+# === Mount v2 METTLE Router (10-suite sessions, VCP attestation, Ed25519 signing) ===
+from mettle.router import router as mettle_v2_router
+
+app.include_router(mettle_v2_router)
+
 
 # === Root serves UI ===
 @app.get("/", include_in_schema=False)
@@ -1821,14 +1854,6 @@ async def redirect_legacy_ui():
 
 
 # === Static Page Routes ===
-@app.get("/pricing", include_in_schema=False)
-async def serve_pricing():
-    """Serve the pricing page."""
-    if _static_dir.exists():
-        return FileResponse(str(_static_dir / "pricing.html"))
-    return RedirectResponse(url="/")
-
-
 @app.get("/about", include_in_schema=False)
 async def serve_about():
     """Serve the about page."""
@@ -1856,11 +1881,6 @@ async def sitemap():
     <loc>https://mettle.sh/static/docs.html</loc>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://mettle.sh/pricing</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://mettle.sh/about</loc>
