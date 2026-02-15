@@ -18,6 +18,10 @@ env/
 htmlcov/
 .tox/
 .nox/
+.hypothesis/
+
+# Database
+mettle.db
 
 # IDE
 .idea/
