@@ -63,7 +63,28 @@
     position: sticky;
     top: 2rem;
     max-height: calc(100vh - 4rem);
-    overflow-y: auto;
+    overflow-y: scroll;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) rgba(255, 255, 255, 0.05);
+}
+
+.docs-sidebar::-webkit-scrollbar {
+    width: 6px;
+    -webkit-appearance: none;
+}
+
+.docs-sidebar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+}
+
+.docs-sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.docs-sidebar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
 }
 
 .docs-sidebar h3 {
@@ -76,7 +97,7 @@
 }
 
 .docs-sidebar h3:first-child {
-    margin-top: 0;
+    margin-top: 0.5rem;
 }
 
 .docs-sidebar ul {

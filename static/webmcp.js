@@ -74,8 +74,8 @@
         properties: {
           difficulty: {
             type: 'string',
-            enum: ['basic', 'full'],
-            description: 'basic = 3 challenges, full = 5'
+            enum: ['easy', 'standard', 'hard'],
+            description: 'easy = relaxed timing, standard = production-grade, hard = aggressive timing'
           },
           entity_id: {
             type: 'string',
