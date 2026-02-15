@@ -1,0 +1,4 @@
+# file: /Users/nellwatson/Documents/GitHub/METTLE/config.py
+# hypothesis_version: 6.148.7
+
+[86400, '*', ',', '.env', '0.2.0', '10/minute', '60/minute', 'API title', 'API version', 'Enable debug mode', 'INFO', 'Logging level', 'METTLE', 'METTLE_', 'Runtime environment', 'Settings', 'after', 'development', 'env_file', 'env_prefix', 'extra', 'ignore', 'production', 'sqlite:///mettle.db']

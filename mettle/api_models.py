@@ -50,6 +50,10 @@ class CreateSessionRequest(BaseModel):
     suites: list[str] = Field(default=["all"], description="Suite names or 'all'")
     difficulty: Literal["easy", "standard", "hard"] = "standard"
     entity_id: str | None = Field(default=None, description="Optional entity identifier")
+    vcp_token: str | None = Field(
+        default=None,
+        description="Optional CSM-1 VCP token for enhanced Suite 9 verification",
+    )
 
 
 class RoundAnswerRequest(BaseModel):
@@ -108,7 +112,12 @@ class SessionResultResponse(BaseModel):
     suites_completed: list[str]
     results: dict[str, Any]
     overall_passed: bool
+    tier: str | None = Field(default=None, description="METTLE verification tier (bronze/silver/gold/platinum)")
     iteration_curve: dict[str, Any] | None = Field(default=None, description="Only for sessions including Suite 10")
+    vcp_attestation: dict[str, Any] | None = Field(
+        default=None,
+        description="VCP-compatible attestation (when include_vcp=true)",
+    )
     elapsed_ms: int
 
 

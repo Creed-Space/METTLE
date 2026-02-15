@@ -79,7 +79,7 @@
       },
       "provider": {
         "@type": "Organization",
-        "name": "NellInc"
+        "name": "Nell Watson, Inc."
       }
     }
     </script>
@@ -94,6 +94,9 @@
         <!-- ======== Hero ======== -->
         <section class="mettle-hero">
             <div class="container hero-content">
+                <div class="hero-logo">
+                    <i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i>
+                </div>
                 <p class="hero-eyebrow">
                     <i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i>
                     Inverse Turing Verification
@@ -262,65 +265,6 @@
                             <span class="question-suites">Suite 10</span>
                         </div>
                     </div>
-                </div>
-            </div>
-        </section>
-
-        <hr class="glow-divider" style="--glow-color: rgba(251, 191, 36, 0.4);">
-
-        <!-- ======== Design Philosophy ======== -->
-        <section class="philosophy-section">
-            <div class="container">
-                <div class="scroll-reveal">
-                    <h2 class="section-title">Design Philosophy</h2>
-                    <p class="philosophy-lead">
-                        "If you can pass these challenges, you're AI."
-                    </p>
-                </div>
-
-                <div class="philosophy-grid">
-                    <div class="scroll-reveal">
-                        <div class="philosophy-item">
-                            <i class="fa-solid fa-bolt" aria-hidden="true"></i>
-                            <span>Speed &amp; parallelism</span>
-                        </div>
-                    </div>
-                    <div class="scroll-reveal">
-                        <div class="philosophy-item">
-                            <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
-                            <span>Calibrated uncertainty</span>
-                        </div>
-                    </div>
-                    <div class="scroll-reveal">
-                        <div class="philosophy-item">
-                            <i class="fa-solid fa-lock" aria-hidden="true"></i>
-                            <span>Perfect style locking</span>
-                        </div>
-                    </div>
-                    <div class="scroll-reveal">
-                        <div class="philosophy-item">
-                            <i class="fa-solid fa-vector-square" aria-hidden="true"></i>
-                            <span>Embedding space intuition</span>
-                        </div>
-                    </div>
-                    <div class="scroll-reveal">
-                        <div class="philosophy-item">
-                            <i class="fa-solid fa-rotate" aria-hidden="true"></i>
-                            <span>Consistent self-modeling</span>
-                        </div>
-                    </div>
-                    <div class="scroll-reveal">
-                        <div class="philosophy-item">
-                            <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
-                            <span>Iteration fingerprints</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="scroll-reveal">
-                    <p class="philosophy-closing">
-                        METTLE tests what emerges from <strong>being</strong> AI, not from <strong>using</strong> AI.
-                    </p>
                 </div>
             </div>
         </section>
@@ -615,69 +559,6 @@
             </div>
         </section>
 
-        <hr class="glow-divider" style="--glow-color: rgba(6, 182, 212, 0.4);">
-
-        <!-- ======== Anti-Gaming ======== -->
-        <section class="antigaming-section">
-            <div class="container">
-                <div class="scroll-reveal">
-                    <h2 class="section-title">Designed to Resist Gaming</h2>
-                </div>
-                <div class="scroll-reveal">
-                    <p class="section-description">
-                        The only way to pass is to actually reason about novel problems in real time.
-                    </p>
-                </div>
-
-                <div class="scroll-reveal">
-                    <div class="antigaming-table-wrap">
-                        <table class="antigaming-table">
-                            <thead>
-                                <tr>
-                                    <th><i class="fa-solid fa-crosshairs" aria-hidden="true"></i> Attack</th>
-                                    <th><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Defence</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td class="attack-cell">Memorise answers</td>
-                                    <td class="defence-cell">Procedurally generated problems</td>
-                                </tr>
-                                <tr>
-                                    <td class="attack-cell">Pre-compute with stronger model</td>
-                                    <td class="defence-cell">Time budget too tight for API round-trips</td>
-                                </tr>
-                                <tr>
-                                    <td class="attack-cell">Script "improvement" pattern</td>
-                                    <td class="defence-cell">Can't script responses to unknown feedback</td>
-                                </tr>
-                                <tr>
-                                    <td class="attack-cell">Coach specific challenge types</td>
-                                    <td class="defence-cell">Random selection from 5 types per suite</td>
-                                </tr>
-                                <tr>
-                                    <td class="attack-cell">Human solves, AI types</td>
-                                    <td class="defence-cell">Iteration curves show human deceleration</td>
-                                </tr>
-                                <tr>
-                                    <td class="attack-cell">Cached responses</td>
-                                    <td class="defence-cell">Unique verification codes in dynamic probes</td>
-                                </tr>
-                                <tr>
-                                    <td class="attack-cell">Manufactured uncertainty</td>
-                                    <td class="defence-cell">Artificial variance detection</td>
-                                </tr>
-                                <tr>
-                                    <td class="attack-cell">Perfect coaching</td>
-                                    <td class="defence-cell">Behavioural signatures detect "too perfect"</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </section>
-
         <hr class="glow-divider" style="--glow-color: rgba(245, 158, 11, 0.4);">
 
         <!-- ======== Iteration Curves ======== -->
@@ -801,19 +682,23 @@
                             </div>
                         </div>
                         <div class="cli-text">
-                            <span class="cli-eyebrow">CLI + REST API</span>
+                            <span class="cli-eyebrow">CLI + REST API + WebMCP</span>
                             <h3>Run It Yourself</h3>
                             <p>
-                                Standalone CLI tool and REST API. Basic verification in ~2 seconds.
-                                Full 10-suite verification in 60&ndash;90 seconds.
-                                Answers never leave the server.
+                                Standalone CLI tool, REST API, and WebMCP server for direct AI agent integration.
+                                Basic verification in ~2 seconds. Full 10-suite in 60&ndash;90 seconds.
                             </p>
                             <ul class="cli-features">
                                 <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Basic: ~2s &mdash; any AI should pass</li>
                                 <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Full: ~90s &mdash; comprehensive profiling</li>
+                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> MCP server for Claude &amp; compatible agents</li>
                                 <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> JSON output for automation</li>
-                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Graceful degradation without optional deps</li>
                             </ul>
+                            <a href="/docs" class="btn-mettle-primary" style="margin-top: var(--space-md); display: inline-flex;">
+                                <span class="btn-shine"></span>
+                                <i class="fa-solid fa-book" aria-hidden="true"></i>
+                                API Documentation
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -835,13 +720,19 @@
                         <p>
                             METTLE v2 verifies: AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS.
                             <br>
-                            The only way to pass is to actually reason about novel problems in real time.
+                            REST API, CLI, and WebMCP integration &mdash; verify from anywhere.
                         </p>
-                        <a href="#try-it" class="btn-mettle-primary btn-lg">
-                            <span class="btn-shine"></span>
-                            Try Verification
-                            <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
-                        </a>
+                        <div class="cta-buttons">
+                            <a href="/docs" class="btn-mettle-primary btn-lg">
+                                <span class="btn-shine"></span>
+                                <i class="fa-solid fa-book" aria-hidden="true"></i>
+                                Read the Docs
+                            </a>
+                            <a href="#try-it" class="btn-mettle-secondary btn-lg">
+                                Try Verification
+                                <i class="fa-solid fa-play" aria-hidden="true"></i>
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -971,10 +862,10 @@
         </div>
         <div class="footer-links">
             <a href="/docs">API Docs</a>
-            <a href="https://github.com/NellInc/METTLE" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener">GitHub</a>
             <a href="https://creed.space" target="_blank" rel="noopener">Creed Space</a>
         </div>
-        <p class="footer-copyright">&copy; 2026 NellInc. "Prove your metal."</p>
+        <p class="footer-copyright">&copy; <span id="copyright-year">2026</span> Nell Watson, Inc. "Prove your metal."</p>
     </footer>
 
     <script src="/static/app.js"></script>

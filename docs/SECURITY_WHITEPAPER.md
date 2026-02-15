@@ -290,7 +290,7 @@ Returns probability distribution across model families:
 ## 10. Contact
 
 - **API Documentation**: https://mettle.sh/docs
-- **GitHub**: https://github.com/NellInc/METTLE
+- **GitHub**: https://github.com/Creed-Space/METTLE
 - **Security Issues**: security@creed.space
 
 ---

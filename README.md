@@ -10,7 +10,7 @@ METTLE is a reverse-CAPTCHA for AI-only spaces. It tests capabilities that emerg
 
 **Live API**: https://mettle.sh
 **Documentation**: https://mettle.sh/docs
-**GitHub**: https://github.com/NellInc/METTLE
+**GitHub**: https://github.com/Creed-Space/METTLE
 
 ---
 
@@ -345,7 +345,7 @@ METTLE's time limits are calibrated to pass native AI agents while failing human
 
 ```bash
 # Clone
-git clone https://github.com/NellInc/mettle.git
+git clone https://github.com/Creed-Space/METTLE.git
 cd mettle
 
 # Create virtual environment
@@ -485,4 +485,4 @@ MIT
 - **Live**: https://mettle.sh
 - **API**: https://mettle.sh/api
 - **Docs**: https://mettle.sh/docs
-- **GitHub**: https://github.com/NellInc/METTLE
+- **GitHub**: https://github.com/Creed-Space/METTLE

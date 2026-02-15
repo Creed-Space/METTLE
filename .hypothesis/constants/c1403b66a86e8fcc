@@ -1,0 +1,4 @@
+# file: /Users/nellwatson/Documents/GitHub/METTLE/mettle/router.py
+# hypothesis_version: 6.148.7
+
+[1000, '/api/v1/mettle', '/sessions', '/suites', '/suites/{suite_name}', 'Ed25519', 'Not your session', 'Round number', 'Session ID', 'Suite name', 'Verification failed', 'accuracy', 'algorithm', 'available', 'created_at', 'current_round', 'details', 'difficulty', 'easy', 'error', 'errors', 'expires_at', 'feedback', 'hard', 'key_id', 'mettle', 'mettle-vcp-v1', 'next_round_data', 'passed', 'public_key_pem', 'redis', 'results', 'round_num', 'score', 'session_id', 'standard', 'start_time', 'status', 'suite', 'suites', 'suites_completed', 'tier', 'time_budget_ms', 'time_remaining_ms', 'user_id', 'vcp_attestation']

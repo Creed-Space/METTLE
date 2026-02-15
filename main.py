@@ -502,7 +502,7 @@ to distinguish AI agents from humans and humans-using-AI-as-tool.
     ],
     contact={
         "name": "METTLE Support",
-        "url": "https://github.com/NellInc/mettle",
+        "url": "https://github.com/Creed-Space/METTLE",
     },
     license_info={
         "name": "MIT",

@@ -196,15 +196,15 @@ class TestGetSessionManager:
     @pytest.mark.asyncio
     async def test_redis_unavailable_raises_503(self) -> None:
         from mettle.router import get_session_manager
+        from fastapi import HTTPException
 
-        with patch("mettle.router.get_redis_client", new_callable=AsyncMock) as mock_redis:
-            mock_redis.return_value = None
-            from fastapi import HTTPException
+        mock_request = MagicMock()
+        mock_request.app.state.redis = None
 
-            with pytest.raises(HTTPException) as exc_info:
-                await get_session_manager()
-            assert exc_info.value.status_code == 503
-            assert "Redis" in exc_info.value.detail
+        with pytest.raises(HTTPException) as exc_info:
+            await get_session_manager(mock_request)
+        assert exc_info.value.status_code == 503
+        assert "Redis" in exc_info.value.detail
 
 
 # ---------------------------------------------------------------------------

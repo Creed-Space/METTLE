@@ -12,7 +12,7 @@ import logging
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
 from mettle.auth import AuthenticatedUser, require_authenticated_user
 from mettle.challenge_adapter import SUITE_REGISTRY
@@ -114,6 +114,7 @@ async def create_session(request: CreateSessionRequest, user: AuthUser, mgr: Met
             suites=request.suites,
             difficulty=request.difficulty,
             entity_id=request.entity_id,
+            vcp_token=request.vcp_token,
         )
 
         logger.info(
@@ -323,10 +324,12 @@ async def get_session_result(
     user: AuthUser,
     mgr: MettleManager,
     session_id: str = Path(description="Session ID"),
+    include_vcp: bool = Query(default=False, description="Include VCP-compatible attestation in response"),
 ) -> SessionResultResponse:
     """Get final results for a completed session.
 
     Returns 404 if session not completed yet.
+    When include_vcp=true, includes a VCP-compatible attestation with tier and signature.
     """
 
     session = await mgr.get_session(session_id)
@@ -342,4 +345,60 @@ async def get_session_result(
             detail=f"Session not completed. Status: {session['status']}",
         )
 
+    # Compute tier from suite results
+    from mettle.vcp import compute_tier
+
+    suite_results = result.get("results", {})
+    suites_passed = [s for s, r in suite_results.items() if r.get("passed", False)]
+    suites_failed = [s for s, r in suite_results.items() if not r.get("passed", False)]
+    tier = compute_tier(suites_passed)
+    result["tier"] = tier
+
+    # Build VCP attestation if requested
+    vcp_attestation = None
+    if include_vcp:
+        from mettle.vcp import build_mettle_attestation
+
+        # Try to use Ed25519 signing if available
+        sign_fn = None
+        try:
+            from mettle.signing import is_available, sign_attestation
+
+            if is_available():
+                sign_fn = sign_attestation
+        except ImportError:
+            pass
+
+        pass_rate = sum(1 for r in suite_results.values() if r.get("passed", False)) / max(len(suite_results), 1)
+        vcp_attestation = build_mettle_attestation(
+            session_id=session_id,
+            difficulty=session.get("difficulty", "standard"),
+            suites_passed=suites_passed,
+            suites_failed=suites_failed,
+            pass_rate=pass_rate,
+            sign_fn=sign_fn,
+        )
+
+    result["vcp_attestation"] = vcp_attestation
+
     return SessionResultResponse(**result)
+
+
+@router.get("/.well-known/vcp-keys")
+async def get_vcp_keys() -> dict:
+    """Serve public key for VCP attestation signature verification.
+
+    This endpoint enables trust config discovery for VCP consumers.
+    """
+    try:
+        from mettle.signing import get_public_key_info
+
+        return get_public_key_info()
+    except ImportError:
+        return {
+            "key_id": "mettle-vcp-v1",
+            "algorithm": "Ed25519",
+            "public_key_pem": None,
+            "available": False,
+            "error": "cryptography package not installed",
+        }

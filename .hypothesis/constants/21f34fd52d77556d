@@ -1,0 +1,4 @@
+# file: /Users/nellwatson/Documents/GitHub/METTLE/mettle/verifier.py
+# hypothesis_version: 6.148.7
+
+[0.0, 0.3, 0.8, 1.0, '.!?', '...', 'Challenge expired', 'Indeed,', 'Start with a number', 'a', 'an', 'avg_similarity', 'chain', 'correct_answer', 'error', 'exactly 5 words', 'expected', 'expected_answer', 'i', 'instruction', 'instruction_followed', 'is', 'it', 'its', 'natural_variation', 'num_responses', 'received', 'response_preview', 'responses', 'the', 'therefore', 'think', 'time_ok', 'unique_count', '|']

@@ -1,0 +1,4 @@
+# file: /Users/nellwatson/Documents/GitHub/METTLE/mettle/challenger.py
+# hypothesis_version: 6.148.7
+
+[100, 400, 500, 600, 800, 999, 1000, 2000, 2500, 3000, 3500, '*', '+', '-', '...', '2', 'Add 10', 'Double it', 'E = mc___', 'Hello ___', 'I have a ___', "I'll be ___", 'Indeed,', 'Once upon a ___', 'Start with a number', 'Subtract 5', 'To be or not to ___', 'To infinity and ___', 'What is 2 + 2?', 'a', 'add_10', 'am', 'b', 'back', 'be', 'beyond', 'chain', 'chocolates', 'double', 'dream', 'expected_answer', 'fear', 'force', 'fox', 'instruction', 'instructions', 'kid', 'leap', 'num_responses', 'op', 'problem', 'question', 'subtract_5', 'therefore', 'time', 'truth', 'validator_id', 'watson', 'word', 'world', 'years', 'you']

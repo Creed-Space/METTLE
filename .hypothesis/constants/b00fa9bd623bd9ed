@@ -1,0 +1,4 @@
+# file: /Users/nellwatson/Documents/GitHub/METTLE/mettle/vcp.py
+# hypothesis_version: 6.148.7
+
+[',', '2.0', ':', '@', 'C', 'G', 'MT', 'P', 'VCP token is empty', '^VCP:([^:]+):(.+)$', 'adversarial', 'agency', 'anti-thrall', 'attestation_type', 'auditor', 'auditor_key_id', 'bronze', 'content_hash', 'counter-coaching', 'difficulty', 'gold', 'intent-provenance', 'inverse-turing', 'metadata', 'mettle-vcp-v1', 'mettle-verification', 'mettle.creed.space', 'mettle_version', 'native', 'none', 'novel-reasoning', 'pass_rate', 'platinum', 'reviewed_at', 'self-reference', 'session_id', 'signature', 'silver', 'social', 'suites_failed', 'suites_passed', 'tier', 'utf-8']

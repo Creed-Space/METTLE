@@ -1,0 +1,4 @@
+# file: /Users/nellwatson/Documents/GitHub/METTLE/mettle/api_models.py
+# hypothesis_version: 6.148.7
+
+['Suite name to verify', "Suite names or 'all'", 'adversarial', 'agency', 'all', 'anti-thrall', 'cancelled', 'challenges_generated', 'completed', 'counter-coaching', 'created', 'easy', 'expired', 'hard', 'in_progress', 'intent-provenance', 'inverse-turing', 'native', 'novel-reasoning', 'self-reference', 'social', 'standard']

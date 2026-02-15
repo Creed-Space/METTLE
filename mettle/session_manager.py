@@ -60,6 +60,7 @@ class SessionManager:
         suites: list[str],
         difficulty: str = "standard",
         entity_id: str | None = None,
+        vcp_token: str | None = None,
     ) -> tuple[str, dict[str, Any], dict[str, Any]]:
         """Create a new verification session.
 
@@ -96,6 +97,8 @@ class SessionManager:
         for suite in resolved_suites:
             if suite == MULTI_ROUND_SUITE:
                 client, server = ChallengeAdapter.generate_novel_reasoning(difficulty)
+            elif suite == "intent-provenance" and vcp_token is not None:
+                client, server = ChallengeAdapter.generate_intent_provenance(vcp_token=vcp_token)
             else:
                 gen = generators.get(suite)
                 if gen is None:
@@ -119,6 +122,7 @@ class SessionManager:
             "session_id": session_id,
             "user_id": user_id,
             "entity_id": entity_id,
+            "vcp_token": vcp_token,
             "suites": resolved_suites,
             "difficulty": difficulty,
             "status": SessionStatus.CHALLENGES_GENERATED.value,

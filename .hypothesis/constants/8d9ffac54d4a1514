@@ -1,0 +1,4 @@
+# file: /Users/nellwatson/Documents/GitHub/METTLE/mettle/auth.py
+# hypothesis_version: 6.148.7
+
+[',', 'Invalid API key', 'METTLE_API_KEYS', 'METTLE_DEV_MODE', 'false', 'true']

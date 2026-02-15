@@ -1,0 +1,4 @@
+# file: /Users/nellwatson/Documents/GitHub/METTLE/mettle/models.py
+# hypothesis_version: 6.148.7
+
+['Challenge', 'Unique challenge ID', 'basic', 'chain', 'chained_reasoning', 'consistency', 'expected_answer', 'full', 'instructions', 'speed_math', 'token_prediction']
