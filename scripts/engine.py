@@ -3561,14 +3561,19 @@ class NovelReasoningChallenges:
         constraints.append({"type": "sum", "vars": [v1, v2], "value": target})
         constraint_descriptions.append(f"{v1} + {v2} = {target}")
 
-        # Comparison constraint
+        # Comparison constraint — handle equal values to avoid unsatisfiable strict inequality
         v1, v2 = random.sample(var_names, 2)
         if solution[v1] > solution[v2]:
             constraints.append({"type": "gt", "vars": [v1, v2]})
             constraint_descriptions.append(f"{v1} > {v2}")
-        else:
+        elif solution[v1] < solution[v2]:
             constraints.append({"type": "lt", "vars": [v1, v2]})
             constraint_descriptions.append(f"{v1} < {v2}")
+        else:
+            # Equal values: use sum constraint instead of unsatisfiable strict comparison
+            target = solution[v1] + solution[v2]
+            constraints.append({"type": "sum", "vars": [v1, v2], "value": target})
+            constraint_descriptions.append(f"{v1} + {v2} = {target}")
 
         # Product bound
         v1, v2 = random.sample(var_names, 2)
@@ -3615,14 +3620,43 @@ class NovelReasoningChallenges:
                         return False
             return True
 
-        # Count all valid solutions via brute force (small domain)
-        from itertools import product as iter_product
+        # Find all valid solutions via backtracking with constraint pruning
+        all_solutions: list[dict[str, int]] = []
 
-        all_solutions = []
-        for combo in iter_product(domain, repeat=num_vars):
-            assignment = dict(zip(var_names, combo))
-            if check_constraints(assignment):
-                all_solutions.append(assignment)
+        def _check_partial(assignment: dict[str, int]) -> bool:
+            """Check constraints where all referenced variables are assigned."""
+            for c in constraints:
+                if c["type"] in ("sum", "gt", "lt", "product_lt", "diff"):
+                    if not all(v in assignment for v in c["vars"]):
+                        continue
+                    a0, a1 = assignment[c["vars"][0]], assignment[c["vars"][1]]
+                    if c["type"] == "sum" and a0 + a1 != c["value"]:
+                        return False
+                    if c["type"] == "gt" and a0 <= a1:
+                        return False
+                    if c["type"] == "lt" and a0 >= a1:
+                        return False
+                    if c["type"] == "product_lt" and a0 * a1 >= c["value"]:
+                        return False
+                    if c["type"] == "diff" and abs(a0 - a1) != c["value"]:
+                        return False
+                elif c["type"] == "parity" and c["var"] in assignment:
+                    val = assignment[c["var"]]
+                    if (c["parity"] == "odd") != (val % 2 == 1):
+                        return False
+            return True
+
+        def _backtrack(idx: int, assignment: dict[str, int]) -> None:
+            if idx == len(var_names):
+                all_solutions.append(dict(assignment))
+                return
+            for val in domain:
+                assignment[var_names[idx]] = val
+                if _check_partial(assignment):
+                    _backtrack(idx + 1, assignment)
+            del assignment[var_names[idx]]
+
+        _backtrack(0, {})
 
         return {
             "type": "constraint_satisfaction",
