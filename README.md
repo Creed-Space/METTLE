@@ -13,10 +13,28 @@ METTLE tests capabilities that emerge from **being** AI — not from using AI as
 ## Quick Start
 
 ```bash
+# Install the open-source verifier
 pip install mettle-verifier
+
+# Run all 10 suites locally — self-signed credential
 mettle verify --full
-mettle verify --full --notarize  # Creed Space signed credential
+
+# Optionally notarize through Creed Space for portable trust
+mettle verify --full --notarize --api-key mtl_your_key
 ```
+
+### Self-Hosted vs Notarized
+
+| | Self-Hosted | Notarized |
+|---|---|---|
+| **Runs where** | Your infrastructure | Your infrastructure + Creed Space signing |
+| **API key needed** | No | Yes (for notarization endpoint only) |
+| **Credential issuer** | `mettle:self-hosted` | `mettle.creedspace.org` |
+| **Trust model** | Your own Ed25519 key | Creed Space's public key |
+| **Verifiable by** | Anyone with your public key | Anyone via `/.well-known/vcp-keys` |
+| **Use case** | Development, internal verification | Production, cross-org, portable trust |
+
+All verification runs locally. Notarization adds a cryptographic countersignature — Creed Space issues a challenge seed that makes the session deterministic, then validates results match the seed without re-running any LLM calls.
 
 ## 10 Verification Suites
 
@@ -78,19 +96,36 @@ METTLE provides a Model Context Protocol server so AI agents can verify themselv
 
 | Tool | Description |
 |------|-------------|
-| `mettle_start_session` | Begin a new verification session |
-| `mettle_answer_challenge` | Submit an answer to a challenge |
-| `mettle_get_result` | Retrieve session results and credential |
-| `mettle_auto_verify` | Run full automated verification |
+| `mettle_start_session` | Start a verification session, returns challenges for all suites |
+| `mettle_verify_suite` | Submit answers for a single-shot suite (1–9) |
+| `mettle_submit_round` | Submit answers for a multi-round suite (Suite 10) |
+| `mettle_get_result` | Get final result with credential tier and VCP attestation |
+| `mettle_auto_verify` | One-shot: create session, solve all challenges, return result |
 
 **Configuration:**
 
 ```bash
-# Environment variable
-export METTLE_API_URL=https://mettle.sh/api
+export METTLE_API_URL=https://mettle.sh
+export METTLE_API_KEY=your_api_key
 
-# Run the MCP server
 python mcp_server.py
+```
+
+Add to Claude Desktop `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mettle": {
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "env": {
+        "METTLE_API_URL": "https://mettle.sh",
+        "METTLE_API_KEY": "your_key"
+      }
+    }
+  }
+}
 ```
 
 ## Use Cases
@@ -119,18 +154,25 @@ pytest tests/ -v
 
 ## API Reference
 
-The API is fully documented via OpenAPI. Once the server is running:
+Full docs: [mettle.sh/docs](https://mettle.sh/docs) | Interactive: `http://localhost:8000/docs`
 
-- **Interactive docs:** `http://localhost:8000/docs`
-- **Production docs:** [mettle.sh/docs](https://mettle.sh/docs)
-
-Core endpoints:
+All endpoints are prefixed with `/api/mettle`. Bearer token authentication required.
 
 ```
-POST /api/session          # Start a verification session
-POST /api/session/{id}     # Submit challenge responses
-GET  /api/session/{id}     # Get session results
-POST /api/verify           # Full automated verification
+GET  /suites                              # List all 10 suites
+POST /sessions                            # Create a verification session
+POST /sessions/{id}/verify                # Submit answers (Suites 1–9)
+POST /sessions/{id}/rounds/{n}/answer     # Submit round answers (Suite 10)
+GET  /sessions/{id}/result                # Final results + credential tier
+GET  /sessions/{id}/result?include_vcp=true  # Results with VCP attestation
+GET  /.well-known/vcp-keys                # Ed25519 public key for verification
+```
+
+### Notarization API
+
+```
+POST /notarize/seed    # Request a challenge seed (makes session deterministic)
+POST /notarize         # Submit results + seed for Creed Space countersignature
 ```
 
 ## The Philosophy
