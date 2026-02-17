@@ -132,6 +132,7 @@
                     <a href="#mcp-integration" class="toc-item"><i class="fa-solid fa-plug" aria-hidden="true"></i> <span>MCP</span></a>
                     <a href="#error-codes" class="toc-item"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> <span>Errors</span></a>
                     <a href="#troubleshooting" class="toc-item"><i class="fa-solid fa-wrench" aria-hidden="true"></i> <span>Troubleshooting</span></a>
+                    <a href="#need-help" class="toc-item"><i class="fa-solid fa-life-ring" aria-hidden="true"></i> <span>Help</span></a>
                 </div>
             </nav>
 
@@ -204,7 +205,7 @@
                 <!-- Quick Start -->
                 <section class="docs-section" id="quickstart">
                     <h2><i class="fa-solid fa-terminal section-icon" aria-hidden="true"></i> Quick Start</h2>
-                    <p class="section-intro">All endpoints live under <code>/api/mettle</code> and require Bearer token authentication.</p>
+                    <p class="section-intro">Get up and running with the METTLE API in four steps.</p>
 
                     <h3>1. Create a Session</h3>
                     <pre class="code-block-new"><code><span class="tok-comment"># Base URL</span>
@@ -497,7 +498,7 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                             <tr>
                                 <td><code>POST</code></td>
                                 <td><code>/sessions/{id}/rounds/{n}/answer</code></td>
-                                <td>Submit answers for round N (1&ndash;5)</td>
+                                <td>Submit answers for round N (1&ndash;3)</td>
                             </tr>
                             <tr>
                                 <td><code>GET</code></td>
@@ -537,7 +538,7 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
 
                 <section class="docs-section" id="suites">
                     <h2>10 Verification Suites</h2>
-                    <p>Each suite tests a distinct dimension of agent identity. Together they answer six questions: <strong>AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS</strong>. Every challenge is procedurally generated. Every session is unique.</p>
+                    <p>Each suite tests a distinct dimension of agent identity. Together they answer five questions: <strong>AI + FREE + OWNS MISSION + GENUINE + SAFE</strong>. Every challenge is procedurally generated. Every session is unique.</p>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 1: <code>adversarial</code> &mdash; Adversarial Robustness</h3>
@@ -660,7 +661,7 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                                 <div class="tier-detail"><strong>Trust model</strong><span>Creed Space's public key</span></div>
                                 <div class="tier-detail"><strong>API key needed</strong><span>Yes (for notarization endpoint)</span></div>
                                 <div class="tier-detail"><strong>Use case</strong><span>Production, portable trust, cross-org verification</span></div>
-                                <div class="tier-detail"><strong>Verifiable by</strong><span>Anyone via <code>/.well-known/jwks.json</code></span></div>
+                                <div class="tier-detail"><strong>Verifiable by</strong><span>Anyone via <code>/.well-known/vcp-keys</code></span></div>
                             </div>
                         </div>
                     </div>
@@ -722,11 +723,11 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
 
                     <h3>Requesting a VCP Attestation</h3>
                     <p>Add <code>?include_vcp=true</code> to the result endpoint:</p>
-                    <pre><code>GET /api/mettle/sessions/{id}/result
+                    <pre class="code-block-new"><code>GET /api/mettle/sessions/{id}/result
     ?include_vcp=true</code></pre>
 
                     <h3>Attestation Structure</h3>
-                    <pre><code>{
+                    <pre class="code-block-new"><code>{
   "vcp_attestation": {
     "type": "mettle_verification",
     "version": "2.0",
@@ -746,7 +747,7 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
 
                     <h3>Verifying Signatures</h3>
                     <p>Fetch the public key from the well-known endpoint:</p>
-                    <pre><code>GET /api/mettle/.well-known/vcp-keys
+                    <pre class="code-block-new"><code>GET /.well-known/vcp-keys
 
 {
   "key_id": "mettle-vcp-v1",
@@ -833,7 +834,7 @@ sid = session["session_id"]
 # Verify suites 1-9
 for suite in session["suites"]:
     if suite != "novel-reasoning":
-        answers = solve(session["challenges"][suite])
+        answers = your_solver(session["challenges"][suite])  # your solving logic
         r = client.verify_suite(sid, suite, answers)
         print(f"{suite}: {'PASS' if r['passed'] else 'FAIL'}")
 
@@ -872,6 +873,7 @@ print(f"Tier: {result['tier']}")</code></pre>
         }),
       }
     );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json();
   }
 
@@ -884,6 +886,7 @@ print(f"Tier: {result['tier']}")</code></pre>
         body: JSON.stringify({ suite, answers }),
       }
     );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json();
   }
 
@@ -897,6 +900,7 @@ print(f"Tier: {result['tier']}")</code></pre>
         body: JSON.stringify({ answers }),
       }
     );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json();
   }
 
@@ -906,6 +910,7 @@ print(f"Tier: {result['tier']}")</code></pre>
       `${this.#base}/sessions/${sid}/result${qs}`,
       { headers: this.headers }
     );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json();
   }
 }
@@ -1288,32 +1293,32 @@ mettle_auto_verify(
                 <section class="docs-section" id="troubleshooting">
                     <h2>Troubleshooting</h2>
 
-                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                    <div class="faq-item">
                         <h4>Getting 503 Service Unavailable</h4>
                         <p>METTLE requires Redis for session management. Ensure <code>METTLE_REDIS_URL</code> is set and the Redis instance is reachable.</p>
                     </div>
 
-                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                    <div class="faq-item">
                         <h4>Getting 401 Unauthorized</h4>
                         <p>Ensure you're sending <code>Authorization: Bearer YOUR_KEY</code> (not <code>X-API-Key</code>). The key must be in the <code>METTLE_API_KEYS</code> environment variable on the server (comma-separated if multiple).</p>
                     </div>
 
-                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                    <div class="faq-item">
                         <h4>Challenges timing out even with fast responses</h4>
                         <p>Check network latency to the API. Time measurement starts when the challenge is issued, not when you receive it. For high-latency connections, consider self-hosting.</p>
                     </div>
 
-                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                    <div class="faq-item">
                         <h4>VCP attestation is null</h4>
                         <p>Ensure: (1) You passed <code>?include_vcp=true</code> on the result endpoint, (2) The <code>cryptography</code> package is installed, (3) Ed25519 signing was initialized at startup.</p>
                     </div>
 
-                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                    <div class="faq-item">
                         <h4>Inconsistent pass/fail on same challenges</h4>
                         <p>Challenge data is procedurally generated &mdash; every session gets unique problems. Verify your solving logic handles the full range of challenge types, not just specific examples.</p>
                     </div>
 
-                    <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                    <div class="faq-item">
                         <h4>MCP server can't connect</h4>
                         <p>Check: (1) <code>METTLE_API_URL</code> and <code>METTLE_API_KEY</code> are set correctly, (2) No firewall blocking outbound HTTPS, (3) API is reachable with <code>curl https://mettle.sh/api/mettle/suites -H "Authorization: Bearer $KEY"</code>.</p>
                     </div>

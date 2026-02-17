@@ -86,7 +86,6 @@
     gap: 8px;
     padding: 7px 10px;
     border: none;
-    border-radius: var(--radius-md);
     background: transparent;
     color: var(--color-text-muted);
     font-size: 0.8125rem;
@@ -281,13 +280,6 @@
     background: none;
     padding: 0;
 }
-
-.tok-key { color: #fbbf24; }
-.tok-str { color: #34d399; }
-.tok-num { color: #60a5fa; }
-.tok-comment { color: #6b7280; }
-.tok-cmd { color: #a78bfa; }
-.tok-flag { color: #fb923c; }
 
 /* Tier comparison */
 .tier-comparison {
@@ -498,39 +490,6 @@
 
 .docs-container { max-width: 1200px; }
 
-/* Old sidebar-based layout — hidden now for new sections */
-.docs-main {
-    display: grid;
-    grid-template-columns: 220px 1fr;
-    gap: 3rem;
-}
-
-@media (max-width: 900px) {
-    .docs-main { grid-template-columns: 1fr; }
-    .docs-sidebar { display: none; }
-}
-
-.docs-sidebar {
-    position: sticky;
-    top: 2rem;
-    max-height: calc(100vh - 4rem);
-    overflow-y: scroll;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.15) rgba(255, 255, 255, 0.05);
-}
-
-.docs-sidebar::-webkit-scrollbar { width: 6px; -webkit-appearance: none; }
-.docs-sidebar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 3px; }
-.docs-sidebar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
-.docs-sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
-
-.docs-sidebar h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem; margin-top: 1.5rem; }
-.docs-sidebar h3:first-child { margin-top: 0.5rem; }
-.docs-sidebar ul { list-style: none; margin-bottom: 1rem; }
-.docs-sidebar li { margin-bottom: 0.25rem; }
-.docs-sidebar a { color: var(--text); text-decoration: none; font-size: 0.9rem; display: block; padding: 0.25rem 0; transition: color 0.2s; }
-.docs-sidebar a:hover { color: var(--primary); }
-
 /* Content — old sections that haven't been migrated yet */
 .docs-content { max-width: 800px; }
 .docs-content h1 { font-size: 2.5rem; margin-bottom: 1rem; }
@@ -572,8 +531,12 @@
 .callout i { color: var(--primary); font-size: 1.25rem; flex-shrink: 0; }
 .callout p { margin: 0; font-size: 0.9rem; }
 
-.docs-footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border); text-align: center; }
-.docs-footer a { color: var(--primary); }
+.faq-item {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+}
 
 /* Responsive */
 @media (max-width: 900px) {
