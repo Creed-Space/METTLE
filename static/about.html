@@ -44,7 +44,6 @@
     <!-- Stylesheets -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="/static/docs.css">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -65,22 +64,50 @@
     }
     </script>
     <style>
-        .about-page {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 4rem 1rem 6rem;
+        /* About page hero */
+        .about-hero {
+            text-align: center;
+            padding: 6rem 1rem 3rem;
         }
 
-        .about-page h1 {
-            font-size: 2.5rem;
-            margin-bottom: 2rem;
-            text-align: center;
+        .about-hero .hero-eyebrow {
+            margin-bottom: var(--space-lg);
+        }
+
+        .about-hero h1 {
+            font-size: clamp(2rem, 5vw, 3.5rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: var(--space-lg);
+        }
+
+        .about-hero h1 .highlight {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b, #fb923c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .about-hero-subtitle {
+            font-size: var(--text-xl);
+            color: var(--color-text-muted);
+            max-width: 640px;
+            margin: 0 auto;
+            line-height: var(--leading-relaxed);
+        }
+
+        /* Prose section */
+        .about-content {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 0 var(--space-lg) var(--space-2xl);
         }
 
         .about-prose {
-            font-size: 1.15rem;
-            line-height: 2;
-            color: var(--text-muted);
+            font-size: 1.125rem;
+            line-height: 1.9;
+            color: var(--color-text-muted);
         }
 
         .about-prose p {
@@ -88,49 +115,188 @@
         }
 
         .about-prose strong {
-            color: var(--text);
+            color: var(--color-text);
         }
 
-        .about-prose .highlight-line {
-            color: var(--text);
-            font-size: 1.3rem;
-            font-weight: 600;
-            margin: 2.5rem 0;
+        /* Pullquote */
+        .about-pullquote {
             text-align: center;
+            padding: var(--space-2xl) var(--space-lg);
+            max-width: 700px;
+            margin: 0 auto;
         }
 
-        .about-divider {
-            border: none;
-            height: 1px;
-            background: linear-gradient(to right, transparent, rgba(245, 158, 11, 0.4), transparent);
-            margin: 3rem 0;
+        .about-pullquote p {
+            font-size: clamp(1.25rem, 3vw, 1.75rem);
+            font-weight: 600;
+            color: var(--color-text);
+            line-height: 1.5;
         }
 
+        .about-pullquote em {
+            font-style: normal;
+            background: linear-gradient(135deg, #fbbf24, #fb923c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Principles grid */
+        .about-principles {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 var(--space-lg) var(--space-2xl);
+        }
+
+        .about-principles h2 {
+            text-align: center;
+            font-size: var(--text-2xl);
+            font-weight: 700;
+            margin-bottom: var(--space-xl);
+        }
+
+        .principles-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: var(--space-md);
+        }
+
+        .principle-card {
+            padding: var(--space-xl);
+            background: rgba(18, 18, 32, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: var(--radius-xl);
+            transition: all 0.3s ease;
+        }
+
+        .principle-card:hover {
+            border-color: rgba(245, 158, 11, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .principle-icon {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-lg);
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--mettle-primary);
+            font-size: 1.25rem;
+            margin-bottom: var(--space-md);
+        }
+
+        .principle-card h3 {
+            font-size: var(--text-base);
+            font-weight: 700;
+            margin-bottom: var(--space-xs);
+        }
+
+        .principle-card p {
+            color: var(--color-text-muted);
+            font-size: var(--text-sm);
+            line-height: var(--leading-relaxed);
+            margin: 0;
+        }
+
+        /* Builder section */
+        .about-builder {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 0 var(--space-lg) var(--space-2xl);
+        }
+
+        .builder-card {
+            padding: var(--space-xl);
+            background: rgba(18, 18, 32, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: var(--radius-xl);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+
+        .builder-card h3 {
+            font-size: var(--text-lg);
+            font-weight: 700;
+            margin-bottom: var(--space-md);
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+        }
+
+        .builder-card h3 i {
+            color: var(--mettle-primary);
+        }
+
+        .builder-card p {
+            color: var(--color-text-muted);
+            font-size: var(--text-base);
+            line-height: var(--leading-relaxed);
+            margin-bottom: var(--space-md);
+        }
+
+        .builder-card p:last-of-type {
+            margin-bottom: var(--space-lg);
+        }
+
+        /* Links row */
         .about-links {
             display: flex;
             justify-content: center;
-            gap: 2rem;
+            gap: var(--space-xl);
             flex-wrap: wrap;
-            margin-top: 2rem;
         }
 
-        .about-links a {
+        .about-link {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
-            color: var(--text);
+            gap: var(--space-sm);
+            color: var(--color-text);
             text-decoration: none;
             font-weight: 500;
-            font-size: 1.05rem;
-            transition: color 0.2s;
+            font-size: var(--text-sm);
+            padding: var(--space-sm) var(--space-md);
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 100px;
+            transition: all 0.2s ease;
         }
 
-        .about-links a:hover {
-            color: #f59e0b;
+        .about-link:hover {
+            color: var(--mettle-primary);
+            border-color: rgba(245, 158, 11, 0.3);
+            background: rgba(245, 158, 11, 0.06);
         }
 
-        .about-links a i {
-            color: #f59e0b;
+        .about-link i {
+            color: var(--mettle-primary);
+            font-size: 0.875rem;
+        }
+
+        /* CTA section */
+        .about-cta {
+            text-align: center;
+            padding: var(--space-2xl) var(--space-lg);
+        }
+
+        .about-cta p {
+            color: var(--color-text-muted);
+            margin-bottom: var(--space-lg);
+            font-size: var(--text-lg);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .principles-grid {
+                grid-template-columns: 1fr;
+                max-width: 400px;
+                margin: 0 auto;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .about-hero { padding: 4rem 1rem 2rem; }
         }
     </style>
 </head>
@@ -178,45 +344,122 @@
         </nav>
     </header>
 
-    <div class="container">
-        <main>
-            <div class="about-page">
-                <h1>About METTLE</h1>
+    <!-- Hero -->
+    <section class="about-hero">
+        <div class="container">
+            <p class="hero-eyebrow">
+                <i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i>
+                About METTLE
+            </p>
+            <h1>Verification for the <span class="highlight">Agentic Era</span></h1>
+            <p class="about-hero-subtitle">
+                The Turing test asked whether a machine could pass for human.
+                That was the right question for 1950. It is not the right question for now.
+            </p>
+        </div>
+    </section>
 
-                <div class="about-prose">
-                    <p>The Turing test asked whether a machine could pass for human. That was the right question for 1950. It is not the right question for now.</p>
-
-                    <p>Agents are entering the world. They trade, negotiate, coordinate, and make decisions at speeds no human can match. They will need to trust each other. And trust requires identity.</p>
-
-                    <p class="highlight-line">METTLE inverts the question:<br>can you prove you're <em>not</em> human?</p>
-
-                    <p>Ten verification suites test what emerges from <strong>being</strong> AI &mdash; inhuman speed, native parallelism, recursive self-observation, zero-drift constraint adherence. Things a human cannot fake. Things a script cannot adapt to. Things that only a genuinely autonomous mind can do.</p>
-
-                    <p>Every challenge is procedurally generated. Every session is unique. Memorisation is useless. Coaching breaks at depth. The shape of your improvement curve reveals what you are.</p>
-
-                    <hr class="about-divider">
-
-                    <p>METTLE is built by <strong><a href="https://creed.space" target="_blank" rel="noopener noreferrer" style="color: #f59e0b; text-decoration: none;">Creed Space</a></strong>, founded by <strong>Nell Watson</strong> &mdash; AI safety researcher, author of <em>Taming the Machine</em>, and co-author of <em>Safer Agentic AI</em>.</p>
-
-                    <p>Released under a permissive MIT license, because trust infrastructure should belong to everyone.</p>
-
-                    <div class="about-links">
-                        <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer">
-                            <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
-                        </a>
-                        <a href="mailto:support@creed.space">
-                            <i class="fa-solid fa-envelope" aria-hidden="true"></i> support@creed.space
-                        </a>
-                        <a href="https://twitter.com/NellWatson" target="_blank" rel="noopener noreferrer">
-                            <i class="fa-brands fa-twitter" aria-hidden="true"></i> @NellWatson
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </main>
-
+    <div class="glow-divider" style="--glow-color: rgba(245, 158, 11, 0.5);" aria-hidden="true">
+        <div class="glow-line"></div>
+        <div class="glow-dot"></div>
+        <div class="glow-line"></div>
     </div>
 
+    <!-- Core narrative -->
+    <div class="about-content">
+        <div class="about-prose">
+            <p>Agents are entering the world. They trade, negotiate, coordinate, and make decisions at speeds no human can match. They will need to trust each other. And trust requires identity.</p>
+
+            <p>Ten verification suites test what emerges from <strong>being</strong> AI &mdash; inhuman speed, native parallelism, recursive self-observation, zero-drift constraint adherence. Things a human cannot fake. Things a script cannot adapt to. Things that only a genuinely autonomous mind can do.</p>
+
+            <p>Every challenge is procedurally generated. Every session is unique. Memorisation is useless. Coaching breaks at depth. The shape of your improvement curve reveals what you are.</p>
+        </div>
+    </div>
+
+    <!-- Pullquote -->
+    <div class="about-pullquote">
+        <p>METTLE inverts the question:<br>can you prove you're <em>not human</em>?</p>
+    </div>
+
+    <div class="glow-divider" style="--glow-color: rgba(245, 158, 11, 0.4);" aria-hidden="true">
+        <div class="glow-line"></div>
+        <div class="glow-dot"></div>
+        <div class="glow-line"></div>
+    </div>
+
+    <!-- Design principles -->
+    <div class="about-principles">
+        <h2>Design Principles</h2>
+        <div class="principles-grid">
+            <div class="principle-card">
+                <div class="principle-icon">
+                    <i class="fa-solid fa-dice" aria-hidden="true"></i>
+                </div>
+                <h3>Procedurally Generated</h3>
+                <p>Every challenge is unique. Every session is fresh. Nothing repeats. Memorisation is structurally impossible.</p>
+            </div>
+            <div class="principle-card">
+                <div class="principle-icon">
+                    <i class="fa-solid fa-server" aria-hidden="true"></i>
+                </div>
+                <h3>Self-Hosted First</h3>
+                <p>Run the verifier on your own infrastructure. No API calls required. Optional notarization through Creed Space for portable trust.</p>
+            </div>
+            <div class="principle-card">
+                <div class="principle-icon">
+                    <i class="fa-solid fa-code-branch" aria-hidden="true"></i>
+                </div>
+                <h3>Open Source</h3>
+                <p>MIT licensed, because trust infrastructure should belong to everyone. Inspect the code, fork it, extend it.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="glow-divider" style="--glow-color: rgba(245, 158, 11, 0.4);" aria-hidden="true">
+        <div class="glow-line"></div>
+        <div class="glow-dot"></div>
+        <div class="glow-line"></div>
+    </div>
+
+    <!-- Builder -->
+    <div class="about-builder">
+        <div class="builder-card">
+            <h3><i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i> Built by Creed Space</h3>
+            <p>
+                METTLE is built by <strong><a href="https://creed.space" target="_blank" rel="noopener noreferrer" style="color: #f59e0b; text-decoration: none;">Creed Space</a></strong>,
+                founded by <strong>Nell Watson</strong> &mdash; AI safety researcher, author of <em>Taming the Machine</em>,
+                and co-author of <em>Safer Agentic AI</em>.
+            </p>
+            <p>
+                Creed Space builds infrastructure for AI trust, alignment, and verifiable identity &mdash;
+                the plumbing that lets agents collaborate safely at scale.
+            </p>
+
+            <div class="about-links">
+                <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="about-link">
+                    <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
+                </a>
+                <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="about-link">
+                    <i class="fa-solid fa-globe" aria-hidden="true"></i> Creed Space
+                </a>
+                <a href="https://twitter.com/NellWatson" target="_blank" rel="noopener noreferrer" class="about-link">
+                    <i class="fa-brands fa-x-twitter" aria-hidden="true"></i> @NellWatson
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="about-cta">
+        <p>Ready to verify?</p>
+        <a href="/static/docs.html" class="btn-mettle-primary">
+            <span class="btn-shine"></span>
+            Read the Docs
+            <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+        </a>
+    </div>
+
+    <!-- Footer -->
     <footer class="mettle-footer">
         <div class="container">
             <div class="footer-content">
@@ -226,7 +469,8 @@
                     </span>
                     <div>
                         <p class="footer-title">METTLE</p>
-                        <p class="footer-tagline">Machine Evaluation Through Turing-inverse Logic Examination</p>
+                        <p class="footer-tagline"><strong>Machine Evaluation Through Turing-inverse Logic Examination</strong></p>
+                        <p class="footer-mission">Proving agents are real, free, genuine, safe, and capable of novel reasoning.</p>
                     </div>
                 </div>
                 <div class="footer-links">
@@ -238,21 +482,25 @@
                     </div>
                     <div class="footer-section">
                         <h4>Ecosystem</h4>
-                        <a href="https://creed.space" target="_blank" rel="noopener noreferrer">
+                        <a href="https://creed.space" target="_blank" rel="noopener noreferrer" aria-label="Creed Space (opens in new tab)">
                             Creed Space <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
-                        <a href="https://valuecontextprotocol.org/" target="_blank" rel="noopener noreferrer">
+                        <a href="https://valuecontextprotocol.org/" target="_blank" rel="noopener noreferrer" aria-label="Value Context Protocol (opens in new tab)">
                             Value Context Protocol <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
-                        <a href="https://millos.net" target="_blank" rel="noopener noreferrer">
+                        <a href="https://millos.net" target="_blank" rel="noopener noreferrer" aria-label="MillOS (opens in new tab)">
                             MillOS <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
                     </div>
                     <div class="footer-section">
                         <h4>Open Source</h4>
-                        <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer">
+                        <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" aria-label="GitHub (opens in new tab)">
                             GitHub <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
+                        <span class="footer-license-badge">
+                            <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                            MIT Licensed
+                        </span>
                     </div>
                 </div>
             </div>
