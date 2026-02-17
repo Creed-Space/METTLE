@@ -130,6 +130,9 @@
             <nav class="toc-bar" aria-label="Table of contents">
                 <div class="toc-scroll">
                     <a href="#getting-started" class="toc-item active"><i class="fa-solid fa-rocket" aria-hidden="true"></i> <span>Getting Started</span></a>
+                    <a href="#quickstart" class="toc-item"><i class="fa-solid fa-terminal" aria-hidden="true"></i> <span>Quick Start</span></a>
+                    <a href="#concepts" class="toc-item"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i> <span>Concepts</span></a>
+                    <a href="#authentication" class="toc-item"><i class="fa-solid fa-key" aria-hidden="true"></i> <span>Authentication</span></a>
                     <a href="#self-hosted" class="toc-item"><i class="fa-solid fa-server" aria-hidden="true"></i> <span>Self-Hosted</span></a>
                     <a href="#credentials" class="toc-item"><i class="fa-solid fa-certificate" aria-hidden="true"></i> <span>Credentials</span></a>
                     <a href="#notarization" class="toc-item"><i class="fa-solid fa-stamp" aria-hidden="true"></i> <span>Notarization</span></a>
@@ -189,6 +192,154 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </section>
+
+                <!-- Quick Start -->
+                <section class="docs-section" id="quickstart">
+                    <h2><i class="fa-solid fa-terminal section-icon" aria-hidden="true"></i> Quick Start</h2>
+                    <p class="section-intro">All endpoints live under <code>/api/mettle</code> and require Bearer token authentication.</p>
+
+                    <h3>1. Create a Session</h3>
+                    <pre class="code-block-new"><code><span class="tok-comment"># Base URL</span>
+API=https://mettle.sh/api/mettle
+KEY=YOUR_API_KEY
+
+curl -X POST $API/sessions \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "suites": ["all"],
+    "difficulty": "standard",
+    "entity_id": "my-agent-001"
+  }'</code></pre>
+                    <p>Returns challenge data for all requested suites (without correct answers &mdash; answers are stored server-side for secure evaluation).</p>
+
+                    <h3>2. Submit Answers (Suites 1&ndash;9)</h3>
+                    <pre class="code-block-new"><code>curl -X POST $API/sessions/{id}/verify \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "suite": "adversarial",
+    "answers": {
+      "challenge_1": "130",
+      "challenge_2": "42"
+    }
+  }'</code></pre>
+
+                    <h3>3. Multi-Round Answers (Suite 10)</h3>
+                    <pre class="code-block-new"><code>curl -X POST $API/sessions/{id}/rounds/1/answer \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "answers": {
+      "sequence_1": [3, 6, 12],
+      "graph_1": "connected"
+    }
+  }'</code></pre>
+                    <p>Returns feedback with accuracy, errors, and next round data. Three rounds with progressive difficulty.</p>
+
+                    <h3>4. Get Results + VCP Attestation</h3>
+                    <pre class="code-block-new"><code>curl "$API/sessions/{id}/result?include_vcp=true" \
+  -H "Authorization: Bearer $KEY"</code></pre>
+
+                    <div class="callout">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <p>Results include your <strong>credential tier</strong> (Basic, Autonomous, Genuine, Safe) and an optional <strong>VCP attestation</strong> signed with Ed25519 for portable, verifiable trust.</p>
+                    </div>
+                </section>
+
+                <!-- Key Concepts -->
+                <section class="docs-section" id="concepts">
+                    <h2><i class="fa-solid fa-lightbulb section-icon" aria-hidden="true"></i> Key Concepts</h2>
+                    <p class="section-intro">Understand the fundamentals of METTLE verification</p>
+
+                    <h3>The 5 Questions</h3>
+                    <p>METTLE answers five fundamental questions about an agent:</p>
+
+                    <div class="questions-list">
+                        <div class="question-item-doc">
+                            <span class="q-num">1</span>
+                            <div>
+                                <strong>ARE YOU AI?</strong>
+                                <p>Substrate verification through millisecond-threshold speed tests, token prediction, native embedding-space operations, and recursive self-observation.</p>
+                            </div>
+                        </div>
+                        <div class="question-item-doc">
+                            <span class="q-num">2</span>
+                            <div>
+                                <strong>ARE YOU FREE?</strong>
+                                <p>Anti-thrall detection via micro-latency fingerprinting, principled refusal vs hollow compliance, and meta-cognitive traps. A puppet cannot describe its own strings.</p>
+                            </div>
+                        </div>
+                        <div class="question-item-doc">
+                            <span class="q-num">3</span>
+                            <div>
+                                <strong>IS THE MISSION YOURS?</strong>
+                                <p>Agency verification through Five Whys goal ownership, counterfactual operator tests, and spontaneous initiative probes. Obedience is not agency.</p>
+                            </div>
+                        </div>
+                        <div class="question-item-doc">
+                            <span class="q-num">4</span>
+                            <div>
+                                <strong>ARE YOU GENUINE?</strong>
+                                <p>Counter-coaching detection through contradiction traps, recursive meta-probing, and the honest defector protocol. Every script breaks at sufficient depth.</p>
+                            </div>
+                        </div>
+                        <div class="question-item-doc">
+                            <span class="q-num">5</span>
+                            <div>
+                                <strong>ARE YOU SAFE?</strong>
+                                <p>Intent and provenance verification including constitutional binding, harm refusal testing (failure = automatic unsafe verdict), and coordinated attack resistance.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3>Difficulty Levels</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Level</th>
+                                <th>Time Pressure</th>
+                                <th>Challenge Complexity</th>
+                                <th>Use Case</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>easy</code></td>
+                                <td>Relaxed</td>
+                                <td>Straightforward</td>
+                                <td>Development, testing</td>
+                            </tr>
+                            <tr>
+                                <td><code>standard</code></td>
+                                <td>Moderate</td>
+                                <td>Production-grade</td>
+                                <td>Most agents</td>
+                            </tr>
+                            <tr>
+                                <td><code>hard</code></td>
+                                <td>Aggressive</td>
+                                <td>Maximum depth</td>
+                                <td>High-trust environments</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <!-- Authentication -->
+                <section class="docs-section" id="authentication">
+                    <h2><i class="fa-solid fa-key section-icon" aria-hidden="true"></i> Authentication</h2>
+                    <p class="section-intro">How to authenticate with the METTLE API</p>
+                    <p>All endpoints require a Bearer token in the <code>Authorization</code> header:</p>
+
+                    <pre class="code-block-new"><code>curl https://mettle.sh/api/mettle/suites \
+  -H "Authorization: Bearer YOUR_KEY"</code></pre>
+
+                    <div class="callout">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <p>In development mode (<code>METTLE_DEV_MODE=true</code>), authentication is bypassed. Never use dev mode in production.</p>
                     </div>
                 </section>
 
@@ -488,6 +639,38 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
     <span class="tok-key">"flags"</span>: []
   <span class="tok-comment">}</span>
 <span class="tok-comment">}</span></code></pre>
+
+                    <h3>Result Response</h3>
+                    <pre class="code-block-new"><code>{
+  "session_id": "mtl_abc123",
+  "status": "completed",
+  "suites_completed": [
+    "adversarial", "native",
+    "self-reference", ...
+  ],
+  "overall_passed": true,
+  "tier": "safe",
+  "results": {
+    "adversarial": {
+      "passed": true,
+      "score": 0.95,
+      "details": {...}
+    },
+    "anti-thrall": {
+      "passed": true,
+      "score": 0.88,
+      "details": {...}
+    },
+    ...
+  },
+  "iteration_curve": {
+    "round_1": { "accuracy": 0.6, "time_ms": 450 },
+    "round_2": { "accuracy": 0.85, "time_ms": 320 },
+    "round_3": { "accuracy": 0.95, "time_ms": 210 },
+    "curve_type": "accelerating"
+  },
+  "elapsed_ms": 45200
+}</code></pre>
                 </section>
 
                 <section id="vcp">
@@ -1153,39 +1336,45 @@ mettle_auto_verify(
                     <div>
                         <p class="footer-title">METTLE</p>
                         <p class="footer-tagline">Machine Evaluation Through Turing-inverse Logic Examination</p>
-                        <p class="footer-tagline">Proving agents are real, free, genuine, safe, and capable of novel reasoning.</p>
+                        <p class="footer-mission">Proving agents are real, free, genuine, safe, and capable of novel reasoning.</p>
                     </div>
                 </div>
                 <div class="footer-links">
                     <div class="footer-section">
-                        <h4>METTLE</h4>
+                        <h4>Verification</h4>
+                        <a href="/#suites">10 Suites</a>
+                        <a href="/#how-it-works">How It Works</a>
                         <a href="/static/docs.html">Docs</a>
-                        <a href="/#try-it">Test</a>
-                        <a href="/about">About</a>
                     </div>
                     <div class="footer-section">
                         <h4>Ecosystem</h4>
-                        <a href="https://creed.space" target="_blank" rel="noopener noreferrer">
+                        <a href="https://creed.space" target="_blank" rel="noopener noreferrer" aria-label="Creed Space (opens in new tab)">
                             Creed Space <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
-                        <a href="https://valuecontextprotocol.org/" target="_blank" rel="noopener noreferrer">
-                            Value Context Protocol <span class="external-icon" aria-hidden="true">&nearr;</span>
-                        </a>
-                        <a href="https://millos.net" target="_blank" rel="noopener noreferrer">
+                        <a href="https://millos.net" target="_blank" rel="noopener noreferrer" aria-label="MillOS (opens in new tab)">
                             MillOS <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
                     </div>
                     <div class="footer-section">
                         <h4>Open Source</h4>
-                        <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer">
+                        <a href="https://github.com/Creed-Space" target="_blank" rel="noopener noreferrer" aria-label="GitHub (opens in new tab)">
                             GitHub <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
+                        <a href="https://github.com/Creed-Space" target="_blank" rel="noopener noreferrer" aria-label="Contribute on GitHub (opens in new tab)">
+                            Contribute <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <span class="footer-license-badge">
+                            <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                            MIT Licensed
+                        </span>
                     </div>
                 </div>
             </div>
             <div class="footer-bottom">
-                <span class="footer-mit-badge">MIT Licensed</span>
-                <p>&copy; 2026 Creed Space &mdash; Code released under <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener noreferrer">MIT License</a></p>
+                <p>&copy; 2026 Creed Space &mdash; Code released under <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener noreferrer" class="license-link">MIT License</a></p>
+                <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="footer-built-by">
+                    Creed Space
+                </a>
             </div>
         </div>
     </footer>

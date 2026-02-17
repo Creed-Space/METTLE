@@ -1801,7 +1801,7 @@ a:hover {
    ============================================= */
 
 .mettle-footer {
-    background: rgba(10, 10, 18, 0.85);
+    background: linear-gradient(180deg, rgba(10, 10, 18, 0.9) 0%, rgba(6, 6, 12, 0.95) 100%);
     border-top: 1px solid rgba(245, 158, 11, 0.08);
     padding: var(--space-xl) 0 var(--space-lg);
     margin-top: 0;
@@ -1816,9 +1816,9 @@ a:hover {
     top: 0;
     left: 50%;
     transform: translateX(-50%);
-    width: 200px;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(245, 158, 11, 0.5), transparent);
+    width: 400px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(245, 158, 11, 0.6), rgba(251, 146, 60, 0.4), transparent);
 }
 
 .footer-content {
@@ -1867,6 +1867,14 @@ a:hover {
     max-width: 280px;
 }
 
+.footer-mission {
+    color: var(--color-text-subtle, rgba(255, 255, 255, 0.4));
+    font-size: 0.75rem;
+    max-width: 280px;
+    margin-top: var(--space-xs);
+    line-height: 1.4;
+}
+
 .footer-links {
     display: flex;
     gap: var(--space-2xl);
@@ -1908,9 +1916,8 @@ a:hover {
     padding-top: var(--space-lg);
     border-top: 1px solid rgba(255, 255, 255, 0.06);
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
     align-items: center;
-    gap: 1rem;
     font-size: 0.8125rem;
     color: var(--color-text-muted);
 }
@@ -1926,16 +1933,44 @@ a:hover {
     color: #fbbf24;
 }
 
-.footer-mit-badge {
-    font-size: 0.6875rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    padding: 2px 10px;
-    border-radius: 100px;
-    background: rgba(245, 158, 11, 0.1);
-    color: var(--mettle-primary);
-    border: 1px solid rgba(245, 158, 11, 0.2);
+.license-link {
+    color: #fbbf24;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.license-link:hover {
+    text-decoration: underline;
+}
+
+.footer-license-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: 0.75rem;
+    color: var(--color-text-subtle, rgba(255, 255, 255, 0.4));
+    padding: var(--space-xs) 0;
+}
+
+.footer-license-badge i {
+    color: rgba(245, 158, 11, 0.5);
+    font-size: 0.625rem;
+}
+
+.footer-built-by {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #a78bfa;
+    text-decoration: none;
+    transition: opacity var(--transition-fast);
+}
+
+.footer-built-by:hover {
+    opacity: 0.8;
+    text-decoration: none;
 }
 
 /* Screen reader only */
@@ -2058,7 +2093,8 @@ a:hover {
         align-items: center;
     }
 
-    .footer-tagline {
+    .footer-tagline,
+    .footer-mission {
         text-align: center;
     }
 }
