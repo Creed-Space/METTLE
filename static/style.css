@@ -123,22 +123,65 @@ a:hover {
 }
 
 /* =============================================
-   Glow Divider
+   Glow Divider (animated line + dot + line)
    ============================================= */
 
 .glow-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin: 0 auto;
+    padding: 0;
+    width: 100%;
+    max-width: 500px;
     border: none;
+    background: none;
+    box-shadow: none;
+}
+
+.glow-line {
+    flex: 1;
     height: 1px;
+    max-width: 200px;
     background: linear-gradient(
         90deg,
-        transparent 0%,
-        var(--glow-color, rgba(245, 158, 11, 0.5)) 30%,
-        var(--glow-color, rgba(245, 158, 11, 0.5)) 70%,
-        transparent 100%
+        transparent,
+        var(--glow-color, rgba(245, 158, 11, 0.5)),
+        transparent
     );
-    margin: 0;
-    box-shadow: 0 0 12px var(--glow-color, rgba(245, 158, 11, 0.3)),
-                0 0 24px var(--glow-color, rgba(245, 158, 11, 0.15));
+    animation: lineShimmer 3s ease-in-out infinite;
+}
+
+.glow-line:first-child {
+    animation-delay: -0.5s;
+}
+
+.glow-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--glow-color, rgba(245, 158, 11, 0.5));
+    box-shadow: 0 0 12px var(--glow-color, rgba(245, 158, 11, 0.5)),
+                0 0 24px color-mix(in srgb, var(--glow-color, rgba(245, 158, 11, 0.5)) 50%, transparent);
+    flex-shrink: 0;
+    animation: dotPulse 3s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+    0%, 100% { opacity: 0.6; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.4); }
+}
+
+@keyframes lineShimmer {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .glow-dot, .glow-line {
+        animation: none;
+    }
 }
 
 /* =============================================
