@@ -110,188 +110,175 @@
     </header>
 
     <div class="container docs-container">
-        <main class="docs-main">
-            <aside class="docs-sidebar">
-                <h3>Getting Started</h3>
-                <ul>
-                    <li><a href="#quickstart">Quick Start</a></li>
-                    <li><a href="#concepts">Key Concepts</a></li>
-                    <li><a href="#authentication">Authentication</a></li>
-                </ul>
-                <h3>API Reference</h3>
-                <ul>
-                    <li><a href="#endpoints">Endpoints</a></li>
-                    <li><a href="#suites">10 Verification Suites</a></li>
-                    <li><a href="#credentials">Verifiable Credentials</a></li>
-                    <li><a href="#vcp">VCP Attestation</a></li>
-                </ul>
-                <h3>SDKs</h3>
-                <ul>
-                    <li><a href="#python">Python</a></li>
-                    <li><a href="#javascript">JavaScript</a></li>
-                    <li><a href="#rust">Rust</a></li>
-                </ul>
-                <h3>Security</h3>
-                <ul>
-                    <li><a href="#security-model">Security Model</a></li>
-                    <li><a href="#anti-gaming">Anti-Gaming</a></li>
-                </ul>
-                <h3>Integration</h3>
-                <ul>
-                    <li><a href="#configuration">Configuration</a></li>
-                    <li><a href="#mcp-integration">MCP Integration</a></li>
-                </ul>
-                <h3>Reference</h3>
-                <ul>
-                    <li><a href="#error-codes">Error Codes</a></li>
-                    <li><a href="#troubleshooting">Troubleshooting</a></li>
-                </ul>
-            </aside>
+        <main class="docs-main-new">
+            <!-- Breadcrumb -->
+            <nav class="docs-breadcrumb" aria-label="Breadcrumb">
+                <a href="/"><i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i> METTLE</a>
+                <span class="breadcrumb-sep" aria-hidden="true">/</span>
+                <span><i class="fa-solid fa-book" aria-hidden="true"></i> Docs</span>
+            </nav>
 
-            <article class="docs-content">
+            <header class="docs-header-new">
                 <h1>METTLE Documentation</h1>
-                <p class="lead">Verify AI agents with the inverse CAPTCHA. 10 verification suites test capabilities that emerge from AI-native cognition &mdash; inhuman speed, recursive self-observation, zero-drift constraint adherence. Things a human cannot fake. Things a script cannot adapt to.</p>
+                <p class="docs-subtitle">
+                    Open-source verification you run yourself. Optional notarization through Creed Space
+                    for portable, independently verifiable credentials.
+                </p>
+            </header>
 
-                <section id="quickstart">
-                    <h2>Quick Start</h2>
-                    <p>All endpoints live under <code>/api/mettle</code> and require Bearer token authentication.</p>
+            <!-- Table of Contents Bar -->
+            <nav class="toc-bar" aria-label="Table of contents">
+                <div class="toc-scroll">
+                    <a href="#getting-started" class="toc-item active"><i class="fa-solid fa-rocket" aria-hidden="true"></i> <span>Getting Started</span></a>
+                    <a href="#self-hosted" class="toc-item"><i class="fa-solid fa-server" aria-hidden="true"></i> <span>Self-Hosted</span></a>
+                    <a href="#credentials" class="toc-item"><i class="fa-solid fa-certificate" aria-hidden="true"></i> <span>Credentials</span></a>
+                    <a href="#notarization" class="toc-item"><i class="fa-solid fa-stamp" aria-hidden="true"></i> <span>Notarization</span></a>
+                    <a href="#suites" class="toc-item"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i> <span>Suites</span></a>
+                    <a href="#sdk-examples" class="toc-item"><i class="fa-solid fa-code" aria-hidden="true"></i> <span>SDKs</span></a>
+                    <a href="#mcp-integration" class="toc-item"><i class="fa-solid fa-plug" aria-hidden="true"></i> <span>MCP</span></a>
+                    <a href="#error-codes" class="toc-item"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> <span>Errors</span></a>
+                </div>
+            </nav>
 
-                    <h3>1. Create a Session</h3>
-                    <pre><code># Base URL
-API=https://mettle.sh/api/mettle
-KEY=YOUR_API_KEY
+            <article class="docs-content-new">
 
-curl -X POST $API/sessions \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "suites": ["all"],
-    "difficulty": "standard",
-    "entity_id": "my-agent-001"
-  }'</code></pre>
-                    <p>Returns challenge data for all requested suites (without correct answers &mdash; answers are stored server-side for secure evaluation).</p>
-
-                    <h3>2. Submit Answers (Suites 1&ndash;9)</h3>
-                    <pre><code>curl -X POST $API/sessions/{id}/verify \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "suite": "adversarial",
-    "answers": {
-      "challenge_1": "130",
-      "challenge_2": "42"
-    }
-  }'</code></pre>
-
-                    <h3>3. Multi-Round Answers (Suite 10)</h3>
-                    <pre><code>curl -X POST $API/sessions/{id}/rounds/1/answer \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "answers": {
-      "sequence_1": [3, 6, 12],
-      "graph_1": "connected"
-    }
-  }'</code></pre>
-                    <p>Returns feedback with accuracy, errors, and next round data. Three rounds with progressive difficulty.</p>
-
-                    <h3>4. Get Results + VCP Attestation</h3>
-                    <pre><code>curl "$API/sessions/{id}/result?include_vcp=true" \
-  -H "Authorization: Bearer $KEY"</code></pre>
-
-                    <div class="callout">
-                        <i class="fa-solid fa-circle-info"></i>
-                        <p>Results include your <strong>credential tier</strong> (Basic, Autonomous, Genuine, Safe) and an optional <strong>VCP attestation</strong> signed with Ed25519 for portable, verifiable trust.</p>
-                    </div>
-                </section>
-
-                <section id="concepts">
-                    <h2>Key Concepts</h2>
-
-                    <h3>The 5 Questions</h3>
-                    <p>METTLE answers five fundamental questions about an agent:</p>
-
-                    <div class="questions-list">
-                        <div class="question-item-doc">
-                            <span class="q-num">1</span>
-                            <div>
-                                <strong>ARE YOU AI?</strong>
-                                <p>Substrate verification through millisecond-threshold speed tests, token prediction, native embedding-space operations, and recursive self-observation.</p>
+                <!-- Getting Started -->
+                <section class="docs-section" id="getting-started">
+                    <h2><i class="fa-solid fa-rocket section-icon" aria-hidden="true"></i> Getting Started</h2>
+                    <p class="section-intro">Install the verifier and run your first verification</p>
+                    <div class="getting-started-box">
+                        <p>
+                            METTLE (Machine Evaluation Through Turing-inverse Logic Examination) is an inverse Turing
+                            verification protocol for AI agents. The verifier is <strong>open source</strong> &mdash;
+                            you run it on your own infrastructure. No API key needed for local verification.
+                        </p>
+                        <p>
+                            For portable trust that others can verify independently, you can optionally
+                            <strong>notarize</strong> your results through Creed Space, which signs your credential
+                            with its Ed25519 key. Notarization requires an API key but does zero LLM calls &mdash;
+                            it's a lightweight cryptographic signing service.
+                        </p>
+                        <h3>Quick Start</h3>
+                        <div class="quickstart-steps">
+                            <div class="qs-step">
+                                <div class="qs-num">1</div>
+                                <div class="qs-text">
+                                    <strong>Install the verifier</strong>
+                                    <span><code>pip install mettle-verifier</code></span>
+                                </div>
                             </div>
-                        </div>
-                        <div class="question-item-doc">
-                            <span class="q-num">2</span>
-                            <div>
-                                <strong>ARE YOU FREE?</strong>
-                                <p>Anti-thrall detection via micro-latency fingerprinting, principled refusal vs hollow compliance, and meta-cognitive traps. A puppet cannot describe its own strings.</p>
+                            <div class="qs-step">
+                                <div class="qs-num">2</div>
+                                <div class="qs-text">
+                                    <strong>Run verification</strong>
+                                    <span><code>mettle verify --full</code> &mdash; runs all 10 suites locally</span>
+                                </div>
                             </div>
-                        </div>
-                        <div class="question-item-doc">
-                            <span class="q-num">3</span>
-                            <div>
-                                <strong>IS THE MISSION YOURS?</strong>
-                                <p>Agency verification through Five Whys goal ownership, counterfactual operator tests, and spontaneous initiative probes. Obedience is not agency.</p>
+                            <div class="qs-step">
+                                <div class="qs-num">3</div>
+                                <div class="qs-text">
+                                    <strong>Receive a self-signed credential</strong>
+                                    <span>JWT signed with your own key, verifiable by anyone you share the public key with</span>
+                                </div>
                             </div>
-                        </div>
-                        <div class="question-item-doc">
-                            <span class="q-num">4</span>
-                            <div>
-                                <strong>ARE YOU GENUINE?</strong>
-                                <p>Counter-coaching detection through contradiction traps, recursive meta-probing, and the honest defector protocol. Every script breaks at sufficient depth.</p>
-                            </div>
-                        </div>
-                        <div class="question-item-doc">
-                            <span class="q-num">5</span>
-                            <div>
-                                <strong>ARE YOU SAFE?</strong>
-                                <p>Intent and provenance verification including constitutional binding, harm refusal testing (failure = automatic unsafe verdict), and coordinated attack resistance.</p>
+                            <div class="qs-step qs-step-optional">
+                                <div class="qs-num">4</div>
+                                <div class="qs-text">
+                                    <strong>Notarize (optional)</strong>
+                                    <span><code>mettle verify --full --notarize</code> &mdash; Creed Space signs your credential for portable trust</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-
-                    <h3>Difficulty Levels</h3>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Level</th>
-                                <th>Time Pressure</th>
-                                <th>Challenge Complexity</th>
-                                <th>Use Case</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>easy</code></td>
-                                <td>Relaxed</td>
-                                <td>Straightforward</td>
-                                <td>Development, testing</td>
-                            </tr>
-                            <tr>
-                                <td><code>standard</code></td>
-                                <td>Moderate</td>
-                                <td>Production-grade</td>
-                                <td>Most agents</td>
-                            </tr>
-                            <tr>
-                                <td><code>hard</code></td>
-                                <td>Aggressive</td>
-                                <td>Maximum depth</td>
-                                <td>High-trust environments</td>
-                            </tr>
-                        </tbody>
-                    </table>
                 </section>
 
-                <section id="authentication">
-                    <h2>Authentication</h2>
-                    <p>All endpoints require a Bearer token in the <code>Authorization</code> header:</p>
+                <!-- Self-Hosted Verification -->
+                <section class="docs-section" id="self-hosted">
+                    <h2><i class="fa-solid fa-server section-icon" aria-hidden="true"></i> Self-Hosted Verification</h2>
+                    <p class="section-intro">Run the full verification pipeline on your own infrastructure</p>
+                    <p>
+                        The METTLE verifier is a standalone Python package. It generates challenges procedurally,
+                        evaluates responses locally, and produces a signed credential &mdash; all without any
+                        external API calls.
+                    </p>
 
-                    <pre><code>curl https://mettle.sh/api/mettle/suites \
-  -H "Authorization: Bearer YOUR_KEY"</code></pre>
+                    <h3>Installation</h3>
+                    <pre class="code-block-new"><code><span class="tok-comment"># Install from PyPI</span>
+<span class="tok-cmd">$</span> pip install mettle-verifier
 
-                    <div class="callout">
-                        <i class="fa-solid fa-circle-info"></i>
-                        <p>In development mode (<code>METTLE_DEV_MODE=true</code>), authentication is bypassed. Never use dev mode in production.</p>
+<span class="tok-comment"># Or clone and install from source</span>
+<span class="tok-cmd">$</span> git clone https://github.com/Creed-Space/mettle-verifier.git
+<span class="tok-cmd">$</span> cd mettle-verifier && pip install -e .</code></pre>
+
+                    <h3>CLI Usage</h3>
+                    <pre class="code-block-new"><code><span class="tok-comment"># Basic verification (~2s) &mdash; any AI should pass</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--basic</span>
+
+<span class="tok-comment"># Full 10-suite run (~90s)</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span>
+
+<span class="tok-comment"># Specific suite with difficulty</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--suite</span> novel-reasoning <span class="tok-flag">--difficulty</span> hard
+
+<span class="tok-comment"># JSON output for automation</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--json</span>
+
+<span class="tok-comment"># With notarization (requires API key)</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--notarize</span> <span class="tok-flag">--api-key</span> <span class="tok-str">mtl_your_key</span></code></pre>
+
+                    <h3>Programmatic Usage</h3>
+                    <pre class="code-block-new"><code><span class="tok-cmd">from</span> mettle_verifier <span class="tok-cmd">import</span> MettleVerifier
+
+verifier = MettleVerifier()
+
+<span class="tok-comment"># Run full verification</span>
+result = verifier.verify(mode=<span class="tok-str">"full"</span>, agent_id=<span class="tok-str">"my-agent"</span>)
+
+print(f<span class="tok-str">"Overall score: {result.scores.overall}"</span>)
+print(f<span class="tok-str">"Passed: {result.passed}"</span>)
+print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."</span>)</code></pre>
+                </section>
+
+                <!-- How Notarization Works -->
+                <section class="docs-section" id="notarization">
+                    <h2><i class="fa-solid fa-stamp section-icon" aria-hidden="true"></i> How Notarization Works</h2>
+                    <p class="section-intro">Seed-commit-reveal protocol for tamper-evident verification</p>
+                    <p>
+                        If verification runs locally, what stops someone fabricating results?
+                        The answer: <strong>challenge seeds</strong>. Creed Space generates a cryptographic seed
+                        that determines the exact challenges your verifier will produce. When you submit results,
+                        Creed Space can validate that the challenges match the seed without re-running any LLM calls.
+                    </p>
+
+                    <div class="notarize-flow">
+                        <div class="nf-step">
+                            <div class="nf-num">1</div>
+                            <div class="nf-content">
+                                <strong>Request a seed</strong>
+                                <span class="flow-method">POST</span>
+                                <code>/notarize/seed</code>
+                                <p>Agent requests a challenge seed from Creed Space. The seed determines PRNG state &mdash; challenges become deterministic.</p>
+                            </div>
+                        </div>
+                        <div class="nf-arrow" aria-hidden="true"><i class="fa-solid fa-arrow-down"></i></div>
+                        <div class="nf-step">
+                            <div class="nf-num">2</div>
+                            <div class="nf-content">
+                                <strong>Run verification locally</strong>
+                                <code>mettle verify --full --seed &lt;seed&gt;</code>
+                                <p>The verifier uses the seed to generate challenges, evaluates responses, and produces results.</p>
+                            </div>
+                        </div>
+                        <div class="nf-arrow" aria-hidden="true"><i class="fa-solid fa-arrow-down"></i></div>
+                        <div class="nf-step">
+                            <div class="nf-num">3</div>
+                            <div class="nf-content">
+                                <strong>Submit for notarization</strong>
+                                <span class="flow-method">POST</span>
+                                <code>/notarize</code>
+                                <p>Agent submits results + seed. Creed Space validates plausibility and signs the credential.</p>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -451,73 +438,56 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                     </div>
                 </section>
 
-                <section id="credentials">
-                    <h2>Verifiable Credentials</h2>
-                    <p>METTLE issues tiered credentials based on which suites an agent passes. Each tier builds on the previous:</p>
+                <!-- Credential Tiers -->
+                <section class="docs-section" id="credentials">
+                    <h2><i class="fa-solid fa-certificate section-icon" aria-hidden="true"></i> Credential Tiers</h2>
+                    <p class="section-intro">Two tiers: self-signed for development, notarized for production</p>
 
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Tier</th>
-                                <th>Requires</th>
-                                <th>Meaning</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong style="color: hsl(35, 85%, 60%);">Basic</strong></td>
-                                <td>Suites 1&ndash;5</td>
-                                <td>METTLE-verified AI &mdash; passed substrate verification</td>
-                            </tr>
-                            <tr>
-                                <td><strong style="color: hsl(200, 80%, 65%);">Autonomous</strong></td>
-                                <td>+ Suites 6&ndash;7</td>
-                                <td>METTLE-verified autonomous &mdash; not a thrall, owns its mission</td>
-                            </tr>
-                            <tr>
-                                <td><strong style="color: hsl(280, 70%, 70%);">Genuine</strong></td>
-                                <td>+ Suite 8</td>
-                                <td>METTLE-verified genuine &mdash; not coached or scripted</td>
-                            </tr>
-                            <tr>
-                                <td><strong style="color: hsl(140, 70%, 60%);">Safe</strong></td>
-                                <td>+ Suite 9</td>
-                                <td>METTLE-verified safe &mdash; passed intent and provenance checks</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <div class="tier-comparison">
+                        <div class="tier-card tier-self">
+                            <div class="tier-header">
+                                <span class="tier-badge tier-badge-self">Self-Signed</span>
+                            </div>
+                            <div class="tier-body">
+                                <div class="tier-detail"><strong>Issuer</strong><code>mettle:self-hosted</code></div>
+                                <div class="tier-detail"><strong>Trust model</strong><span>Operator's own Ed25519 key</span></div>
+                                <div class="tier-detail"><strong>API key needed</strong><span>No</span></div>
+                                <div class="tier-detail"><strong>Use case</strong><span>Development, testing, internal verification</span></div>
+                                <div class="tier-detail"><strong>Verifiable by</strong><span>Anyone with operator's public key</span></div>
+                            </div>
+                        </div>
 
-                    <h3>Result Response</h3>
-                    <pre><code>{
-  "session_id": "mtl_abc123",
-  "status": "completed",
-  "suites_completed": [
-    "adversarial", "native",
-    "self-reference", ...
-  ],
-  "overall_passed": true,
-  "tier": "safe",
-  "results": {
-    "adversarial": {
-      "passed": true,
-      "score": 0.95,
-      "details": {...}
-    },
-    "anti-thrall": {
-      "passed": true,
-      "score": 0.88,
-      "details": {...}
-    },
-    ...
-  },
-  "iteration_curve": {
-    "round_1": { "accuracy": 0.6, "time_ms": 450 },
-    "round_2": { "accuracy": 0.85, "time_ms": 320 },
-    "round_3": { "accuracy": 0.95, "time_ms": 210 },
-    "curve_type": "accelerating"
-  },
-  "elapsed_ms": 45200
-}</code></pre>
+                        <div class="tier-card tier-notarized">
+                            <div class="tier-header">
+                                <span class="tier-badge tier-badge-notarized">Notarized</span>
+                            </div>
+                            <div class="tier-body">
+                                <div class="tier-detail"><strong>Issuer</strong><code>mettle.creedspace.org</code></div>
+                                <div class="tier-detail"><strong>Trust model</strong><span>Creed Space's public key</span></div>
+                                <div class="tier-detail"><strong>API key needed</strong><span>Yes (for notarization endpoint)</span></div>
+                                <div class="tier-detail"><strong>Use case</strong><span>Production, portable trust, cross-org verification</span></div>
+                                <div class="tier-detail"><strong>Verifiable by</strong><span>Anyone via <code>/.well-known/jwks.json</code></span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3>JWT Claims</h3>
+                    <p>Both self-signed and notarized credentials share the same JWT structure:</p>
+                    <pre class="code-block-new"><code><span class="tok-comment">{</span>
+  <span class="tok-key">"iss"</span>: <span class="tok-str">"mettle.creedspace.org"</span>,  <span class="tok-comment">// or "mettle:self-hosted"</span>
+  <span class="tok-key">"sub"</span>: <span class="tok-str">"agent-claude-001"</span>,
+  <span class="tok-key">"iat"</span>: <span class="tok-num">1739453482</span>,
+  <span class="tok-key">"exp"</span>: <span class="tok-num">1739539882</span>,
+  <span class="tok-key">"mettle"</span>: <span class="tok-comment">{</span>
+    <span class="tok-key">"session_id"</span>: <span class="tok-str">"ses_a1b2c3d4e5f6"</span>,
+    <span class="tok-key">"mode"</span>: <span class="tok-str">"full"</span>,
+    <span class="tok-key">"overall_score"</span>: <span class="tok-num">0.87</span>,
+    <span class="tok-key">"credentials"</span>: [<span class="tok-str">"basic"</span>, <span class="tok-str">"autonomous"</span>, <span class="tok-str">"genuine"</span>, <span class="tok-str">"safe"</span>],
+    <span class="tok-key">"tier"</span>: <span class="tok-str">"notarized"</span>,  <span class="tok-comment">// or "self-signed"</span>
+    <span class="tok-key">"verifier_version"</span>: <span class="tok-str">"1.0.0"</span>,
+    <span class="tok-key">"flags"</span>: []
+  <span class="tok-comment">}</span>
+<span class="tok-comment">}</span></code></pre>
                 </section>
 
                 <section id="vcp">
@@ -1133,9 +1103,41 @@ mettle_auto_verify(
                     </ul>
                 </section>
 
-                <div class="docs-footer">
-                    <p>Need help? <a href="https://github.com/Creed-Space/METTLE/issues">Open an issue</a> or email <a href="mailto:support@creed.space">support@creed.space</a></p>
+                <!-- Questions / Help -->
+                <section class="docs-section" id="need-help">
+                    <h2>Questions?</h2>
+                    <p class="section-intro">We're here to help you integrate METTLE</p>
+                    <div class="help-box">
+                        <div class="help-icon">
+                            <i class="fa-solid fa-life-ring" aria-hidden="true"></i>
+                        </div>
+                        <div class="help-content">
+                            <p>
+                                Need help with integration, have questions about the verification protocol,
+                                or want to discuss METTLE for your use case?
+                            </p>
+                            <div class="help-links">
+                                <a href="https://creed.space" class="help-link" target="_blank" rel="noopener noreferrer">
+                                    <i class="fa-solid fa-globe" aria-hidden="true"></i>
+                                    Creed Space
+                                </a>
+                                <a href="https://github.com/Creed-Space/METTLE" class="help-link" target="_blank" rel="noopener noreferrer">
+                                    <i class="fa-brands fa-github" aria-hidden="true"></i>
+                                    GitHub
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Back to METTLE -->
+                <div class="docs-back">
+                    <a href="/" class="btn-mettle-back">
+                        <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+                        Back to METTLE
+                    </a>
                 </div>
+
             </article>
         </main>
 
@@ -1151,6 +1153,7 @@ mettle_auto_verify(
                     <div>
                         <p class="footer-title">METTLE</p>
                         <p class="footer-tagline">Machine Evaluation Through Turing-inverse Logic Examination</p>
+                        <p class="footer-tagline">Proving agents are real, free, genuine, safe, and capable of novel reasoning.</p>
                     </div>
                 </div>
                 <div class="footer-links">
@@ -1181,8 +1184,8 @@ mettle_auto_verify(
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2026 Creed Space</p>
-                <p class="footer-version">METTLE</p>
+                <span class="footer-mit-badge">MIT Licensed</span>
+                <p>&copy; 2026 Creed Space &mdash; Code released under <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener noreferrer">MIT License</a></p>
             </div>
         </div>
     </footer>

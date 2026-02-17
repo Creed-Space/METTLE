@@ -911,6 +911,23 @@ a:hover {
     margin: 0;
 }
 
+/* Credential card multi-color borders */
+.credential-card { border-top: 3px solid transparent; }
+.credential-basic { border-top-color: hsla(35, 85%, 55%, 0.5); }
+.credential-basic:hover { border-color: hsla(35, 85%, 55%, 0.25); border-top-color: hsla(35, 85%, 55%, 0.7); }
+.credential-autonomous { border-top-color: hsla(200, 80%, 55%, 0.5); }
+.credential-autonomous:hover { border-color: hsla(200, 80%, 55%, 0.25); border-top-color: hsla(200, 80%, 55%, 0.7); }
+.credential-genuine { border-top-color: hsla(280, 70%, 60%, 0.5); }
+.credential-genuine:hover { border-color: hsla(280, 70%, 60%, 0.25); border-top-color: hsla(280, 70%, 60%, 0.7); }
+.credential-safe { border-top-color: hsla(140, 70%, 50%, 0.5); }
+.credential-safe:hover { border-color: hsla(140, 70%, 50%, 0.25); border-top-color: hsla(140, 70%, 50%, 0.7); }
+
+/* Credential level pill colors */
+.credential-basic .credential-level { color: hsl(35, 85%, 60%); background: hsla(35, 85%, 55%, 0.12); }
+.credential-autonomous .credential-level { color: hsl(200, 80%, 65%); background: hsla(200, 80%, 55%, 0.12); }
+.credential-genuine .credential-level { color: hsl(280, 70%, 70%); background: hsla(280, 70%, 60%, 0.12); }
+.credential-safe .credential-level { color: hsl(140, 70%, 60%); background: hsla(140, 70%, 50%, 0.12); }
+
 /* =============================================
    CLI Section
    ============================================= */
@@ -1855,10 +1872,27 @@ a:hover {
     color: var(--color-text-muted);
 }
 
-.footer-version {
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    color: rgba(245, 158, 11, 0.5);
+.footer-bottom a {
+    color: var(--color-text-muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color var(--transition-fast);
+}
+
+.footer-bottom a:hover {
+    color: #fbbf24;
+}
+
+.footer-mit-badge {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 2px 10px;
+    border-radius: 100px;
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--mettle-primary);
+    border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
 /* Screen reader only */
