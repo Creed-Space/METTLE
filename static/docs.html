@@ -592,7 +592,44 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                 <!-- Credential Tiers -->
                 <section class="docs-section" id="credentials">
                     <h2><i class="fa-solid fa-certificate section-icon" aria-hidden="true"></i> Credential Tiers</h2>
-                    <p class="section-intro">Two tiers: self-signed for development, notarized for production</p>
+                    <p class="section-intro">Tiered credentials based on which suites an agent passes</p>
+
+                    <p>METTLE issues tiered credentials based on which suites an agent passes. Each tier builds on the previous:</p>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tier</th>
+                                <th>Requires</th>
+                                <th>Meaning</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong style="color: hsl(35, 85%, 60%);">Basic</strong></td>
+                                <td>Suites 1&ndash;5</td>
+                                <td>METTLE-verified AI &mdash; passed substrate verification</td>
+                            </tr>
+                            <tr>
+                                <td><strong style="color: hsl(200, 80%, 65%);">Autonomous</strong></td>
+                                <td>+ Suites 6&ndash;7</td>
+                                <td>METTLE-verified autonomous &mdash; not a thrall, owns its mission</td>
+                            </tr>
+                            <tr>
+                                <td><strong style="color: hsl(280, 70%, 70%);">Genuine</strong></td>
+                                <td>+ Suite 8</td>
+                                <td>METTLE-verified genuine &mdash; not coached or scripted</td>
+                            </tr>
+                            <tr>
+                                <td><strong style="color: hsl(140, 70%, 60%);">Safe</strong></td>
+                                <td>+ Suite 9</td>
+                                <td>METTLE-verified safe &mdash; passed intent and provenance checks</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Signing Models</h3>
+                    <p>Credentials can be self-signed or notarized:</p>
 
                     <div class="tier-comparison">
                         <div class="tier-card tier-self">
