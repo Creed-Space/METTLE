@@ -126,9 +126,14 @@
                 </p>
             </header>
 
-            <!-- Table of Contents Bar -->
-            <nav class="toc-bar" aria-label="Table of contents">
-                <div class="toc-scroll">
+            <div class="docs-layout">
+            <!-- Sidebar TOC -->
+            <nav class="toc-sidebar" aria-label="Table of contents">
+                <div class="toc-sidebar-header">
+                    <img src="/static/favicon.svg" alt="" width="20" height="20" />
+                    <span>Docs</span>
+                </div>
+                <div class="toc-list">
                     <a href="#getting-started" class="toc-item active"><i class="fa-solid fa-rocket" aria-hidden="true"></i> <span>Getting Started</span></a>
                     <a href="#quickstart" class="toc-item"><i class="fa-solid fa-terminal" aria-hidden="true"></i> <span>Quick Start</span></a>
                     <a href="#concepts" class="toc-item"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i> <span>Concepts</span></a>
@@ -1322,6 +1327,7 @@ mettle_auto_verify(
                 </div>
 
             </article>
+            </div><!-- /.docs-layout -->
         </main>
 
     </div>
