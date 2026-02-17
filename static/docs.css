@@ -7,7 +7,7 @@
     gap: 0.5rem;
     font-size: 0.8125rem;
     color: var(--color-text-muted);
-    margin-bottom: var(--space-lg);
+    margin-bottom: var(--space-sm);
     padding-top: var(--space-lg);
 }
 
@@ -60,12 +60,13 @@
 /* TOC Sidebar */
 .toc-sidebar {
     position: sticky;
-    top: var(--space-xl);
+    top: 80px;
     z-index: 20;
-    max-height: calc(100vh - 4rem);
+    max-height: calc(100vh - 100px);
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: rgba(245, 158, 11, 0.2) transparent;
+    padding-top: var(--space-lg);
 }
 
 .toc-sidebar-header {

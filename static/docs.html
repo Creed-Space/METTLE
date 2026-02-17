@@ -111,21 +111,6 @@
 
     <div class="container docs-container">
         <main class="docs-main-new">
-            <!-- Breadcrumb -->
-            <nav class="docs-breadcrumb" aria-label="Breadcrumb">
-                <a href="/"><i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i> METTLE</a>
-                <span class="breadcrumb-sep" aria-hidden="true">/</span>
-                <span><i class="fa-solid fa-book" aria-hidden="true"></i> Docs</span>
-            </nav>
-
-            <header class="docs-header-new">
-                <h1>METTLE Documentation</h1>
-                <p class="docs-subtitle">
-                    Open-source verification you run yourself. Optional notarization through Creed Space
-                    for portable, independently verifiable credentials.
-                </p>
-            </header>
-
             <div class="docs-layout">
             <!-- Sidebar TOC -->
             <nav class="toc-sidebar" aria-label="Table of contents">
@@ -149,6 +134,20 @@
             </nav>
 
             <article class="docs-content-new">
+            <!-- Breadcrumb -->
+            <nav class="docs-breadcrumb" aria-label="Breadcrumb">
+                <a href="/"><i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i> METTLE</a>
+                <span class="breadcrumb-sep" aria-hidden="true">/</span>
+                <span><i class="fa-solid fa-book" aria-hidden="true"></i> Docs</span>
+            </nav>
+
+            <header class="docs-header-new">
+                <h1>METTLE Documentation</h1>
+                <p class="docs-subtitle">
+                    Open-source verification you run yourself. Optional notarization through Creed Space
+                    for portable, independently verifiable credentials.
+                </p>
+            </header>
 
                 <!-- Getting Started -->
                 <section class="docs-section" id="getting-started">
@@ -1436,6 +1435,42 @@ mettle_auto_verify(
                     btn.focus();
                 }
             });
+        })();
+
+        // Scroll-spy: highlight TOC item matching visible section
+        (function() {
+            var tocItems = document.querySelectorAll('.toc-item');
+            if (!tocItems.length) return;
+
+            var sectionIds = [];
+            tocItems.forEach(function(item) {
+                var href = item.getAttribute('href');
+                if (href && href.startsWith('#')) sectionIds.push(href.slice(1));
+            });
+
+            function updateActive() {
+                var scrollY = window.scrollY + 100;
+                var current = sectionIds[0];
+
+                for (var i = 0; i < sectionIds.length; i++) {
+                    var el = document.getElementById(sectionIds[i]);
+                    if (el && el.offsetTop <= scrollY) {
+                        current = sectionIds[i];
+                    }
+                }
+
+                tocItems.forEach(function(item) {
+                    var href = item.getAttribute('href');
+                    if (href === '#' + current) {
+                        item.classList.add('active');
+                    } else {
+                        item.classList.remove('active');
+                    }
+                });
+            }
+
+            window.addEventListener('scroll', updateActive, { passive: true });
+            updateActive();
         })();
     </script>
 </body>
