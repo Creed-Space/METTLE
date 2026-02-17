@@ -67,7 +67,7 @@
         /* About page hero */
         .about-hero {
             text-align: center;
-            padding: 6rem 1rem 3rem;
+            padding: 6rem 1rem 0.75rem;
         }
 
         .about-hero .hero-eyebrow {
@@ -90,27 +90,34 @@
         }
 
         .about-hero-subtitle {
-            font-size: var(--text-base);
+            font-size: var(--text-sm);
             color: var(--color-text-muted);
-            max-width: 520px;
+            max-width: 700px;
             margin: 0 auto;
-            line-height: 1.8;
+            line-height: 1.6;
         }
 
         .about-hero-subtitle strong {
             color: var(--color-text);
         }
 
+        /* Tighten glow dividers on about page */
+        .about-hero + .glow-divider,
+        .about-content + .about-pullquote + .glow-divider,
+        .about-principles + .glow-divider {
+            margin: 0.5rem auto;
+        }
+
         /* Prose section */
         .about-content {
             max-width: 720px;
             margin: 0 auto;
-            padding: 0 var(--space-lg) var(--space-2xl);
+            padding: 0.75rem var(--space-lg) var(--space-md);
         }
 
         .about-prose {
-            font-size: 1.125rem;
-            line-height: 1.9;
+            font-size: 1rem;
+            line-height: 1.75;
             color: var(--color-text-muted);
         }
 
@@ -125,7 +132,7 @@
         /* Pullquote */
         .about-pullquote {
             text-align: center;
-            padding: var(--space-2xl) var(--space-lg);
+            padding: 0.75rem var(--space-lg);
             max-width: 700px;
             margin: 0 auto;
         }
@@ -149,7 +156,7 @@
         .about-principles {
             max-width: 900px;
             margin: 0 auto;
-            padding: 0 var(--space-lg) var(--space-2xl);
+            padding: 0.75rem var(--space-lg) var(--space-md);
         }
 
         .about-principles h2 {
@@ -208,7 +215,7 @@
         .about-builder {
             max-width: 720px;
             margin: 0 auto;
-            padding: 0 var(--space-lg) var(--space-2xl);
+            padding: 0.75rem var(--space-lg) var(--space-md);
         }
 
         .builder-card {
@@ -352,7 +359,7 @@
     <section class="about-hero">
         <div class="container">
             <p class="hero-eyebrow">
-                <i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i>
+                <img src="/static/favicon.svg" alt="" width="16" height="16" style="vertical-align: -1px;" aria-hidden="true">
                 About METTLE
             </p>
             <h1>Verification for the <span class="highlight">Agentic Era</span></h1>
