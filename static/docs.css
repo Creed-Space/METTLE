@@ -25,6 +25,11 @@
     opacity: 0.4;
 }
 
+.breadcrumb-logo {
+    vertical-align: -2px;
+    opacity: 0.7;
+}
+
 /* Docs layout: sidebar + content */
 .docs-main-new {
     max-width: 1100px;
@@ -67,23 +72,6 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(245, 158, 11, 0.2) transparent;
     padding-top: var(--space-lg);
-}
-
-.toc-sidebar-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding-bottom: var(--space-md);
-    margin-bottom: var(--space-sm);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    font-size: 0.8125rem;
-    font-weight: 700;
-    color: var(--color-text);
-    letter-spacing: 0.02em;
-}
-
-.toc-sidebar-header img {
-    opacity: 0.8;
 }
 
 .toc-list {
@@ -602,7 +590,6 @@
         -webkit-backdrop-filter: blur(16px);
         backdrop-filter: blur(16px);
     }
-    .toc-sidebar-header { display: none; }
     .toc-list {
         flex-direction: row;
         flex-wrap: wrap;
