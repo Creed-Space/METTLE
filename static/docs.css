@@ -116,9 +116,15 @@
     max-width: 800px;
 }
 
-/* Section styling */
-.docs-section {
+/* Section styling — applies to ALL sections in docs content */
+.docs-content-new > section {
+    margin-top: var(--space-2xl);
     margin-bottom: var(--space-2xl);
+    padding-top: var(--space-lg);
+    scroll-margin-top: 60px;
+}
+
+.docs-section {
     scroll-margin-top: 60px;
 }
 
