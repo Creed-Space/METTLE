@@ -16,32 +16,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Get current year
-        id: year
-        run: echo "CURRENT_YEAR=$(date +%Y)" >> $GITHUB_OUTPUT
-      
-      - name: Get short year
-        id: shortyear
-        run: echo "SHORT_YEAR=$(date +%y)" >> $GITHUB_OUTPUT
-      
-      - name: Update footer year patterns
+
+      - name: Update copyright years to range format
         run: |
-          YEAR=${{ steps.year.outputs.CURRENT_YEAR }}
-          SHORT_YEAR=${{ steps.shortyear.outputs.SHORT_YEAR }}
-          
-          # Pattern 1: Update "2020-XX" to "2020-[current short year]" (e.g., 2020-25 -> 2020-26)
-          find . -name "*.html" -exec sed -i -E "s/2020-[0-9]{2}/2020-$SHORT_YEAR/g" {} \;
-          
-          # Pattern 2: Update "2021-XX" to "2021-[current short year]" (e.g., 2021-25 -> 2021-26)
-          find . -name "*.html" -exec sed -i -E "s/2021-[0-9]{2}/2021-$SHORT_YEAR/g" {} \;
-          
-          # Pattern 3: Update "© YYYY" to "© [current year]" (e.g., © 2025 -> © 2026)
-          find . -name "*.html" -exec sed -i -E "s/© [0-9]{4}/© $YEAR/g" {} \;
-          
-          # Pattern 4: Update "&copy; YYYY" to "&copy; [current year]"
-          find . -name "*.html" -exec sed -i -E "s/\&copy; [0-9]{4}/\&copy; $YEAR/g" {} \;
-      
+          SHORT_YEAR=$(date +%y)
+
+          # Update "&copy; 2026" -> "&copy; 2026-27" (or update existing range)
+          # Handles both single year and existing range patterns
+          find static -name "*.html" -exec sed -i -E \
+            "s/\&copy; 2026(-[0-9]{2})?/\&copy; 2026-$SHORT_YEAR/g" {} \;
+
       - name: Commit if changed
         run: |
-          git diff --quiet || (git config user.email "github-actions[bot]@users.noreply.github.com" && git config user.name "github-actions[bot]" && git add -A && git commit -m "chore: Update footer year to ${{ steps.year.outputs.CURRENT_YEAR }}" && git push)
+          SHORT_YEAR=$(date +%y)
+          if ! git diff --quiet; then
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git add -A
+            git commit -m "chore: update copyright year to 2026-$SHORT_YEAR"
+            git push
+          fi
