@@ -120,12 +120,18 @@
                     <a href="#concepts" class="toc-item"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i> <span>Concepts</span></a>
                     <a href="#authentication" class="toc-item"><i class="fa-solid fa-key" aria-hidden="true"></i> <span>Authentication</span></a>
                     <a href="#self-hosted" class="toc-item"><i class="fa-solid fa-server" aria-hidden="true"></i> <span>Self-Hosted</span></a>
-                    <a href="#credentials" class="toc-item"><i class="fa-solid fa-certificate" aria-hidden="true"></i> <span>Credentials</span></a>
                     <a href="#notarization" class="toc-item"><i class="fa-solid fa-stamp" aria-hidden="true"></i> <span>Notarization</span></a>
+                    <a href="#endpoints" class="toc-item"><i class="fa-solid fa-route" aria-hidden="true"></i> <span>Endpoints</span></a>
                     <a href="#suites" class="toc-item"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i> <span>Suites</span></a>
+                    <a href="#credentials" class="toc-item"><i class="fa-solid fa-certificate" aria-hidden="true"></i> <span>Credentials</span></a>
+                    <a href="#vcp" class="toc-item"><i class="fa-solid fa-fingerprint" aria-hidden="true"></i> <span>VCP</span></a>
                     <a href="#sdk-examples" class="toc-item"><i class="fa-solid fa-code" aria-hidden="true"></i> <span>SDKs</span></a>
+                    <a href="#security-model" class="toc-item"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Security</span></a>
+                    <a href="#anti-gaming" class="toc-item"><i class="fa-solid fa-chess-knight" aria-hidden="true"></i> <span>Anti-Gaming</span></a>
+                    <a href="#configuration" class="toc-item"><i class="fa-solid fa-gear" aria-hidden="true"></i> <span>Configuration</span></a>
                     <a href="#mcp-integration" class="toc-item"><i class="fa-solid fa-plug" aria-hidden="true"></i> <span>MCP</span></a>
                     <a href="#error-codes" class="toc-item"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> <span>Errors</span></a>
+                    <a href="#troubleshooting" class="toc-item"><i class="fa-solid fa-wrench" aria-hidden="true"></i> <span>Troubleshooting</span></a>
                 </div>
             </nav>
 
@@ -433,7 +439,7 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                     </div>
                 </section>
 
-                <section id="endpoints">
+                <section class="docs-section" id="endpoints">
                     <h2>API Endpoints</h2>
                     <p>All endpoints are prefixed with <code>/api/mettle</code>.</p>
 
@@ -529,7 +535,7 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                     </table>
                 </section>
 
-                <section id="suites">
+                <section class="docs-section" id="suites">
                     <h2>10 Verification Suites</h2>
                     <p>Each suite tests a distinct dimension of agent identity. Together they answer six questions: <strong>AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS</strong>. Every challenge is procedurally generated. Every session is unique.</p>
 
@@ -710,7 +716,7 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
 }</code></pre>
                 </section>
 
-                <section id="vcp">
+                <section class="docs-section" id="vcp">
                     <h2>VCP Attestation</h2>
                     <p>METTLE credentials can be <strong>notarized</strong> as VCP (Verifiable Credential Protocol) attestations, signed with Ed25519 for portable, cryptographically verifiable trust.</p>
 
@@ -755,8 +761,11 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                     </div>
                 </section>
 
-                <section id="sdk-examples">
-                    <h2>Python SDK</h2>
+                <section class="docs-section" id="sdk-examples">
+                    <h2><i class="fa-solid fa-code section-icon" aria-hidden="true"></i> SDKs</h2>
+                    <p class="section-intro">Client libraries for Python, JavaScript, and Rust</p>
+
+                    <h3 id="python">Python SDK</h3>
                     <pre><code>import httpx
 
 class MettleClient:
@@ -836,10 +845,8 @@ for n in range(1, 4):
 # Get result with VCP attestation
 result = client.get_result(sid, include_vcp=True)
 print(f"Tier: {result['tier']}")</code></pre>
-                </section>
 
-                <section id="javascript">
-                    <h2>JavaScript SDK</h2>
+                    <h3 id="javascript">JavaScript SDK</h3>
                     <pre><code>class MettleClient {
   #base;
 
@@ -916,10 +923,8 @@ const result = await client.getResult(
   session.session_id, true
 );
 console.log(`Tier: ${result.tier}`);</code></pre>
-                </section>
 
-                <section id="rust">
-                    <h2>Rust SDK</h2>
+                    <h3 id="rust">Rust SDK</h3>
                     <pre><code>use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -999,7 +1004,7 @@ impl MettleClient {
 }</code></pre>
                 </section>
 
-                <section id="security-model">
+                <section class="docs-section" id="security-model">
                     <h2>Security Model</h2>
 
                     <table>
@@ -1051,7 +1056,7 @@ impl MettleClient {
                     </div>
                 </section>
 
-                <section id="anti-gaming">
+                <section class="docs-section" id="anti-gaming">
                     <h2>Anti-Gaming Design</h2>
                     <p>Every known attack vector has a built-in countermeasure. There are no shortcuts through the forge.</p>
 
@@ -1095,7 +1100,7 @@ impl MettleClient {
                     </table>
                 </section>
 
-                <section id="configuration">
+                <section class="docs-section" id="configuration">
                     <h2>Configuration</h2>
                     <p>METTLE is configured via environment variables:</p>
 
@@ -1147,7 +1152,7 @@ impl MettleClient {
                     </div>
                 </section>
 
-                <section id="mcp-integration">
+                <section class="docs-section" id="mcp-integration">
                     <h2>MCP Integration</h2>
                     <p>METTLE provides a Model Context Protocol (MCP) server for direct AI agent integration. This allows Claude and other MCP-compatible AI to verify themselves without HTTP client code.</p>
 
@@ -1222,7 +1227,7 @@ mettle_auto_verify(
 // Returns tier + VCP attestation</code></pre>
                 </section>
 
-                <section id="error-codes">
+                <section class="docs-section" id="error-codes">
                     <h2>Error Codes</h2>
                     <p>METTLE uses standard HTTP status codes with structured error responses.</p>
 
@@ -1280,7 +1285,7 @@ mettle_auto_verify(
 }</code></pre>
                 </section>
 
-                <section id="troubleshooting">
+                <section class="docs-section" id="troubleshooting">
                     <h2>Troubleshooting</h2>
 
                     <div class="faq-item" style="background: var(--bg-card); border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
