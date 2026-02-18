@@ -8,7 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 class AuthenticatedUser(BaseModel):
@@ -16,8 +16,14 @@ class AuthenticatedUser(BaseModel):
 
 
 async def require_authenticated_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> AuthenticatedUser:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
     api_key = credentials.credentials
     dev_mode = os.getenv("METTLE_DEV_MODE", "false").lower() == "true"
     valid_keys = os.getenv("METTLE_API_KEYS", "").split(",")

@@ -1,6 +1,6 @@
 """Pydantic Settings for METTLE standalone."""
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MettleSettings(BaseSettings):
@@ -9,7 +9,14 @@ class MettleSettings(BaseSettings):
     dev_mode: bool = False
     cors_origins: str = "*"
     vcp_signing_key: str = ""
-    model_config = {"env_prefix": "METTLE_", "env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = SettingsConfigDict(
+        env_prefix="METTLE_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        # The project environment can contain many non-METTLE keys.
+        # Ignore unknown keys so settings import remains stable.
+        extra="ignore",
+    )
 
 
 settings = MettleSettings()

@@ -38,6 +38,11 @@ mettle.db
 # Logs
 *.log
 
+# Node / Frontend
+node_modules/
+.svelte-kit/
+package-lock.json
+
 # OS
 .DS_Store
 Thumbs.db

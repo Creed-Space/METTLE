@@ -251,9 +251,7 @@ async def _create_session(
 
 def _store_session(fake_redis: FakeRedis, session_id: str, data: dict) -> None:
     """Synchronously store a session in FakeRedis."""
-    asyncio.get_event_loop().run_until_complete(
-        fake_redis.setex(_key(session_id), 300, json.dumps(data))
-    )
+    asyncio.run(fake_redis.setex(_key(session_id), 300, json.dumps(data)))
 
 
 def _make_foreign_session(
