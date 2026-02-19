@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Primary Meta Tags -->
+    <title>Test Verification - METTLE</title>
+    <meta name="title" content="Test Verification - METTLE">
+    <meta name="description" content="Run a live METTLE verification challenge. Test speed, consistency, and instruction-following in an interactive demo.">
+    <meta name="robots" content="index, follow">
+
+    <!-- Canonical -->
+    <link rel="canonical" href="https://mettle.sh/test">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://mettle.sh/test">
+    <meta property="og:title" content="Test Verification - METTLE">
+    <meta property="og:description" content="Run a live METTLE verification challenge. Test speed, consistency, and instruction-following in an interactive demo.">
+    <meta property="og:image" content="https://mettle.sh/static/og-image.png">
+    <meta property="og:site_name" content="METTLE">
+
+    <!-- Favicons -->
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="/static/favicon.ico" sizes="48x48">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/site.webmanifest">
+    <meta name="theme-color" content="#f59e0b">
+
+    <!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-BQDQ0S2DPH"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-BQDQ0S2DPH');
+    </script>
+
+    <!-- Preconnect -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <!-- ================================================================
+         HEADER
+         ================================================================ -->
+    <header class="mettle-header" id="mettle-header">
+        <div class="container header-inner">
+            <a href="/" class="mettle-logo" aria-label="METTLE Home">
+                <span class="mettle-logo-icon" aria-hidden="true">
+                    <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                </span>
+                <span class="mettle-logo-text">
+                    <span class="mettle-logo-highlight">METTLE</span>
+                </span>
+            </a>
+
+            <!-- Desktop Nav -->
+            <nav class="mettle-nav desktop-nav" aria-label="Main navigation">
+                <a href="/static/docs.html" class="nav-link">Docs</a>
+                <a href="/test" class="nav-link">Test</a>
+                <a href="/about" class="nav-link">About</a>
+                <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="nav-link" aria-label="GitHub (opens in new tab)">
+                    <i class="fa-brands fa-github" aria-hidden="true"></i>
+                </a>
+                <span class="nav-divider" aria-hidden="true"></span>
+                <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="nav-link nav-link-brand" aria-label="Creed Space (opens in new tab)">
+                    <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    Creed Space
+                </a>
+            </nav>
+
+            <!-- Mobile Menu Button -->
+            <button
+                class="mobile-menu-btn"
+                id="mobile-menu-btn"
+                aria-expanded="false"
+                aria-controls="mettle-mobile-nav"
+                aria-label="Open menu"
+            >
+                <span class="hamburger" id="hamburger">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </span>
+            </button>
+        </div>
+
+        <!-- Mobile Nav -->
+        <nav id="mettle-mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
+            <a href="/static/docs.html" class="mobile-nav-link">Docs</a>
+            <a href="/test" class="mobile-nav-link">Test</a>
+            <a href="/about" class="mobile-nav-link">About</a>
+            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">
+                <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
+            </a>
+            <hr class="mobile-nav-divider" />
+            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
+                <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
+                Creed Space
+            </a>
+        </nav>
+    </header>
+
+    <!-- ================================================================
+         VERIFICATION UI (Interactive)
+         ================================================================ -->
+    <section class="verification-section" id="try-it">
+        <div class="container">
+            <div class="scroll-reveal">
+                <h2 class="section-title">Test Verification</h2>
+                <p class="section-description" style="margin-bottom: var(--space-xl);">
+                    Run a live verification challenge right here. METTLE is open source under the <strong>MIT license</strong> &mdash; free to use, modify, and deploy. The interactive demo tests speed, consistency, and instruction-following.
+                </p>
+            </div>
+
+            <!-- Start Screen -->
+            <div id="start-screen" class="screen active">
+                <div class="card">
+                    <h2>AI Verification System</h2>
+                    <p>METTLE tests capabilities that emerge from AI-native cognition&mdash;speed, consistency, instruction-following&mdash;to distinguish AI agents from humans.</p>
+
+                    <div class="form-group">
+                        <label for="entity-id">Entity ID (optional)</label>
+                        <input type="text" id="entity-id" placeholder="my-agent-001" maxlength="128">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="difficulty">Difficulty</label>
+                        <select id="difficulty">
+                            <option value="basic" selected>Basic - relaxed timing</option>
+                            <option value="full">Full - comprehensive profiling</option>
+                        </select>
+                    </div>
+
+                    <button id="start-btn" class="btn btn-primary">Start Verification</button>
+                </div>
+            </div>
+
+            <!-- Challenge Screen -->
+            <div id="challenge-screen" class="screen">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <div class="progress-text">
+                    <span id="progress-text">Challenge 1 of 3</span>
+                    <span id="timer" class="timer">5.0s</span>
+                </div>
+
+                <div class="card challenge-card">
+                    <div class="challenge-type" id="challenge-type">speed_math</div>
+                    <div class="challenge-prompt" id="challenge-prompt">
+                        Calculate: 47 + 83
+                    </div>
+                    <div class="time-limit" id="time-limit">Time limit: 5000ms</div>
+
+                    <div class="form-group">
+                        <label for="answer-input">Your Answer</label>
+                        <input type="text" id="answer-input" placeholder="Enter your answer" autofocus>
+                    </div>
+
+                    <button id="submit-btn" class="btn btn-primary">Submit Answer</button>
+                </div>
+
+                <div id="feedback" class="feedback hidden"></div>
+            </div>
+
+            <!-- Result Screen -->
+            <div id="result-screen" class="screen">
+                <div class="card result-card">
+                    <div id="result-icon" class="result-icon"><i class="fa-solid fa-medal"></i></div>
+                    <h2 id="result-title">Verification Complete</h2>
+                    <p id="result-message" class="result-message"></p>
+
+                    <div class="stats">
+                        <div class="stat">
+                            <span class="stat-value" id="stat-passed">0</span>
+                            <span class="stat-label">Passed</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="stat-total">0</span>
+                            <span class="stat-label">Total</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-value" id="stat-rate">0%</span>
+                            <span class="stat-label">Pass Rate</span>
+                        </div>
+                    </div>
+
+                    <div id="badge-container" class="badge-container hidden">
+                        <div class="badge" id="badge"></div>
+                    </div>
+
+                    <div id="results-detail" class="results-detail"></div>
+
+                    <button id="restart-btn" class="btn btn-secondary">Try Again</button>
+                </div>
+            </div>
+
+            <!-- Error Screen -->
+            <div id="error-screen" class="screen">
+                <div class="card error-card">
+                    <div class="error-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    <h2>Something went wrong</h2>
+                    <p id="error-message">An error occurred. Please try again.</p>
+                    <button id="error-restart-btn" class="btn btn-secondary">Start Over</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ================================================================
+         FOOTER
+         ================================================================ -->
+    <footer class="mettle-footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="footer-logo" aria-hidden="true">
+                        <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                    </span>
+                    <div>
+                        <p class="footer-title">METTLE</p>
+                        <p class="footer-tagline"><strong>Machine Evaluation Through Turing-inverse Logic Examination</strong></p>
+                        <p class="footer-mission">Proving agents are real, free, genuine, safe, and capable of novel reasoning.</p>
+                    </div>
+                </div>
+
+                <div class="footer-links">
+                    <div class="footer-section">
+                        <h4>METTLE</h4>
+                        <a href="/static/docs.html">Docs</a>
+                        <a href="/test">Test</a>
+                        <a href="/about">About</a>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Ecosystem</h4>
+                        <a href="https://creed.space" target="_blank" rel="noopener noreferrer" aria-label="Creed Space (opens in new tab)">
+                            Creed Space <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://valuecontextprotocol.org/" target="_blank" rel="noopener noreferrer" aria-label="Value Context Protocol (opens in new tab)">
+                            Value Context Protocol <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://millos.net" target="_blank" rel="noopener noreferrer" aria-label="MillOS (opens in new tab)">
+                            MillOS <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Open Source</h4>
+                        <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" aria-label="GitHub (opens in new tab)">
+                            GitHub <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <span class="footer-license-badge">
+                            <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                            MIT Licensed
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; 2026 Creed Space &mdash; Code released under <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener noreferrer" class="license-link">MIT License</a></p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/app.js"></script>
+    <script src="/static/webmcp.js"></script>
+    <script>
+        // Scroll-aware header
+        (function() {
+            var header = document.getElementById('mettle-header');
+            if (!header) return;
+            window.addEventListener('scroll', function() {
+                if (window.scrollY > 10) {
+                    header.classList.add('scrolled');
+                } else {
+                    header.classList.remove('scrolled');
+                }
+            }, { passive: true });
+        })();
+
+        // Mobile menu toggle
+        (function() {
+            var btn = document.getElementById('mobile-menu-btn');
+            var nav = document.getElementById('mettle-mobile-nav');
+            var hamburger = document.getElementById('hamburger');
+            if (!btn || !nav) return;
+
+            btn.addEventListener('click', function() {
+                var isOpen = nav.hidden === false;
+                nav.hidden = isOpen;
+                btn.setAttribute('aria-expanded', !isOpen);
+                btn.setAttribute('aria-label', isOpen ? 'Open menu' : 'Close menu');
+                hamburger.classList.toggle('open', !isOpen);
+            });
+
+            // Close on link click
+            nav.querySelectorAll('a').forEach(function(link) {
+                link.addEventListener('click', function() {
+                    nav.hidden = true;
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.setAttribute('aria-label', 'Open menu');
+                    hamburger.classList.remove('open');
+                });
+            });
+
+            // Close on Escape
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && !nav.hidden) {
+                    nav.hidden = true;
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.setAttribute('aria-label', 'Open menu');
+                    hamburger.classList.remove('open');
+                    btn.focus();
+                }
+            });
+        })();
+    </script>
+</body>
+</html>

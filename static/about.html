@@ -101,11 +101,12 @@
             color: var(--color-text);
         }
 
-        /* Tighten glow dividers on about page */
-        .about-hero + .glow-divider,
-        .about-content + .about-pullquote + .glow-divider,
+        /* Glow divider spacing on about page */
+        .about-pullquote + .glow-divider {
+            margin: 2.5rem auto 2rem;
+        }
         .about-principles + .glow-divider {
-            margin: 0.5rem auto;
+            margin: 2.5rem auto 2rem;
         }
 
         /* Prose section */
@@ -325,7 +326,7 @@
             </a>
             <nav class="mettle-nav desktop-nav" aria-label="Main navigation">
                 <a href="/static/docs.html" class="nav-link">Docs</a>
-                <a href="/#try-it" class="nav-link">Test</a>
+                <a href="/test" class="nav-link">Test</a>
                 <a href="/about" class="nav-link">About</a>
                 <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="nav-link" aria-label="GitHub (opens in new tab)">
                     <i class="fa-brands fa-github" aria-hidden="true"></i>
@@ -342,7 +343,7 @@
         </div>
         <nav id="mettle-mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
             <a href="/static/docs.html" class="mobile-nav-link">Docs</a>
-            <a href="/#try-it" class="mobile-nav-link">Test</a>
+            <a href="/test" class="mobile-nav-link">Test</a>
             <a href="/about" class="mobile-nav-link">About</a>
             <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">
                 <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
@@ -369,12 +370,6 @@
             </p>
         </div>
     </section>
-
-    <div class="glow-divider" style="--glow-color: rgba(245, 158, 11, 0.5);" aria-hidden="true">
-        <div class="glow-line"></div>
-        <div class="glow-dot"></div>
-        <div class="glow-line"></div>
-    </div>
 
     <!-- Core narrative -->
     <div class="about-content">
@@ -488,7 +483,7 @@
                     <div class="footer-section">
                         <h4>METTLE</h4>
                         <a href="/static/docs.html">Docs</a>
-                        <a href="/#try-it">Test</a>
+                        <a href="/test">Test</a>
                         <a href="/about">About</a>
                     </div>
                     <div class="footer-section">

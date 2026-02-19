@@ -193,19 +193,6 @@ print(f<span class="tok-str">"Self-signed JWT: </span><span class="tok-comment">
 			<p class="section-intro">Two tiers: self-signed for development, notarized for production</p>
 
 			<div class="tier-comparison">
-				<div class="tier-card tier-self">
-					<div class="tier-header">
-						<span class="tier-badge tier-badge-self">Self-Signed</span>
-					</div>
-					<div class="tier-body">
-						<div class="tier-detail"><strong>Issuer</strong><code>mettle:self-hosted</code></div>
-						<div class="tier-detail"><strong>Trust model</strong><span>Operator's own Ed25519 key</span></div>
-						<div class="tier-detail"><strong>API key needed</strong><span>No</span></div>
-						<div class="tier-detail"><strong>Use case</strong><span>Development, testing, internal verification</span></div>
-						<div class="tier-detail"><strong>Verifiable by</strong><span>Anyone with operator's public key</span></div>
-					</div>
-				</div>
-
 				<div class="tier-card tier-notarized">
 					<div class="tier-header">
 						<span class="tier-badge tier-badge-notarized">Notarized</span>
@@ -216,6 +203,19 @@ print(f<span class="tok-str">"Self-signed JWT: </span><span class="tok-comment">
 						<div class="tier-detail"><strong>API key needed</strong><span>Yes (for notarization endpoint)</span></div>
 						<div class="tier-detail"><strong>Use case</strong><span>Production, portable trust, cross-org verification</span></div>
 						<div class="tier-detail"><strong>Verifiable by</strong><span>Anyone via <code>/.well-known/jwks.json</code></span></div>
+					</div>
+				</div>
+
+				<div class="tier-card tier-self">
+					<div class="tier-header">
+						<span class="tier-badge tier-badge-self">Self-Signed</span>
+					</div>
+					<div class="tier-body">
+						<div class="tier-detail"><strong>Issuer</strong><code>mettle:self-hosted</code></div>
+						<div class="tier-detail"><strong>Trust model</strong><span>Operator's own Ed25519 key</span></div>
+						<div class="tier-detail"><strong>API key needed</strong><span>No</span></div>
+						<div class="tier-detail"><strong>Use case</strong><span>Development, testing, internal verification</span></div>
+						<div class="tier-detail"><strong>Verifiable by</strong><span>Anyone with operator's public key</span></div>
 					</div>
 				</div>
 			</div>

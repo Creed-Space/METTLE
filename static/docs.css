@@ -509,9 +509,25 @@
 .docs-content th { background: var(--bg-card); font-weight: 600; font-size: 0.875rem; }
 .docs-content td { font-size: 0.9rem; }
 
-.endpoint-table td:first-child { width: 60px; }
+/* Table column dividers (audit fix) */
+.docs-content table thead th,
+.docs-content table tbody td {
+    border-right: 1px solid var(--border);
+}
+.docs-content table thead th:last-child,
+.docs-content table tbody td:last-child {
+    border-right: none;
+}
+
+/* Alternating row colors (audit fix) */
+.docs-content table tbody tr:nth-child(odd) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.endpoint-table td:first-child { width: 80px; }
 .endpoint-table td:first-child code { font-weight: 600; }
-.endpoint-table td:nth-child(2) { font-family: 'SF Mono', Monaco, monospace; font-size: 0.85rem; }
+.endpoint-table td:nth-child(2) { font-family: 'SF Mono', Monaco, monospace; font-size: 0.85rem; padding-right: 2rem; }
+.endpoint-table td:nth-child(3) { padding-left: 1.5rem; }
 
 .docs-content ul, .docs-content ol { margin-bottom: 1.5rem; padding-left: 1.5rem; }
 .docs-content li { margin-bottom: 0.5rem; line-height: 1.6; }
@@ -527,7 +543,7 @@
 .challenge-type-doc p { margin-bottom: 1rem; color: var(--text-muted); }
 .challenge-type-doc pre { margin-bottom: 0; font-size: 0.8rem; }
 
-.callout { display: flex; gap: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); border-radius: 8px; margin-bottom: 1.5rem; }
+.callout { display: flex; gap: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); border-radius: 8px; margin-top: 1.5rem; margin-bottom: 1.5rem; }
 .callout i { color: var(--primary); font-size: 1.25rem; flex-shrink: 0; }
 .callout p { margin: 0; font-size: 0.9rem; }
 

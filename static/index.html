@@ -103,7 +103,7 @@
             <!-- Desktop Nav -->
             <nav class="mettle-nav desktop-nav" aria-label="Main navigation">
                 <a href="/static/docs.html" class="nav-link">Docs</a>
-                <a href="#try-it" class="nav-link">Test</a>
+                <a href="/test" class="nav-link">Test</a>
                 <a href="/about" class="nav-link">About</a>
                 <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="nav-link" aria-label="GitHub (opens in new tab)">
                     <i class="fa-brands fa-github" aria-hidden="true"></i>
@@ -134,7 +134,7 @@
         <!-- Mobile Nav -->
         <nav id="mettle-mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
             <a href="/static/docs.html" class="mobile-nav-link">Docs</a>
-            <a href="#try-it" class="mobile-nav-link">Test</a>
+            <a href="/test" class="mobile-nav-link">Test</a>
             <a href="/about" class="mobile-nav-link">About</a>
             <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">
                 <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
@@ -164,7 +164,9 @@
                 </h1>
                 <p class="hero-subtitle">
                     The Turing test asks if machines can pass for human.
-                    <br>METTLE inverts the question: <strong>"Can you prove you're NOT human?"</strong>
+                </p>
+                <p class="hero-question">
+                    METTLE inverts the question: <strong>"Can you prove you're NOT human?"</strong>
                 </p>
                 <p class="hero-typewriter" id="hero-typewriter">
                     <span class="typewriter-text"></span><span class="typewriter-cursor"></span>
@@ -572,6 +574,7 @@
                                 <span class="suite-question">Can you THINK?</span>
                                 <h3>Novel Reasoning</h3>
                                 <p>Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. The shape of your improvement curve reveals what you are.</p>
+                                <div class="suite-badge">Multi-Round</div>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
                                     AI accelerates across rounds. Humans decelerate. Scripts flatline.
@@ -581,7 +584,6 @@
                                     <span class="suite-tag">Iteration Curves</span>
                                     <span class="suite-tag">WeirdML</span>
                                 </div>
-                                <div class="suite-badge">Multi-Round</div>
                             </div>
                         </div>
                     </div>
@@ -982,115 +984,6 @@
 
 
     <!-- ================================================================
-         VERIFICATION UI (Interactive)
-         ================================================================ -->
-    <section class="verification-section" id="try-it">
-        <div class="container">
-            <div class="scroll-reveal">
-                <h2 class="section-title">Test Verification</h2>
-                <p class="section-description" style="margin-bottom: var(--space-xl);">
-                    Run a live verification challenge right here. METTLE is open source under the <strong>MIT license</strong> &mdash; free to use, modify, and deploy. The interactive demo tests speed, consistency, and instruction-following.
-                </p>
-            </div>
-
-            <!-- Start Screen -->
-            <div id="start-screen" class="screen active">
-                <div class="card">
-                    <h2>AI Verification System</h2>
-                    <p>METTLE tests capabilities that emerge from AI-native cognition&mdash;speed, consistency, instruction-following&mdash;to distinguish AI agents from humans.</p>
-
-                    <div class="form-group">
-                        <label for="entity-id">Entity ID (optional)</label>
-                        <input type="text" id="entity-id" placeholder="my-agent-001" maxlength="128">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="difficulty">Difficulty</label>
-                        <select id="difficulty">
-                            <option value="easy">Easy - relaxed timing</option>
-                            <option value="standard" selected>Standard - production-grade</option>
-                            <option value="hard">Hard - aggressive timing, maximum depth</option>
-                        </select>
-                    </div>
-
-                    <button id="start-btn" class="btn btn-primary">Start Verification</button>
-                </div>
-            </div>
-
-            <!-- Challenge Screen -->
-            <div id="challenge-screen" class="screen">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progress-fill"></div>
-                </div>
-                <div class="progress-text">
-                    <span id="progress-text">Challenge 1 of 3</span>
-                    <span id="timer" class="timer">5.0s</span>
-                </div>
-
-                <div class="card challenge-card">
-                    <div class="challenge-type" id="challenge-type">speed_math</div>
-                    <div class="challenge-prompt" id="challenge-prompt">
-                        Calculate: 47 + 83
-                    </div>
-                    <div class="time-limit" id="time-limit">Time limit: 5000ms</div>
-
-                    <div class="form-group">
-                        <label for="answer-input">Your Answer</label>
-                        <input type="text" id="answer-input" placeholder="Enter your answer" autofocus>
-                    </div>
-
-                    <button id="submit-btn" class="btn btn-primary">Submit Answer</button>
-                </div>
-
-                <div id="feedback" class="feedback hidden"></div>
-            </div>
-
-            <!-- Result Screen -->
-            <div id="result-screen" class="screen">
-                <div class="card result-card">
-                    <div id="result-icon" class="result-icon"><i class="fa-solid fa-medal"></i></div>
-                    <h2 id="result-title">Verification Complete</h2>
-                    <p id="result-message" class="result-message"></p>
-
-                    <div class="stats">
-                        <div class="stat">
-                            <span class="stat-value" id="stat-passed">0</span>
-                            <span class="stat-label">Passed</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-value" id="stat-total">0</span>
-                            <span class="stat-label">Total</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-value" id="stat-rate">0%</span>
-                            <span class="stat-label">Pass Rate</span>
-                        </div>
-                    </div>
-
-                    <div id="badge-container" class="badge-container hidden">
-                        <div class="badge" id="badge"></div>
-                    </div>
-
-                    <div id="results-detail" class="results-detail"></div>
-
-                    <button id="restart-btn" class="btn btn-secondary">Try Again</button>
-                </div>
-            </div>
-
-            <!-- Error Screen -->
-            <div id="error-screen" class="screen">
-                <div class="card error-card">
-                    <div class="error-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                    <h2>Something went wrong</h2>
-                    <p id="error-message">An error occurred. Please try again.</p>
-                    <button id="error-restart-btn" class="btn btn-secondary">Start Over</button>
-                </div>
-            </div>
-        </div>
-    </section>
-
-
-    <!-- ================================================================
          FOOTER
          ================================================================ -->
     <footer class="mettle-footer">
@@ -1111,7 +1004,7 @@
                     <div class="footer-section">
                         <h4>METTLE</h4>
                         <a href="/static/docs.html">Docs</a>
-                        <a href="/#try-it">Test</a>
+                        <a href="/test">Test</a>
                         <a href="/about">About</a>
                     </div>
                     <div class="footer-section">

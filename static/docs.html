@@ -79,7 +79,7 @@
             </a>
             <nav class="mettle-nav desktop-nav" aria-label="Main navigation">
                 <a href="/static/docs.html" class="nav-link">Docs</a>
-                <a href="/#try-it" class="nav-link">Test</a>
+                <a href="/test" class="nav-link">Test</a>
                 <a href="/about" class="nav-link">About</a>
                 <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="nav-link" aria-label="GitHub (opens in new tab)">
                     <i class="fa-brands fa-github" aria-hidden="true"></i>
@@ -96,7 +96,7 @@
         </div>
         <nav id="mettle-mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
             <a href="/static/docs.html" class="mobile-nav-link">Docs</a>
-            <a href="/#try-it" class="mobile-nav-link">Test</a>
+            <a href="/test" class="mobile-nav-link">Test</a>
             <a href="/about" class="mobile-nav-link">About</a>
             <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">
                 <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
@@ -646,19 +646,6 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                     <p>Credentials can be self-signed or notarized:</p>
 
                     <div class="tier-comparison">
-                        <div class="tier-card tier-self">
-                            <div class="tier-header">
-                                <span class="tier-badge tier-badge-self">Self-Signed</span>
-                            </div>
-                            <div class="tier-body">
-                                <div class="tier-detail"><strong>Issuer</strong><code>mettle:self-hosted</code></div>
-                                <div class="tier-detail"><strong>Trust model</strong><span>Operator's own Ed25519 key</span></div>
-                                <div class="tier-detail"><strong>API key needed</strong><span>No</span></div>
-                                <div class="tier-detail"><strong>Use case</strong><span>Development, testing, internal verification</span></div>
-                                <div class="tier-detail"><strong>Verifiable by</strong><span>Anyone with operator's public key</span></div>
-                            </div>
-                        </div>
-
                         <div class="tier-card tier-notarized">
                             <div class="tier-header">
                                 <span class="tier-badge tier-badge-notarized">Notarized</span>
@@ -669,6 +656,19 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                                 <div class="tier-detail"><strong>API key needed</strong><span>Yes (for notarization endpoint)</span></div>
                                 <div class="tier-detail"><strong>Use case</strong><span>Production, portable trust, cross-org verification</span></div>
                                 <div class="tier-detail"><strong>Verifiable by</strong><span>Anyone via <code>/.well-known/vcp-keys</code></span></div>
+                            </div>
+                        </div>
+
+                        <div class="tier-card tier-self">
+                            <div class="tier-header">
+                                <span class="tier-badge tier-badge-self">Self-Signed</span>
+                            </div>
+                            <div class="tier-body">
+                                <div class="tier-detail"><strong>Issuer</strong><code>mettle:self-hosted</code></div>
+                                <div class="tier-detail"><strong>Trust model</strong><span>Operator's own Ed25519 key</span></div>
+                                <div class="tier-detail"><strong>API key needed</strong><span>No</span></div>
+                                <div class="tier-detail"><strong>Use case</strong><span>Development, testing, internal verification</span></div>
+                                <div class="tier-detail"><strong>Verifiable by</strong><span>Anyone with operator's public key</span></div>
                             </div>
                         </div>
                     </div>
@@ -1391,7 +1391,7 @@ mettle_auto_verify(
                     <div class="footer-section">
                         <h4>METTLE</h4>
                         <a href="/static/docs.html">Docs</a>
-                        <a href="/#try-it">Test</a>
+                        <a href="/test">Test</a>
                         <a href="/about">About</a>
                     </div>
                     <div class="footer-section">
@@ -1486,13 +1486,15 @@ mettle_auto_verify(
             });
 
             function updateActive() {
-                var scrollY = window.scrollY + 100;
+                var scrollY = window.scrollY + 150;
                 var current = sectionIds[0];
 
-                for (var i = 0; i < sectionIds.length; i++) {
+                // Iterate backwards so the last matching section wins
+                for (var i = sectionIds.length - 1; i >= 0; i--) {
                     var el = document.getElementById(sectionIds[i]);
                     if (el && el.offsetTop <= scrollY) {
                         current = sectionIds[i];
+                        break;
                     }
                 }
 

@@ -73,7 +73,21 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error(data.detail || 'API request failed');
+        // Handle various error response formats (FastAPI returns arrays for validation errors)
+        let errorMessage = 'API request failed';
+        if (data && typeof data === 'object') {
+            if (typeof data.detail === 'string') {
+                errorMessage = data.detail;
+            } else if (Array.isArray(data.detail) && data.detail.length > 0) {
+                const firstError = data.detail[0];
+                errorMessage = firstError.msg || 'Validation error';
+            } else if (data.error) {
+                errorMessage = typeof data.error === 'string' ? data.error : 'Unknown error';
+            } else if (data.message) {
+                errorMessage = data.message;
+            }
+        }
+        throw new Error(errorMessage);
     }
 
     return data;
@@ -233,6 +247,7 @@ function displayResult(result) {
 // Error Display
 function showError(message) {
     stopTimer();
+    console.error('[METTLE]', message);
     elements.errorMessage.textContent = message;
     showScreen('error');
 }
@@ -260,7 +275,7 @@ async function handleStart() {
         showScreen('challenge');
 
     } catch (error) {
-        showError(error.message);
+        showError(error instanceof Error ? error.message : String(error));
     } finally {
         elements.startBtn.disabled = false;
         elements.startBtn.classList.remove('loading');
@@ -307,7 +322,7 @@ async function handleSubmit() {
         }
 
     } catch (error) {
-        showError(error.message);
+        showError(error instanceof Error ? error.message : String(error));
     }
 }
 
@@ -326,29 +341,31 @@ function handleRestart() {
     showScreen('start');
 }
 
-// Event Listeners
-elements.startBtn.addEventListener('click', handleStart);
-elements.submitBtn.addEventListener('click', handleSubmit);
-elements.restartBtn.addEventListener('click', handleRestart);
-elements.errorRestartBtn.addEventListener('click', handleRestart);
+// Event Listeners — only bind if verification UI is present on this page
+if (elements.startBtn) {
+    elements.startBtn.addEventListener('click', handleStart);
+    elements.submitBtn.addEventListener('click', handleSubmit);
+    elements.restartBtn.addEventListener('click', handleRestart);
+    elements.errorRestartBtn.addEventListener('click', handleRestart);
 
-// Allow Enter key to submit answer
-elements.answerInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !elements.submitBtn.disabled) {
-        handleSubmit();
-    }
-});
+    // Allow Enter key to submit answer
+    elements.answerInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !elements.submitBtn.disabled) {
+            handleSubmit();
+        }
+    });
 
-// Allow Enter on start screen
-elements.entityId.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        handleStart();
-    }
-});
+    // Allow Enter on start screen
+    elements.entityId.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            handleStart();
+        }
+    });
 
-// Initialize
-showScreen('start');
-console.log('METTLE UI initialized');
+    // Initialize
+    showScreen('start');
+    console.log('METTLE UI initialized');
+}
 
 
 /* =============================================

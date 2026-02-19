@@ -1862,6 +1862,14 @@ async def serve_about():
     return RedirectResponse(url="/")
 
 
+@app.get("/test", include_in_schema=False)
+async def serve_test():
+    """Serve the test verification page."""
+    if _static_dir.exists():
+        return FileResponse(str(_static_dir / "test.html"))
+    return RedirectResponse(url="/")
+
+
 # === SEO Endpoints ===
 @app.get("/sitemap.xml", include_in_schema=False)
 async def sitemap():
@@ -1881,6 +1889,11 @@ async def sitemap():
     <loc>https://mettle.sh/static/docs.html</loc>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://mettle.sh/test</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://mettle.sh/about</loc>
