@@ -37,6 +37,15 @@
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <meta name="theme-color" content="#f59e0b">
 
+    <!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-BQDQ0S2DPH"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-BQDQ0S2DPH');
+    </script>
+
     <!-- Preconnect -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com">
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
@@ -595,7 +604,7 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                     <div class="challenge-type-doc">
                         <h3>Suite 10: <code>novel-reasoning</code> &mdash; Novel Reasoning <span style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">MULTI-ROUND</span></h3>
                         <p><strong>Cross-cutting</strong> &mdash; Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. AI accelerates across rounds. Humans decelerate. Scripts flatline. The shape of your improvement curve reveals what you are.</p>
-                        <pre><code>// Iteration Curve Scoring
+                        <pre class="code-block-new"><code>// Iteration Curve Scoring
 Time trend (30%)        &mdash; AI gets faster each round
 Improvement (30%)       &mdash; accuracy jumps per round
 Feedback response (25%) &mdash; adapts to specific errors
@@ -774,7 +783,7 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                     <p class="section-intro">Client libraries for Python, JavaScript, and Rust</p>
 
                     <h3 id="python">Python SDK</h3>
-                    <pre><code>import httpx
+                    <pre class="code-block-new"><code>import httpx
 
 class MettleClient:
     BASE = "/api/mettle"
@@ -855,7 +864,7 @@ result = client.get_result(sid, include_vcp=True)
 print(f"Tier: {result['tier']}")</code></pre>
 
                     <h3 id="javascript">JavaScript SDK</h3>
-                    <pre><code>class MettleClient {
+                    <pre class="code-block-new"><code>class MettleClient {
   #base;
 
   constructor(url = 'https://mettle.sh', key) {
@@ -937,7 +946,7 @@ const result = await client.getResult(
 console.log(`Tier: ${result.tier}`);</code></pre>
 
                     <h3 id="rust">Rust SDK</h3>
-                    <pre><code>use reqwest::Client;
+                    <pre class="code-block-new"><code>use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 const BASE: &amp;str = "/api/mettle";
@@ -1169,14 +1178,14 @@ impl MettleClient {
                     <p>METTLE provides a Model Context Protocol (MCP) server for direct AI agent integration. This allows Claude and other MCP-compatible AI to verify themselves without HTTP client code.</p>
 
                     <h3>Installation</h3>
-                    <pre><code># Clone or install the MCP server
+                    <pre class="code-block-new"><code># Clone or install the MCP server
 pip install httpx mcp
 
 # Run the server
 python mcp_server.py</code></pre>
 
                     <h3>Configuration</h3>
-                    <pre><code># Environment variables
+                    <pre class="code-block-new"><code># Environment variables
 export METTLE_API_URL=https://mettle.sh
 export METTLE_API_KEY=your_api_key</code></pre>
 
@@ -1214,7 +1223,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
 
                     <h3>Claude Desktop Integration</h3>
                     <p>Add to your <code>claude_desktop_config.json</code>:</p>
-                    <pre><code>{
+                    <pre class="code-block-new"><code>{
   "mcpServers": {
     "mettle": {
       "command": "python",
@@ -1229,7 +1238,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
 
                     <h3>Usage Example</h3>
                     <p>Once configured, AI agents can verify themselves:</p>
-                    <pre><code>// "Please verify yourself with METTLE"
+                    <pre class="code-block-new"><code>// "Please verify yourself with METTLE"
 
 // The AI will use:
 mettle_auto_verify(
@@ -1291,7 +1300,7 @@ mettle_auto_verify(
                     </table>
 
                     <h3>Error Response Format</h3>
-                    <pre><code>{
+                    <pre class="code-block-new"><code>{
   "detail": "Suite not found: invalid_name.
     Valid suites: [adversarial, native, ...]"
 }</code></pre>
