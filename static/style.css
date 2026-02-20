@@ -223,7 +223,7 @@ a:hover {
 
 .mettle-hero {
     position: relative;
-    min-height: 65vh;
+    min-height: 90vh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -259,7 +259,7 @@ a:hover {
     font-weight: 800;
     letter-spacing: -0.03em;
     line-height: 1.1;
-    margin-bottom: var(--space-lg);
+    margin-bottom: var(--space-xs);
     animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
 }
 
@@ -274,7 +274,7 @@ a:hover {
     font-size: var(--text-xl);
     color: var(--color-text-muted);
     max-width: 800px;
-    margin: 0 auto var(--space-md);
+    margin: 0 auto var(--space-2xl);
     line-height: var(--leading-relaxed);
     animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) 0.8s both;
 }
@@ -287,7 +287,7 @@ a:hover {
     font-size: var(--text-lg);
     color: var(--color-text);
     max-width: 800px;
-    margin: 0 auto var(--space-sm);
+    margin: 0 auto var(--space-xl);
     line-height: var(--leading-relaxed);
     animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) 0.9s both;
 }
@@ -2072,7 +2072,7 @@ a:hover {
         direction: ltr;
     }
 
-    .problems-row, .credentials-grid {
+    .problems-row {
         grid-template-columns: repeat(2, 1fr);
     }
 
@@ -2096,6 +2096,10 @@ a:hover {
 @media (max-width: 768px) {
     .desktop-nav { display: none; }
     .mobile-menu-btn { display: block; }
+
+    .credentials-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 
     .footer-content {
         flex-direction: column;

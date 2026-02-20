@@ -1498,6 +1498,11 @@ mettle_auto_verify(
                     }
                 }
 
+                // If near bottom of page, activate last section
+                if ((window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 400)) {
+                    current = sectionIds[sectionIds.length - 1];
+                }
+
                 tocItems.forEach(function(item) {
                     var href = item.getAttribute('href');
                     if (href === '#' + current) {

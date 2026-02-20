@@ -382,11 +382,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+            "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.googletagmanager.com; "
             "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
             "font-src 'self' https://cdnjs.cloudflare.com; "
-            "img-src 'self' data:; "
-            "connect-src 'self'"
+            "img-src 'self' data: https://www.googletagmanager.com; "
+            "connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com"
         )
         if settings.is_production:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

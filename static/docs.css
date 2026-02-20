@@ -524,6 +524,58 @@
     background: rgba(255, 255, 255, 0.02);
 }
 
+/* Table styling for new docs layout */
+.docs-content-new table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+}
+
+.docs-content-new th,
+.docs-content-new td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.docs-content-new th {
+    background: var(--bg-card);
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.docs-content-new td {
+    font-size: 0.9rem;
+}
+
+/* Column dividers */
+.docs-content-new table thead th,
+.docs-content-new table tbody td {
+    border-right: 1px solid var(--border);
+}
+
+.docs-content-new table thead th:last-child,
+.docs-content-new table tbody td:last-child {
+    border-right: none;
+}
+
+/* Alternating row colors */
+.docs-content-new table tbody tr:nth-child(odd) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Inline code in new docs */
+.docs-content-new p code,
+.docs-content-new li code,
+.docs-content-new td code {
+    background: var(--bg-card);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+    color: var(--primary);
+    font-family: var(--font-mono);
+}
+
 .endpoint-table td:first-child { width: 80px; }
 .endpoint-table td:first-child code { font-weight: 600; }
 .endpoint-table td:nth-child(2) { font-family: 'SF Mono', Monaco, monospace; font-size: 0.85rem; padding-right: 2rem; }
