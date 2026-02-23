@@ -1838,6 +1838,7 @@ app.include_router(mettle_router)
 
 # === Root serves UI ===
 @app.get("/", include_in_schema=False)
+@app.head("/", include_in_schema=False)
 async def serve_ui():
     """Serve the web UI at root."""
     if _static_dir.exists():
@@ -1855,6 +1856,7 @@ async def redirect_legacy_ui():
 
 # === Static Page Routes ===
 @app.get("/about", include_in_schema=False)
+@app.head("/about", include_in_schema=False)
 async def serve_about():
     """Serve the about page."""
     if _static_dir.exists():
@@ -1863,6 +1865,7 @@ async def serve_about():
 
 
 @app.get("/test", include_in_schema=False)
+@app.head("/test", include_in_schema=False)
 async def serve_test():
     """Serve the test verification page."""
     if _static_dir.exists():
@@ -1872,6 +1875,7 @@ async def serve_test():
 
 # === SEO Endpoints ===
 @app.get("/sitemap.xml", include_in_schema=False)
+@app.head("/sitemap.xml", include_in_schema=False)
 async def sitemap():
     """Generate sitemap for search engines.
 
@@ -1905,6 +1909,7 @@ async def sitemap():
 
 
 @app.get("/robots.txt", include_in_schema=False)
+@app.head("/robots.txt", include_in_schema=False)
 async def robots():
     """Serve robots.txt for search engine crawlers."""
     if _static_dir.exists():
