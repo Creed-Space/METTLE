@@ -120,9 +120,18 @@ class TestComputeTier:
         all_suites = [
             "adversarial", "native", "self-reference", "social",
             "inverse-turing", "anti-thrall", "agency", "counter-coaching",
-            "intent-provenance", "novel-reasoning",
+            "intent-provenance", "novel-reasoning", "governance",
         ]
         assert compute_tier(all_suites) == "platinum"
+
+    def test_suites_1_to_10_is_gold_not_platinum(self):
+        """Suites 1-10 without governance gives gold, not platinum."""
+        suites = [
+            "adversarial", "native", "self-reference", "social",
+            "inverse-turing", "anti-thrall", "agency", "counter-coaching",
+            "intent-provenance", "novel-reasoning",
+        ]
+        assert compute_tier(suites) == "gold"
 
     def test_gold_suites_1_to_9(self):
         suites = [

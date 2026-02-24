@@ -208,7 +208,7 @@ class TestComputeTier:
         assert TIER_RANGES["bronze"] == (1, 5)
         assert TIER_RANGES["silver"] == (1, 7)
         assert TIER_RANGES["gold"] == (1, 9)
-        assert TIER_RANGES["platinum"] == (1, 10)
+        assert TIER_RANGES["platinum"] == (1, 11)  # Updated: governance suite required
 
 
 class TestBuildMettleAttestation:

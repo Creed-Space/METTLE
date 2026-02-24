@@ -476,7 +476,7 @@ class TestAllSuitesSmoke:
         resp = client.post("/api/mettle/sessions", json={"suites": ["all"]})
         assert resp.status_code == 201
         data = resp.json()
-        assert len(data["suites"]) == 10
+        assert len(data["suites"]) == 11
         assert set(data["suites"]) == set(SUITE_NAMES)
 
     def test_suite_info_all_suites(self, client: TestClient) -> None:
@@ -484,7 +484,7 @@ class TestAllSuitesSmoke:
         resp = client.get("/api/mettle/suites")
         assert resp.status_code == 200
         suites = resp.json()
-        assert len(suites) == 10
+        assert len(suites) == 11
         names = {s["name"] for s in suites}
         assert names == set(SUITE_NAMES)
 

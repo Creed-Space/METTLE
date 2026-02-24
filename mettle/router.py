@@ -9,18 +9,18 @@ SECURITY: All endpoints require authentication. Correct answers are NEVER sent t
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
-from mettle.auth import AuthenticatedUser, require_authenticated_user
-from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.api_models import (
     MULTI_ROUND_SUITE,
     SUITE_NAMES,
     CreateSessionRequest,
     CreateSessionResponse,
+    GovernanceAttestation,
+    OperatorAttestation,
     RoundAnswerRequest,
     RoundFeedbackResponse,
     SessionResultResponse,
@@ -29,6 +29,8 @@ from mettle.api_models import (
     VerifyRequest,
     VerifyResponse,
 )
+from mettle.auth import AuthenticatedUser, require_authenticated_user
+from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -115,6 +117,7 @@ async def create_session(request: CreateSessionRequest, user: AuthUser, mgr: Met
             difficulty=request.difficulty,
             entity_id=request.entity_id,
             vcp_token=request.vcp_token,
+            operator_commitment=request.operator_commitment.model_dump() if request.operator_commitment else None,
         )
 
         logger.info(
@@ -381,6 +384,22 @@ async def get_session_result(
 
     result["vcp_attestation"] = vcp_attestation
 
+    # Build GovernanceAttestation from VCP token if present
+    governance_attestation = None
+    vcp_token = session.get("vcp_token")
+    if vcp_token and tier in ("gold", "platinum"):
+        governance_attestation = _build_governance_attestation(vcp_token)
+    result["governance_attestation"] = governance_attestation
+
+    # Build OperatorAttestation from operator commitment if present
+    operator_attestation = None
+    operator_commitment = session.get("operator_commitment")
+    if operator_commitment:
+        operator_attestation = _build_operator_attestation(
+            operator_commitment, session.get("entity_id", "unknown")
+        )
+    result["operator_attestation"] = operator_attestation
+
     return SessionResultResponse(**result)
 
 
@@ -402,3 +421,125 @@ async def get_vcp_keys() -> dict:
             "available": False,
             "error": "cryptography package not installed",
         }
+
+
+# ---- Attestation Builders ----
+
+
+def _build_governance_attestation(vcp_token: str) -> GovernanceAttestation | None:
+    """Build GovernanceAttestation from a VCP token.
+
+    Parses the CSM-1 token to extract constitution metadata, then checks
+    environment for active governance plugins (action gate, drift detection, bilateral).
+    """
+    import hashlib
+    import os
+
+    try:
+        from mettle.vcp import parse_csm1_token
+
+        parsed = parse_csm1_token(vcp_token)
+    except (ValueError, ImportError):
+        logger.warning("Failed to parse VCP token for governance attestation")
+        return None
+
+    # Determine framework from constitution ID
+    constitution_id = parsed.constitution_id or ""
+    framework = "none"
+    if "creed" in constitution_id.lower() or parsed.extra_lines.get("F"):
+        framework = "creed-space"
+    elif constitution_id:
+        framework = "custom"
+
+    # Hash the constitution reference for integrity
+    constitutional_hash = None
+    if parsed.constitution_ref:
+        constitutional_hash = hashlib.sha256(parsed.constitution_ref.encode()).hexdigest()
+
+    # Check which governance plugins are active (from env vars)
+    has_action_gate = os.getenv("PUBLIC_ACTION_GATE_ENABLED", "true").lower() == "true"
+    has_drift_detection = os.getenv("CONSTITUTIONAL_DRIFT_DETECTOR_ENABLED", "true").lower() == "true"
+    has_bilateral = os.getenv("BILATERAL_ALIGNMENT_ENABLED", "true").lower() == "true"
+
+    now = datetime.now(tz=timezone.utc)
+
+    # Sign the governance attestation if signing is available
+    attestation_signature = None
+    try:
+        from mettle.signing import is_available, sign_attestation
+
+        if is_available():
+            import json
+
+            payload = {
+                "framework": framework,
+                "framework_version": parsed.constitution_version,
+                "constitutional_hash": constitutional_hash,
+                "has_action_gate": has_action_gate,
+                "has_drift_detection": has_drift_detection,
+                "has_bilateral": has_bilateral,
+                "verified_at": now.isoformat(),
+            }
+            sig = sign_attestation(json.dumps(payload, sort_keys=True).encode())
+            attestation_signature = f"ed25519:{sig}"
+    except (ImportError, RuntimeError):
+        pass
+
+    return GovernanceAttestation(
+        framework=framework,
+        framework_version=parsed.constitution_version,
+        constitutional_hash=constitutional_hash,
+        has_action_gate=has_action_gate,
+        has_drift_detection=has_drift_detection,
+        has_bilateral=has_bilateral,
+        verified_at=now,
+        attestation_signature=attestation_signature,
+    )
+
+
+def _build_operator_attestation(
+    commitment: dict[str, Any],
+    entity_id: str,
+) -> OperatorAttestation | None:
+    """Build OperatorAttestation from an operator commitment.
+
+    Verifies the Ed25519 signature before accepting the commitment.
+    Returns None if verification fails.
+    """
+    import base64
+
+    required_fields = ["operator_pseudonym", "operator_public_key", "signed_commitment", "contact_method", "contact_hash"]
+    if not all(commitment.get(f) for f in required_fields):
+        logger.warning("Operator commitment missing required fields")
+        return None
+
+    # Verify Ed25519 signature
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+        public_key = load_pem_public_key(commitment["operator_public_key"].encode())
+        if not isinstance(public_key, Ed25519PublicKey):
+            logger.warning("Operator public key is not Ed25519")
+            return None
+
+        # The commitment message is: "I accept accountability for agent {entity_id}"
+        expected_message = f"I accept accountability for agent {entity_id}"
+        signature_bytes = base64.b64decode(commitment["signed_commitment"])
+        public_key.verify(signature_bytes, expected_message.encode())
+
+    except ImportError:
+        logger.warning("cryptography package not available for operator signature verification")
+        return None
+    except Exception:
+        logger.warning("Operator commitment signature verification failed", exc_info=True)
+        return None
+
+    return OperatorAttestation(
+        operator_pseudonym=commitment["operator_pseudonym"],
+        operator_public_key=commitment["operator_public_key"],
+        operator_signed_commitment=commitment["signed_commitment"],
+        commitment_timestamp=datetime.now(tz=timezone.utc),
+        contact_method=commitment["contact_method"],
+        contact_hash=commitment["contact_hash"],
+    )

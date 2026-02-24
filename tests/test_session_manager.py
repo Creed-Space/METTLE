@@ -878,8 +878,8 @@ class TestTimeBudgetCalculation:
     @pytest.mark.asyncio
     async def test_time_budget_all_suites_easy(self, manager: SessionManager) -> None:
         _, _, meta = await manager.create_session(user_id="user1", suites=["all"], difficulty="easy")
-        # easy: time_budget_s=45, 10 suites: 45*1000 + 10*30000 = 345000
-        assert meta["time_budget_ms"] == 45 * 1000 + 10 * 30000
+        # easy: time_budget_s=45, 11 suites: 45*1000 + 11*30000 = 375000
+        assert meta["time_budget_ms"] == 45 * 1000 + 11 * 30000
 
     @pytest.mark.asyncio
     async def test_time_budget_mixed_suites_with_novel(self, manager: SessionManager) -> None:

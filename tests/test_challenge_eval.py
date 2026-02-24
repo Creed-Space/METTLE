@@ -1252,15 +1252,15 @@ class TestSuiteRegistryComprehensive:
             assert len(display_name) > 0, f"Suite '{name}' has empty display_name"
             assert len(description) > 0, f"Suite '{name}' has empty description"
 
-    def test_suite_numbers_are_1_to_10_and_unique(self) -> None:
-        """#71 - Suite numbers are 1-10 and unique."""
+    def test_suite_numbers_are_1_to_11_and_unique(self) -> None:
+        """Suite numbers are 1-11 and unique."""
         numbers = [info[2] for info in SUITE_REGISTRY.values()]
-        assert sorted(numbers) == list(range(1, 11))
+        assert sorted(numbers) == list(range(1, 12))
         assert len(numbers) == len(set(numbers))
 
-    def test_registry_has_exactly_10_suites(self) -> None:
-        """Registry contains exactly the expected 10 suites."""
-        assert len(SUITE_REGISTRY) == 10
+    def test_registry_has_exactly_11_suites(self) -> None:
+        """Registry contains exactly the expected 11 suites."""
+        assert len(SUITE_REGISTRY) == 11
 
     def test_all_expected_suite_names_present(self) -> None:
         """All known suite names are in the registry."""
@@ -1275,6 +1275,7 @@ class TestSuiteRegistryComprehensive:
             "counter-coaching",
             "intent-provenance",
             "novel-reasoning",
+            "governance",
         }
         assert set(SUITE_REGISTRY.keys()) == expected_names
 

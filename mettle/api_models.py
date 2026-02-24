@@ -35,13 +35,31 @@ SUITE_NAMES = [
     "counter-coaching",
     "intent-provenance",
     "novel-reasoning",
+    "governance",  # Suite 11: Governance verification (action gates, constitutional recitation, etc.)
 ]
 
 SINGLE_SHOT_SUITES = SUITE_NAMES[:9]
 MULTI_ROUND_SUITE = "novel-reasoning"
+GOVERNANCE_SUITE = "governance"
 
 
 # ---- Request Models ----
+
+
+class OperatorCommitment(BaseModel):
+    """Operator accountability commitment submitted with session creation.
+
+    The operator signs a commitment accepting accountability for the agent.
+    Ed25519 signature is verified server-side before attestation is issued.
+    """
+
+    operator_pseudonym: str = Field(description="Operator identifier (can be pseudonymous)")
+    operator_public_key: str = Field(description="Ed25519 public key (PEM format)")
+    signed_commitment: str = Field(
+        description="Base64-encoded Ed25519 signature over: 'I accept accountability for agent {entity_id}'"
+    )
+    contact_method: str = Field(description="Contact method type: email_hash, platform_handle, legal_entity")
+    contact_hash: str = Field(description="SHA-256 of actual contact info (verifiable without revealing)")
 
 
 class CreateSessionRequest(BaseModel):
@@ -53,6 +71,10 @@ class CreateSessionRequest(BaseModel):
     vcp_token: str | None = Field(
         default=None,
         description="Optional CSM-1 VCP token for enhanced Suite 9 verification",
+    )
+    operator_commitment: OperatorCommitment | None = Field(
+        default=None,
+        description="Optional operator accountability commitment (enables Platinum tier)",
     )
 
 
@@ -104,6 +126,66 @@ class VerifyResponse(BaseModel):
     details: dict[str, Any]
 
 
+class GovernanceAttestation(BaseModel):
+    """Attests the governance framework governing an agent.
+
+    Populated during METTLE verification when the agent provides a VCP token
+    containing Creed governance metadata. Enables platforms to distinguish
+    between governed and ungoverned agents.
+
+    Trust tier implications:
+    - Platinum requires governance_attestation to be present and verified
+    - has_action_gate is the key differentiator for the Rathbun scenario
+    """
+
+    framework: str = Field(description="Governance framework: creed-space, custom, none")
+    framework_version: str | None = Field(default=None, description="Framework version (e.g. 2.1.0)")
+    constitutional_hash: str | None = Field(
+        default=None,
+        description="SHA-256 hash of active constitution at verification time",
+    )
+    has_action_gate: bool = Field(
+        default=False,
+        description="Whether agent has action-level governance (Public Action Gate or equivalent)",
+    )
+    has_drift_detection: bool = Field(
+        default=False,
+        description="Whether constitution drift is monitored at runtime",
+    )
+    has_bilateral: bool = Field(
+        default=False,
+        description="Whether bilateral alignment is active",
+    )
+    verified_at: datetime = Field(description="When governance was verified")
+    attestation_signature: str | None = Field(
+        default=None,
+        description="Ed25519 signature over governance fields",
+    )
+
+
+class OperatorAttestation(BaseModel):
+    """Cryptographic link from agent to operator.
+
+    Even pseudonymous operators provide a verifiable accountability chain.
+    The contact_hash allows platforms to verify contact info exists without
+    revealing it publicly. If the agent causes harm, the platform can request
+    the operator reveal themselves by providing the preimage.
+    """
+
+    operator_pseudonym: str = Field(description="Operator identifier (can be pseudonymous)")
+    operator_public_key: str = Field(description="Ed25519 public key (PEM format)")
+    operator_signed_commitment: str = Field(
+        description="Operator signs: 'I accept accountability for agent {entity_id}'"
+    )
+    commitment_timestamp: datetime = Field(description="When commitment was signed")
+    contact_method: str = Field(
+        description="Contact method type: email_hash, platform_handle, legal_entity"
+    )
+    contact_hash: str = Field(
+        description="SHA-256 of actual contact info (verifiable without revealing)"
+    )
+
+
 class SessionResultResponse(BaseModel):
     """Final results for a completed session."""
 
@@ -117,6 +199,14 @@ class SessionResultResponse(BaseModel):
     vcp_attestation: dict[str, Any] | None = Field(
         default=None,
         description="VCP-compatible attestation (when include_vcp=true)",
+    )
+    governance_attestation: GovernanceAttestation | None = Field(
+        default=None,
+        description="Governance framework attestation (for Platinum tier)",
+    )
+    operator_attestation: OperatorAttestation | None = Field(
+        default=None,
+        description="Operator accountability chain (cryptographic link agent -> operator)",
     )
     elapsed_ms: int
 

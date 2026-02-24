@@ -29,15 +29,17 @@ SUITE_ORDER: dict[str, int] = {
     "counter-coaching": 8,
     "intent-provenance": 9,
     "novel-reasoning": 10,
+    "governance": 11,  # Suite 11: Governance verification
 }
 
-# Tier definitions: tier name -> (min suite number, max suite number)
+# Tier definitions: tier name -> required suite numbers
 # All suites in the range must pass for the tier to apply.
+# Platinum now requires Suite 11 (governance verification) in addition to 1-10.
 TIER_RANGES: dict[str, tuple[int, int]] = {
     "bronze": (1, 5),
     "silver": (1, 7),
     "gold": (1, 9),
-    "platinum": (1, 10),
+    "platinum": (1, 11),  # Updated: requires governance suite
 }
 
 

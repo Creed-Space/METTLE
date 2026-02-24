@@ -765,7 +765,7 @@ class TestRouterListSuites:
         resp = client.get("/api/mettle/suites")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 10
+        assert len(data) == 11
         names = [s["name"] for s in data]
         assert "adversarial" in names
         assert MULTI_ROUND_SUITE in names

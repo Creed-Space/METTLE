@@ -179,7 +179,7 @@ class TestModels:
         assert SessionStatus.EXPIRED.value == "expired"
 
     def test_suite_names_count(self) -> None:
-        assert len(SUITE_NAMES) == 10
+        assert len(SUITE_NAMES) == 11
 
     def test_single_shot_suites(self) -> None:
         assert len(SINGLE_SHOT_SUITES) == 9
@@ -361,7 +361,7 @@ class TestSessionManager:
     @pytest.mark.asyncio
     async def test_create_session_all_suites(self, session_manager: SessionManager) -> None:
         session_id, challenges, meta = await session_manager.create_session(user_id="user1", suites=["all"])
-        assert len(meta["suites"]) == 10
+        assert len(meta["suites"]) == 11
         assert MULTI_ROUND_SUITE in meta["suites"]
 
     @pytest.mark.asyncio
@@ -471,7 +471,7 @@ class TestSessionManager:
     @pytest.mark.asyncio
     async def test_suite_resolution_all(self, session_manager: SessionManager) -> None:
         resolved = SessionManager._resolve_suites(["all"])
-        assert len(resolved) == 10
+        assert len(resolved) == 11
 
     @pytest.mark.asyncio
     async def test_suite_resolution_specific(self, session_manager: SessionManager) -> None:
@@ -511,7 +511,7 @@ class TestSuiteEndpoints:
         resp = client.get("/api/mettle/suites")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 10
+        assert len(data) == 11
         names = [s["name"] for s in data]
         assert "adversarial" in names
         assert "novel-reasoning" in names
@@ -568,7 +568,7 @@ class TestSessionEndpoints:
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert len(data["suites"]) == 10
+        assert len(data["suites"]) == 11
 
     def test_create_session_invalid_suite(self, client: TestClient) -> None:
         resp = client.post(
@@ -763,7 +763,7 @@ class TestSuiteRegistry:
             assert isinstance(display_name, str)
             assert isinstance(description, str)
             assert isinstance(num, int)
-            assert 1 <= num <= 10
+            assert 1 <= num <= 11
 
     def test_suite_numbers_unique(self) -> None:
         numbers = [info[2] for info in SUITE_REGISTRY.values()]

@@ -50,8 +50,8 @@ def init_signing() -> bool:
     try:
         from mettle.app_config import settings
         pem_key = settings.vcp_signing_key or None
-    except Exception:
-        pass
+    except (ImportError, AttributeError) as settings_error:
+        logger.debug("Mettle settings unavailable for VCP signing key lookup: %s", settings_error)
     if not pem_key:
         pem_key = os.environ.get("METTLE_VCP_SIGNING_KEY")
 
@@ -108,12 +108,14 @@ def get_public_key_pem() -> str | None:
     if _public_key is None:
         return None
 
+    pem: str | None = None
     try:
         from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-        return _public_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode("ascii")
-    except Exception:
-        return None
+        pem = _public_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode("ascii")
+    except Exception as exc:
+        logger.debug("Failed to serialize VCP public key: %s", exc)
+    return pem
 
 
 def get_public_key_info() -> dict[str, Any]:

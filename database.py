@@ -6,6 +6,7 @@ Falls back to in-memory storage if database unavailable.
 """
 
 import json
+import logging
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -36,6 +37,7 @@ else:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+logger = logging.getLogger(__name__)
 
 
 # === Database Models ===
@@ -123,6 +125,9 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -143,7 +148,8 @@ def save_session(session_id: str, entity_id: str | None, difficulty: str, challe
             db.add(db_session)
             db.commit()
             return True
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to save session '%s': %s", session_id, exc)
         return False
 
 
@@ -163,7 +169,8 @@ def get_session(session_id: str) -> dict | None:
                     "created_at": result.created_at,
                 }
             return None
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to fetch session '%s': %s", session_id, exc)
         return None
 
 
@@ -180,7 +187,8 @@ def update_session_results(session_id: str, results: list, completed: bool = Fal
                 db.commit()
                 return True
             return False
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to update session '%s' results: %s", session_id, exc)
         return False
 
 
@@ -200,7 +208,8 @@ def add_revoked_badge(jti: str, entity_id: str | None, reason: str, evidence: di
             db.add(record)
             db.commit()
             return True
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to add revoked badge '%s': %s", jti, exc)
         return False
 
 
@@ -210,7 +219,8 @@ def is_badge_revoked(jti: str) -> bool:
         with get_db() as db:
             result = db.query(DBRevokedBadge).filter(DBRevokedBadge.jti == jti).first()
             return result is not None
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to check revoked badge '%s': %s", jti, exc)
         return False
 
 
@@ -228,7 +238,8 @@ def get_revoked_badges(limit: int = 100) -> list[dict]:
                 }
                 for r in results
             ]
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to list revoked badges: %s", exc)
         return []
 
 
@@ -247,7 +258,8 @@ def save_api_key(api_key: str, tier: str, entity_id: str | None) -> bool:
             db.add(record)
             db.commit()
             return True
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to save API key: %s", exc)
         return False
 
 
@@ -265,7 +277,8 @@ def get_api_key(api_key: str) -> dict | None:
                     "created_at": result.created_at.isoformat() if result.created_at else None,
                 }
             return None
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to fetch API key metadata: %s", exc)
         return None
 
 
@@ -280,7 +293,8 @@ def update_api_key_usage(api_key: str, usage_date: str, usage_count: int) -> boo
                 db.commit()
                 return True
             return False
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to update API key usage: %s", exc)
         return False
 
 
@@ -302,7 +316,8 @@ def save_webhook(entity_id: str, url: str, events: list[str], secret: str | None
             db.add(record)
             db.commit()
             return True
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to save webhook for entity '%s': %s", entity_id, exc)
         return False
 
 
@@ -319,7 +334,8 @@ def get_webhook(entity_id: str) -> dict | None:
                     "created_at": result.created_at.isoformat() if result.created_at else None,
                 }
             return None
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to fetch webhook for entity '%s': %s", entity_id, exc)
         return None
 
 
@@ -330,7 +346,8 @@ def delete_webhook(entity_id: str) -> bool:
             result = db.query(DBWebhook).filter(DBWebhook.entity_id == entity_id).delete()
             db.commit()
             return result > 0
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to delete webhook for entity '%s': %s", entity_id, exc)
         return False
 
 
@@ -349,7 +366,8 @@ def save_verification_record(entity_id: str, ip_address: str, passed: bool) -> b
             db.add(record)
             db.commit()
             return True
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to save verification record for entity '%s': %s", entity_id, exc)
         return False
 
 
@@ -376,7 +394,8 @@ def get_recent_verifications(hours: int = 1) -> list[dict]:
                 }
                 for r in results
             ]
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to fetch recent verifications: %s", exc)
         return []
 
 
@@ -393,7 +412,8 @@ def get_entity_verification_count(entity_id: str, hours: int = 1) -> int:
                 .filter(DBVerificationRecord.created_at >= cutoff)
                 .count()
             )
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to count verifications for entity '%s': %s", entity_id, exc)
         return 0
 
 
@@ -412,7 +432,8 @@ def get_ip_entities(ip_address: str, hours: int = 1) -> set[str]:
                 .all()
             )
             return {r.entity_id for r in results}
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to fetch entities for IP '%s': %s", ip_address, exc)
         return set()
 
 
@@ -420,5 +441,4 @@ def get_ip_entities(ip_address: str, hours: int = 1) -> set[str]:
 try:
     init_db()
 except Exception as e:
-    print(f"[METTLE] Database initialization failed: {e}")
-    print("[METTLE] Falling back to in-memory storage")
+    logger.exception("Database initialization failed; using in-memory mode: %s", e)
