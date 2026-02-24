@@ -2,7 +2,7 @@
 
 METTLE v2: Machine Evaluation Through Turing-inverse Logic Examination
 
-"Prove your metal."
+"Prove your mettle."
 
 ## Overview
 

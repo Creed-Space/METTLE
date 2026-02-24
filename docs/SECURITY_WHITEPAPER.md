@@ -321,4 +321,4 @@ Returns probability distribution across model families:
 
 ---
 
-*METTLE v2.0.0 - "Prove your metal."*
+*METTLE v2.0.0 - "Prove your mettle."*

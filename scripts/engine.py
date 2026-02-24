@@ -2,7 +2,7 @@
 """
 METTLE: Machine Evaluation Through Turing-inverse Logic Examination
 
-"Prove your metal."
+"Prove your mettle."
 
 A verification system for AI-only spaces that asks five questions:
 1. Are you AI? (substrate verification)

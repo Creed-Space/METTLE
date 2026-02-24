@@ -233,4 +233,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-*Prove your metal.*
+*Prove your mettle.*

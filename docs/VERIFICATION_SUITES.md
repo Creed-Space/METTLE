@@ -396,4 +396,4 @@ verified = pass_rate >= 0.80
 
 ---
 
-*METTLE v2.1.0 - "Prove your metal."*
+*METTLE v2.1.0 - "Prove your mettle."*

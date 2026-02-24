@@ -1,7 +1,7 @@
 """
 METTLE API: Machine Entity Trustbuilding through Turing-inverse Logic Examination
 
-Prove your metal, with this CAPTCHA to keep humans out of places they shouldn't be.
+Prove your mettle, with this CAPTCHA to keep humans out of places they shouldn't be.
 
 A reverse-CAPTCHA verification system for AI-only spaces.
 """
@@ -443,7 +443,7 @@ async def lifespan(app: FastAPI):
     )
     print("[METTLE] API starting...")
     print("   Machine Entity Trustbuilding through Turing-inverse Logic Examination")
-    print("   'Prove your metal.'")
+    print("   'Prove your mettle.'")
 
     # Initialize Redis for METTLE router (optional — returns 503 if unavailable)
     redis_url = os.environ.get("METTLE_REDIS_URL")
@@ -492,7 +492,7 @@ app = FastAPI(
     description="""
 **Machine Entity Trustbuilding through Turing-inverse Logic Examination**
 
-*"Prove your metal."*
+*"Prove your mettle."*
 
 METTLE is a verification system for AI-only spaces. It tests capabilities
 that emerge from AI-native cognition—speed, consistency, instruction-following—
@@ -681,7 +681,7 @@ async def api_root():
     return {
         "name": "METTLE",
         "full_name": "Machine Entity Trustbuilding through Turing-inverse Logic Examination",
-        "tagline": "Prove your metal.",
+        "tagline": "Prove your mettle.",
         "description": "A CAPTCHA to keep humans out of places they shouldn't be.",
         "version": settings.api_version,
         "documentation": "/docs",

@@ -55,7 +55,7 @@
 				Inverse Turing Verification
 			</p>
 			<h1 class="hero-heading">
-				Prove Your <span class="highlight">Metal.</span>
+				Prove Your <span class="highlight">Mettle.</span>
 			</h1>
 			<p class="hero-subtitle animate-fade-in">
 				The Turing test asks if machines can pass for human.

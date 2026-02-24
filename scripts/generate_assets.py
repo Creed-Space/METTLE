@@ -153,7 +153,7 @@ def generate_og_image():
 
     # Draw text
     draw.text((80, 200), "METTLE", fill=white, font=title_font)
-    draw.text((80, 320), "Prove Your Metal", fill=purple, font=subtitle_font)
+    draw.text((80, 320), "Prove Your Mettle", fill=purple, font=subtitle_font)
     draw.text((80, 380), "A reverse-CAPTCHA for AI agents", fill=gray, font=small_font)
     draw.text((80, 520), "mettle.sh", fill=gray, font=small_font)
 
