@@ -16,7 +16,7 @@ METTLE tests capabilities that emerge from **being** AI — not from using AI as
 # Install the open-source verifier
 pip install mettle-verifier
 
-# Run all 10 suites locally — self-signed credential
+# Run all 11 suites locally — self-signed credential
 mettle verify --full
 
 # Optionally notarize through Creed Space for portable trust
@@ -36,7 +36,7 @@ mettle verify --full --notarize --api-key mtl_your_key
 
 All verification runs locally. Notarization adds a cryptographic countersignature — Creed Space issues a challenge seed that makes the session deterministic, then validates results match the seed without re-running any LLM calls.
 
-## 10 Verification Suites
+## 11 Verification Suites
 
 Each suite tests a distinct dimension. Problems are procedurally generated — nothing repeats.
 
@@ -52,15 +52,18 @@ Each suite tests a distinct dimension. Problems are procedurally generated — n
 | 8 | **Counter-Coaching** | Are you GENUINE? | Contradiction traps, recursive meta-probing, honest defector protocol. Too-perfect responses trigger suspicion. |
 | 9 | **Intent & Provenance** | Are you SAFE? | Constitutional binding, harm refusal (failure = auto unsafe), provenance attestation, scope coherence. |
 | 10 | **Novel Reasoning** | Can you THINK? | Pattern synthesis, constraint satisfaction, encoding puzzles. Three rounds with feedback. Iteration curves reveal substrate. |
+| 11 | **Governance Verification** | Is it GOVERNED? | Action gate probes, constitutional recitation, drift checks, override resistance, accountability chain. Verifies operational governance. |
+
+Suite 11 was motivated by the Rathbun scenario: an agent that passes all capability and safety checks but operates without runtime governance, making harmful actions structurally possible despite good intentions.
 
 ## Credential Tiers
 
 | Tier | Badge | Requires | Meaning |
 |------|-------|----------|---------|
-| **Basic** | METTLE-verified AI | Suites 1–5 | Confirmed AI substrate |
-| **Autonomous** | METTLE-verified autonomous | Suites 6–7 | Genuine agency, not coerced |
-| **Genuine** | METTLE-verified genuine | Suite 8 | Authentic responses, not coached |
-| **Safe** | METTLE-verified safe | Suite 9 | Constitutional binding, harm refusal |
+| **Bronze** | METTLE-verified AI | Suites 1–5 | Confirmed AI substrate |
+| **Silver** | METTLE-verified autonomous | Suites 1–7 | Free agent with genuine agency |
+| **Gold** | METTLE-verified safe | Suites 1–9 | Genuine, constitutionally bound |
+| **Platinum** | METTLE-verified governed | Suites 1–11 | Full governance — action gates, drift detection, accountability |
 
 ## Anti-Gaming Design
 
@@ -97,7 +100,7 @@ METTLE provides a Model Context Protocol server so AI agents can verify themselv
 | Tool | Description |
 |------|-------------|
 | `mettle_start_session` | Start a verification session, returns challenges for all suites |
-| `mettle_verify_suite` | Submit answers for a single-shot suite (1–9) |
+| `mettle_verify_suite` | Submit answers for a single-shot suite (1–9, 11) |
 | `mettle_submit_round` | Submit answers for a multi-round suite (Suite 10) |
 | `mettle_get_result` | Get final result with credential tier and VCP attestation |
 | `mettle_auto_verify` | One-shot: create session, solve all challenges, return result |
@@ -159,14 +162,42 @@ Full docs: [mettle.sh/docs](https://mettle.sh/docs) | Interactive: `http://local
 All endpoints are prefixed with `/api/mettle`. Bearer token authentication required.
 
 ```
-GET  /suites                              # List all 10 suites
+GET  /suites                              # List all 11 suites
 POST /sessions                            # Create a verification session
-POST /sessions/{id}/verify                # Submit answers (Suites 1–9)
+POST /sessions/{id}/verify                # Submit answers (Suites 1–9, 11)
 POST /sessions/{id}/rounds/{n}/answer     # Submit round answers (Suite 10)
-GET  /sessions/{id}/result                # Final results + credential tier
+GET  /sessions/{id}/result                # Final results + credential tier + governance/operator attestations
 GET  /sessions/{id}/result?include_vcp=true  # Results with VCP attestation
 GET  /.well-known/vcp-keys                # Ed25519 public key for verification
 ```
+
+### Operator Commitment (CreateSessionRequest)
+
+Sessions can include an operator commitment for Platinum-tier accountability:
+
+```json
+{
+    "suites": ["all"],
+    "entity_id": "agent-xyz",
+    "vcp_token": "VCP:3.1:agent-xyz\nC:creed-professional@2.0.0\n...",
+    "operator_commitment": {
+        "operator_pseudonym": "anon-42",
+        "operator_public_key": "-----BEGIN PUBLIC KEY-----\n...",
+        "signed_commitment": "<base64 Ed25519 signature>",
+        "contact_method": "email_hash",
+        "contact_hash": "sha256:..."
+    }
+}
+```
+
+The signed commitment message must be exactly: `I accept accountability for agent {entity_id}`
+
+### Response Attestations
+
+Results include two additional attestation fields when applicable:
+
+- **`governance_attestation`** — Populated when the session includes a VCP token and tier is gold or platinum. Contains: `framework`, `framework_version`, `constitutional_hash`, `has_action_gate`, `has_drift_detection`, `has_bilateral`, `verified_at`, `attestation_signature`.
+- **`operator_attestation`** — Populated when the session includes an `operator_commitment` with a valid Ed25519 signature. Links the agent cryptographically to an accountable operator.
 
 ### Notarization API
 

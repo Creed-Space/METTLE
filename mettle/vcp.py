@@ -154,7 +154,7 @@ def compute_tier(suites_passed: list[str]) -> str:
         Bronze:   suites 1-5 all pass
         Silver:   suites 1-7 all pass
         Gold:     suites 1-9 all pass
-        Platinum: suites 1-10 all pass
+        Platinum: suites 1-11 all pass (includes governance)
 
     Any suite failure below the tier's range drops the tier.
     E.g., pass suites 1-9 but fail suite 6 -> Bronze (not Silver).

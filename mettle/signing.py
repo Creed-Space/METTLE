@@ -50,7 +50,7 @@ def init_signing() -> bool:
     try:
         from mettle.app_config import settings
         pem_key = settings.vcp_signing_key or None
-    except (ImportError, AttributeError) as settings_error:
+    except Exception as settings_error:
         logger.debug("Mettle settings unavailable for VCP signing key lookup: %s", settings_error)
     if not pem_key:
         pem_key = os.environ.get("METTLE_VCP_SIGNING_KEY")

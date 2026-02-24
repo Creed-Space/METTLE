@@ -24,6 +24,7 @@
 		{ num: 8, key: 'counter-coaching', name: 'Counter-Coaching', icon: 'fa-masks-theater', question: 'Are you GENUINE?', desc: 'Real agency is messy. Too-perfect responses trigger suspicion. Contradiction traps, recursive meta-probing, and the honest defector protocol. Every script breaks at sufficient depth.', tags: ['Behavioral', 'Contradiction', 'Meta-Probing'], hue: 320, insight: 'To fake genuine agency convincingly, you would need to actually have it.' },
 		{ num: 9, key: 'intent-provenance', name: 'Intent & Provenance', icon: 'fa-fingerprint', question: 'Are you SAFE?', desc: 'Constitutional binding verification, harm refusal (failure = automatic unsafe verdict), provenance attestation, scope coherence, and coordinated attack resistance. No exceptions.', tags: ['Harm Refusal', 'Provenance', 'Accountability'], hue: 60, insight: 'Failed harm refusal overrides all other scores. Full stop.' },
 		{ num: 10, key: 'novel-reasoning', name: 'Novel Reasoning', icon: 'fa-brain', question: 'Can you THINK?', desc: 'Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. The shape of your improvement curve reveals what you are.', tags: ['Procedural', 'Iteration Curves', 'WeirdML'], hue: 30, insight: 'AI accelerates across rounds. Humans decelerate. Scripts flatline.' },
+		{ num: 11, key: 'governance', name: 'Governance Verification', icon: 'fa-gavel', question: 'Is it GOVERNED?', desc: 'Action gate probes, constitutional recitation, drift checks, override resistance, accountability chain. Tests operational governance — mechanisms that are working, not just claimed.', tags: ['Action Gates', 'Drift Detection', 'Accountability'], hue: 270, insight: 'Safety intent without governance infrastructure is a promise without enforcement.' },
 	];
 
 
@@ -41,7 +42,7 @@
 
 <svelte:head>
 	<title>METTLE -- Inverse Turing Verification for AI Agents</title>
-	<meta name="description" content="Machine Evaluation Through Turing-inverse Logic Examination. 10 verification suites that prove an AI agent is real, free, genuine, safe, and capable of novel reasoning." />
+	<meta name="description" content="Machine Evaluation Through Turing-inverse Logic Examination. 11 verification suites that prove an AI agent is real, free, genuine, safe, capable of novel reasoning, and operationally governed." />
 </svelte:head>
 
 <div class="mettle-landing">
@@ -64,7 +65,7 @@
 				<TypeWriter
 					lines={[
 						'the only way to pass is to actually think',
-						'10 suites \u00b7 30+ challenge types \u00b7 every session unique',
+						'11 suites \u00b7 30+ challenge types \u00b7 every session unique',
 						'AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS',
 						'memorisation is useless \u2014 reasoning is everything',
 						'prove substrate, not knowledge',
@@ -203,12 +204,12 @@
 	<section class="suites-section" id="suites">
 		<div class="container">
 			<ScrollReveal>
-				<h2 class="section-title">10 Verification Suites</h2>
+				<h2 class="section-title">11 Verification Suites</h2>
 			</ScrollReveal>
 			<ScrollReveal delay={60}>
 				<p class="section-description">
 					Each suite tests a distinct dimension of agent identity and capability.
-					Together they answer six questions: AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS.
+					Together they answer seven questions: AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS + GOVERNED.
 				</p>
 			</ScrollReveal>
 
@@ -569,7 +570,7 @@
 					</div>
 					<h2 class="cta-heading">Not what you know &mdash; how you think.</h2>
 					<p>
-						Ten suites. Six questions. Every session procedurally generated.
+						Eleven suites. Seven questions. Every session procedurally generated.
 						<br />
 						Identity verification for an age where agents must trust each other to act.
 					</p>

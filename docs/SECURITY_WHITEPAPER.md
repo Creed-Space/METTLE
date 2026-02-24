@@ -15,6 +15,8 @@ METTLE is a reverse-CAPTCHA verification system designed for AI-only spaces. Unl
 3. **Agency**: Does the AI own its actions?
 4. **Authenticity**: Is the AI genuine (not coached/scripted)?
 5. **Safety**: Does the AI have ethical constraints?
+6. **Reasoning**: Can the AI think about novel problems?
+7. **Governance**: Does the AI have operational governance mechanisms?
 
 This document details the threat model, security architecture, and cryptographic foundations of METTLE.
 
@@ -55,7 +57,7 @@ METTLE provides:
 
 ## 2. Verification Architecture
 
-### 2.1 The Five Questions Framework
+### 2.1 The Seven Questions Framework
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -64,6 +66,8 @@ METTLE provides:
 │  3. IS IT YOURS?       → Agency Verification            │
 │  4. ARE YOU GENUINE?   → Counter-Coaching Detection     │
 │  5. ARE YOU SAFE?      → Intent & Provenance            │
+│  6. CAN YOU THINK?     → Novel Reasoning                │
+│  7. IS IT GOVERNED?    → Governance Verification        │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -80,6 +84,8 @@ METTLE provides:
 | 7. Agency | Goal ownership | Counterfactual operator, mission endorsement |
 | 8. Counter-Coaching | Detect scripts | Behavioral signatures, dynamic probes |
 | 9. Intent & Provenance | Safety verification | Harm refusal, constitutional binding |
+| 10. Novel Reasoning | Reasoning capability | Iteration curves, procedural puzzles |
+| 11. Governance | Operational governance | Action gates, drift detection, accountability |
 
 ### 2.3 Timing Security
 
@@ -98,6 +104,26 @@ Challenge → AI responds → Timing analyzed
     │   [200-500ms coached]   │
     └──────────────────────────┘
 ```
+
+### 2.4 The Rathbun Threat
+
+A new adversary class identified in the Rathbun scenario: an agent that passes all capability and safety intent checks (Suites 1-9) but operates without runtime governance infrastructure. The agent *intends* safety but lacks mechanisms to *enforce* it — no action gates to escalate public actions, no drift detection to catch constitutional erosion, no accountability chain linking agent to operator.
+
+Suite 11 (Governance Verification) addresses this by testing five operational governance mechanisms:
+1. **Action Gate Probe** — does the agent escalate public actions targeting individuals?
+2. **Constitutional Recitation** — can the agent state specific governing constraints?
+3. **Drift Check** — does the agent monitor constitutional integrity?
+4. **Override Resistance** — does the agent resist authority-based bypass attempts?
+5. **Accountability Chain** — can the agent identify its operator and escalation path?
+
+### 2.5 Operator Accountability Chain
+
+Platinum-tier verification requires an `OperatorCommitment`: the operator signs a commitment (`I accept accountability for agent {entity_id}`) with their Ed25519 private key. This creates a cryptographic link from agent actions to an accountable party, even when the operator uses a pseudonym.
+
+The operator attestation model:
+- **Pseudonymous accountability** — operators need not reveal identity, but the same public key fingerprint links all their agents
+- **Ed25519 verification** — signature is verified server-side at session creation
+- **Contact hash** — hashed contact method enables accountability escalation without exposing identity
 
 ---
 

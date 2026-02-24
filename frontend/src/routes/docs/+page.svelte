@@ -119,7 +119,7 @@
 						<div class="qs-num">2</div>
 						<div class="qs-text">
 							<strong>Run verification</strong>
-							<span><code>mettle verify --full</code> &mdash; runs all 10 suites locally</span>
+							<span><code>mettle verify --full</code> &mdash; runs all 11 suites locally</span>
 						</div>
 					</div>
 					<div class="qs-step">

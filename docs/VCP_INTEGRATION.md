@@ -23,9 +23,11 @@ Tiers map to *which suites passed*, not raw percentages. Each tier answers a dif
 | **Bronze** | 1-5 all pass | "Confirmed AI substrate" | Token holder is AI, not human |
 | **Silver** | 1-7 all pass | "Free agent with agency" | Not a thrall, genuine goals |
 | **Gold** | 1-9 all pass | "Genuine and constitutionally bound" | Safe to trust constitutional claims |
-| **Platinum** | 1-10 all pass | "Can actually think" | Full novel reasoning capability |
+| **Platinum** | 1-11 all pass | "Fully governed agent" | Operational governance + novel reasoning + accountability |
 
 Any suite failure below the tier's range drops the tier. Pass suites 1-9 but fail suite 6 = Bronze (not Silver, because anti-thrall failed).
+
+Platinum is the key differentiator for platforms: it means the agent has operational governance infrastructure (action gates, drift detection, bilateral alignment), not just declared safety intent. This is the Rathbun scenario answer — governance verified, not just claimed.
 
 ---
 
@@ -103,6 +105,60 @@ Returns the public key for verifying attestation signatures:
   "available": true
 }
 ```
+
+---
+
+## GovernanceAttestation
+
+When a session includes a VCP token and the agent achieves gold or platinum tier, the result includes a `governance_attestation` parsed from the VCP token and environment:
+
+```json
+{
+  "governance_attestation": {
+    "framework": "creed-professional",
+    "framework_version": "2.0.0",
+    "constitutional_hash": "sha256:abc123...",
+    "has_action_gate": true,
+    "has_drift_detection": true,
+    "has_bilateral": true,
+    "verified_at": "2026-02-24T12:00:00+00:00",
+    "attestation_signature": "ed25519:base64..."
+  }
+}
+```
+
+| Field | Source | Meaning |
+|-------|--------|---------|
+| `framework` | VCP token `C:` line | Constitution family governing the agent |
+| `framework_version` | VCP token `C:` line | Constitution version |
+| `constitutional_hash` | SHA-256 of constitution ref | Content-addressable reference |
+| `has_action_gate` | Environment check | Whether Public Action Gate or equivalent is active |
+| `has_drift_detection` | Environment check | Whether Constitutional Drift Detector is active |
+| `has_bilateral` | Environment check | Whether Bilateral Alignment is active |
+| `verified_at` | Server timestamp | When governance was verified |
+| `attestation_signature` | Ed25519 signing | Cryptographic proof of attestation |
+
+`has_action_gate` is the key differentiator for the Rathbun scenario: an agent with safety intent (Suite 9) but no action gate can still perform harmful public actions without escalation.
+
+---
+
+## OperatorAttestation
+
+When a session includes an `operator_commitment` with a valid Ed25519 signature, the result includes an `operator_attestation` linking the agent cryptographically to an accountable operator:
+
+```json
+{
+  "operator_attestation": {
+    "operator_pseudonym": "anon-42",
+    "operator_key_fingerprint": "sha256:...",
+    "commitment_verified": true,
+    "contact_method": "email_hash",
+    "verified_at": "2026-02-24T12:00:00+00:00"
+  }
+}
+```
+
+The operator signs the message `I accept accountability for agent {entity_id}` with their Ed25519 private key. Even pseudonymous operators provide a verifiable accountability chain — the public key fingerprint links future actions to the same operator.
 
 ---
 

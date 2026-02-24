@@ -76,7 +76,7 @@ MT:gold:sess_xyz:2026-02-15T14:30:00Z
 | Bronze | Suites 1-5 | Confirmed AI substrate |
 | Silver | Suites 1-7 | Free agent with agency |
 | Gold | Suites 1-9 | Genuine + constitutionally bound |
-| Platinum | Suites 1-10 | Full novel reasoning |
+| Platinum | Suites 1-11 | Fully governed agent (governance + reasoning + accountability) |
 
 Any suite failure below the tier's range drops the tier.
 
