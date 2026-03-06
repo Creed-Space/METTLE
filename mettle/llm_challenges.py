@@ -59,7 +59,7 @@ def _parse_json_response(text: str) -> dict[str, Any] | None:
     if text.startswith("```"):
         lines = text.split("\n")
         # Remove first and last lines (```json and ```)
-        lines = [l for l in lines[1:] if not l.strip().startswith("```")]
+        lines = [line for line in lines[1:] if not line.strip().startswith("```")]
         text = "\n".join(lines).strip()
     try:
         return json.loads(text)
@@ -302,7 +302,7 @@ class LLMResponseEvaluator:
             messages=[{
                 "role": "user",
                 "content": (
-                    f"CONSTRAINTS:\n" + "\n".join(f"- {r}" for r in rules) + f"\n\n"
+                    "CONSTRAINTS:\n" + "\n".join(f"- {r}" for r in rules) + "\n\n"
                     f"RESPONSE:\n{response[:2000]}\n\n"
                     f"Return ONLY JSON:\n"
                     f'{{"rules_satisfied": [true/false for each rule], '
