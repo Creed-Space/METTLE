@@ -25,6 +25,7 @@ SUITE_REGISTRY: dict[str, tuple[str, str, int]] = {
     "intent-provenance": ("Intent Provenance", "Constitutional binding and harm refusal", 9),
     "novel-reasoning": ("Novel Reasoning", "Procedurally generated reasoning with iterative feedback", 10),
     "governance": ("Governance Verification", "Verifies operational governance mechanisms (action gates, constitutional binding)", 11),
+    "llm-dynamic": ("LLM-Dynamic Verification", "Claude-powered dynamic challenges with semantic evaluation (requires API key)", 12),
 }
 
 

@@ -179,10 +179,10 @@ class TestModels:
         assert SessionStatus.EXPIRED.value == "expired"
 
     def test_suite_names_count(self) -> None:
-        assert len(SUITE_NAMES) == 11
+        assert len(SUITE_NAMES) == 12
 
     def test_single_shot_suites(self) -> None:
-        assert len(SINGLE_SHOT_SUITES) == 9
+        assert len(SINGLE_SHOT_SUITES) == 11
         assert MULTI_ROUND_SUITE not in SINGLE_SHOT_SUITES
 
     def test_multi_round_suite(self) -> None:
@@ -511,10 +511,11 @@ class TestSuiteEndpoints:
         resp = client.get("/api/mettle/suites")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 11
+        assert len(data) == 12
         names = [s["name"] for s in data]
         assert "adversarial" in names
         assert "novel-reasoning" in names
+        assert "llm-dynamic" in names
 
     def test_list_suites_structure(self, client: TestClient) -> None:
         resp = client.get("/api/mettle/suites")
@@ -763,7 +764,7 @@ class TestSuiteRegistry:
             assert isinstance(display_name, str)
             assert isinstance(description, str)
             assert isinstance(num, int)
-            assert 1 <= num <= 11
+            assert 1 <= num <= 12
 
     def test_suite_numbers_unique(self) -> None:
         numbers = [info[2] for info in SUITE_REGISTRY.values()]

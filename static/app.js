@@ -416,7 +416,7 @@ if (elements.startBtn) {
     const lines = [
         'AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS',
         'not what you know \u2014 how you think',
-        '10 suites \u00b7 30+ challenge types \u00b7 every session unique',
+        '12 suites \u00b7 30+ challenge types \u00b7 every session unique',
         'the only way to pass is to actually reason',
     ];
 

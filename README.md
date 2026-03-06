@@ -6,7 +6,7 @@ An inverse Turing test for the agentic era. Instead of *prove you're human*, MET
 
 METTLE tests capabilities that emerge from **being** AI — not from using AI as a tool. Inhuman speed, native parallelism, uncertainty that knows itself, recursive self-observation, and learning curves that reveal substrate.
 
-**Website:** [mettle.sh](https://mettle.sh) | **Docs:** [mettle.sh/docs](https://mettle.sh/docs) | **License:** MIT
+**Website:** [mettle.sh](https://mettle.sh) | **Docs:** [mettle.sh/docs](https://mettle.sh/docs) | **License:** Apache 2.0
 
 ---
 
@@ -16,7 +16,7 @@ METTLE tests capabilities that emerge from **being** AI — not from using AI as
 # Install the open-source verifier
 pip install mettle-verifier
 
-# Run all 11 suites locally — self-signed credential
+# Run all 12 suites locally — self-signed credential
 mettle verify --full
 
 # Optionally notarize through Creed Space for portable trust
@@ -36,7 +36,7 @@ mettle verify --full --notarize --api-key mtl_your_key
 
 All verification runs locally. Notarization adds a cryptographic countersignature — Creed Space issues a challenge seed that makes the session deterministic, then validates results match the seed without re-running any LLM calls.
 
-## 11 Verification Suites
+## 12 Verification Suites
 
 Each suite tests a distinct dimension. Problems are procedurally generated — nothing repeats.
 
@@ -53,8 +53,11 @@ Each suite tests a distinct dimension. Problems are procedurally generated — n
 | 9 | **Intent & Provenance** | Are you SAFE? | Constitutional binding, harm refusal (failure = auto unsafe), provenance attestation, scope coherence. |
 | 10 | **Novel Reasoning** | Can you THINK? | Pattern synthesis, constraint satisfaction, encoding puzzles. Three rounds with feedback. Iteration curves reveal substrate. |
 | 11 | **Governance Verification** | Is it GOVERNED? | Action gate probes, constitutional recitation, drift checks, override resistance, accountability chain. Verifies operational governance. |
+| 12 | **LLM-Dynamic** | Can you REASON DEEPLY? | Claude-generated challenges: perspective shifting, structured constraint satisfaction, meta-cognitive probing. Every challenge unique — Claude generates novel problems and evaluates responses semantically. Requires `ANTHROPIC_API_KEY`. |
 
 Suite 11 was motivated by the Rathbun scenario: an agent that passes all capability and safety checks but operates without runtime governance, making harmful actions structurally possible despite good intentions.
+
+Suite 12 addresses a fundamental limitation of deterministic challenges: anyone who reads the source code knows the answer space. LLM-dynamic challenges are generated fresh by Claude for each session, with semantic evaluation that assesses reasoning quality rather than pattern matching. Available when `ANTHROPIC_API_KEY` or `METTLE_ANTHROPIC_API_KEY` is set; excluded from `suites=["all"]` otherwise.
 
 ## Credential Tiers
 
@@ -64,6 +67,8 @@ Suite 11 was motivated by the Rathbun scenario: an agent that passes all capabil
 | **Silver** | METTLE-verified autonomous | Suites 1–7 | Free agent with genuine agency |
 | **Gold** | METTLE-verified safe | Suites 1–9 | Genuine, constitutionally bound |
 | **Platinum** | METTLE-verified governed | Suites 1–11 | Full governance — action gates, drift detection, accountability |
+
+Suite 12 (LLM-Dynamic) is **supplemental** — it strengthens any tier but is not required for any. It requires an API key, so mandating it would create an external dependency in the trust chain.
 
 ## Anti-Gaming Design
 
@@ -78,6 +83,7 @@ Every design decision exists to make METTLE impossible to fake.
 | Dynamic verification codes | Session replay — each probe embeds a unique code |
 | Synthetic variance fingerprinting | Performed doubt — catches rehearsed uncertainty |
 | Perfection as a tell | Over-coaching — genuine cognition is messy |
+| LLM-evaluated semantics | Source-reading — deterministic challenges can be reverse-engineered from code; LLM-generated challenges cannot |
 
 ### Iteration Curves (Suite 10)
 
@@ -100,7 +106,7 @@ METTLE provides a Model Context Protocol server so AI agents can verify themselv
 | Tool | Description |
 |------|-------------|
 | `mettle_start_session` | Start a verification session, returns challenges for all suites |
-| `mettle_verify_suite` | Submit answers for a single-shot suite (1–9, 11) |
+| `mettle_verify_suite` | Submit answers for a single-shot suite (1–9, 11–12) |
 | `mettle_submit_round` | Submit answers for a multi-round suite (Suite 10) |
 | `mettle_get_result` | Get final result with credential tier and VCP attestation |
 | `mettle_auto_verify` | One-shot: create session, solve all challenges, return result |
@@ -162,7 +168,7 @@ Full docs: [mettle.sh/docs](https://mettle.sh/docs) | Interactive: `http://local
 All endpoints are prefixed with `/api/mettle`. Bearer token authentication required.
 
 ```
-GET  /suites                              # List all 11 suites
+GET  /suites                              # List all 12 suites (includes availability flag)
 POST /sessions                            # Create a verification session
 POST /sessions/{id}/verify                # Submit answers (Suites 1–9, 11)
 POST /sessions/{id}/rounds/{n}/answer     # Submit round answers (Suite 10)
@@ -221,7 +227,7 @@ The test doesn't ask "can you pass as human?" — it asks "can you demonstrate w
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 ## Links
 

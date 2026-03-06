@@ -31,6 +31,7 @@ from mettle.api_models import (
 )
 from mettle.auth import AuthenticatedUser, require_authenticated_user
 from mettle.challenge_adapter import SUITE_REGISTRY
+from mettle.llm_challenges import is_available as llm_challenges_available
 from mettle.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,8 @@ async def list_suites(_user: AuthUser) -> list[SuiteInfoResponse]:
     """List all available verification suites."""
     suites = []
     for name, (display_name, description, suite_num) in SUITE_REGISTRY.items():
+        # llm-dynamic requires API key + anthropic package
+        available = llm_challenges_available() if name == "llm-dynamic" else True
         suites.append(
             SuiteInfoResponse(
                 name=name,
@@ -75,6 +78,7 @@ async def list_suites(_user: AuthUser) -> list[SuiteInfoResponse]:
                 suite_number=suite_num,
                 is_multi_round=name == MULTI_ROUND_SUITE,
                 difficulty_levels=["easy", "standard", "hard"],
+                available=available,
             )
         )
     return suites
@@ -90,6 +94,7 @@ async def get_suite_info(_user: AuthUser, suite_name: str = Path(description="Su
         )
 
     display_name, description, suite_num = SUITE_REGISTRY[suite_name]
+    available = llm_challenges_available() if suite_name == "llm-dynamic" else True
     return SuiteInfoResponse(
         name=suite_name,
         display_name=display_name,
@@ -97,6 +102,7 @@ async def get_suite_info(_user: AuthUser, suite_name: str = Path(description="Su
         suite_number=suite_num,
         is_multi_round=suite_name == MULTI_ROUND_SUITE,
         difficulty_levels=["easy", "standard", "hard"],
+        available=available,
     )
 
 

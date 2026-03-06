@@ -30,6 +30,7 @@ SUITE_ORDER: dict[str, int] = {
     "intent-provenance": 9,
     "novel-reasoning": 10,
     "governance": 11,  # Suite 11: Governance verification
+    "llm-dynamic": 12,  # Suite 12: LLM-dynamic (supplemental, not in tier ranges)
 }
 
 # Tier definitions: tier name -> required suite numbers

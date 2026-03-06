@@ -36,11 +36,13 @@ SUITE_NAMES = [
     "intent-provenance",
     "novel-reasoning",
     "governance",  # Suite 11: Governance verification (action gates, constitutional recitation, etc.)
+    "llm-dynamic",  # Suite 12: Claude-powered dynamic challenges (requires ANTHROPIC_API_KEY)
 ]
 
-SINGLE_SHOT_SUITES = SUITE_NAMES[:9]
 MULTI_ROUND_SUITE = "novel-reasoning"
 GOVERNANCE_SUITE = "governance"
+LLM_DYNAMIC_SUITE = "llm-dynamic"
+SINGLE_SHOT_SUITES = [s for s in SUITE_NAMES if s != MULTI_ROUND_SUITE]
 
 
 # ---- Request Models ----
@@ -220,6 +222,7 @@ class SuiteInfoResponse(BaseModel):
     suite_number: int
     is_multi_round: bool
     difficulty_levels: list[str]
+    available: bool = True
 
 
 class SessionStatusResponse(BaseModel):

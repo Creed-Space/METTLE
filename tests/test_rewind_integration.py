@@ -476,21 +476,23 @@ class TestAllSuitesSmoke:
         resp = client.post("/api/mettle/sessions", json={"suites": ["all"]})
         assert resp.status_code == 201
         data = resp.json()
-        assert len(data["suites"]) == 11
-        assert set(data["suites"]) == set(SUITE_NAMES)
+        # llm-dynamic excluded from "all" when no API key is set
+        expected_all = [s for s in SUITE_NAMES if s != "llm-dynamic"]
+        assert set(data["suites"]) == set(expected_all)
 
     def test_suite_info_all_suites(self, client: TestClient) -> None:
         """Verify suite info is available for all suites."""
         resp = client.get("/api/mettle/suites")
         assert resp.status_code == 200
         suites = resp.json()
-        assert len(suites) == 11
+        assert len(suites) == 12
         names = {s["name"] for s in suites}
         assert names == set(SUITE_NAMES)
 
     def test_each_single_shot_suite_verifiable(self, client: TestClient) -> None:
         """Each single-shot suite can create + verify independently."""
-        single_shot = [s for s in SUITE_NAMES if s != "novel-reasoning"]
+        # Exclude novel-reasoning (multi-round) and llm-dynamic (needs API key)
+        single_shot = [s for s in SUITE_NAMES if s not in ("novel-reasoning", "llm-dynamic")]
         for suite_name in single_shot:
             resp = client.post("/api/mettle/sessions", json={"suites": [suite_name]})
             assert resp.status_code == 201, f"Failed to create session for {suite_name}"

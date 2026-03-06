@@ -296,7 +296,9 @@ class TestKeyBuilders:
 
 class TestResolveSuites:
     def test_all_resolves_to_full_list(self):
-        assert SessionManager._resolve_suites(["all"]) == list(SUITE_NAMES)
+        # llm-dynamic excluded from "all" when no API key is set
+        expected = [s for s in SUITE_NAMES if s != "llm-dynamic"]
+        assert SessionManager._resolve_suites(["all"]) == expected
 
     def test_valid_list(self):
         assert SessionManager._resolve_suites(["adversarial", "native"]) == ["adversarial", "native"]
@@ -319,7 +321,9 @@ class TestCreateSession:
     @pytest.mark.asyncio
     async def test_create_all_suites(self, mgr, fake_redis):
         sid, challenges, meta = await _create_session(mgr, ["all"])
-        assert meta["suites"] == list(SUITE_NAMES)
+        # llm-dynamic excluded from "all" when no API key is set
+        expected = [s for s in SUITE_NAMES if s != "llm-dynamic"]
+        assert meta["suites"] == expected
         assert meta["time_budget_ms"] > 0
 
     @pytest.mark.asyncio
@@ -765,10 +769,11 @@ class TestRouterListSuites:
         resp = client.get("/api/mettle/suites")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 11
+        assert len(data) == 12
         names = [s["name"] for s in data]
         assert "adversarial" in names
         assert MULTI_ROUND_SUITE in names
+        assert "llm-dynamic" in names
         novel = [s for s in data if s["name"] == MULTI_ROUND_SUITE][0]
         assert novel["is_multi_round"] is True
 

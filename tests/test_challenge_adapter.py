@@ -43,10 +43,11 @@ class TestSuiteRegistry:
         "intent-provenance": 9,
         "novel-reasoning": 10,
         "governance": 11,
+        "llm-dynamic": 12,
     }
 
     def test_all_suites_present(self):
-        assert len(SUITE_REGISTRY) == 11
+        assert len(SUITE_REGISTRY) == 12
 
     def test_suite_keys_match(self):
         assert set(SUITE_REGISTRY.keys()) == set(self.EXPECTED_SUITES.keys())

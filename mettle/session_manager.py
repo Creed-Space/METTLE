@@ -20,6 +20,9 @@ from mettle.api_models import (
     SessionStatus,
 )
 from mettle.challenge_adapter import ChallengeAdapter
+from mettle.llm_challenges import is_available as llm_available
+
+LLM_DYNAMIC_SUITE = "llm-dynamic"
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +99,18 @@ class SessionManager:
             "intent-provenance": ChallengeAdapter.generate_intent_provenance,
         }
 
+        # Track async suites that need await
+        llm_dynamic_pending = False
+
         for suite in resolved_suites:
-            if suite == MULTI_ROUND_SUITE:
+            if suite == LLM_DYNAMIC_SUITE:
+                if not llm_available():
+                    raise ValueError(
+                        "llm-dynamic suite requires ANTHROPIC_API_KEY and anthropic package"
+                    )
+                llm_dynamic_pending = True
+                continue
+            elif suite == MULTI_ROUND_SUITE:
                 client, server = ChallengeAdapter.generate_novel_reasoning(difficulty)
             elif suite == GOVERNANCE_SUITE:
                 client, server = ChallengeAdapter.generate_governance()
@@ -110,6 +123,14 @@ class SessionManager:
                 client, server = gen()
             client_challenges[suite] = client
             server_answers[suite] = server
+
+        # Generate LLM-dynamic challenges (async -- requires await)
+        if llm_dynamic_pending:
+            from mettle.llm_challenges import generate_llm_challenges
+
+            client, server = await generate_llm_challenges()
+            client_challenges[LLM_DYNAMIC_SUITE] = client
+            server_answers[LLM_DYNAMIC_SUITE] = server
 
         # Calculate time budget
         has_novel = MULTI_ROUND_SUITE in resolved_suites
@@ -226,7 +247,14 @@ class SessionManager:
             raise ValueError("Session answers expired")
 
         suite_server = server_answers.get(suite, {})
-        result = ChallengeAdapter.evaluate_single_shot(suite, answers, suite_server)
+
+        # LLM-dynamic suite requires async evaluation
+        if suite == LLM_DYNAMIC_SUITE:
+            from mettle.llm_challenges import evaluate_llm_challenges
+
+            result = await evaluate_llm_challenges(answers, suite_server)
+        else:
+            result = ChallengeAdapter.evaluate_single_shot(suite, answers, suite_server)
 
         # Update session
         session["suites_completed"].append(suite)
@@ -469,7 +497,11 @@ class SessionManager:
     def _resolve_suites(suites: list[str]) -> list[str]:
         """Resolve 'all' to full suite list and validate names."""
         if "all" in suites:
-            return list(SUITE_NAMES)
+            # Exclude llm-dynamic from "all" when API key isn't available
+            resolved = list(SUITE_NAMES)
+            if not llm_available():
+                resolved = [s for s in resolved if s != LLM_DYNAMIC_SUITE]
+            return resolved
 
         invalid = [s for s in suites if s not in SUITE_NAMES]
         if invalid:
