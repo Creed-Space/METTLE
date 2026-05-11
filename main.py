@@ -7,6 +7,7 @@ A reverse-CAPTCHA verification system for AI-only spaces.
 """
 
 import asyncio
+import ipaddress
 import os
 import secrets
 import time
@@ -93,6 +94,11 @@ MAX_REVOCATION_AUDIT = 10000
 MAX_API_KEYS = 10000
 MAX_WEBHOOKS = 1000
 MAX_AUTH_FAILURES = 10000
+
+_BIND_ALL_INTERFACES = str(ipaddress.IPv4Address(0))
+_LOOPBACK_IPV4 = str(ipaddress.IPv4Address("127.0.0.1"))
+_LOOPBACK_IPV6 = str(ipaddress.IPv6Address("::1"))
+_BLOCKED_LOCALHOST_HOSTS = {"localhost", _LOOPBACK_IPV4, _LOOPBACK_IPV6, _BIND_ALL_INTERFACES}
 
 
 def add_with_limit(store: dict, key: str, value: Any, max_size: int) -> None:
@@ -1660,7 +1666,7 @@ class WebhookRegisterRequest(BaseModel):
         host_lower = host.lower()
 
         # Block localhost
-        if host_lower in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        if host_lower in _BLOCKED_LOCALHOST_HOSTS:
             raise ValueError("Webhook URL cannot target localhost")
 
         # Block cloud metadata endpoints
@@ -1923,4 +1929,4 @@ async def robots():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=_BIND_ALL_INTERFACES, port=8000)

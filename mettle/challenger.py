@@ -146,8 +146,8 @@ def generate_instruction_following_challenge(difficulty: Difficulty) -> Challeng
     instruction, validator = _secure_choice(instructions)
     time_limit = 3000 if difficulty == Difficulty.BASIC else 600  # Basic: 3s, Full: 600ms
 
-    # Store validator as string representation for serialization
-    validator_id = hashlib.md5(instruction.encode()).hexdigest()[:8]
+    # Store a short stable validator identifier for serialization.
+    validator_id = hashlib.sha256(instruction.encode("utf-8")).hexdigest()[:8]
 
     return Challenge(
         id=generate_challenge_id(),

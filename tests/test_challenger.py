@@ -160,6 +160,15 @@ class TestInstructionFollowingChallenge:
         instruction = challenge.data["instruction"]
         assert instruction in challenge.prompt
 
+    def test_validator_id_is_short_hex_digest(self):
+        """Test that validator IDs are stable short hex digests."""
+        challenge = generate_instruction_following_challenge(Difficulty.BASIC)
+        validator_id = challenge.data["validator_id"]
+
+        assert isinstance(validator_id, str)
+        assert len(validator_id) == 8
+        int(validator_id, 16)
+
 
 class TestConsistencyChallenge:
     """Test consistency challenge generation."""
