@@ -54,8 +54,11 @@
 	--color-danger: #ef4444;
 	--color-danger-muted: rgba(239, 68, 68, 0.2);
 
-	/* Focus ring for accessibility */
-	--focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-primary);
+	/* Focus ring — mettle amber accent (was indigo --color-primary). Decoupled so
+	   the global focus ring matches the components (which already use amber) and is
+	   non-blue, per the design-system rule. */
+	--color-focus-ring: #f59e0b;
+	--focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-focus-ring);
 
 	/* Spacing */
 	--space-xs: 0.25rem;
@@ -165,8 +168,29 @@ select:focus-visible,
 textarea:focus-visible,
 [role="button"]:focus-visible,
 [tabindex]:focus-visible:not([tabindex="-1"]) {
-	outline: 2px solid var(--color-primary);
+	outline: 2px solid var(--color-focus-ring);
 	outline-offset: 2px;
+}
+
+/* Skip-to-main link — visually hidden until keyboard-focused. */
+.skip-link {
+	position: absolute;
+	left: 0.5rem;
+	top: -3rem;
+	z-index: 1000;
+	padding: 0.5rem 1rem;
+	background: var(--color-focus-ring);
+	color: #1a1a1a;
+	font-weight: 600;
+	border-radius: 4px;
+}
+.skip-link:focus {
+	top: 0.5rem;
+}
+
+/* Anchored sections clear the sticky header when navigated to (#suites, #how-it-works). */
+section[id] {
+	scroll-margin-top: 5rem;
 }
 
 /* ============================================
