@@ -1141,6 +1141,16 @@ def generate_signed_badge(
 ) -> dict[str, Any]:
     """Generate a signed JWT badge for verified entities with expiry.
 
+    SECURITY (REWIND-FRESH-014): badges issued on the public ``/api/session/*``
+    surface attest METTLE *capability* (the session passed the verification
+    challenges), NOT *entity identity*. ``entity_id`` here is self-asserted by the
+    caller at ``/session/start`` with no proof of control, so the payload marks it
+    explicitly as unverified (``entity_id_verified=False``, ``identity_binding=
+    "self_asserted"``, ``attests="capability"``). Consumers MUST NOT treat a
+    badge's ``entity_id`` as a proven identity. Cryptographic identity binding is
+    available via the authenticated ``/api/mettle/sessions`` surface using an
+    Ed25519 ``operator_commitment``.
+
     Returns dict with:
         - token: The JWT badge token
         - expires_at: ISO timestamp of expiry
@@ -1160,6 +1170,13 @@ def generate_signed_badge(
 
     payload = {
         "entity_id": entity_id,
+        # SECURITY (REWIND-FRESH-014): entity_id is self-asserted on the public
+        # session surface and is NOT proof of entity ownership. These claims make
+        # the badge's meaning explicit and machine-checkable so consumers cannot
+        # misread it as a verified identity attestation.
+        "entity_id_verified": False,
+        "identity_binding": "self_asserted",
+        "attests": "capability",
         "difficulty": difficulty,
         "pass_rate": pass_rate,
         "verified_at": now.isoformat(),
