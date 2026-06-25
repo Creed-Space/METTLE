@@ -70,7 +70,7 @@
     max-height: calc(100vh - 100px);
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: rgba(245, 158, 11, 0.2) transparent;
+    scrollbar-color: rgba(20, 184, 166, 0.2) transparent;
     padding-top: var(--space-lg);
 }
 
@@ -112,7 +112,7 @@
 }
 
 .toc-item.active {
-    background: rgba(245, 158, 11, 0.08);
+    background: rgba(20, 184, 166, 0.08);
     color: var(--mettle-primary);
     border-left-color: var(--mettle-primary);
 }
@@ -179,7 +179,7 @@
 /* Getting Started box */
 .getting-started-box {
     background: rgba(18, 18, 32, 0.5);
-    border: 1px solid rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(20, 184, 166, 0.12);
     border-radius: var(--radius-lg);
     padding: var(--space-xl);
 }
@@ -215,7 +215,7 @@
 }
 
 .qs-step-optional {
-    border-left-color: rgba(245, 158, 11, 0.4);
+    border-left-color: rgba(20, 184, 166, 0.4);
     border-left-style: dashed;
 }
 
@@ -226,7 +226,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    background: linear-gradient(135deg, #f59e0b, #fb923c);
+    background: linear-gradient(135deg, #14b8a6, #0f766e);
     color: #0a0a12;
     font-weight: 800;
     font-size: 0.75rem;
@@ -235,7 +235,7 @@
 }
 
 .qs-step-optional .qs-num {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.5), rgba(251, 146, 60, 0.5));
+    background: linear-gradient(135deg, rgba(20, 184, 166, 0.5), rgba(45, 212, 191, 0.5));
 }
 
 .qs-text {
@@ -301,7 +301,7 @@
 }
 
 .tier-self .tier-header { background: rgba(255, 255, 255, 0.03); }
-.tier-notarized .tier-header { background: rgba(245, 158, 11, 0.06); }
+.tier-notarized .tier-header { background: rgba(20, 184, 166, 0.06); }
 
 .tier-badge {
     font-size: 0.75rem;
@@ -313,7 +313,7 @@
 }
 
 .tier-badge-self { color: var(--color-text-muted); background: rgba(255, 255, 255, 0.08); }
-.tier-badge-notarized { color: var(--mettle-primary); background: rgba(245, 158, 11, 0.15); }
+.tier-badge-notarized { color: var(--mettle-primary); background: rgba(20, 184, 166, 0.15); }
 
 .tier-body {
     padding: var(--space-md) var(--space-lg);
@@ -368,7 +368,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    background: linear-gradient(135deg, #f59e0b, #fb923c);
+    background: linear-gradient(135deg, #14b8a6, #0f766e);
     color: #0a0a12;
     font-weight: 800;
     font-size: 0.875rem;
@@ -398,8 +398,8 @@
     font-weight: 700;
     padding: 2px 6px;
     border-radius: var(--radius-sm);
-    background: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
+    background: rgba(20, 184, 166, 0.15);
+    color: #2dd4bf;
     font-family: var(--font-mono);
     align-self: flex-start;
 }
@@ -411,7 +411,7 @@
     gap: var(--space-lg);
     padding: var(--space-xl);
     background: rgba(18, 18, 32, 0.5);
-    border: 1px solid rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(20, 184, 166, 0.12);
     border-radius: var(--radius-lg);
 }
 
@@ -422,7 +422,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    background: rgba(245, 158, 11, 0.15);
+    background: rgba(20, 184, 166, 0.15);
     color: var(--mettle-primary);
     font-size: 1.25rem;
     flex-shrink: 0;
@@ -595,7 +595,7 @@
 .challenge-type-doc p { margin-bottom: 1rem; color: var(--text-muted); }
 .challenge-type-doc pre { margin-bottom: 0; font-size: 0.8rem; }
 
-.callout { display: flex; gap: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); border-radius: 8px; margin-top: 1.5rem; margin-bottom: 1.5rem; }
+.callout { display: flex; gap: 1rem; padding: 1rem; background: rgba(20, 184, 166, 0.1); border: 1px solid var(--primary); border-radius: 8px; margin-top: 1.5rem; margin-bottom: 1.5rem; }
 .callout i { color: var(--primary); font-size: 1.25rem; flex-shrink: 0; }
 .callout p { margin: 0; font-size: 0.9rem; }
 
@@ -634,7 +634,7 @@
     }
     .toc-item.active {
         border-left-color: transparent;
-        background: rgba(245, 158, 11, 0.15);
+        background: rgba(20, 184, 166, 0.15);
     }
 }
 
@@ -649,4 +649,16 @@
 @media (max-width: 480px) {
     .code-block-new { font-size: 0.75rem; padding: var(--space-md); }
     .quickstart-steps { gap: var(--space-xs); }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
 }

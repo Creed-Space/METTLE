@@ -843,12 +843,37 @@ class BatchStartResponse(BaseModel):
     description="Start multiple verification sessions at once (Pro/Enterprise tier).",
     responses={
         200: {"description": "Sessions started"},
+        401: {"description": "Unauthorized - requires API key"},
+        403: {"description": "Forbidden - batch feature requires pro/enterprise tier"},
         429: {"description": "Rate limit exceeded"},
     },
 )
 @limiter.limit("5/minute")
 async def batch_start_sessions(request: Request, body: BatchStartRequest):
-    """Start multiple verification sessions in batch."""
+    """Start multiple verification sessions in batch.
+
+    SECURITY: Batch start lets a single request spin up many sessions, so it is
+    gated behind an API key whose tier includes the ``batch`` feature. Anonymous
+    or free-tier callers cannot use it (DoS / abuse protection).
+    """
+    # Require an API key with the "batch" feature (pro/enterprise tier)
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        raise HTTPException(status_code=401, detail="API key required")
+
+    tier = RateTier.get_tier(api_key)
+    features = RateTier.get_limits(tier).get("features", [])
+    if "batch" not in features and "all" not in features:
+        raise HTTPException(
+            status_code=403,
+            detail="Batch sessions require a pro or enterprise tier API key",
+        )
+
+    # Enforce per-key daily session limits
+    allowed, message = RateTier.check_limit(api_key, "session")
+    if not allowed:
+        raise HTTPException(status_code=429, detail=message)
+
     results = []
     failed = 0
 
@@ -1116,6 +1141,16 @@ def generate_signed_badge(
 ) -> dict[str, Any]:
     """Generate a signed JWT badge for verified entities with expiry.
 
+    SECURITY (REWIND-FRESH-014): badges issued on the public ``/api/session/*``
+    surface attest METTLE *capability* (the session passed the verification
+    challenges), NOT *entity identity*. ``entity_id`` here is self-asserted by the
+    caller at ``/session/start`` with no proof of control, so the payload marks it
+    explicitly as unverified (``entity_id_verified=False``, ``identity_binding=
+    "self_asserted"``, ``attests="capability"``). Consumers MUST NOT treat a
+    badge's ``entity_id`` as a proven identity. Cryptographic identity binding is
+    available via the authenticated ``/api/mettle/sessions`` surface using an
+    Ed25519 ``operator_commitment``.
+
     Returns dict with:
         - token: The JWT badge token
         - expires_at: ISO timestamp of expiry
@@ -1135,6 +1170,13 @@ def generate_signed_badge(
 
     payload = {
         "entity_id": entity_id,
+        # SECURITY (REWIND-FRESH-014): entity_id is self-asserted on the public
+        # session surface and is NOT proof of entity ownership. These claims make
+        # the badge's meaning explicit and machine-checkable so consumers cannot
+        # misread it as a verified identity attestation.
+        "entity_id_verified": False,
+        "identity_binding": "self_asserted",
+        "attests": "capability",
         "difficulty": difficulty,
         "pass_rate": pass_rate,
         "verified_at": now.isoformat(),
@@ -1466,11 +1508,34 @@ async def get_collusion_stats(request: Request):
     "/security/collusion/check",
     tags=["Status"],
     summary="Check Entity Collusion",
-    description="Check collusion indicators for a specific entity.",
+    description="Check collusion indicators for a specific entity. Requires admin key.",
+    responses={
+        200: {"description": "Collusion indicators for the entity"},
+        401: {"description": "Unauthorized - requires admin key"},
+        429: {"description": "Too many failed auth attempts"},
+    },
 )
 async def check_entity_collusion(request: Request, entity_id: str):
-    """Check collusion indicators for an entity."""
+    """Check collusion indicators for an entity. Requires admin authorization.
+
+    SECURITY: Collusion risk scores and warnings are security-sensitive -
+    exposing them lets attackers probe and tune evasion of the detector.
+    """
+    admin_key = request.headers.get("X-Admin-Key")
     ip_address = get_remote_address(request)
+
+    # Check rate limiting for brute force protection
+    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if not verify_admin_key(admin_key, ip_address):
+        raise HTTPException(status_code=401, detail="Admin authorization required")
+
     return CollusionDetector.check_collusion(entity_id, ip_address)
 
 
@@ -1695,12 +1760,41 @@ class WebhookRegisterRequest(BaseModel):
     "/webhooks/register",
     tags=["Status"],
     summary="Register Webhook",
-    description="Register a webhook URL for verification events.",
+    description="Register a webhook URL for verification events. Requires an API key that owns the entity.",
+    responses={
+        200: {"description": "Webhook registered"},
+        400: {"description": "Invalid events"},
+        401: {"description": "Unauthorized - requires API key"},
+        403: {"description": "Forbidden - API key does not own this entity"},
+    },
 )
 async def register_webhook(body: WebhookRegisterRequest, request: Request):
-    """Register a webhook for an entity."""
-    # SECURITY: Audit all webhook registrations
+    """Register a webhook for an entity.
+
+    SECURITY: A webhook discloses session/badge event metadata for an entity and
+    causes outbound requests on its behalf, so registration must be authenticated
+    and restricted to the entity's owner. The caller must present an X-API-Key
+    whose registered entity_id matches the requested entity_id (IDOR protection).
+    """
     ip_address = get_remote_address(request)
+
+    # Require an API key that owns the target entity (prevents anonymous IDOR overwrite)
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        raise HTTPException(status_code=401, detail="API key required")
+
+    key_data = api_keys.get(api_key)
+    if not key_data:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    owned_entity = key_data.get("entity_id")
+    if not owned_entity or owned_entity != body.entity_id:
+        raise HTTPException(
+            status_code=403,
+            detail="API key is not authorized to register webhooks for this entity",
+        )
+
+    # SECURITY: Audit all webhook registrations
     logger.info(
         "webhook_registered",
         entity_id=body.entity_id,
@@ -1727,11 +1821,34 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
     "/webhooks/{entity_id}",
     tags=["Status"],
     summary="Unregister Webhook",
-    description="Remove a webhook registration.",
+    description="Remove a webhook registration. Requires admin key.",
+    responses={
+        200: {"description": "Webhook unregistered"},
+        401: {"description": "Unauthorized - requires admin key"},
+        404: {"description": "Webhook not found"},
+        429: {"description": "Too many failed auth attempts"},
+    },
 )
 async def unregister_webhook(entity_id: str, request: Request):
-    """Unregister a webhook."""
+    """Unregister a webhook. Requires admin authorization.
+
+    SECURITY: Deleting another entity's webhook is a denial-of-service against
+    that entity's event delivery, so removal requires an admin API key.
+    """
+    admin_key = request.headers.get("X-Admin-Key")
     ip_address = get_remote_address(request)
+
+    # Check rate limiting for brute force protection
+    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if not verify_admin_key(admin_key, ip_address):
+        raise HTTPException(status_code=401, detail="Admin authorization required")
 
     if WebhookManager.unregister(entity_id):
         # SECURITY: Audit all webhook deletions

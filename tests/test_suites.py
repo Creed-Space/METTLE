@@ -257,7 +257,9 @@ class TestNativeCapabilityChallenges:
         else:
             assert "challenge" in result
             assert "hidden_message" in result
-            assert "cover_text" in result
+            # engine.steganographic_encoding returns the carrier text under
+            # "carrier_preview" (the old "cover_text" key was renamed).
+            assert "carrier_preview" in result
             assert "detection_margin" in result
             assert "passed" in result
 
