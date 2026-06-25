@@ -1046,13 +1046,15 @@ class TestWebhookProductionValidation:
     """Tests for webhook URL production-only HTTPS requirement."""
 
     def test_http_allowed_in_dev(self, client):
-        """HTTP URLs should be allowed in non-production."""
+        """HTTP URLs should be allowed in non-production (with an owning API key)."""
+        RateTier.register_key("dev-http-key", "pro", "test")
         response = client.post(
             "/api/webhooks/register",
             json={
                 "entity_id": "test",
                 "url": "http://example.com/hook",
             },
+            headers={"X-API-Key": "dev-http-key"},
         )
         assert response.status_code == 200
 
@@ -1078,13 +1080,15 @@ class TestBatchStartExceptionHandling:
     """Tests for batch session start exception handling."""
 
     def test_batch_with_many_entities(self, client):
-        """Batch start should handle multiple entities correctly."""
+        """Batch start should handle multiple entities correctly (pro-tier key)."""
+        RateTier.register_key("batch-many-key", "pro", "batch-owner")
         response = client.post(
             "/api/session/batch",
             json={
                 "entity_ids": [f"entity-{i}" for i in range(5)],
                 "difficulty": "basic",
             },
+            headers={"X-API-Key": "batch-many-key"},
         )
         assert response.status_code == 200
         data = response.json()
