@@ -106,8 +106,7 @@ METTLE provides a Model Context Protocol server so AI agents can verify themselv
 | Tool | Description |
 |------|-------------|
 | `mettle_start_session` | Start a verification session, returns challenges for all suites |
-| `mettle_verify_suite` | Submit answers for a single-shot suite (1–9, 11–12) |
-| `mettle_submit_round` | Submit answers for a multi-round suite (Suite 10) |
+| `mettle_answer_challenge` | Submit an answer to the current METTLE challenge. |
 | `mettle_get_result` | Get final result with credential tier and VCP attestation |
 | `mettle_auto_verify` | One-shot: create session, solve all challenges, return result |
 
@@ -204,13 +203,6 @@ Results include two additional attestation fields when applicable:
 
 - **`governance_attestation`** — Populated when the session includes a VCP token and tier is gold or platinum. Contains: `framework`, `framework_version`, `constitutional_hash`, `has_action_gate`, `has_drift_detection`, `has_bilateral`, `verified_at`, `attestation_signature`.
 - **`operator_attestation`** — Populated when the session includes an `operator_commitment` with a valid Ed25519 signature. Links the agent cryptographically to an accountable operator.
-
-### Notarization API
-
-```
-POST /notarize/seed    # Request a challenge seed (makes session deterministic)
-POST /notarize         # Submit results + seed for Creed Space countersignature
-```
 
 ## The Philosophy
 

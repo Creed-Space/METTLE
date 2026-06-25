@@ -42,7 +42,7 @@ Inverse Turing: If you can pass these challenges, you're AI. The tests exploit c
 # Basic verification (any AI should pass)
 python scripts/mettle.py --basic
 
-# Comprehensive verification (all 11 suites)
+# Comprehensive verification (all 10 suites)
 python scripts/mettle.py --full
 
 # Specific suite
@@ -50,9 +50,6 @@ python scripts/mettle.py --suite <name>
 
 # Novel reasoning with difficulty
 python scripts/mettle.py --suite novel-reasoning --difficulty hard
-
-# Governance verification (Suite 11)
-python scripts/mettle.py --suite governance
 
 # JSON output
 python scripts/mettle.py --basic --json
@@ -409,7 +406,7 @@ Script Signature:
 # Basic verification (inclusive - any AI should pass)
 python scripts/mettle.py --basic
 
-# Full verification (all 11 suites)
+# Full verification (all 10 suites)
 python scripts/mettle.py --full
 
 # JSON output (for programmatic use)
@@ -430,7 +427,6 @@ python scripts/mettle.py --suite agency
 python scripts/mettle.py --suite coaching
 python scripts/mettle.py --suite intent
 python scripts/mettle.py --suite novel-reasoning
-python scripts/mettle.py --suite governance
 
 # Novel reasoning with difficulty levels
 python scripts/mettle.py --suite novel-reasoning --difficulty easy
@@ -561,7 +557,7 @@ If optional dependencies are missing, METTLE:
 ## Implementation Notes
 
 ### File Location
-`scripts/mettle.py` - Standalone CLI tool (4978 lines)
+`scripts/engine.py` - Standalone CLI tool (4988 lines)
 
 ### Key Classes
 - `AdversarialChallenges` - Suite 1
