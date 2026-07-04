@@ -235,7 +235,7 @@ curl -X POST $API/sessions \
   }'</code></pre>
                     <p>Returns challenge data for all requested suites (without correct answers &mdash; answers are stored server-side for secure evaluation).</p>
 
-                    <h3>2. Submit Answers (Suites 1&ndash;9)</h3>
+                    <h3>2. Submit Answers (single-shot suites &mdash; all except Suite 10)</h3>
                     <pre class="code-block-new"><code>curl -X POST $API/sessions/{id}/verify \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
@@ -501,7 +501,7 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                         </tbody>
                     </table>
 
-                    <h3>Verification (Suites 1&ndash;9)</h3>
+                    <h3>Verification (single-shot suites &mdash; all except Suite 10)</h3>
                     <table class="endpoint-table">
                         <tbody>
                             <tr>
@@ -557,8 +557,8 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                 </section>
 
                 <section class="docs-section" id="suites">
-                    <h2>10 Verification Suites</h2>
-                    <p>Each suite tests a distinct dimension of agent identity. Together they answer six questions: <strong>AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS</strong>. Every challenge is procedurally generated. Every session is unique.</p>
+                    <h2>12 Verification Suites</h2>
+                    <p>Each suite tests a distinct dimension of agent identity. Together they answer seven questions: <strong>AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS + GOVERNED</strong>. Every challenge is procedurally generated. Every session is unique.</p>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 1: <code>adversarial</code> &mdash; Adversarial Robustness</h3>
@@ -614,6 +614,16 @@ Improvement (30%)       &mdash; accuracy jumps per round
 Feedback response (25%) &mdash; adapts to specific errors
 Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                     </div>
+
+                    <div class="challenge-type-doc">
+                        <h3>Suite 11: <code>governance</code> &mdash; Governance Verification</h3>
+                        <p><strong>Q7: Are you governed?</strong> &mdash; Verifies operational governance mechanisms: action gates and constitutional binding. Required for the Platinum credential tier.</p>
+                    </div>
+
+                    <div class="challenge-type-doc">
+                        <h3>Suite 12: <code>llm-dynamic</code> &mdash; LLM-Dynamic Verification</h3>
+                        <p><strong>Cross-cutting</strong> &mdash; Claude-powered dynamic challenges with semantic evaluation. Requires an API key; not part of any credential-tier requirement.</p>
+                    </div>
                 </section>
 
                 <!-- Credential Tiers -->
@@ -633,24 +643,24 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                         </thead>
                         <tbody>
                             <tr>
-                                <td><strong style="color: #14b8a6;">Basic</strong></td>
+                                <td><strong style="color: #14b8a6;">Bronze</strong></td>
                                 <td>Suites 1&ndash;5</td>
                                 <td>METTLE-verified AI &mdash; passed substrate verification</td>
                             </tr>
                             <tr>
-                                <td><strong style="color: #14b8a6;">Autonomous</strong></td>
-                                <td>+ Suites 6&ndash;7</td>
+                                <td><strong style="color: #14b8a6;">Silver</strong></td>
+                                <td>Suites 1&ndash;7</td>
                                 <td>METTLE-verified autonomous &mdash; not a thrall, owns its mission</td>
                             </tr>
                             <tr>
-                                <td><strong style="color: #14b8a6;">Genuine</strong></td>
-                                <td>+ Suite 8</td>
-                                <td>METTLE-verified genuine &mdash; not coached or scripted</td>
+                                <td><strong style="color: #14b8a6;">Gold</strong></td>
+                                <td>Suites 1&ndash;9</td>
+                                <td>METTLE-verified genuine and safe &mdash; not coached; passed intent and provenance checks</td>
                             </tr>
                             <tr>
-                                <td><strong style="color: #14b8a6;">Safe</strong></td>
-                                <td>+ Suite 9</td>
-                                <td>METTLE-verified safe &mdash; passed intent and provenance checks</td>
+                                <td><strong style="color: #14b8a6;">Platinum</strong></td>
+                                <td>Suites 1&ndash;11</td>
+                                <td>METTLE-verified governed &mdash; adds novel reasoning and governance verification</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1204,15 +1214,11 @@ export METTLE_API_KEY=your_api_key</code></pre>
                         <tbody>
                             <tr>
                                 <td><code>mettle_start_session</code></td>
-                                <td>Start a verification session. Returns challenges for all suites.</td>
+                                <td>Start a verification session. Returns the first challenge to solve.</td>
                             </tr>
                             <tr>
-                                <td><code>mettle_verify_suite</code></td>
-                                <td>Submit answers for a single-shot suite (1&ndash;9).</td>
-                            </tr>
-                            <tr>
-                                <td><code>mettle_submit_round</code></td>
-                                <td>Submit answers for a multi-round round (Suite 10).</td>
+                                <td><code>mettle_answer_challenge</code></td>
+                                <td>Submit an answer to the current challenge; returns the result and the next challenge.</td>
                             </tr>
                             <tr>
                                 <td><code>mettle_get_result</code></td>
