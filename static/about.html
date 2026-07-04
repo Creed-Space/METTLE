@@ -42,6 +42,10 @@
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 
     <!-- Stylesheets -->
+    <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
 
@@ -327,14 +331,14 @@
             <nav class="mettle-nav desktop-nav" aria-label="Main navigation">
                 <a href="/static/docs.html" class="nav-link">Docs</a>
                 <a href="/test" class="nav-link">Test</a>
-                <a href="/about" class="nav-link">About</a>
+                <a href="/about" class="nav-link active" aria-current="page">About</a>
                 <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="nav-link" aria-label="GitHub (opens in new tab)">
                     <i class="fa-brands fa-github" aria-hidden="true"></i>
                 </a>
                 <span class="nav-divider" aria-hidden="true"></span>
                 <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="nav-link nav-link-brand" aria-label="Creed Space (opens in new tab)">
-                    <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
-                    Creed Space
+                    <img src="/static/brand/mark.svg" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    <img src="/static/brand/wordmark-light.svg" alt="Creed Space" class="nav-brand-wordmark" />
                 </a>
             </nav>
             <button class="mobile-menu-btn" id="mobile-menu-btn" aria-expanded="false" aria-controls="mettle-mobile-nav" aria-label="Open menu">
@@ -350,8 +354,8 @@
             </a>
             <hr class="mobile-nav-divider" />
             <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
-                <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
-                Creed Space
+                <img src="/static/brand/mark.svg" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    <img src="/static/brand/wordmark-light.svg" alt="Creed Space" class="nav-brand-wordmark" />
             </a>
         </nav>
     </header>
