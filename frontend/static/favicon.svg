@@ -1,12 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Creed Space">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#2dd4bf"/>
-      <stop offset="55%" stop-color="#14b8a6"/>
-      <stop offset="100%" stop-color="#0f766e"/>
-    </linearGradient>
-  </defs>
-  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
-  <path d="M16 5.5 24 8.8v6.2c0 5.4-3.3 9.5-8 11.5-4.7-2-8-6.1-8-11.5V8.8l8-3.3Z" fill="#06221f" opacity="0.22"/>
-  <path d="M16 8.2 21.5 10.4v4.5c0 3.7-2.2 6.6-5.5 8.2-3.3-1.6-5.5-4.5-5.5-8.2v-4.5L16 8.2Z" fill="#f2fffc"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- METTLE favicon: tab-optimized flame-M on a tile.
+       Bolder geometry than mettle-mark.svg so the M survives 16px. -->
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="#042f2e"/>
+  <path fill-rule="evenodd" fill="#2dd4bf" d="M32 5
+    C34.8 14 41.5 18.5 46 25 C51 32 53.5 38 53.5 44
+    C53.5 53 44.5 59 32 59 C19.5 59 10.5 53 10.5 44
+    C10.5 38 13 32 18 25 C22.5 18.5 29.2 14 32 5 Z
+    M16 55 V35 L25.5 45 L32 35 L38.5 45 L48 35 V55 H40 V49 L32 56.5 L24 49 V55 Z"/>
 </svg>

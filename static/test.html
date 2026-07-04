@@ -42,6 +42,10 @@
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 
     <!-- Stylesheets -->
+    <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -54,7 +58,7 @@
         <div class="container header-inner">
             <a href="/" class="mettle-logo" aria-label="METTLE Home">
                 <span class="mettle-logo-icon" aria-hidden="true">
-                    <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                    <img src="/static/mettle-mark.svg" alt="" width="28" height="28" />
                 </span>
                 <span class="mettle-logo-text">
                     <span class="mettle-logo-highlight">METTLE</span>
@@ -64,15 +68,15 @@
             <!-- Desktop Nav -->
             <nav class="mettle-nav desktop-nav" aria-label="Main navigation">
                 <a href="/static/docs.html" class="nav-link">Docs</a>
-                <a href="/test" class="nav-link">Test</a>
+                <a href="/test" class="nav-link active" aria-current="page">Test</a>
                 <a href="/about" class="nav-link">About</a>
                 <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="nav-link" aria-label="GitHub (opens in new tab)">
                     <i class="fa-brands fa-github" aria-hidden="true"></i>
                 </a>
                 <span class="nav-divider" aria-hidden="true"></span>
                 <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="nav-link nav-link-brand" aria-label="Creed Space (opens in new tab)">
-                    <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
-                    Creed Space
+                    <img src="/static/brand/mark.svg" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    <img src="/static/brand/wordmark-light.svg" alt="Creed Space" class="nav-brand-wordmark" />
                 </a>
             </nav>
 
@@ -102,8 +106,8 @@
             </a>
             <hr class="mobile-nav-divider" />
             <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
-                <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
-                Creed Space
+                <img src="/static/brand/mark.svg" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    <img src="/static/brand/wordmark-light.svg" alt="Creed Space" class="nav-brand-wordmark" />
             </a>
         </nav>
     </header>
@@ -116,7 +120,7 @@
             <div class="scroll-reveal">
                 <h2 class="section-title">Test Verification</h2>
                 <p class="section-description" style="margin-bottom: var(--space-xl);">
-                    Run a live verification challenge right here. METTLE is open source under the <strong>MIT license</strong> &mdash; free to use, modify, and deploy. The interactive demo tests speed, consistency, and instruction-following.
+                    Run a live verification challenge right here. METTLE is open source under the <strong>Apache 2.0 license</strong> &mdash; free to use, modify, and deploy. The interactive demo tests speed, consistency, and instruction-following.
                 </p>
             </div>
 
@@ -224,7 +228,7 @@
             <div class="footer-content">
                 <div class="footer-brand">
                     <span class="footer-logo" aria-hidden="true">
-                        <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                        <img src="/static/mettle-mark.svg" alt="" width="28" height="28" />
                     </span>
                     <div>
                         <p class="footer-title">METTLE</p>

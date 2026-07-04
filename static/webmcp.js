@@ -74,8 +74,8 @@
         properties: {
           difficulty: {
             type: 'string',
-            enum: ['easy', 'standard', 'hard'],
-            description: 'easy = relaxed timing, standard = production-grade, hard = aggressive timing'
+            enum: ['basic', 'full'],
+            description: 'basic = relaxed timing, full = comprehensive profiling'
           },
           entity_id: {
             type: 'string',
@@ -165,9 +165,6 @@
               passed: data.result.passed,
               response_time_ms: data.result.response_time_ms
             };
-            if (data.result.reason) {
-              result.result.reason = data.result.reason;
-            }
           }
 
           if (data.next_challenge) {
@@ -254,27 +251,30 @@
         try {
           var data = await getJSON('/api/badge/verify/' + encodeURIComponent(params.token));
 
+          // Badge fields live in the nested `payload` object (BadgeVerifyResponse)
+          var payload = data.payload || {};
+
           var result = {
             valid: !!data.valid
           };
 
-          if (data.entity_id) {
-            result.entity_id = data.entity_id;
+          if (payload.entity_id) {
+            result.entity_id = payload.entity_id;
           }
-          if (data.issued_at) {
-            result.issued_at = data.issued_at;
+          if (payload.verified_at) {
+            result.issued_at = payload.verified_at;
           }
           if (data.expires_at) {
             result.expires_at = data.expires_at;
           }
-          if (data.verified_at) {
-            result.issued_at = result.issued_at || data.verified_at;
+          if (payload.exp) {
+            result.expires_at = result.expires_at || new Date(payload.exp * 1000).toISOString();
           }
-          if (data.exp) {
-            result.expires_at = result.expires_at || new Date(data.exp * 1000).toISOString();
+          if (data.error) {
+            result.error = data.error;
           }
-          if (data.reason) {
-            result.reason = data.reason;
+          if (data.revoked) {
+            result.revoked = true;
           }
 
           return textResult(result);

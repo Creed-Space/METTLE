@@ -54,6 +54,10 @@
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 
     <!-- Stylesheets -->
+    <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
 
@@ -93,7 +97,7 @@
         <div class="container header-inner">
             <a href="/" class="mettle-logo" aria-label="METTLE Home">
                 <span class="mettle-logo-icon" aria-hidden="true">
-                    <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                    <img src="/static/mettle-mark.svg" alt="" width="28" height="28" />
                 </span>
                 <span class="mettle-logo-text">
                     <span class="mettle-logo-highlight">METTLE</span>
@@ -110,8 +114,8 @@
                 </a>
                 <span class="nav-divider" aria-hidden="true"></span>
                 <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="nav-link nav-link-brand" aria-label="Creed Space (opens in new tab)">
-                    <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
-                    Creed Space
+                    <img src="/static/brand/mark.svg" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    <img src="/static/brand/wordmark-light.svg" alt="Creed Space" class="nav-brand-wordmark" />
                 </a>
             </nav>
 
@@ -141,8 +145,8 @@
             </a>
             <hr class="mobile-nav-divider" />
             <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
-                <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
-                Creed Space
+                <img src="/static/brand/mark.svg" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    <img src="/static/brand/wordmark-light.svg" alt="Creed Space" class="nav-brand-wordmark" />
             </a>
         </nav>
     </header>
@@ -156,7 +160,7 @@
         <section class="mettle-hero">
             <div class="container hero-content">
                 <p class="hero-eyebrow">
-                    <img src="/static/favicon.svg" alt="" width="16" height="16" style="vertical-align: -1px;" aria-hidden="true">
+                    <img src="/static/mettle-mark.svg" alt="" width="16" height="16" style="vertical-align: -1px;" aria-hidden="true">
                     Inverse Turing Verification
                 </p>
                 <h1 class="hero-heading">
@@ -829,17 +833,17 @@
                                     <span class="code-dot code-dot-green"></span>
                                     <span class="code-title">terminal</span>
                                 </div>
-                                <pre class="code-content"><code><span class="tok-comment"># Install the verifier</span>
-<span class="tok-cmd">$</span> pip install mettle-verifier
+                                <pre class="code-content"><code><span class="tok-comment"># Install the verifier (PyPI: mettle-verifier, coming soon)</span>
+<span class="tok-cmd">$</span> pip install git+https://github.com/Creed-Space/METTLE.git
 
 <span class="tok-comment"># Run locally (self-signed credential)</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span>
 
-<span class="tok-comment"># Run + notarize (Creed Space signed)</span>
+<span class="tok-comment"># Run + notarize (hosted signing &mdash; coming soon)</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--notarize</span>
 
-<span class="tok-comment"># Specific suite with difficulty</span>
-<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--suite</span> novel-reasoning <span class="tok-flag">--difficulty</span> hard</code></pre>
+<span class="tok-comment"># Run a specific registry suite</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--suite</span> native</code></pre>
                             </div>
                         </div>
                         <div class="cli-text">
@@ -847,7 +851,7 @@
                             <h3>Run It Yourself</h3>
                             <p>
                                 Install the open-source verifier and run locally. Basic verification in ~2 seconds.
-                                Full 10-suite run in 60&ndash;90 seconds.
+                                Full multi-suite run in about a minute; the LLM-dynamic suite additionally needs an API key.
                                 Optionally notarize through Creed Space for portable trust.
                             </p>
                             <ul class="cli-features">
@@ -880,7 +884,7 @@
                         <div class="step-card">
                             <div class="step-number">1</div>
                             <h3>Install</h3>
-                            <code class="step-endpoint">pip install mettle-verifier</code>
+                            <code class="step-endpoint">pip install git+https://github.com/Creed-Space/METTLE.git</code>
                             <p>Open-source verifier runs on your infrastructure</p>
                         </div>
                     </div>
@@ -1013,7 +1017,7 @@
                 <div class="scroll-reveal">
                     <div class="cta-block">
                         <div class="cta-icon-ring">
-                            <img src="/static/favicon.svg" alt="" width="36" height="36" />
+                            <img src="/static/mettle-mark.svg" alt="" width="36" height="36" />
                         </div>
                         <h3>Not what you know &mdash; how you think.</h3>
                         <p>
@@ -1045,7 +1049,7 @@
             <div class="footer-content">
                 <div class="footer-brand">
                     <span class="footer-logo" aria-hidden="true">
-                        <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                        <img src="/static/mettle-mark.svg" alt="" width="28" height="28" />
                     </span>
                     <div>
                         <p class="footer-title">METTLE</p>

@@ -229,7 +229,7 @@ print(pem.decode())
 | `mettle/session_manager.py` | VCP token passthrough in session lifecycle |
 | `mettle/api_models.py` | Request/response models with VCP fields |
 | `mettle/router.py` | API wiring, `include_vcp` param, `.well-known/vcp-keys` endpoint |
-| `tests/test_vcp_integration.py` | 37 tests covering all VCP integration surfaces |
+| `tests/test_vcp_integration.py` | 38 tests covering all VCP integration surfaces |
 
 ---
 

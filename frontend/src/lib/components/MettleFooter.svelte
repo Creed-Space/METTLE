@@ -101,7 +101,15 @@
         rel="noopener noreferrer"
         class="footer-built-by"
       >
-        Creed Space
+        <img
+          src="/brand/mark.svg"
+          alt=""
+          width="18"
+          height="18"
+          class="creed-mark"
+          aria-hidden="true"
+        />
+        Built by Creed Space
       </a>
     </div>
   </div>
@@ -284,6 +292,11 @@
   .footer-built-by:hover {
     opacity: 0.8;
     text-decoration: none;
+  }
+
+  .creed-mark {
+    display: block;
+    flex-shrink: 0;
   }
 
   @media (max-width: 768px) {

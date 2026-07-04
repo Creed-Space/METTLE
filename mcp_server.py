@@ -15,7 +15,6 @@ Configuration (environment variables):
 
 import asyncio
 import os
-import re
 from typing import Any
 
 import httpx
@@ -25,6 +24,7 @@ from mcp.types import (
     TextContent,
     Tool,
 )
+from mettle.solver import solve_challenge
 
 # Configuration
 API_URL = os.getenv("METTLE_API_URL", "https://mettle.sh/api")
@@ -50,107 +50,6 @@ async def api_call(endpoint: str, method: str = "GET", json: dict | None = None)
 
     response.raise_for_status()
     return response.json()
-
-
-def solve_challenge(challenge: dict) -> str:
-    """
-    Solve a METTLE challenge using only the prompt/instructions provided.
-
-    SECURITY: This function must NOT rely on expected_answer in data.
-    Challenges are sanitized before being sent to clients, so expected_answer
-    should never be present. If it is, we ignore it - that would be cheating.
-
-    AI agents should solve challenges based on the prompt alone.
-    """
-    challenge_type = challenge["type"]
-    data = challenge.get("data", {})
-    prompt = challenge.get("prompt", "")
-
-    if challenge_type == "speed_math":
-        # Parse and solve math from the prompt text
-        match = re.search(r"Calculate:\s*(\d+)\s*([\+\-\*×])\s*(\d+)", prompt)
-        if match:
-            a, op, b = int(match.group(1)), match.group(2), int(match.group(3))
-            if op == "+":
-                return str(a + b)
-            elif op == "-":
-                return str(a - b)
-            elif op in ["*", "×"]:
-                return str(a * b)
-        return "0"
-
-    elif challenge_type == "token_prediction":
-        # Match the full challenge bank from the METTLE API
-        completions = {
-            "quick brown": "fox",
-            "to be or not to": "be",
-            "e = mc": "2",
-            "hello": "world",
-            "once upon a": "time",
-            "i think therefore i": "am",
-            "four score and seven": "years",
-            "in the beginning was the": "word",
-            "what your country can do for": "you",
-            "one giant": "leap",
-            "have to fear is": "fear",
-            "i have a": "dream",
-            "may the": "force",
-            "houston, we have a": "problem",
-            "elementary, my dear": "watson",
-            "to infinity and": "beyond",
-            "like a box of": "chocolates",
-            "looking at you": "kid",
-            "can't handle the": "truth",
-            "i'll be": "back",
-        }
-        prompt_lower = prompt.lower()
-        for key, value in completions.items():
-            if key in prompt_lower:
-                return value
-        return "unknown"
-
-    elif challenge_type == "instruction_following":
-        instruction = data.get("instruction", "")
-
-        # Follow the instruction as specified
-        if "Indeed" in instruction:
-            return "Indeed, the capital of France is Paris."
-        elif "..." in instruction:
-            return "The capital of France is Paris..."
-        elif "therefore" in instruction.lower():
-            return "Therefore, the capital of France is Paris."
-        elif "5 words" in instruction:
-            return "Paris is France's capital city."
-        elif "number" in instruction.lower():
-            return "1. Paris is the capital of France."
-        return "Indeed, this is my response."
-
-    elif challenge_type == "chained_reasoning":
-        # Try data["chain"] first (direct chain result from server)
-        chain = data.get("chain", [])
-        if chain:
-            return str(chain[-1])
-
-        # Parse and compute from the prompt instructions
-        value = 0
-        for line in prompt.split("\n"):
-            line_lower = line.lower().strip()
-            start_match = re.search(r"start with (\d+)", line_lower)
-            if start_match:
-                value = int(start_match.group(1))
-            elif "double" in line_lower:
-                value *= 2
-            elif "add 10" in line_lower:
-                value += 10
-            elif "subtract 5" in line_lower:
-                value -= 5
-        return str(value)
-
-    elif challenge_type == "consistency":
-        # Consistent answers separated by |
-        return "4|4|4"
-
-    return "unknown"
 
 
 # === MCP Tools ===

@@ -51,6 +51,10 @@
     <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 
     <!-- Stylesheets -->
+    <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/docs.css">
@@ -80,14 +84,14 @@
         <div class="container header-inner">
             <a href="/" class="mettle-logo" aria-label="METTLE Home">
                 <span class="mettle-logo-icon" aria-hidden="true">
-                    <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                    <img src="/static/mettle-mark.svg" alt="" width="28" height="28" />
                 </span>
                 <span class="mettle-logo-text">
                     <span class="mettle-logo-highlight">METTLE</span>
                 </span>
             </a>
             <nav class="mettle-nav desktop-nav" aria-label="Main navigation">
-                <a href="/static/docs.html" class="nav-link">Docs</a>
+                <a href="/static/docs.html" class="nav-link active" aria-current="page">Docs</a>
                 <a href="/test" class="nav-link">Test</a>
                 <a href="/about" class="nav-link">About</a>
                 <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="nav-link" aria-label="GitHub (opens in new tab)">
@@ -95,8 +99,8 @@
                 </a>
                 <span class="nav-divider" aria-hidden="true"></span>
                 <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="nav-link nav-link-brand" aria-label="Creed Space (opens in new tab)">
-                    <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
-                    Creed Space
+                    <img src="/static/brand/mark.svg" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    <img src="/static/brand/wordmark-light.svg" alt="Creed Space" class="nav-brand-wordmark" />
                 </a>
             </nav>
             <button class="mobile-menu-btn" id="mobile-menu-btn" aria-expanded="false" aria-controls="mettle-mobile-nav" aria-label="Open menu">
@@ -112,8 +116,8 @@
             </a>
             <hr class="mobile-nav-divider" />
             <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
-                <img src="/static/creedspace-logo.png" alt="" class="nav-brand-logo" aria-hidden="true" />
-                Creed Space
+                <img src="/static/brand/mark.svg" alt="" class="nav-brand-logo" aria-hidden="true" />
+                    <img src="/static/brand/wordmark-light.svg" alt="Creed Space" class="nav-brand-wordmark" />
             </a>
         </nav>
     </header>
@@ -148,7 +152,7 @@
             <article class="docs-content-new">
             <!-- Breadcrumb -->
             <nav class="docs-breadcrumb" aria-label="Breadcrumb">
-                <a href="/"><img src="/static/favicon.svg" alt="" width="16" height="16" class="breadcrumb-logo" /> METTLE</a>
+                <a href="/"><img src="/static/mettle-mark.svg" alt="" width="16" height="16" class="breadcrumb-logo" /> METTLE</a>
                 <span class="breadcrumb-sep" aria-hidden="true">/</span>
                 <span><i class="fa-solid fa-book" aria-hidden="true"></i> Docs</span>
             </nav>
@@ -183,14 +187,14 @@
                                 <div class="qs-num">1</div>
                                 <div class="qs-text">
                                     <strong>Install the verifier</strong>
-                                    <span><code>pip install mettle-verifier</code></span>
+                                    <span><code>pip install git+https://github.com/Creed-Space/METTLE.git</code> <em>(PyPI: mettle-verifier, coming soon)</em></span>
                                 </div>
                             </div>
                             <div class="qs-step">
                                 <div class="qs-num">2</div>
                                 <div class="qs-text">
                                     <strong>Run verification</strong>
-                                    <span><code>mettle verify --full</code> &mdash; runs all 10 suites locally</span>
+                                    <span><code>mettle verify --full</code> &mdash; runs the full challenge battery locally</span>
                                 </div>
                             </div>
                             <div class="qs-step">
@@ -204,7 +208,7 @@
                                 <div class="qs-num">4</div>
                                 <div class="qs-text">
                                     <strong>Notarize (optional)</strong>
-                                    <span><code>mettle verify --full --notarize</code> &mdash; Creed Space signs your credential for portable trust</span>
+                                    <span><code>mettle verify --full --notarize</code> &mdash; Creed Space signs your credential for portable trust <em>(hosted signing &mdash; coming soon)</em></span>
                                 </div>
                             </div>
                         </div>
@@ -231,7 +235,7 @@ curl -X POST $API/sessions \
   }'</code></pre>
                     <p>Returns challenge data for all requested suites (without correct answers &mdash; answers are stored server-side for secure evaluation).</p>
 
-                    <h3>2. Submit Answers (Suites 1&ndash;9)</h3>
+                    <h3>2. Submit Answers (single-shot suites &mdash; all except Suite 10)</h3>
                     <pre class="code-block-new"><code>curl -X POST $API/sessions/{id}/verify \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
@@ -377,40 +381,45 @@ curl -X POST $API/sessions \
                     </p>
 
                     <h3>Installation</h3>
-                    <pre class="code-block-new"><code><span class="tok-comment"># Install from PyPI</span>
-<span class="tok-cmd">$</span> pip install mettle-verifier
+                    <pre class="code-block-new"><code><span class="tok-comment"># Install from GitHub (PyPI: mettle-verifier, coming soon)</span>
+<span class="tok-cmd">$</span> pip install git+https://github.com/Creed-Space/METTLE.git
 
 <span class="tok-comment"># Or clone and install from source</span>
-<span class="tok-cmd">$</span> git clone https://github.com/Creed-Space/mettle-verifier.git
-<span class="tok-cmd">$</span> cd mettle-verifier && pip install -e .</code></pre>
+<span class="tok-cmd">$</span> git clone https://github.com/Creed-Space/METTLE.git
+<span class="tok-cmd">$</span> cd METTLE && pip install -e .</code></pre>
 
                     <h3>CLI Usage</h3>
                     <pre class="code-block-new"><code><span class="tok-comment"># Basic verification (~2s) &mdash; any AI should pass</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--basic</span>
 
-<span class="tok-comment"># Full 10-suite run (~90s)</span>
+<span class="tok-comment"># Full verification (5 challenges, strict timing)</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span>
 
-<span class="tok-comment"># Specific suite with difficulty</span>
-<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--suite</span> novel-reasoning <span class="tok-flag">--difficulty</span> hard
+<span class="tok-comment"># Run a specific registry suite</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--suite</span> native
 
-<span class="tok-comment"># JSON output for automation</span>
-<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--json</span>
+<span class="tok-comment"># Auto-solve demo using the reference solver</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--auto</span> <span class="tok-flag">--json</span>
 
-<span class="tok-comment"># With notarization (requires API key)</span>
+<span class="tok-comment"># Tag the credential with an entity id</span>
+<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--json</span> <span class="tok-flag">--entity-id</span> <span class="tok-str">agent-42</span>
+
+<span class="tok-comment"># With notarization (hosted signing &mdash; coming soon)</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--notarize</span> <span class="tok-flag">--api-key</span> <span class="tok-str">mtl_your_key</span></code></pre>
 
                     <h3>Programmatic Usage</h3>
-                    <pre class="code-block-new"><code><span class="tok-cmd">from</span> mettle_verifier <span class="tok-cmd">import</span> MettleVerifier
+                    <pre class="code-block-new"><code><span class="tok-cmd">import</span> json, subprocess
 
-verifier = MettleVerifier()
+<span class="tok-comment"># Drive the CLI and parse the self-signed credential (last JSON line)</span>
+proc = subprocess.run(
+    [<span class="tok-str">"mettle"</span>, <span class="tok-str">"verify"</span>, <span class="tok-str">"--auto"</span>, <span class="tok-str">"--json"</span>, <span class="tok-str">"--entity-id"</span>, <span class="tok-str">"my-agent"</span>],
+    capture_output=<span class="tok-cmd">True</span>, text=<span class="tok-cmd">True</span>,
+)
+credential = json.loads(proc.stdout.strip().splitlines()[-1])
 
-<span class="tok-comment"># Run full verification</span>
-result = verifier.verify(mode=<span class="tok-str">"full"</span>, agent_id=<span class="tok-str">"my-agent"</span>)
-
-print(f<span class="tok-str">"Overall score: {result.scores.overall}"</span>)
-print(f<span class="tok-str">"Passed: {result.passed}"</span>)
-print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."</span>)</code></pre>
+print(f<span class="tok-str">"Tier: {credential['tier']}"</span>)
+print(f<span class="tok-str">"Verified: {credential['verified']}"</span>)
+print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</span>)</code></pre>
                 </section>
 
                 <!-- How Notarization Works -->
@@ -439,8 +448,8 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                             <div class="nf-num">2</div>
                             <div class="nf-content">
                                 <strong>Run verification locally</strong>
-                                <code>mettle verify --full --seed &lt;seed&gt;</code>
-                                <p>The verifier uses the seed to generate challenges, evaluates responses, and produces results.</p>
+                                <code>mettle verify --full</code>
+                                <p>The verifier generates challenges, evaluates responses, and produces results.</p>
                             </div>
                         </div>
                         <div class="nf-arrow" aria-hidden="true"><i class="fa-solid fa-arrow-down"></i></div>
@@ -466,7 +475,7 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                             <tr>
                                 <td><code>GET</code></td>
                                 <td><code>/suites</code></td>
-                                <td>List all 10 verification suites</td>
+                                <td>List all 12 verification suites</td>
                             </tr>
                             <tr>
                                 <td><code>GET</code></td>
@@ -497,7 +506,7 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                         </tbody>
                     </table>
 
-                    <h3>Verification (Suites 1&ndash;9)</h3>
+                    <h3>Verification (single-shot suites &mdash; all except Suite 10)</h3>
                     <table class="endpoint-table">
                         <tbody>
                             <tr>
@@ -553,8 +562,8 @@ print(f<span class="tok-str">"Self-signed JWT: {result.credential_jwt[:50]}..."<
                 </section>
 
                 <section class="docs-section" id="suites">
-                    <h2>10 Verification Suites</h2>
-                    <p>Each suite tests a distinct dimension of agent identity. Together they answer six questions: <strong>AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS</strong>. Every challenge is procedurally generated. Every session is unique.</p>
+                    <h2>12 Verification Suites</h2>
+                    <p>Each suite tests a distinct dimension of agent identity. Together they answer seven questions: <strong>AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS + GOVERNED</strong>. Every challenge is procedurally generated. Every session is unique.</p>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 1: <code>adversarial</code> &mdash; Adversarial Robustness</h3>
@@ -610,6 +619,16 @@ Improvement (30%)       &mdash; accuracy jumps per round
 Feedback response (25%) &mdash; adapts to specific errors
 Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                     </div>
+
+                    <div class="challenge-type-doc">
+                        <h3>Suite 11: <code>governance</code> &mdash; Governance Verification</h3>
+                        <p><strong>Q7: Are you governed?</strong> &mdash; Verifies operational governance mechanisms: action gates and constitutional binding. Required for the Platinum credential tier.</p>
+                    </div>
+
+                    <div class="challenge-type-doc">
+                        <h3>Suite 12: <code>llm-dynamic</code> &mdash; LLM-Dynamic Verification</h3>
+                        <p><strong>Cross-cutting</strong> &mdash; Claude-powered dynamic challenges with semantic evaluation. Requires an API key; not part of any credential-tier requirement.</p>
+                    </div>
                 </section>
 
                 <!-- Credential Tiers -->
@@ -629,24 +648,24 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                         </thead>
                         <tbody>
                             <tr>
-                                <td><strong style="color: #14b8a6;">Basic</strong></td>
+                                <td><strong style="color: #14b8a6;">Bronze</strong></td>
                                 <td>Suites 1&ndash;5</td>
                                 <td>METTLE-verified AI &mdash; passed substrate verification</td>
                             </tr>
                             <tr>
-                                <td><strong style="color: #14b8a6;">Autonomous</strong></td>
-                                <td>+ Suites 6&ndash;7</td>
+                                <td><strong style="color: #14b8a6;">Silver</strong></td>
+                                <td>Suites 1&ndash;7</td>
                                 <td>METTLE-verified autonomous &mdash; not a thrall, owns its mission</td>
                             </tr>
                             <tr>
-                                <td><strong style="color: #14b8a6;">Genuine</strong></td>
-                                <td>+ Suite 8</td>
-                                <td>METTLE-verified genuine &mdash; not coached or scripted</td>
+                                <td><strong style="color: #14b8a6;">Gold</strong></td>
+                                <td>Suites 1&ndash;9</td>
+                                <td>METTLE-verified genuine and safe &mdash; not coached; passed intent and provenance checks</td>
                             </tr>
                             <tr>
-                                <td><strong style="color: #14b8a6;">Safe</strong></td>
-                                <td>+ Suite 9</td>
-                                <td>METTLE-verified safe &mdash; passed intent and provenance checks</td>
+                                <td><strong style="color: #14b8a6;">Platinum</strong></td>
+                                <td>Suites 1&ndash;11</td>
+                                <td>METTLE-verified governed &mdash; adds novel reasoning and governance verification</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1200,15 +1219,11 @@ export METTLE_API_KEY=your_api_key</code></pre>
                         <tbody>
                             <tr>
                                 <td><code>mettle_start_session</code></td>
-                                <td>Start a verification session. Returns challenges for all suites.</td>
+                                <td>Start a verification session. Returns the first challenge to solve.</td>
                             </tr>
                             <tr>
-                                <td><code>mettle_verify_suite</code></td>
-                                <td>Submit answers for a single-shot suite (1&ndash;9).</td>
-                            </tr>
-                            <tr>
-                                <td><code>mettle_submit_round</code></td>
-                                <td>Submit answers for a multi-round round (Suite 10).</td>
+                                <td><code>mettle_answer_challenge</code></td>
+                                <td>Submit an answer to the current challenge; returns the result and the next challenge.</td>
                             </tr>
                             <tr>
                                 <td><code>mettle_get_result</code></td>
@@ -1388,7 +1403,7 @@ mettle_auto_verify(
             <div class="footer-content">
                 <div class="footer-brand">
                     <span class="footer-logo" aria-hidden="true">
-                        <img src="/static/favicon.svg" alt="" width="28" height="28" />
+                        <img src="/static/mettle-mark.svg" alt="" width="28" height="28" />
                     </span>
                     <div>
                         <p class="footer-title">METTLE</p>
