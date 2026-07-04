@@ -1,17 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
-    <linearGradient id="mettle-shield" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#2dd4bf"/>
-      <stop offset="100%" stop-color="#0f766e"/>
-    </linearGradient>
-    <linearGradient id="mettle-flame" x1="0.5" y1="1" x2="0.5" y2="0">
-      <stop offset="0%" stop-color="#0d9488"/>
-      <stop offset="55%" stop-color="#2dd4bf"/>
-      <stop offset="100%" stop-color="#99f6e4"/>
+    <linearGradient id="mb-flame" x1="0.5" y1="1" x2="0.5" y2="0">
+      <stop offset="0%" stop-color="#0f766e"/>
+      <stop offset="50%" stop-color="#14b8a6"/>
+      <stop offset="100%" stop-color="#5eead4"/>
     </linearGradient>
   </defs>
-  <!-- Shield outline -->
-  <path d="M32 4 L56 12 V32 C56 46 46 55 32 60 C18 55 8 46 8 32 V12 Z" fill="none" stroke="url(#mettle-shield)" stroke-width="4" stroke-linejoin="round"/>
-  <!-- Flame with true negative-space inner notch -->
-  <path fill-rule="evenodd" fill="url(#mettle-flame)" d="M32 16 C36.5 22 44 27 44 36 C44 43 38.5 48 32 48 C25.5 48 20 43 20 36 C20 27 27.5 22 32 16 Z M32 30 C34.5 33 37 35.2 37 39 C37 42 34.8 44 32 44 C29.2 44 27 42 27 39 C27 35.2 29.5 33 32 30 Z"/>
+  <!-- Flame body with M cut from the base — true negative space -->
+  <path fill-rule="evenodd" fill="url(#mb-flame)" d="M32 4
+    C34.5 13 41 17.5 45.5 24 C50.5 31.2 53 37.5 53 44
+    C53 53 44.5 59 32 59 C19.5 59 11 53 11 44
+    C11 37.5 13.5 31.2 18.5 24 C23 17.5 29.5 13 32 4 Z
+    M17.5 53.5 V37 L25.5 45.5 L32 35.5 L38.5 45.5 L46.5 37 V53.5 H40 V48.5 L32 55 L24 48.5 V53.5 Z"/>
 </svg>
