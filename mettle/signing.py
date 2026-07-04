@@ -138,3 +138,110 @@ def is_available() -> bool:
     if not _initialized:
         init_signing()
     return _private_key is not None
+
+
+# === CLI self-signed credential key management ===
+
+CLI_KEY_ID = "mettle-cli-ed25519-v1"
+
+
+def cli_key_dir() -> "os.PathLike[str] | str":
+    """Return the directory holding the CLI's persistent signing key.
+
+    Defaults to ``~/.mettle`` but can be overridden with ``METTLE_HOME``
+    (useful for tests and sandboxed runs).
+    """
+    from pathlib import Path
+
+    override = os.environ.get("METTLE_HOME")
+    base = Path(override).expanduser() if override else Path.home() / ".mettle"
+    return base
+
+
+def load_or_create_cli_keypair() -> tuple[Any, str]:
+    """Load (or create on first run) the persistent Ed25519 CLI signing key.
+
+    The private key is stored at ``<key_dir>/ed25519_private.pem`` with 0600
+    permissions; the public key at ``<key_dir>/ed25519_public.pem``.
+
+    Returns:
+        Tuple of (Ed25519PrivateKey, public_key_pem_str).
+
+    Raises:
+        RuntimeError: If the cryptography package is unavailable.
+    """
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+            PublicFormat,
+            load_pem_private_key,
+        )
+    except ImportError as e:
+        raise RuntimeError("The 'cryptography' package is required for credential signing") from e
+
+    from pathlib import Path
+
+    key_dir = Path(cli_key_dir())
+    key_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(key_dir, 0o700)
+    except OSError as e:
+        logger.debug("Could not chmod key dir %s: %s", key_dir, e)
+
+    priv_path = key_dir / "ed25519_private.pem"
+    pub_path = key_dir / "ed25519_public.pem"
+
+    if priv_path.exists():
+        private_key = load_pem_private_key(priv_path.read_bytes(), password=None)
+    else:
+        private_key = Ed25519PrivateKey.generate()
+        priv_bytes = private_key.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        )
+        priv_path.write_bytes(priv_bytes)
+        try:
+            os.chmod(priv_path, 0o600)
+        except OSError as e:
+            logger.debug("Could not chmod private key %s: %s", priv_path, e)
+
+    public_key = private_key.public_key()
+    public_pem = public_key.public_bytes(
+        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+    ).decode("ascii")
+    pub_path.write_text(public_pem)
+
+    return private_key, public_pem
+
+
+def sign_bytes(private_key: Any, data: bytes) -> str:
+    """Sign bytes with an Ed25519 private key, returning a base64 signature."""
+    return base64.b64encode(private_key.sign(data)).decode("ascii")
+
+
+def verify_signature(public_key_pem: str, data: bytes, signature_b64: str) -> bool:
+    """Verify a base64 Ed25519 signature against data using a PEM public key.
+
+    Returns True if the signature is valid, False otherwise.
+    """
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+    except ImportError:
+        return False
+
+    try:
+        public_key = load_pem_public_key(public_key_pem.encode("ascii"))
+        if not isinstance(public_key, Ed25519PublicKey):
+            logger.debug("Public key is not Ed25519: %s", type(public_key).__name__)
+            return False
+        public_key.verify(base64.b64decode(signature_b64), data)
+        return True
+    except InvalidSignature:
+        return False
+    except (ValueError, TypeError) as e:
+        logger.debug("Signature verification error: %s", e)
+        return False
