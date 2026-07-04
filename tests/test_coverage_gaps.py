@@ -322,6 +322,7 @@ class TestBatchStartFailure:
 
     def test_batch_start_with_failing_entity(self, client):
         """Failed entity in batch is counted and error reported."""
+        RateTier.register_key("batch-fail-key", "pro", "batch-owner")
         with patch("main.generate_challenge_set", side_effect=Exception("Test failure")):
             response = client.post(
                 "/api/session/batch",
@@ -329,6 +330,7 @@ class TestBatchStartFailure:
                     "entity_ids": ["entity-1", "entity-2"],
                     "difficulty": "basic",
                 },
+                headers={"X-API-Key": "batch-fail-key"},
             )
         assert response.status_code == 200
         data = response.json()

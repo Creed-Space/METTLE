@@ -30,6 +30,7 @@ from main import (
     api_keys,
     app,
     check_admin_auth_rate_limit,
+    generate_signed_badge,
     limiter,
     record_admin_auth_failure,
     revoked_badges,
@@ -104,6 +105,48 @@ def _make_badge_token(
     if extra_claims:
         payload.update(extra_claims)
     return jwt.encode(payload, secret, algorithm="HS256")
+
+
+# =============================================================================
+# Badge identity semantics (REWIND-FRESH-014)
+# =============================================================================
+
+
+class TestBadgeCapabilityOnlySemantics:
+    """generate_signed_badge must mark the self-asserted entity_id as unverified.
+
+    The public /api/session/* surface accepts a caller-chosen entity_id with no
+    proof of control, so badges must attest METTLE *capability*, not identity.
+    """
+
+    def _decode(self, badge):
+        return jwt.decode(badge["token"], SECRET_KEY, algorithms=["HS256"])
+
+    def test_badge_marks_entity_id_unverified(self):
+        badge = generate_signed_badge(
+            entity_id="victim-agent",
+            difficulty="basic",
+            pass_rate=1.0,
+            session_id="sess-1",
+        )
+        payload = self._decode(badge)
+        # entity_id is preserved (capability metadata) ...
+        assert payload["entity_id"] == "victim-agent"
+        # ... but explicitly marked as NOT a verified identity claim.
+        assert payload["entity_id_verified"] is False
+        assert payload["identity_binding"] == "self_asserted"
+        assert payload["attests"] == "capability"
+
+    def test_badge_unverified_claims_present_for_anonymous(self):
+        badge = generate_signed_badge(
+            entity_id=None,
+            difficulty="full",
+            pass_rate=0.9,
+        )
+        payload = self._decode(badge)
+        assert payload["entity_id"] is None
+        assert payload["entity_id_verified"] is False
+        assert payload["attests"] == "capability"
 
 
 # =============================================================================
@@ -1046,13 +1089,15 @@ class TestWebhookProductionValidation:
     """Tests for webhook URL production-only HTTPS requirement."""
 
     def test_http_allowed_in_dev(self, client):
-        """HTTP URLs should be allowed in non-production."""
+        """HTTP URLs should be allowed in non-production (with an owning API key)."""
+        RateTier.register_key("dev-http-key", "pro", "test")
         response = client.post(
             "/api/webhooks/register",
             json={
                 "entity_id": "test",
                 "url": "http://example.com/hook",
             },
+            headers={"X-API-Key": "dev-http-key"},
         )
         assert response.status_code == 200
 
@@ -1078,13 +1123,15 @@ class TestBatchStartExceptionHandling:
     """Tests for batch session start exception handling."""
 
     def test_batch_with_many_entities(self, client):
-        """Batch start should handle multiple entities correctly."""
+        """Batch start should handle multiple entities correctly (pro-tier key)."""
+        RateTier.register_key("batch-many-key", "pro", "batch-owner")
         response = client.post(
             "/api/session/batch",
             json={
                 "entity_ids": [f"entity-{i}" for i in range(5)],
                 "difficulty": "basic",
             },
+            headers={"X-API-Key": "batch-many-key"},
         )
         assert response.status_code == 200
         data = response.json()
