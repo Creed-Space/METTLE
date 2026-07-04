@@ -185,11 +185,10 @@ def load_or_create_cli_keypair() -> tuple[Any, str]:
     from pathlib import Path
 
     key_dir = Path(cli_key_dir())
-    key_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        os.chmod(key_dir, 0o700)
-    except OSError as e:
-        logger.debug("Could not chmod key dir %s: %s", key_dir, e)
+    key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # mkdir mode is ignored for pre-existing dirs; enforce it. Fatal on failure —
+    # a traversable key dir undermines the 0600 key file below.
+    os.chmod(key_dir, 0o700)
 
     priv_path = key_dir / "ed25519_private.pem"
     pub_path = key_dir / "ed25519_public.pem"
@@ -201,11 +200,16 @@ def load_or_create_cli_keypair() -> tuple[Any, str]:
         priv_bytes = private_key.private_bytes(
             Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
         )
-        priv_path.write_bytes(priv_bytes)
+        # Create atomically with 0600 — never a window where the key is
+        # world-readable (no write-then-chmod TOCTOU). O_EXCL: refuse to
+        # follow/overwrite anything racing us at this path.
+        fd = os.open(priv_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
-            os.chmod(priv_path, 0o600)
-        except OSError as e:
-            logger.debug("Could not chmod private key %s: %s", priv_path, e)
+            with os.fdopen(fd, "wb") as f:
+                f.write(priv_bytes)
+        except BaseException:
+            priv_path.unlink(missing_ok=True)
+            raise
 
     public_key = private_key.public_key()
     public_pem = public_key.public_bytes(
