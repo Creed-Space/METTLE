@@ -1,15 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- METTLE mark — "Tempered Flame, waterline" (Creed Space family, v4 final).
+       Solid tip resolving into fine engraved slits, over a molten solid base
+       with the M in true negative space — the same negative-M as the favicon.
+       Single ink: #2dd4bf on light; use #2dd4bf on dark. -->
   <defs>
-    <linearGradient id="mb-flame" x1="0.5" y1="1" x2="0.5" y2="0">
-      <stop offset="0%" stop-color="#0f766e"/>
-      <stop offset="50%" stop-color="#14b8a6"/>
-      <stop offset="100%" stop-color="#5eead4"/>
-    </linearGradient>
+    <clipPath id="twFlame"><path d="M 50 6.3 C 53.9 20.3, 64.1 27.3, 71.1 37.5 C 78.9 48.8, 82.8 58.6, 82.8 68.8 C 82.8 82.8, 69.5 92.2, 50 92.2 C 30.5 92.2, 17.2 82.8, 17.2 68.8 C 17.2 58.6, 21.1 48.8, 28.9 37.5 C 35.9 27.3, 46.1 20.3, 50 6.3 Z"/></clipPath>
+    <clipPath id="twCap"><rect x="0" y="0" width="100" height="19.5"/></clipPath>
+    <clipPath id="twBase"><rect x="0" y="53.5" width="100" height="46.5"/></clipPath>
+    <mask id="twM">
+      <rect width="100" height="100" fill="#ffffff"/>
+      <path fill="#000000" d="M 27.3 83.6 V 57.8 L 39.8 71.1 L 50 55.5 L 60.2 71.1 L 72.7 57.8 V 83.6 H 62.5 V 75.8 L 50 85.9 L 37.5 75.8 V 83.6 Z"/>
+    </mask>
   </defs>
-  <!-- Flame body with M cut from the base — true negative space -->
-  <path fill-rule="evenodd" fill="url(#mb-flame)" d="M32 4
-    C34.5 13 41 17.5 45.5 24 C50.5 31.2 53 37.5 53 44
-    C53 53 44.5 59 32 59 C19.5 59 11 53 11 44
-    C11 37.5 13.5 31.2 18.5 24 C23 17.5 29.5 13 32 4 Z
-    M17.5 53.5 V37 L25.5 45.5 L32 35.5 L38.5 45.5 L46.5 37 V53.5 H40 V48.5 L32 55 L24 48.5 V53.5 Z"/>
+  <g clip-path="url(#twCap)"><path clip-path="url(#twFlame)" fill="#2dd4bf" d="M 50 6.3 C 53.9 20.3, 64.1 27.3, 71.1 37.5 C 78.9 48.8, 82.8 58.6, 82.8 68.8 C 82.8 82.8, 69.5 92.2, 50 92.2 C 30.5 92.2, 17.2 82.8, 17.2 68.8 C 17.2 58.6, 21.1 48.8, 28.9 37.5 C 35.9 27.3, 46.1 20.3, 50 6.3 Z"/></g>
+  <g clip-path="url(#twFlame)">
+<line x1="12" y1="23" x2="88" y2="23" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="0"/>
+<line x1="12" y1="29" x2="88" y2="29" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="7"/>
+<line x1="12" y1="35" x2="88" y2="35" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="14"/>
+<line x1="12" y1="41" x2="88" y2="41" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="21"/>
+<line x1="12" y1="47" x2="88" y2="47" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="4"/>
+  </g>
+  <g clip-path="url(#twBase)"><path clip-path="url(#twFlame)" fill="#2dd4bf" mask="url(#twM)" d="M 50 6.3 C 53.9 20.3, 64.1 27.3, 71.1 37.5 C 78.9 48.8, 82.8 58.6, 82.8 68.8 C 82.8 82.8, 69.5 92.2, 50 92.2 C 30.5 92.2, 17.2 82.8, 17.2 68.8 C 17.2 58.6, 21.1 48.8, 28.9 37.5 C 35.9 27.3, 46.1 20.3, 50 6.3 Z"/></g>
 </svg>
