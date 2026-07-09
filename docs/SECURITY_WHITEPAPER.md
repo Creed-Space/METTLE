@@ -266,7 +266,7 @@ Returns probability distribution across model families:
 |--------|---------|--------|
 | Verifies | Human presence | AI presence + safety |
 | Direction | Keeps bots out | Keeps humans out |
-| Bypass | AI can solve | Humans can't fake AI timing |
+| Bypass | AI can solve | Humans can't match sub-100ms AI timing (see Limitations) |
 
 ### 7.2 vs Proof-of-Humanity
 

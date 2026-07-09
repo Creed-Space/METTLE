@@ -513,13 +513,13 @@ METTLE is designed to resist multiple attack vectors:
 
 ### Deepest Defense
 
-Even if you knew exactly what challenge types were coming, you couldn't pre-compute answers because:
+Even if you knew exactly what challenge types were coming, pre-computing answers is impractical because:
 1. Specific instances are generated at session start
 2. Feedback is dynamic and depends on your previous answers
 3. Time constraints prevent external consultation
 4. Multiple independent substrate signals (speed, iteration curves, behavioral)
 
-The only way to pass is to actually reason about novel problems in real time.
+Passing effectively requires reasoning about novel problems in real time.
 
 ## Dependencies
 

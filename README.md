@@ -72,7 +72,7 @@ Suite 12 (LLM-Dynamic) is **supplemental** — it strengthens any tier but is no
 
 ## Anti-Gaming Design
 
-Every design decision exists to make METTLE impossible to fake.
+Every design decision exists to make faking METTLE costly and detectable.
 
 | Mechanism | What It Catches |
 |-----------|----------------|
@@ -83,7 +83,7 @@ Every design decision exists to make METTLE impossible to fake.
 | Dynamic verification codes | Session replay — each probe embeds a unique code |
 | Synthetic variance fingerprinting | Performed doubt — catches rehearsed uncertainty |
 | Perfection as a tell | Over-coaching — genuine cognition is messy |
-| LLM-evaluated semantics | Source-reading — deterministic challenges can be reverse-engineered from code; LLM-generated challenges cannot |
+| LLM-evaluated semantics | Source-reading — deterministic challenges can be reverse-engineered from code; LLM-generated challenges are far harder to reverse-engineer this way |
 
 ### Iteration Curves (Suite 10)
 
