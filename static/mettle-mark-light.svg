@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- METTLE mark — "Tempered Flame, waterline" (Creed Space family, v4 final).
+       Solid tip resolving into fine engraved slits, over a molten solid base
+       with the M in true negative space — the same negative-M as the favicon.
+       Single ink: #0f766e on light; use #2dd4bf on dark. -->
+  <defs>
+    <clipPath id="twFlame"><path d="M 50 6.3 C 53.9 20.3, 64.1 27.3, 71.1 37.5 C 78.9 48.8, 82.8 58.6, 82.8 68.8 C 82.8 82.8, 69.5 92.2, 50 92.2 C 30.5 92.2, 17.2 82.8, 17.2 68.8 C 17.2 58.6, 21.1 48.8, 28.9 37.5 C 35.9 27.3, 46.1 20.3, 50 6.3 Z"/></clipPath>
+    <clipPath id="twCap"><rect x="0" y="0" width="100" height="19.5"/></clipPath>
+    <clipPath id="twBase"><rect x="0" y="53.5" width="100" height="46.5"/></clipPath>
+    <mask id="twM">
+      <rect width="100" height="100" fill="#ffffff"/>
+      <path fill="#000000" d="M 27.3 83.6 V 57.8 L 39.8 71.1 L 50 55.5 L 60.2 71.1 L 72.7 57.8 V 83.6 H 62.5 V 75.8 L 50 85.9 L 37.5 75.8 V 83.6 Z"/>
+    </mask>
+  </defs>
+  <g clip-path="url(#twCap)"><path clip-path="url(#twFlame)" fill="#0f766e" d="M 50 6.3 C 53.9 20.3, 64.1 27.3, 71.1 37.5 C 78.9 48.8, 82.8 58.6, 82.8 68.8 C 82.8 82.8, 69.5 92.2, 50 92.2 C 30.5 92.2, 17.2 82.8, 17.2 68.8 C 17.2 58.6, 21.1 48.8, 28.9 37.5 C 35.9 27.3, 46.1 20.3, 50 6.3 Z"/></g>
+  <g clip-path="url(#twFlame)">
+<line x1="12" y1="23" x2="88" y2="23" stroke="#0f766e" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="0"/>
+<line x1="12" y1="29" x2="88" y2="29" stroke="#0f766e" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="7"/>
+<line x1="12" y1="35" x2="88" y2="35" stroke="#0f766e" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="14"/>
+<line x1="12" y1="41" x2="88" y2="41" stroke="#0f766e" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="21"/>
+<line x1="12" y1="47" x2="88" y2="47" stroke="#0f766e" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="4"/>
+  </g>
+  <g clip-path="url(#twBase)"><path clip-path="url(#twFlame)" fill="#0f766e" mask="url(#twM)" d="M 50 6.3 C 53.9 20.3, 64.1 27.3, 71.1 37.5 C 78.9 48.8, 82.8 58.6, 82.8 68.8 C 82.8 82.8, 69.5 92.2, 50 92.2 C 30.5 92.2, 17.2 82.8, 17.2 68.8 C 17.2 58.6, 21.1 48.8, 28.9 37.5 C 35.9 27.3, 46.1 20.3, 50 6.3 Z"/></g>
+</svg>
