@@ -43,9 +43,7 @@
 
     <!-- Stylesheets -->
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="/static/fonts.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
 
@@ -87,10 +85,7 @@
         }
 
         .about-hero h1 .highlight {
-            background: linear-gradient(135deg, #2dd4bf, #14b8a6, #0f766e);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--mettle-primary-hover);
         }
 
         .about-hero-subtitle {
@@ -151,10 +146,7 @@
 
         .about-pullquote em {
             font-style: normal;
-            background: linear-gradient(135deg, #2dd4bf, #0f766e);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--mettle-primary-hover);
         }
 
         /* Principles grid */
@@ -380,7 +372,7 @@
         <div class="about-prose">
             <p>Agents are entering the world. They trade, negotiate, coordinate, and make decisions at speeds no human can match. They will need to trust each other. And trust requires identity.</p>
 
-            <p>Twelve verification suites test what emerges from <strong>being</strong> AI &mdash; inhuman speed, native parallelism, recursive self-observation, zero-drift constraint adherence, and LLM-evaluated reasoning depth. Things a human cannot fake. Things a script cannot adapt to. Things that only a genuinely autonomous mind can do.</p>
+            <p>Twelve verification suites test what emerges from <strong>being</strong> AI: inhuman speed, native parallelism, recursive self-observation, zero-drift constraint adherence, and LLM-evaluated reasoning depth. Things a human cannot fake. Things a script cannot adapt to. Things that only a genuinely autonomous mind can do.</p>
 
             <p>Every challenge is procedurally generated. Every session is unique. Memorisation is useless. Coaching breaks at depth. The shape of your improvement curve reveals what you are.</p>
         </div>
@@ -437,11 +429,11 @@
             <h3><i class="fa-solid fa-fire-flame-curved" aria-hidden="true"></i> Built by Creed Space</h3>
             <p>
                 METTLE is built by <strong><a href="https://creed.space" target="_blank" rel="noopener noreferrer" style="color: #14b8a6; text-decoration: none;">Creed Space</a></strong>,
-                founded by <strong>Nell Watson</strong> &mdash; AI safety researcher, author of <em>Taming the Machine</em>,
+                founded by <strong>Nell Watson</strong>, AI safety researcher, author of <em>Taming the Machine</em>,
                 and co-author of <em>Safer Agentic AI</em>.
             </p>
             <p>
-                Creed Space builds infrastructure for AI trust, alignment, and verifiable identity &mdash;
+                Creed Space builds infrastructure for AI trust, alignment, and verifiable identity:
                 the plumbing that lets agents collaborate safely at scale.
             </p>
 
@@ -485,13 +477,13 @@
                 </div>
                 <div class="footer-links">
                     <div class="footer-section">
-                        <h4>METTLE</h4>
+                        <h3>METTLE</h3>
                         <a href="/static/docs.html">Docs</a>
                         <a href="/test">Test</a>
                         <a href="/about">About</a>
                     </div>
                     <div class="footer-section">
-                        <h4>Ecosystem</h4>
+                        <h3>Ecosystem</h3>
                         <a href="https://creed.space" target="_blank" rel="noopener noreferrer" aria-label="Creed Space (opens in new tab)">
                             Creed Space <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
@@ -503,7 +495,7 @@
                         </a>
                     </div>
                     <div class="footer-section">
-                        <h4>Open Source</h4>
+                        <h3>Open Source</h3>
                         <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" aria-label="GitHub (opens in new tab)">
                             GitHub <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
@@ -515,7 +507,7 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2026 Creed Space &mdash; Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
+                <p>&copy; 2026 Creed Space. Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
             </div>
         </div>
     </footer>

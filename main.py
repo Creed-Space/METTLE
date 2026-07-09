@@ -386,12 +386,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # cdn.jsdelivr.net + blob worker + fastapi.tiangolo.com favicon are required
+        # by FastAPI's bundled Swagger UI (/docs) and ReDoc (/redoc).
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://www.googletagmanager.com; "
-            "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+            "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://www.googletagmanager.com; "
+            "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://fonts.googleapis.com; "
             "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
-            "img-src 'self' data: https://www.googletagmanager.com; "
+            "img-src 'self' data: https://www.googletagmanager.com https://fastapi.tiangolo.com; "
+            "worker-src 'self' blob:; "
             "connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com"
         )
         if settings.is_production:
@@ -539,8 +542,8 @@ to distinguish AI agents from humans and humans-using-AI-as-tool.
         "url": "https://github.com/Creed-Space/METTLE",
     },
     license_info={
-        "name": "MIT",
-        "url": "https://opensource.org/licenses/MIT",
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
     },
 )
 

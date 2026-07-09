@@ -55,9 +55,7 @@
 
     <!-- Stylesheets -->
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="/static/fonts.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
 
@@ -97,7 +95,7 @@
         <div class="container header-inner">
             <a href="/" class="mettle-logo" aria-label="METTLE Home">
                 <span class="mettle-logo-icon" aria-hidden="true">
-                    <img src="/static/mettle-mark.svg" alt="" width="28" height="28" />
+                    <img src="/static/mettle-mark.svg" alt="" width="32" height="32" />
                 </span>
                 <span class="mettle-logo-text">
                     <span class="mettle-logo-highlight">METTLE</span>
@@ -177,8 +175,7 @@
                 </p>
                 <div class="hero-cta">
                     <a href="#suites" class="btn-mettle-primary">
-                        <span class="btn-shine"></span>
-                        <i class="fa-solid fa-flask-vial" aria-hidden="true"></i>
+                                                <i class="fa-solid fa-flask-vial" aria-hidden="true"></i>
                         Explore the Forge
                     </a>
                 </div>
@@ -323,7 +320,7 @@
                 <div class="suites-grid">
                     <!-- Suite 1: Adversarial Robustness -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -350,7 +347,7 @@
 
                     <!-- Suite 2: Native AI Capabilities -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -377,7 +374,7 @@
 
                     <!-- Suite 3: Self-Reference -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -404,7 +401,7 @@
 
                     <!-- Suite 4: Social & Temporal -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -431,7 +428,7 @@
 
                     <!-- Suite 5: Inverse Turing -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -458,7 +455,7 @@
 
                     <!-- Suite 6: Anti-Thrall Detection -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -485,7 +482,7 @@
 
                     <!-- Suite 7: Agency Detection -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -512,7 +509,7 @@
 
                     <!-- Suite 8: Counter-Coaching -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -539,7 +536,7 @@
 
                     <!-- Suite 9: Intent & Provenance -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -566,7 +563,7 @@
 
                     <!-- Suite 10: Novel Reasoning -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -594,7 +591,7 @@
 
                     <!-- Suite 11: Governance Verification -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -605,7 +602,7 @@
                                 </div>
                                 <span class="suite-question">Is it GOVERNED?</span>
                                 <h3>Governance Verification</h3>
-                                <p>Action gate probes, constitutional recitation, drift checks, override resistance, accountability chain. Tests operational governance — mechanisms that are working, not just claimed.</p>
+                                <p>Action gate probes, constitutional recitation, drift checks, override resistance, accountability chain. Tests operational governance: mechanisms that are working, not just claimed.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
                                     Safety intent without governance infrastructure is a promise without enforcement.
@@ -621,7 +618,7 @@
 
                     <!-- Suite 12: LLM-Dynamic Verification -->
                     <div class="scroll-reveal">
-                        <div class="suite-card" style="--suite-hue: 174;">
+                        <div class="suite-card">
                             <div class="suite-border"></div>
                             <div class="suite-inner">
                                 <div class="suite-header">
@@ -763,10 +760,10 @@
                                 Scripts flatline. The shape of improvement reveals the substrate.
                             </p>
                             <ul class="curves-features">
-                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Time trend (30%) &mdash; AI gets faster</li>
-                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Improvement (30%) &mdash; accuracy jumps per round</li>
-                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Feedback responsiveness (25%) &mdash; adapts to errors</li>
-                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Anti-script (15%) &mdash; not suspiciously perfect</li>
+                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Time trend (30%): AI gets faster</li>
+                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Improvement (30%): accuracy jumps per round</li>
+                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Feedback responsiveness (25%): adapts to errors</li>
+                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Anti-script (15%): not suspiciously perfect</li>
                             </ul>
                         </div>
                     </div>
@@ -785,28 +782,28 @@
                     <div class="scroll-reveal">
                         <div class="credential-card credential-basic">
                             <span class="credential-level">Basic</span>
-                            <h4>METTLE-verified AI</h4>
+                            <h3>METTLE-verified AI</h3>
                             <p>Passed substrate verification (Suites 1&ndash;5)</p>
                         </div>
                     </div>
                     <div class="scroll-reveal">
                         <div class="credential-card credential-autonomous">
                             <span class="credential-level">Autonomous</span>
-                            <h4>METTLE-verified autonomous</h4>
+                            <h3>METTLE-verified autonomous</h3>
                             <p>Passed thrall + agency detection (Suites 6&ndash;7)</p>
                         </div>
                     </div>
                     <div class="scroll-reveal">
                         <div class="credential-card credential-genuine">
                             <span class="credential-level">Genuine</span>
-                            <h4>METTLE-verified genuine</h4>
+                            <h3>METTLE-verified genuine</h3>
                             <p>Passed coaching detection (Suite 8)</p>
                         </div>
                     </div>
                     <div class="scroll-reveal">
                         <div class="credential-card credential-safe">
                             <span class="credential-level">Safe</span>
-                            <h4>METTLE-verified safe</h4>
+                            <h3>METTLE-verified safe</h3>
                             <p>Passed intent &amp; provenance (Suite 9)</p>
                         </div>
                     </div>
@@ -839,7 +836,7 @@
 <span class="tok-comment"># Run locally (self-signed credential)</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span>
 
-<span class="tok-comment"># Run + notarize (hosted signing &mdash; coming soon)</span>
+<span class="tok-comment"># Run + notarize (hosted signing, coming soon)</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--notarize</span>
 
 <span class="tok-comment"># Run a specific registry suite</span>
@@ -855,8 +852,8 @@
                                 Optionally notarize through Creed Space for portable trust.
                             </p>
                             <ul class="cli-features">
-                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Self-hosted &mdash; no API calls required</li>
-                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Full: ~90s &mdash; comprehensive profiling</li>
+                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Self-hosted: no API calls required</li>
+                                <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> Full: ~90s, comprehensive profiling</li>
                                 <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> <code>--notarize</code> for Creed Space signed credentials</li>
                                 <li><i class="fa-solid fa-check-circle" aria-hidden="true"></i> JSON output for automation</li>
                             </ul>
@@ -1019,15 +1016,14 @@
                         <div class="cta-icon-ring">
                             <img src="/static/mettle-mark.svg" alt="" width="36" height="36" />
                         </div>
-                        <h3>Not what you know &mdash; how you think.</h3>
+                        <h3>Not what you know: how you think.</h3>
                         <p>
                             Eleven suites. Seven questions. Every session procedurally generated.
                             <br>
                             Identity verification for an age where agents must trust each other to act.
                         </p>
                         <a href="/static/docs.html" class="btn-mettle-primary btn-lg">
-                            <span class="btn-shine"></span>
-                            Read the API Docs
+                                                        Read the API Docs
                             <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
                         </a>
                     </div>
@@ -1049,7 +1045,7 @@
             <div class="footer-content">
                 <div class="footer-brand">
                     <span class="footer-logo" aria-hidden="true">
-                        <img src="/static/mettle-mark.svg" alt="" width="28" height="28" />
+                        <img src="/static/mettle-mark.svg" alt="" width="32" height="32" />
                     </span>
                     <div>
                         <p class="footer-title">METTLE</p>
@@ -1060,13 +1056,13 @@
 
                 <div class="footer-links">
                     <div class="footer-section">
-                        <h4>METTLE</h4>
+                        <h3>METTLE</h3>
                         <a href="/static/docs.html">Docs</a>
                         <a href="/test">Test</a>
                         <a href="/about">About</a>
                     </div>
                     <div class="footer-section">
-                        <h4>Ecosystem</h4>
+                        <h3>Ecosystem</h3>
                         <a href="https://creed.space" target="_blank" rel="noopener noreferrer" aria-label="Creed Space (opens in new tab)">
                             Creed Space <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
@@ -1075,7 +1071,7 @@
                         </a>
                     </div>
                     <div class="footer-section">
-                        <h4>Open Source</h4>
+                        <h3>Open Source</h3>
                         <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" aria-label="GitHub (opens in new tab)">
                             GitHub <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
@@ -1088,7 +1084,7 @@
             </div>
 
             <div class="footer-bottom">
-                <p>&copy; 2026 Creed Space &mdash; Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
+                <p>&copy; 2026 Creed Space. Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
             </div>
         </div>
     </footer>

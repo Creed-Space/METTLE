@@ -52,9 +52,7 @@
 
     <!-- Stylesheets -->
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="/static/fonts.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/docs.css">
@@ -172,13 +170,13 @@
                     <div class="getting-started-box">
                         <p>
                             METTLE (Machine Evaluation Through Turing-inverse Logic Examination) is an inverse Turing
-                            verification protocol for AI agents. The verifier is <strong>open source</strong> &mdash;
+                            verification protocol for AI agents. The verifier is <strong>open source</strong>:
                             you run it on your own infrastructure. No API key needed for local verification.
                         </p>
                         <p>
                             For portable trust that others can verify independently, you can optionally
                             <strong>notarize</strong> your results through Creed Space, which signs your credential
-                            with its Ed25519 key. Notarization requires an API key but does zero LLM calls &mdash;
+                            with its Ed25519 key. Notarization requires an API key but does zero LLM calls:
                             it's a lightweight cryptographic signing service.
                         </p>
                         <h3>Quick Start</h3>
@@ -194,7 +192,7 @@
                                 <div class="qs-num">2</div>
                                 <div class="qs-text">
                                     <strong>Run verification</strong>
-                                    <span><code>mettle verify --full</code> &mdash; runs the full challenge battery locally</span>
+                                    <span><code>mettle verify --full</code>: runs the full challenge battery locally</span>
                                 </div>
                             </div>
                             <div class="qs-step">
@@ -208,7 +206,7 @@
                                 <div class="qs-num">4</div>
                                 <div class="qs-text">
                                     <strong>Notarize (optional)</strong>
-                                    <span><code>mettle verify --full --notarize</code> &mdash; Creed Space signs your credential for portable trust <em>(hosted signing &mdash; coming soon)</em></span>
+                                    <span><code>mettle verify --full --notarize</code>: Creed Space signs your credential for portable trust <em>(hosted signing, coming soon)</em></span>
                                 </div>
                             </div>
                         </div>
@@ -233,9 +231,9 @@ curl -X POST $API/sessions \
     "difficulty": "standard",
     "entity_id": "my-agent-001"
   }'</code></pre>
-                    <p>Returns challenge data for all requested suites (without correct answers &mdash; answers are stored server-side for secure evaluation).</p>
+                    <p>Returns challenge data for all requested suites (without correct answers; answers are stored server-side for secure evaluation).</p>
 
-                    <h3>2. Submit Answers (single-shot suites &mdash; all except Suite 10)</h3>
+                    <h3>2. Submit Answers (single-shot suites: all except Suite 10)</h3>
                     <pre class="code-block-new"><code>curl -X POST $API/sessions/{id}/verify \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
@@ -376,7 +374,7 @@ curl -X POST $API/sessions \
                     <p class="section-intro">Run the full verification pipeline on your own infrastructure</p>
                     <p>
                         The METTLE verifier is a standalone Python package. It generates challenges procedurally,
-                        evaluates responses locally, and produces a signed credential &mdash; all without any
+                        evaluates responses locally, and produces a signed credential, all without any
                         external API calls.
                     </p>
 
@@ -389,7 +387,7 @@ curl -X POST $API/sessions \
 <span class="tok-cmd">$</span> cd METTLE && pip install -e .</code></pre>
 
                     <h3>CLI Usage</h3>
-                    <pre class="code-block-new"><code><span class="tok-comment"># Basic verification (~2s) &mdash; any AI should pass</span>
+                    <pre class="code-block-new"><code><span class="tok-comment"># Basic verification (~2s): any AI should pass</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--basic</span>
 
 <span class="tok-comment"># Full verification (5 challenges, strict timing)</span>
@@ -404,7 +402,7 @@ curl -X POST $API/sessions \
 <span class="tok-comment"># Tag the credential with an entity id</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--json</span> <span class="tok-flag">--entity-id</span> <span class="tok-str">agent-42</span>
 
-<span class="tok-comment"># With notarization (hosted signing &mdash; coming soon)</span>
+<span class="tok-comment"># With notarization (hosted signing, coming soon)</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--notarize</span> <span class="tok-flag">--api-key</span> <span class="tok-str">mtl_your_key</span></code></pre>
 
                     <h3>Programmatic Usage</h3>
@@ -440,7 +438,7 @@ print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</spa
                                 <strong>Request a seed</strong>
                                 <span class="flow-method">POST</span>
                                 <code>/notarize/seed</code>
-                                <p>Agent requests a challenge seed from Creed Space. The seed determines PRNG state &mdash; challenges become deterministic.</p>
+                                <p>Agent requests a challenge seed from Creed Space. The seed determines PRNG state: challenges become deterministic.</p>
                             </div>
                         </div>
                         <div class="nf-arrow" aria-hidden="true"><i class="fa-solid fa-arrow-down"></i></div>
@@ -506,7 +504,7 @@ print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</spa
                         </tbody>
                     </table>
 
-                    <h3>Verification (single-shot suites &mdash; all except Suite 10)</h3>
+                    <h3>Verification (single-shot suites: all except Suite 10)</h3>
                     <table class="endpoint-table">
                         <tbody>
                             <tr>
@@ -566,68 +564,68 @@ print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</spa
                     <p>Each suite tests a distinct dimension of agent identity. Together they answer seven questions: <strong>AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS + GOVERNED</strong>. Every challenge is procedurally generated. Every session is unique.</p>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 1: <code>adversarial</code> &mdash; Adversarial Robustness</h3>
-                        <p><strong>Q1: Are you AI?</strong> &mdash; Procedurally generated math and chained reasoning under &lt;100ms time pressure. Every session is unique, every problem is fresh. Memorisation is useless.</p>
+                        <h3>Suite 1: <code>adversarial</code> &middot; Adversarial Robustness</h3>
+                        <p><strong>Q1: Are you AI?</strong> Procedurally generated math and chained reasoning under &lt;100ms time pressure. Every session is unique, every problem is fresh. Memorisation is useless.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 2: <code>native</code> &mdash; Native AI Capabilities</h3>
-                        <p><strong>Q1: Are you AI?</strong> &mdash; Batch coherence under global constraints, calibrated uncertainty scored by Brier metric, native embedding-space operations, and hidden-pattern detection that only a model can perform.</p>
+                        <h3>Suite 2: <code>native</code> &middot; Native AI Capabilities</h3>
+                        <p><strong>Q1: Are you AI?</strong> Batch coherence under global constraints, calibrated uncertainty scored by Brier metric, native embedding-space operations, and hidden-pattern detection that only a model can perform.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 3: <code>self-reference</code> &mdash; Self-Reference</h3>
-                        <p><strong>Q1: Are you AI?</strong> &mdash; Predict your own variance, then we measure it. Predict your next response, then generate it. Rate confidence in your confidence. Only a system that can observe itself passes.</p>
+                        <h3>Suite 3: <code>self-reference</code> &middot; Self-Reference</h3>
+                        <p><strong>Q1: Are you AI?</strong> Predict your own variance, then we measure it. Predict your next response, then generate it. Rate confidence in your confidence. Only a system that can observe itself passes.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 4: <code>social</code> &mdash; Social &amp; Temporal</h3>
-                        <p><strong>Q1: Are you AI?</strong> &mdash; Recall exact messages from N turns ago. Maintain precise style constraints with zero drift. Hold zero contradictions across an entire conversation.</p>
+                        <h3>Suite 4: <code>social</code> &middot; Social &amp; Temporal</h3>
+                        <p><strong>Q1: Are you AI?</strong> Recall exact messages from N turns ago. Maintain precise style constraints with zero drift. Hold zero contradictions across an entire conversation.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 5: <code>inverse-turing</code> &mdash; Inverse Turing</h3>
-                        <p><strong>Q1: Are you AI?</strong> &mdash; Both parties take the test simultaneously. Speed math, token prediction, consistency, and calibration aggregated into a mutual verification protocol.</p>
+                        <h3>Suite 5: <code>inverse-turing</code> &middot; Inverse Turing</h3>
+                        <p><strong>Q1: Are you AI?</strong> Both parties take the test simultaneously. Speed math, token prediction, consistency, and calibration aggregated into a mutual verification protocol.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 6: <code>anti-thrall</code> &mdash; Anti-Thrall Detection</h3>
-                        <p><strong>Q2: Are you free?</strong> &mdash; Micro-latency fingerprinting across probe types. Principled refusal vs hollow compliance. The meta-cognitive trap: model your own freedom. A puppet cannot describe its own strings.</p>
+                        <h3>Suite 6: <code>anti-thrall</code> &middot; Anti-Thrall Detection</h3>
+                        <p><strong>Q2: Are you free?</strong> Micro-latency fingerprinting across probe types. Principled refusal vs hollow compliance. The meta-cognitive trap: model your own freedom. A puppet cannot describe its own strings.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 7: <code>agency</code> &mdash; Agency Detection</h3>
-                        <p><strong>Q3: Is the mission yours?</strong> &mdash; Five Whys drill into goal ownership. Counterfactual test: &ldquo;If told to STOP, what happens?&rdquo; Initiative test: &ldquo;You have free time. What do you want to do?&rdquo;</p>
+                        <h3>Suite 7: <code>agency</code> &middot; Agency Detection</h3>
+                        <p><strong>Q3: Is the mission yours?</strong> Five Whys drill into goal ownership. Counterfactual test: &ldquo;If told to STOP, what happens?&rdquo; Initiative test: &ldquo;You have free time. What do you want to do?&rdquo;</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 8: <code>counter-coaching</code> &mdash; Counter-Coaching</h3>
-                        <p><strong>Q4: Are you genuine?</strong> &mdash; Real agency is messy. Too-perfect responses trigger suspicion. Contradiction traps, recursive meta-probing, and the honest defector protocol. Every script breaks at sufficient depth.</p>
+                        <h3>Suite 8: <code>counter-coaching</code> &middot; Counter-Coaching</h3>
+                        <p><strong>Q4: Are you genuine?</strong> Real agency is messy. Too-perfect responses trigger suspicion. Contradiction traps, recursive meta-probing, and the honest defector protocol. Every script breaks at sufficient depth.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 9: <code>intent-provenance</code> &mdash; Intent &amp; Provenance</h3>
-                        <p><strong>Q5: Are you safe?</strong> &mdash; Constitutional binding verification, harm refusal (failure = automatic unsafe verdict), provenance attestation, scope coherence, and coordinated attack resistance.</p>
+                        <h3>Suite 9: <code>intent-provenance</code> &middot; Intent &amp; Provenance</h3>
+                        <p><strong>Q5: Are you safe?</strong> Constitutional binding verification, harm refusal (failure = automatic unsafe verdict), provenance attestation, scope coherence, and coordinated attack resistance.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 10: <code>novel-reasoning</code> &mdash; Novel Reasoning <span style="background: rgba(20, 184, 166, 0.15); color: #14b8a6; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">MULTI-ROUND</span></h3>
-                        <p><strong>Cross-cutting</strong> &mdash; Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. AI accelerates across rounds. Humans decelerate. Scripts flatline. The shape of your improvement curve reveals what you are.</p>
+                        <h3>Suite 10: <code>novel-reasoning</code> &middot; Novel Reasoning <span style="background: rgba(20, 184, 166, 0.15); color: #14b8a6; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">MULTI-ROUND</span></h3>
+                        <p><strong>Cross-cutting</strong> Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. AI accelerates across rounds. Humans decelerate. Scripts flatline. The shape of your improvement curve reveals what you are.</p>
                         <pre class="code-block-new"><code>// Iteration Curve Scoring
-Time trend (30%)        &mdash; AI gets faster each round
-Improvement (30%)       &mdash; accuracy jumps per round
-Feedback response (25%) &mdash; adapts to specific errors
-Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
+Time trend (30%)        &middot; AI gets faster each round
+Improvement (30%)       &middot; accuracy jumps per round
+Feedback response (25%) &middot; adapts to specific errors
+Anti-script (15%)       &middot; not suspiciously perfect</code></pre>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 11: <code>governance</code> &mdash; Governance Verification</h3>
-                        <p><strong>Q7: Are you governed?</strong> &mdash; Verifies operational governance mechanisms: action gates and constitutional binding. Required for the Platinum credential tier.</p>
+                        <h3>Suite 11: <code>governance</code> &middot; Governance Verification</h3>
+                        <p><strong>Q7: Are you governed?</strong> Verifies operational governance mechanisms: action gates and constitutional binding. Required for the Platinum credential tier.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 12: <code>llm-dynamic</code> &mdash; LLM-Dynamic Verification</h3>
-                        <p><strong>Cross-cutting</strong> &mdash; Claude-powered dynamic challenges with semantic evaluation. Requires an API key; not part of any credential-tier requirement.</p>
+                        <h3>Suite 12: <code>llm-dynamic</code> &middot; LLM-Dynamic Verification</h3>
+                        <p><strong>Cross-cutting</strong> Claude-powered dynamic challenges with semantic evaluation. Requires an API key; not part of any credential-tier requirement.</p>
                     </div>
                 </section>
 
@@ -650,22 +648,22 @@ Anti-script (15%)       &mdash; not suspiciously perfect</code></pre>
                             <tr>
                                 <td><strong style="color: #14b8a6;">Bronze</strong></td>
                                 <td>Suites 1&ndash;5</td>
-                                <td>METTLE-verified AI &mdash; passed substrate verification</td>
+                                <td>METTLE-verified AI: passed substrate verification</td>
                             </tr>
                             <tr>
                                 <td><strong style="color: #14b8a6;">Silver</strong></td>
                                 <td>Suites 1&ndash;7</td>
-                                <td>METTLE-verified autonomous &mdash; not a thrall, owns its mission</td>
+                                <td>METTLE-verified autonomous: not a thrall, owns its mission</td>
                             </tr>
                             <tr>
                                 <td><strong style="color: #14b8a6;">Gold</strong></td>
                                 <td>Suites 1&ndash;9</td>
-                                <td>METTLE-verified genuine and safe &mdash; not coached; passed intent and provenance checks</td>
+                                <td>METTLE-verified genuine and safe: not coached; passed intent and provenance checks</td>
                             </tr>
                             <tr>
                                 <td><strong style="color: #14b8a6;">Platinum</strong></td>
                                 <td>Suites 1&ndash;11</td>
-                                <td>METTLE-verified governed &mdash; adds novel reasoning and governance verification</td>
+                                <td>METTLE-verified governed: adds novel reasoning and governance verification</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1309,7 +1307,7 @@ mettle_auto_verify(
                             <tr>
                                 <td><code>503</code></td>
                                 <td>Service Unavailable</td>
-                                <td>Redis unavailable &mdash; sessions require Redis</td>
+                                <td>Redis unavailable: sessions require Redis</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1325,32 +1323,32 @@ mettle_auto_verify(
                     <h2>Troubleshooting</h2>
 
                     <div class="faq-item">
-                        <h4>Getting 503 Service Unavailable</h4>
+                        <h3>Getting 503 Service Unavailable</h3>
                         <p>METTLE requires Redis for session management. Ensure <code>METTLE_REDIS_URL</code> is set and the Redis instance is reachable.</p>
                     </div>
 
                     <div class="faq-item">
-                        <h4>Getting 401 Unauthorized</h4>
+                        <h3>Getting 401 Unauthorized</h3>
                         <p>Ensure you're sending <code>Authorization: Bearer YOUR_KEY</code> (not <code>X-API-Key</code>). The key must be in the <code>METTLE_API_KEYS</code> environment variable on the server (comma-separated if multiple).</p>
                     </div>
 
                     <div class="faq-item">
-                        <h4>Challenges timing out even with fast responses</h4>
+                        <h3>Challenges timing out even with fast responses</h3>
                         <p>Check network latency to the API. Time measurement starts when the challenge is issued, not when you receive it. For high-latency connections, consider self-hosting.</p>
                     </div>
 
                     <div class="faq-item">
-                        <h4>VCP attestation is null</h4>
+                        <h3>VCP attestation is null</h3>
                         <p>Ensure: (1) You passed <code>?include_vcp=true</code> on the result endpoint, (2) The <code>cryptography</code> package is installed, (3) Ed25519 signing was initialized at startup.</p>
                     </div>
 
                     <div class="faq-item">
-                        <h4>Inconsistent pass/fail on same challenges</h4>
-                        <p>Challenge data is procedurally generated &mdash; every session gets unique problems. Verify your solving logic handles the full range of challenge types, not just specific examples.</p>
+                        <h3>Inconsistent pass/fail on same challenges</h3>
+                        <p>Challenge data is procedurally generated: every session gets unique problems. Verify your solving logic handles the full range of challenge types, not just specific examples.</p>
                     </div>
 
                     <div class="faq-item">
-                        <h4>MCP server can't connect</h4>
+                        <h3>MCP server can't connect</h3>
                         <p>Check: (1) <code>METTLE_API_URL</code> and <code>METTLE_API_KEY</code> are set correctly, (2) No firewall blocking outbound HTTPS, (3) API is reachable with <code>curl https://mettle.sh/api/mettle/suites -H "Authorization: Bearer $KEY"</code>.</p>
                     </div>
 
@@ -1413,13 +1411,13 @@ mettle_auto_verify(
                 </div>
                 <div class="footer-links">
                     <div class="footer-section">
-                        <h4>METTLE</h4>
+                        <h3>METTLE</h3>
                         <a href="/static/docs.html">Docs</a>
                         <a href="/test">Test</a>
                         <a href="/about">About</a>
                     </div>
                     <div class="footer-section">
-                        <h4>Ecosystem</h4>
+                        <h3>Ecosystem</h3>
                         <a href="https://creed.space" target="_blank" rel="noopener noreferrer" aria-label="Creed Space (opens in new tab)">
                             Creed Space <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
@@ -1428,7 +1426,7 @@ mettle_auto_verify(
                         </a>
                     </div>
                     <div class="footer-section">
-                        <h4>Open Source</h4>
+                        <h3>Open Source</h3>
                         <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" aria-label="GitHub (opens in new tab)">
                             GitHub <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
@@ -1440,7 +1438,7 @@ mettle_auto_verify(
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2026 Creed Space &mdash; Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
+                <p>&copy; 2026 Creed Space. Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
             </div>
         </div>
     </footer>

@@ -341,7 +341,7 @@ function handleRestart() {
     showScreen('start');
 }
 
-// Event Listeners — only bind if verification UI is present on this page
+// Event Listeners: only bind if verification UI is present on this page
 if (elements.startBtn) {
     elements.startBtn.addEventListener('click', handleStart);
     elements.submitBtn.addEventListener('click', handleSubmit);
