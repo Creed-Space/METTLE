@@ -1,24 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-  <!-- METTLE mark — "Tempered Flame, waterline" (Creed Space family, v4 final).
-       Solid tip resolving into fine engraved slits, over a molten solid base
-       with the M in true negative space — the same negative-M as the favicon.
-       Single ink: #2dd4bf on light; use #2dd4bf on dark. -->
+  <!-- METTLE mark — "Witnessed Flame, calm grain" (Creed Space family, round 4 variant D).
+       Mirrored witness rails cup a split flame: felt fire solid on the left,
+       measured fire as unbroken grain lines on the right (the substrate, read).
+       Left rail solid (the holder); right rail engraved (the examiner), with
+       truly transparent gaps via mask. Single ink: #2dd4bf. -->
   <defs>
-    <clipPath id="twFlame"><path d="M 50 6.3 C 53.9 20.3, 64.1 27.3, 71.1 37.5 C 78.9 48.8, 82.8 58.6, 82.8 68.8 C 82.8 82.8, 69.5 92.2, 50 92.2 C 30.5 92.2, 17.2 82.8, 17.2 68.8 C 17.2 58.6, 21.1 48.8, 28.9 37.5 C 35.9 27.3, 46.1 20.3, 50 6.3 Z"/></clipPath>
-    <clipPath id="twCap"><rect x="0" y="0" width="100" height="19.5"/></clipPath>
-    <clipPath id="twBase"><rect x="0" y="53.5" width="100" height="46.5"/></clipPath>
-    <mask id="twM">
-      <rect width="100" height="100" fill="#ffffff"/>
-      <path fill="#000000" d="M 27.3 83.6 V 57.8 L 39.8 71.1 L 50 55.5 L 60.2 71.1 L 72.7 57.8 V 83.6 H 62.5 V 75.8 L 50 85.9 L 37.5 75.8 V 83.6 Z"/>
+    <clipPath id="wfF"><path d="M 61 12 C 56 20, 47 25, 42 33 C 36.5 41.5, 36 51, 41.5 58 C 46 63.8, 54 65.8, 60 62.5 C 66.5 59, 69 51, 66.5 44 C 64.5 38.5, 59.5 36.5, 57 29 C 57.8 23.5, 59.8 17.5, 61 12 Z"/></clipPath>
+    <clipPath id="wfL"><path d="M 56 8 C 49 26, 56 38, 49.5 50 C 47 56, 49 61, 52 66 L 52 100 L 0 100 L 0 0 L 56 0 Z"/></clipPath>
+    <clipPath id="wfR"><path d="M 56 8 C 49 26, 56 38, 49.5 50 C 47 56, 49 61, 52 66 L 52 100 L 100 100 L 100 0 L 56 0 Z"/></clipPath>
+    <mask id="wfRail">
+      <path d="M 79.5 39 C 84.5 51, 83 63, 74 71 C 68.2 76.2, 61.5 79.4, 55.5 80.4" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+      <path d="M 79.5 39 C 84.5 51, 83 63, 74 71 C 68.2 76.2, 61.5 79.4, 55.5 80.4" fill="none" stroke="#000000" stroke-width="3.4" stroke-linecap="round"/>
+      <path d="M 79.5 39 C 84.5 51, 83 63, 74 71 C 68.2 76.2, 61.5 79.4, 55.5 80.4" fill="none" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/>
     </mask>
   </defs>
-  <g clip-path="url(#twCap)"><path clip-path="url(#twFlame)" fill="#2dd4bf" d="M 50 6.3 C 53.9 20.3, 64.1 27.3, 71.1 37.5 C 78.9 48.8, 82.8 58.6, 82.8 68.8 C 82.8 82.8, 69.5 92.2, 50 92.2 C 30.5 92.2, 17.2 82.8, 17.2 68.8 C 17.2 58.6, 21.1 48.8, 28.9 37.5 C 35.9 27.3, 46.1 20.3, 50 6.3 Z"/></g>
-  <g clip-path="url(#twFlame)">
-<line x1="12" y1="23" x2="88" y2="23" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="0"/>
-<line x1="12" y1="29" x2="88" y2="29" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="7"/>
-<line x1="12" y1="35" x2="88" y2="35" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="14"/>
-<line x1="12" y1="41" x2="88" y2="41" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="21"/>
-<line x1="12" y1="47" x2="88" y2="47" stroke="#2dd4bf" stroke-width="2.4" stroke-dasharray="26 2.2" stroke-dashoffset="4"/>
+  <path d="M 20.5 39 C 15.5 51, 17 63, 26 71 C 31.8 76.2, 38.5 79.4, 44.5 80.4" fill="none" stroke="#2dd4bf" stroke-width="6" stroke-linecap="round"/>
+  <path d="M 79.5 39 C 84.5 51, 83 63, 74 71 C 68.2 76.2, 61.5 79.4, 55.5 80.4" fill="none" stroke="#2dd4bf" stroke-width="6.6" stroke-linecap="round" mask="url(#wfRail)"/>
+  <g transform="translate(-4.4 -3.15) scale(1.075)">
+    <g clip-path="url(#wfL)"><path fill="#2dd4bf" d="M 61 12 C 56 20, 47 25, 42 33 C 36.5 41.5, 36 51, 41.5 58 C 46 63.8, 54 65.8, 60 62.5 C 66.5 59, 69 51, 66.5 44 C 64.5 38.5, 59.5 36.5, 57 29 C 57.8 23.5, 59.8 17.5, 61 12 Z"/></g>
+    <g clip-path="url(#wfR)"><g clip-path="url(#wfF)">
+      <line x1="30" y1="18" x2="74" y2="18" stroke="#2dd4bf" stroke-width="2.8"/>
+      <line x1="30" y1="26" x2="74" y2="26" stroke="#2dd4bf" stroke-width="2.8"/>
+      <line x1="30" y1="34" x2="74" y2="34" stroke="#2dd4bf" stroke-width="2.8"/>
+      <line x1="30" y1="42" x2="74" y2="42" stroke="#2dd4bf" stroke-width="2.8"/>
+      <line x1="30" y1="50" x2="74" y2="50" stroke="#2dd4bf" stroke-width="2.8"/>
+      <line x1="30" y1="58" x2="74" y2="58" stroke="#2dd4bf" stroke-width="2.8"/>
+    </g></g>
   </g>
-  <g clip-path="url(#twBase)"><path clip-path="url(#twFlame)" fill="#2dd4bf" mask="url(#twM)" d="M 50 6.3 C 53.9 20.3, 64.1 27.3, 71.1 37.5 C 78.9 48.8, 82.8 58.6, 82.8 68.8 C 82.8 82.8, 69.5 92.2, 50 92.2 C 30.5 92.2, 17.2 82.8, 17.2 68.8 C 17.2 58.6, 21.1 48.8, 28.9 37.5 C 35.9 27.3, 46.1 20.3, 50 6.3 Z"/></g>
 </svg>
