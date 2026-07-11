@@ -89,7 +89,7 @@
         <img src="/favicon.svg" alt="" width="28" height="28" />
       </span>
       <span class="mettle-logo-text">
-        <span class="mettle-logo-highlight">METTLE</span>
+        <span class="wm-solid">MET</span><span class="wm-outline">TLE</span>
       </span>
     </a>
 
@@ -249,38 +249,36 @@
     box-shadow: 0 0 20px color-mix(in srgb, var(--color-teal) 16%, transparent);
   }
 
+  /* Wordmark follows the ratified Creed Space convention:
+     solid caps plus an outlined mono tail, 0.24em tracking, single ink. */
   .mettle-logo-text {
-    font-weight: 400;
-    font-size: 1.2rem;
-    color: var(--color-text-muted);
-    letter-spacing: 0.03em;
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: 0.24em;
+    color: var(--color-teal);
+    white-space: nowrap;
   }
 
-  .mettle-logo-highlight {
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    background: linear-gradient(
-      135deg,
-      var(--color-teal-light),
-      var(--color-teal)
-    );
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  .wm-outline {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: transparent;
+    -webkit-text-stroke: 1px var(--color-teal);
+  }
+
+  @supports not (-webkit-text-stroke: 1px black) {
+    .wm-outline {
+      color: var(--color-teal);
+      opacity: 0.55;
+    }
   }
 
   .mettle-logo:hover .mettle-logo-text {
-    color: var(--color-text);
+    color: var(--color-teal-light);
   }
 
-  .mettle-logo:hover .mettle-logo-highlight {
-    background: linear-gradient(
-      135deg,
-      var(--color-teal-light),
-      var(--color-teal-strong)
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
+  .mettle-logo:hover .wm-outline {
+    -webkit-text-stroke-color: var(--color-teal-light);
   }
 
   /* Desktop Nav */
