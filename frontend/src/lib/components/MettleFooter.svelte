@@ -178,8 +178,10 @@
     flex-shrink: 0;
   }
 
-  /* Wordmark: solid caps at 0.24em tracking, single ink (Creed family). */
+  /* Wordmark: IBM Plex Sans SemiBold caps at 0.24em tracking, single ink
+     (the ratified Creed Space wordmark face). */
   .footer-title {
+    font-family: "IBM Plex Sans", var(--font-sans);
     font-weight: 600;
     font-size: 0.95rem;
     letter-spacing: 0.24em;

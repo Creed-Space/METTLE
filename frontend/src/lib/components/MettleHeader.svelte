@@ -249,8 +249,10 @@
     box-shadow: 0 0 20px color-mix(in srgb, var(--color-teal) 16%, transparent);
   }
 
-  /* Wordmark: solid caps at 0.24em tracking, single ink (Creed family). */
+  /* Wordmark: IBM Plex Sans SemiBold caps at 0.24em tracking, single ink
+     (the ratified Creed Space wordmark face). */
   .mettle-logo-text {
+    font-family: "IBM Plex Sans", var(--font-sans);
     font-weight: 600;
     font-size: 1.05rem;
     letter-spacing: 0.24em;
