@@ -1468,25 +1468,24 @@ a:hover {
     filter: drop-shadow(0 0 8px rgba(45, 212, 191, 0.35));
 }
 
+/* Wordmark: IBM Plex Sans SemiBold caps at 0.24em tracking, single ink
+   (the ratified Creed Space wordmark face, all solid for METTLE). */
 .mettle-logo-text {
-    font-family: var(--font-display);
-    font-weight: 500;
-    font-size: 1.2rem;
-    color: rgba(255, 255, 255, 0.7);
-    letter-spacing: 0.03em;
+    font-family: 'IBM Plex Sans', var(--font-display);
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--mettle-primary-hover);
+    letter-spacing: 0.24em;
+    white-space: nowrap;
 }
 
 .mettle-logo-highlight {
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--mettle-primary-hover);
+    font-weight: inherit;
+    letter-spacing: inherit;
+    color: inherit;
 }
 
 .mettle-logo:hover .mettle-logo-text {
-    color: rgba(255, 255, 255, 0.85);
-}
-
-.mettle-logo:hover .mettle-logo-highlight {
     color: #5eead4;
 }
 
@@ -1899,10 +1898,12 @@ a:hover {
     display: block;
 }
 
+/* Wordmark: IBM Plex Sans SemiBold caps at 0.24em tracking (Creed family). */
 .footer-title {
-    font-weight: 700;
-    font-size: 1rem;
-    letter-spacing: 0.06em;
+    font-family: 'IBM Plex Sans', var(--font-display);
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.24em;
     margin-bottom: var(--space-xs);
     color: var(--mettle-primary-hover);
 }
