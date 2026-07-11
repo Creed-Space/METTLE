@@ -10,7 +10,7 @@
           <img src="/favicon.svg" alt="" width="28" height="28" />
         </span>
         <div>
-          <p class="footer-title"><span class="wm-solid">MET</span><span class="wm-outline">TLE</span></p>
+          <p class="footer-title">METTLE</p>
           <p class="footer-tagline">
             Machine Evaluation Through Turing-inverse Logic Examination
           </p>
@@ -178,8 +178,7 @@
     flex-shrink: 0;
   }
 
-  /* Wordmark follows the ratified Creed Space convention:
-     solid caps plus an outlined mono tail, 0.24em tracking, single ink. */
+  /* Wordmark: solid caps at 0.24em tracking, single ink (Creed family). */
   .footer-title {
     font-weight: 600;
     font-size: 0.95rem;
@@ -188,19 +187,6 @@
     color: var(--color-teal);
   }
 
-  .wm-outline {
-    font-family: var(--font-mono);
-    font-weight: 500;
-    color: transparent;
-    -webkit-text-stroke: 1px var(--color-teal);
-  }
-
-  @supports not (-webkit-text-stroke: 1px black) {
-    .wm-outline {
-      color: var(--color-teal);
-      opacity: 0.55;
-    }
-  }
 
   .footer-tagline {
     color: var(--color-text-muted);

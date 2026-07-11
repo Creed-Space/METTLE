@@ -89,7 +89,7 @@
         <img src="/favicon.svg" alt="" width="28" height="28" />
       </span>
       <span class="mettle-logo-text">
-        <span class="wm-solid">MET</span><span class="wm-outline">TLE</span>
+        METTLE
       </span>
     </a>
 
@@ -249,8 +249,7 @@
     box-shadow: 0 0 20px color-mix(in srgb, var(--color-teal) 16%, transparent);
   }
 
-  /* Wordmark follows the ratified Creed Space convention:
-     solid caps plus an outlined mono tail, 0.24em tracking, single ink. */
+  /* Wordmark: solid caps at 0.24em tracking, single ink (Creed family). */
   .mettle-logo-text {
     font-weight: 600;
     font-size: 1.05rem;
@@ -259,26 +258,8 @@
     white-space: nowrap;
   }
 
-  .wm-outline {
-    font-family: var(--font-mono);
-    font-weight: 500;
-    color: transparent;
-    -webkit-text-stroke: 1px var(--color-teal);
-  }
-
-  @supports not (-webkit-text-stroke: 1px black) {
-    .wm-outline {
-      color: var(--color-teal);
-      opacity: 0.55;
-    }
-  }
-
   .mettle-logo:hover .mettle-logo-text {
     color: var(--color-teal-light);
-  }
-
-  .mettle-logo:hover .wm-outline {
-    -webkit-text-stroke-color: var(--color-teal-light);
   }
 
   /* Desktop Nav */
