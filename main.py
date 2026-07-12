@@ -116,8 +116,48 @@ def add_with_limit(store: dict, key: str, value: Any, max_size: int) -> None:
 # In-memory storage
 sessions: dict[str, MettleSession] = {}
 challenges: dict[str, tuple[Challenge, float]] = {}
-revoked_badges: dict[str, float] = {}  # JTI -> revocation timestamp (bounded dict)
+# JTI -> the revoked badge's OWN expiry (unix ts); float("inf") if the badge carries no
+# exp claim. Keyed by badge expiry (not revocation time) so the store can be pruned
+# safely: see _prune_expired_revocations.
+revoked_badges: dict[str, float] = {}
 revocation_audit: list[dict[str, Any]] = []  # Audit trail
+
+
+def _prune_expired_revocations(now: float | None = None) -> None:
+    """Drop revocations only for badges that have themselves already expired.
+
+    SECURITY: a revoked JTI only needs to be remembered until the badge's own ``exp``
+    passes, because ``verify_badge`` rejects an expired badge regardless. Pruning by
+    badge expiry keeps this store bounded WITHOUT ever un-revoking a still-valid badge.
+
+    This replaces an LRU eviction (``add_with_limit``) that could silently reverse a
+    revocation: once the cap was reached, the oldest revoked JTI was dropped and that
+    badge verified as VALID again. Eviction is never a safe policy for a revocation
+    list, and the DoS rationale did not apply here anyway — revocation is admin-only.
+    """
+    current = time.time() if now is None else now
+    for jti in [j for j, badge_exp in revoked_badges.items() if badge_exp <= current]:
+        del revoked_badges[jti]
+
+
+def _is_badge_revoked(jti: str) -> bool:
+    """Check a JTI against the revocation stores: in-memory fast path, then the DB.
+
+    The in-memory dict is process-local and lost on restart, so on its own a revoked
+    badge would verify as VALID again after a deploy (and would be invisible to other
+    instances). ``database.add_revoked_badge`` / ``is_badge_revoked`` already existed
+    and were tested, but were never wired to these endpoints -- this wires them.
+
+    NOTE (open decision): ``database.is_badge_revoked`` swallows its own exceptions and
+    returns False, so a DB outage currently fails **open** (an unreadable revocation
+    store means a revoked badge verifies as valid). Flipping that to fail-closed is a
+    live-service availability trade-off; see the composed-credential contprompt.
+    """
+    if jti in revoked_badges:
+        return True
+    if db is not None:
+        return bool(db.is_badge_revoked(jti))
+    return False
 
 # Collusion detection - track verification patterns
 verification_graph: dict[str, list[dict[str, Any]]] = {}  # entity_id -> list of verifications
@@ -1223,9 +1263,9 @@ async def verify_badge(request: Request, token: str):
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
 
-        # Check revocation (will be implemented in Task 3)
+        # Check revocation against the durable store, not just this process's memory.
         jti = payload.get("jti")
-        if jti and jti in revoked_badges:
+        if jti and _is_badge_revoked(jti):
             return BadgeVerifyResponse(
                 valid=False,
                 error="Badge has been revoked",
@@ -1251,8 +1291,8 @@ async def verify_badge(request: Request, token: str):
 
 # === Revocation Endpoints ===
 
-# Audit trail for revocations
-revocation_audit: list[dict[str, Any]] = []
+# NOTE: revocation_audit and revoked_badges are defined once, at module top. A second
+# `revocation_audit = []` used to sit here and silently rebound the module-level list.
 
 
 class RevokeBadgeRequest(BaseModel):
@@ -1328,15 +1368,33 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
     if not jti:
         raise HTTPException(status_code=400, detail="Badge has no revocable ID (jti)")
 
-    if jti in revoked_badges:
+    if _is_badge_revoked(jti):
         return RevokeBadgeResponse(
             revoked=False,
             jti=jti,
             message="Badge already revoked",
         )
 
-    # Add to revocation dict with memory limit
-    add_with_limit(revoked_badges, jti, time.time(), MAX_REVOKED_BADGES)
+    # SECURITY: never evict a live revocation. Prune only badges that have already
+    # expired (verify_badge rejects those anyway), then record this one keyed by the
+    # badge's own expiry. The previous LRU eviction could silently un-revoke the oldest
+    # revoked badge once the cap was hit, making it verify as VALID again.
+    _prune_expired_revocations()
+    badge_exp = payload.get("exp")
+    revoked_badges[jti] = float(badge_exp) if badge_exp else float("inf")
+    if len(revoked_badges) > MAX_REVOKED_BADGES:
+        # Alarm rather than silently drop a revocation. Bounded naturally by the badge
+        # expiry window, and revocation is admin-authenticated, so this should not occur.
+        logger.error(
+            "revocation_store_over_capacity",
+            size=len(revoked_badges),
+            limit=MAX_REVOKED_BADGES,
+        )
+
+    # Persist durably so the revocation survives a restart and is visible to every
+    # instance. Without this the revocation lived only in this process's memory.
+    if db is not None and not db.add_revoked_badge(jti, payload.get("entity_id"), body.reason, body.evidence):
+        logger.error("revocation_not_persisted", jti=jti)
 
     # Create audit record with memory limit
     audit_record = {
@@ -1954,7 +2012,9 @@ if _static_dir.exists():
 app.include_router(api_router)
 
 # === Mount METTLE Router (10-suite sessions, VCP attestation, Ed25519 signing) ===
-from mettle.router import router as mettle_router  # noqa: E402 — intentional late import; router depends on app being fully constructed
+from mettle.router import (
+    router as mettle_router,  # noqa: E402 — intentional late import; router depends on app being fully constructed
+)
 
 app.include_router(mettle_router)
 
