@@ -14,6 +14,7 @@ Configuration (environment variables):
 """
 
 import asyncio
+import json
 import os
 from typing import Any
 
@@ -28,6 +29,12 @@ from mettle.solver import solve_challenge
 
 # Configuration
 API_URL = os.getenv("METTLE_API_URL", "https://mettle.sh/api")
+# The v2 suites/tiers/attestation endpoints (/api/mettle/*) require a Bearer key; the
+# operator supplies the client's key here (the server validates it against its own
+# METTLE_API_KEYS). The MVP /session/* endpoints are unauthenticated.
+API_KEY = os.getenv("METTLE_API_KEY") or next(
+    (k.strip() for k in os.getenv("METTLE_API_KEYS", "").split(",") if k.strip()), None
+)
 
 # Initialize MCP server
 server = Server("mettle")
@@ -39,14 +46,29 @@ http_client = httpx.AsyncClient(timeout=30.0)
 # === Helper Functions ===
 
 
-async def api_call(endpoint: str, method: str = "GET", json: dict | None = None) -> dict:
-    """Make an API call to METTLE."""
+async def api_call(
+    endpoint: str,
+    method: str = "GET",
+    json: dict | None = None,
+    params: dict | None = None,
+    auth: bool = False,
+) -> dict:
+    """Make an API call to METTLE.
+
+    Set ``auth=True`` for the v2 ``/api/mettle/*`` endpoints, which require a Bearer
+    key (``METTLE_API_KEY``). The MVP ``/session/*`` endpoints leave it ``False``.
+    """
     url = f"{API_URL}{endpoint}"
+    headers: dict[str, str] = {}
+    if auth:
+        if not API_KEY:
+            raise RuntimeError("METTLE_API_KEY is required for the METTLE v2 (suites/tiers/attestation) endpoints")
+        headers["Authorization"] = f"Bearer {API_KEY}"
 
     if method == "GET":
-        response = await http_client.get(url)
+        response = await http_client.get(url, headers=headers, params=params)
     else:
-        response = await http_client.post(url, json=json)
+        response = await http_client.post(url, json=json, headers=headers, params=params)
 
     response.raise_for_status()
     return response.json()
@@ -145,6 +167,82 @@ async def list_tools() -> list[Tool]:
                         "description": "Optional identifier for this AI agent",
                     },
                 },
+            },
+        ),
+        # --- v2 suites / tiers / VCP attestation (require METTLE_API_KEY) ---
+        Tool(
+            name="mettle_list_suites",
+            description=(
+                "List the METTLE v2 verification suites (the harder, tiered credential path). "
+                "Each suite probes a capability dimension; passing sets earn a tier "
+                "(bronze/silver/gold/platinum). Requires METTLE_API_KEY."
+            ),
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="mettle_start_v2_session",
+            description=(
+                "Start a METTLE v2 verification session over one or more suites and receive the "
+                "challenge data (never the answers). Answer each suite with mettle_verify_suite. "
+                "Requires METTLE_API_KEY."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "suites": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Suite names, or ['all']",
+                        "default": ["all"],
+                    },
+                    "difficulty": {
+                        "type": "string",
+                        "enum": ["easy", "standard", "hard"],
+                        "description": "Difficulty level",
+                        "default": "standard",
+                    },
+                    "entity_id": {"type": "string", "description": "Optional identifier for this AI agent"},
+                    "vcp_token": {
+                        "type": "string",
+                        "description": "Optional CSM-1 VCP token (enhanced Suite 9 / governance attestation)",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="mettle_verify_suite",
+            description=(
+                "Submit your answers for one single-shot suite in a v2 session and get pass/score. "
+                "Requires METTLE_API_KEY."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID from mettle_start_v2_session"},
+                    "suite": {"type": "string", "description": "Suite name to verify"},
+                    "answers": {"type": "object", "description": "Suite-specific answers (your responses)"},
+                },
+                "required": ["session_id", "suite", "answers"],
+            },
+        ),
+        Tool(
+            name="mettle_get_v2_result",
+            description=(
+                "Get the final v2 result for a session: overall pass, the earned tier, and (by "
+                "default) the signed VCP attestation you can present as a credential. Requires "
+                "METTLE_API_KEY."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID to get results for"},
+                    "include_vcp": {
+                        "type": "boolean",
+                        "description": "Include the VCP-compatible attestation (tier + signature)",
+                        "default": True,
+                    },
+                },
+                "required": ["session_id"],
             },
         ),
     ]
@@ -321,6 +419,108 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return [TextContent(type="text", text=response_text)]
         except httpx.HTTPStatusError as e:
             return [TextContent(type="text", text=f"Error in auto-verification: {e.response.text}")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "mettle_list_suites":
+        try:
+            suites = await api_call("/mettle/suites", auth=True)
+            lines = ["METTLE v2 verification suites:\n"]
+            for s in suites:
+                flags = []
+                if s.get("is_multi_round"):
+                    flags.append("multi-round")
+                if not s.get("available", True):
+                    flags.append("unavailable")
+                suffix = f"  [{', '.join(flags)}]" if flags else ""
+                lines.append(f"  {s.get('suite_number')}. {s.get('name')} ({s.get('display_name')}){suffix}")
+                lines.append(f"       {s.get('description', '')}")
+            lines.append("\nStart one with mettle_start_v2_session (suites=[...]).")
+            return [TextContent(type="text", text="\n".join(lines))]
+        except httpx.HTTPStatusError as e:
+            return [TextContent(type="text", text=f"Error listing suites: {e.response.text}")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "mettle_start_v2_session":
+        try:
+            payload: dict[str, Any] = {
+                "suites": arguments.get("suites", ["all"]),
+                "difficulty": arguments.get("difficulty", "standard"),
+            }
+            if arguments.get("entity_id"):
+                payload["entity_id"] = arguments["entity_id"]
+            if arguments.get("vcp_token"):
+                payload["vcp_token"] = arguments["vcp_token"]
+
+            data = await api_call("/mettle/sessions", "POST", payload, auth=True)
+            challenges = data.get("challenges", {})
+            lines = [
+                "METTLE v2 session started.\n",
+                f"Session ID: {data.get('session_id')}",
+                f"Suites: {', '.join(data.get('suites', []))}",
+                f"Time budget: {data.get('time_budget_ms')}ms",
+                f"Expires: {data.get('expires_at')}",
+                "\nChallenges (answer each suite with mettle_verify_suite):",
+            ]
+            for suite_name, cdata in challenges.items():
+                lines.append(f"  {suite_name}:")
+                lines.append(f"    {json.dumps(cdata)}")
+            return [TextContent(type="text", text="\n".join(lines))]
+        except httpx.HTTPStatusError as e:
+            return [TextContent(type="text", text=f"Error starting v2 session: {e.response.text}")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "mettle_verify_suite":
+        try:
+            data = await api_call(
+                f"/mettle/sessions/{arguments['session_id']}/verify",
+                "POST",
+                {"suite": arguments["suite"], "answers": arguments["answers"]},
+                auth=True,
+            )
+            passed = "PASSED" if data.get("passed") else "FAILED"
+            lines = [
+                f"Suite '{data.get('suite')}': {passed}",
+                f"Score: {data.get('score')}",
+            ]
+            if data.get("details"):
+                lines.append(f"Details: {json.dumps(data['details'])}")
+            lines.append("\nGet the final tier + attestation with mettle_get_v2_result.")
+            return [TextContent(type="text", text="\n".join(lines))]
+        except httpx.HTTPStatusError as e:
+            return [TextContent(type="text", text=f"Error verifying suite: {e.response.text}")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "mettle_get_v2_result":
+        try:
+            include_vcp = arguments.get("include_vcp", True)
+            data = await api_call(
+                f"/mettle/sessions/{arguments['session_id']}/result",
+                params={"include_vcp": str(include_vcp).lower()},
+                auth=True,
+            )
+            passed = "PASSED" if data.get("overall_passed") else "NOT PASSED"
+            lines = [
+                "METTLE v2 Result",
+                "=" * 30,
+                f"Status: {data.get('status')}",
+                f"Overall: {passed}",
+                f"Tier: {data.get('tier') or 'none'}",
+                f"Suites completed: {', '.join(data.get('suites_completed', []))}",
+            ]
+            attestation = data.get("vcp_attestation")
+            if attestation:
+                lines.append("\nVCP attestation (presentable credential):")
+                lines.append(json.dumps(attestation, indent=2))
+            gov = data.get("governance_attestation")
+            if gov:
+                lines.append(f"\nGovernance attestation: framework={gov.get('framework')}")
+            return [TextContent(type="text", text="\n".join(lines))]
+        except httpx.HTTPStatusError as e:
+            return [TextContent(type="text", text=f"Error getting v2 result: {e.response.text}")]
         except Exception as e:
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
