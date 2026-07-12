@@ -5,7 +5,6 @@ from unittest.mock import patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from mettle.auth import AuthenticatedUser, require_authenticated_user
 
 # Minimal FastAPI app for testing the dependency

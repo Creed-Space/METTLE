@@ -64,10 +64,8 @@ except ImportError:
     sys.modules["mcp.types"].Tool = _FakeTool
 
 import httpx  # noqa: E402
-
 import mcp_server  # noqa: E402
 from mcp_server import api_call, call_tool, list_tools, solve_challenge  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

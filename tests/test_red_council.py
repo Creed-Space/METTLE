@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import yaml
-
 from red_team.instrumented_agent import BehavioralSignals, InstrumentedMettleAgent
 from red_team.run_red_council import (
     ScenarioResult,
@@ -32,7 +31,6 @@ from red_team.run_red_council import (
     print_summary,
     run_scenario,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

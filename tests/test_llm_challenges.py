@@ -10,7 +10,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from mettle.llm_challenges import (
     LLMChallengeGenerator,
     LLMResponseEvaluator,
@@ -22,7 +21,6 @@ from mettle.llm_challenges import (
     generate_llm_challenges,
     is_available,
 )
-
 
 # ---- Helpers ----
 

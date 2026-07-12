@@ -22,7 +22,6 @@ import numpy as np
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-
 from scripts.engine import (
     IterationCurveAnalyzer,
     NovelReasoningChallenges,

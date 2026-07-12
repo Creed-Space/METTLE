@@ -13,12 +13,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-
 from red_team.instrumented_agent import (
     InstrumentedMettleAgent,
     MettleEventType,
 )
-
 
 # ── start_session with _client set ───────────────────────────────────────────
 

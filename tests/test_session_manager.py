@@ -20,7 +20,6 @@ import time
 from typing import Any
 
 import pytest
-
 from mettle.api_models import (
     MULTI_ROUND_SUITE,
     SessionStatus,

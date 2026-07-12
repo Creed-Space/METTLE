@@ -23,7 +23,6 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from mettle.session_manager import SessionManager
 
 # ---------------------------------------------------------------------------
@@ -195,8 +194,8 @@ class TestGetSessionManager:
 
     @pytest.mark.asyncio
     async def test_redis_unavailable_raises_503(self) -> None:
-        from mettle.router import get_session_manager
         from fastapi import HTTPException
+        from mettle.router import get_session_manager
 
         mock_request = MagicMock()
         mock_request.app.state.redis = None

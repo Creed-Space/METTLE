@@ -7,10 +7,8 @@ challenge_adapter.py gap: line 932 (vcp_behavioral_match lower adherence path)
 from __future__ import annotations
 
 import pytest
-
-from mettle.vcp import VCPTokenClaim, parse_csm1_token
 from mettle.challenge_adapter import _evaluate_intent_provenance
-
+from mettle.vcp import VCPTokenClaim, parse_csm1_token
 
 # ---- VCPTokenClaim.constitution_ref ----
 

@@ -16,11 +16,10 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from mettle.auth import require_authenticated_user
-from mettle.router import get_session_manager, router
-from mettle.challenge_adapter import ChallengeAdapter
 from mettle.api_models import SUITE_NAMES
+from mettle.auth import require_authenticated_user
+from mettle.challenge_adapter import ChallengeAdapter
+from mettle.router import get_session_manager, router
 from mettle.session_manager import SessionManager
 
 # ---- Shared FakeRedis (same as unit tests) ----

@@ -9,15 +9,13 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-
+from mettle.challenge_adapter import ChallengeAdapter
 from mettle.vcp import (
     build_mettle_attestation,
     compute_tier,
     format_csm1_line,
     parse_csm1_token,
 )
-from mettle.challenge_adapter import ChallengeAdapter
-
 
 # ---- CSM-1 Token Parsing ----
 

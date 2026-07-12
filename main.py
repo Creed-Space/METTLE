@@ -365,7 +365,7 @@ class CollusionDetector:
     SYNC_THRESHOLD = 5  # Max verifications in window to be suspicious
 
     @staticmethod
-    def record_verification(entity_id: str, ip_address: str, passed: bool) -> None:
+    def record_verification(entity_id: str | None, ip_address: str, passed: bool) -> None:
         """Record a verification for pattern analysis."""
         if not entity_id:
             return
@@ -633,8 +633,9 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown Redis
-    if getattr(app.state, "redis", None):
-        await app.state.redis.aclose()
+    redis = getattr(app.state, "redis", None)
+    if redis is not None:
+        await redis.aclose()
 
     # Shutdown background tasks
     for task in (cleanup_task, revocation_task):
@@ -2154,8 +2155,8 @@ if _static_dir.exists():
 app.include_router(api_router)
 
 # === Mount METTLE Router (10-suite sessions, VCP attestation, Ed25519 signing) ===
-from mettle.router import (
-    router as mettle_router,  # noqa: E402 — intentional late import; router depends on app being fully constructed
+from mettle.router import (  # noqa: E402  (intentional late import: router depends on the app being fully constructed)
+    router as mettle_router,
 )
 
 app.include_router(mettle_router)
