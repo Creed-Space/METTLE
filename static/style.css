@@ -450,6 +450,95 @@ a:hover {
 }
 
 /* =============================================
+   Explainer Video
+   ============================================= */
+
+.explainer-section {
+    padding: var(--space-2xl) 0 var(--space-lg);
+}
+
+.video-frame {
+    position: relative;
+    max-width: 920px;
+    margin: var(--space-xl) auto 0;
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    border: 1px solid rgba(20, 184, 166, 0.25);
+    background: #000;
+    box-shadow: 0 10px 50px var(--mettle-primary-glow), var(--shadow);
+}
+
+.video-frame video {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+}
+
+.video-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    cursor: pointer;
+    background: linear-gradient(rgba(10, 10, 18, 0) 45%, rgba(10, 10, 18, 0.55));
+}
+
+.video-overlay:focus-visible {
+    outline: none;
+    box-shadow: inset var(--focus-ring);
+}
+
+.video-overlay.hidden {
+    display: none;
+}
+
+.video-play-btn {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    background: var(--mettle-primary);
+    color: #04110f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    padding-left: 5px; /* optical centring of the triangle */
+    box-shadow: 0 0 40px var(--mettle-primary-glow);
+    transition: transform var(--transition-normal), background var(--transition-normal);
+}
+
+.video-overlay:hover .video-play-btn,
+.video-overlay:focus-visible .video-play-btn {
+    transform: scale(1.06);
+    background: var(--mettle-primary-hover);
+}
+
+.video-duration {
+    position: absolute;
+    right: 14px;
+    bottom: 12px;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    background: rgba(10, 10, 18, 0.7);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 10px;
+}
+
+@media (max-width: 640px) {
+    .video-play-btn {
+        width: 60px;
+        height: 60px;
+        font-size: 1.2rem;
+    }
+}
+
+/* =============================================
    Problems (Born from Reality)
    ============================================= */
 

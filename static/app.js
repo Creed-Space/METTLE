@@ -403,6 +403,32 @@ if (elements.startBtn) {
 })();
 
 /**
+ * Explainer Video - click-to-play overlay with lazy preload
+ * Metadata loads only when the player scrolls near the viewport
+ */
+(function initExplainerVideo() {
+    const video = document.getElementById('explainer-video');
+    const overlay = document.getElementById('explainer-overlay');
+    if (!video || !overlay) return;
+
+    const preloader = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                video.preload = 'metadata';
+                preloader.disconnect();
+            }
+        });
+    }, { rootMargin: '200px' });
+    preloader.observe(video);
+
+    overlay.addEventListener('click', () => {
+        overlay.classList.add('hidden');
+        video.controls = true;
+        video.play().catch(() => {});
+    });
+})();
+
+/**
  * Typewriter Effect for the hero section
  * Cycles through lines, typing and deleting
  */
