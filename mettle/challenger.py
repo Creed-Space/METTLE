@@ -3,8 +3,11 @@
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Sequence, TypeVar
 
 from .models import Challenge, ChallengeType, Difficulty
+
+T = TypeVar("T")
 
 
 def _secure_randint(a: int, b: int) -> int:
@@ -12,7 +15,7 @@ def _secure_randint(a: int, b: int) -> int:
     return a + secrets.randbelow(b - a + 1)
 
 
-def _secure_choice(seq: list) -> any:
+def _secure_choice(seq: Sequence[T]) -> T:
     """Select a random element from sequence using cryptographic randomness."""
     return seq[secrets.randbelow(len(seq))]
 

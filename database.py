@@ -20,10 +20,19 @@ from sqlalchemy import (
     Text,
     create_engine,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+def _database_url_from_env() -> str:
+    """Resolve the configured URL, preferring the documented METTLE prefix."""
+    return (
+        os.environ.get("METTLE_DATABASE_URL")
+        or os.environ.get("DATABASE_URL")
+        or "sqlite:///mettle.db"
+    )
+
 
 # Database configuration
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///mettle.db")
+DATABASE_URL = _database_url_from_env()
 
 # Handle Render's postgres:// vs postgresql://
 if DATABASE_URL.startswith("postgres://"):
@@ -36,8 +45,11 @@ else:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 logger = logging.getLogger(__name__)
+
+
+class Base(DeclarativeBase):
+    """Base class for persisted METTLE records."""
 
 
 # === Database Models ===
@@ -213,7 +225,7 @@ def add_revoked_badge(jti: str, entity_id: str | None, reason: str, evidence: di
         return False
 
 
-def is_badge_revoked(jti: str) -> bool:
+def is_badge_revoked(jti: str, *, raise_on_error: bool = False) -> bool:
     """Check if a badge is revoked."""
     try:
         with get_db() as db:
@@ -221,10 +233,12 @@ def is_badge_revoked(jti: str) -> bool:
             return result is not None
     except Exception as exc:
         logger.exception("Failed to check revoked badge '%s': %s", jti, exc)
+        if raise_on_error:
+            raise RuntimeError("Badge revocation status unavailable") from exc
         return False
 
 
-def get_revoked_badges(limit: int = 100) -> list[dict]:
+def get_revoked_badges(limit: int = 100, *, raise_on_error: bool = False) -> list[dict]:
     """Get list of revoked badges."""
     try:
         with get_db() as db:
@@ -234,13 +248,28 @@ def get_revoked_badges(limit: int = 100) -> list[dict]:
                     "jti": r.jti,
                     "entity_id": r.entity_id,
                     "reason": r.reason,
+                    "evidence": json.loads(r.evidence_json) if r.evidence_json else None,
                     "revoked_at": r.revoked_at.isoformat() if r.revoked_at else None,
                 }
                 for r in results
             ]
     except Exception as exc:
         logger.exception("Failed to list revoked badges: %s", exc)
+        if raise_on_error:
+            raise RuntimeError("Badge revocation audit unavailable") from exc
         return []
+
+
+def count_revoked_badges(*, raise_on_error: bool = False) -> int:
+    """Return the durable number of revoked badges."""
+    try:
+        with get_db() as db:
+            return db.query(DBRevokedBadge).count()
+    except Exception as exc:
+        logger.exception("Failed to count revoked badges: %s", exc)
+        if raise_on_error:
+            raise RuntimeError("Badge revocation audit unavailable") from exc
+        return 0
 
 
 # === API Key Operations ===

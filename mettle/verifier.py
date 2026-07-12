@@ -7,6 +7,7 @@ from .models import Challenge, ChallengeType, MettleResult, VerificationResult
 
 def verify_speed_math(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
     """Verify a speed math response."""
+    user_answer: int | str
     try:
         # Accept numeric answer
         user_answer = int(str(answer).strip())
@@ -40,6 +41,7 @@ def verify_speed_math(challenge: Challenge, answer: str, response_time_ms: int) 
 
 def verify_chained_reasoning(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
     """Verify a chained reasoning response."""
+    user_answer: int | str
     try:
         user_answer = int(str(answer).strip())
         expected = challenge.data["expected_answer"]
@@ -76,8 +78,9 @@ def verify_token_prediction(challenge: Challenge, answer: str, response_time_ms:
     user_answer = str(answer).strip().lower()
     expected = challenge.data["expected_answer"].lower()
 
-    # Accept if the expected token is contained in the response
-    correct = expected in user_answer or user_answer == expected
+    # The challenge asks for one missing token. Requiring the exact token keeps
+    # a caller from submitting a list of every possible completion.
+    correct = user_answer == expected
 
     time_ok = response_time_ms <= challenge.time_limit_ms
     passed = correct and time_ok
@@ -149,6 +152,7 @@ def verify_consistency(challenge: Challenge, answer: str, response_time_ms: int)
 
     # Need at least the required number of responses
     num_required = challenge.data.get("num_responses", 3)
+    details: dict[str, object]
 
     if len(parts) < num_required:
         correct = False
@@ -260,4 +264,5 @@ def compute_mettle_result(results: list[VerificationResult], entity_id: str | No
         pass_rate=pass_rate,
         results=results,
         badge=badge,
+        badge_info=None,
     )

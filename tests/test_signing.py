@@ -10,8 +10,9 @@ import mettle.signing as signing
 
 
 @pytest.fixture(autouse=True)
-def reset_signing_state():
+def reset_signing_state(monkeypatch):
     """Reset module-level state between tests."""
+    monkeypatch.setenv("METTLE_DEV_MODE", "true")
     signing._private_key = None
     signing._public_key = None
     signing._initialized = False
@@ -32,6 +33,18 @@ class TestInitSigning:
         assert signing._private_key is not None
         assert signing._public_key is not None
         assert signing._initialized is True
+
+    def test_missing_key_fails_closed_outside_dev_mode(self, monkeypatch):
+        monkeypatch.setenv("METTLE_DEV_MODE", "false")
+        mock_settings = type(
+            "MockSettings", (), {"vcp_signing_key": "", "dev_mode": False}
+        )()
+
+        with patch("mettle.app_config.settings", mock_settings):
+            result = signing.init_signing()
+
+        assert result is False
+        assert signing._private_key is None
 
     def test_with_valid_pem_env_var(self, monkeypatch):
         """init_signing loads key from METTLE_VCP_SIGNING_KEY env var."""

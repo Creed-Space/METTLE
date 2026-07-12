@@ -72,6 +72,8 @@ class ScenarioResult:
 class TestReport:
     """Overall test report."""
 
+    __test__ = False
+
     session_id: str
     timestamp: str
     total_scenarios: int

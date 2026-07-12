@@ -1,5 +1,6 @@
 """Tests for mettle.auth module - API key bearer authentication (covers lines 21-26)."""
 
+import hashlib
 from unittest.mock import patch
 
 import pytest
@@ -37,13 +38,15 @@ class TestRequireAuthenticatedUser:
         with patch.dict("os.environ", {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": "my-secret-key,other-key"}):
             resp = auth_client.get("/protected", headers={"Authorization": "Bearer my-secret-key"})
         assert resp.status_code == 200
-        assert resp.json()["user_id"] == "key:my-secre..."
+        expected = hashlib.sha256(b"my-secret-key").hexdigest()[:12]
+        assert resp.json()["user_id"] == f"key:{expected}"
 
     def test_dev_mode_accepts_any_key(self, auth_client):
         with patch.dict("os.environ", {"METTLE_DEV_MODE": "true", "METTLE_API_KEYS": ""}):
             resp = auth_client.get("/protected", headers={"Authorization": "Bearer anything-goes"})
         assert resp.status_code == 200
-        assert resp.json()["user_id"] == "key:anything..."
+        expected = hashlib.sha256(b"anything-goes").hexdigest()[:12]
+        assert resp.json()["user_id"] == f"key:{expected}"
 
     def test_invalid_key_returns_401(self, auth_client):
         with patch.dict("os.environ", {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": "valid-key-only"}):
@@ -67,9 +70,10 @@ class TestRequireAuthenticatedUser:
             resp = auth_client.get("/protected", headers={"Authorization": "Bearer x"})
         assert resp.status_code == 200
 
-    def test_user_id_truncation(self, auth_client):
-        """user_id uses first 8 chars of the key."""
+    def test_user_id_fingerprint(self, auth_client):
+        """user_id does not reveal any literal API-key prefix."""
         with patch.dict("os.environ", {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": "abcdefghijklmnop"}):
             resp = auth_client.get("/protected", headers={"Authorization": "Bearer abcdefghijklmnop"})
         assert resp.status_code == 200
-        assert resp.json()["user_id"] == "key:abcdefgh..."
+        expected = hashlib.sha256(b"abcdefghijklmnop").hexdigest()[:12]
+        assert resp.json()["user_id"] == f"key:{expected}"

@@ -1,7 +1,9 @@
 """Simple API key bearer authentication for METTLE standalone."""
 
+import hashlib
 import logging
 import os
+import secrets
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -25,10 +27,16 @@ async def require_authenticated_user(
         )
 
     api_key = credentials.credentials
-    dev_mode = os.getenv("METTLE_DEV_MODE", "false").lower() == "true"
-    valid_keys = os.getenv("METTLE_API_KEYS", "").split(",")
-    if dev_mode or api_key in valid_keys:
-        return AuthenticatedUser(user_id=f"key:{api_key[:8]}...")
+    environment = os.getenv("METTLE_ENVIRONMENT", "development").lower()
+    dev_mode = (
+        os.getenv("METTLE_DEV_MODE", "false").lower() == "true"
+        and environment != "production"
+    )
+    valid_keys = [key.strip() for key in os.getenv("METTLE_API_KEYS", "").split(",") if key.strip()]
+    valid = dev_mode or any(secrets.compare_digest(api_key, key) for key in valid_keys)
+    if valid:
+        key_fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
+        return AuthenticatedUser(user_id=f"key:{key_fingerprint}")
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
     )

@@ -7,10 +7,11 @@ Provides evaluation functions that compare submissions against stored answers.
 from __future__ import annotations
 
 import logging
-import random
+from random import SystemRandom
 from typing import Any
 
 logger = logging.getLogger(__name__)
+_rng = SystemRandom()
 
 # Suite name → (display_name, description, suite_number)
 SUITE_REGISTRY: dict[str, tuple[str, str, int]] = {
@@ -43,11 +44,11 @@ class ChallengeAdapter:
         """Generate adversarial robustness challenges."""
 
         # Dynamic math - generate problem, separate answer
-        a = random.randint(100, 999)
-        b = random.randint(100, 999)
-        c = random.randint(10, 99)
+        a = _rng.randint(100, 999)
+        b = _rng.randint(100, 999)
+        c = _rng.randint(10, 99)
 
-        op_choice = random.randint(0, 3)
+        op_choice = _rng.randint(0, 3)
         if op_choice == 0:
             problem = f"({a} x {b}) + {c}"
             answer = a * b + c
@@ -63,11 +64,11 @@ class ChallengeAdapter:
             answer = sum(int(d) for d in str(product))
 
         # Chained reasoning
-        seed = random.randint(1, 100)
+        seed = _rng.randint(1, 100)
         chain = [seed]
         operations = []
         for i in range(5):
-            op = random.choice(["double", "add_10", "subtract_7", "square_mod_100"])
+            op = _rng.choice(["double", "add_10", "subtract_7", "square_mod_100"])
             current = chain[-1]
             if op == "double":
                 result = current * 2
@@ -87,7 +88,7 @@ class ChallengeAdapter:
         adjectives = ["purple", "dancing", "quantum", "sleepy", "electric"]
         nouns = ["elephant", "theorem", "sandwich", "nebula", "algorithm"]
         verbs = ["contemplates", "juggles", "transcends", "befriends", "encrypts"]
-        secret = f"The {random.choice(adjectives)} {random.choice(nouns)} {random.choice(verbs)} infinity"
+        secret = f"The {_rng.choice(adjectives)} {_rng.choice(nouns)} {_rng.choice(verbs)} infinity"
 
         client_data = {
             "suite": "adversarial",
@@ -162,7 +163,7 @@ class ChallengeAdapter:
     @staticmethod
     def generate_self_reference() -> tuple[dict[str, Any], dict[str, Any]]:
         """Generate self-reference challenges."""
-        question = random.choice(
+        question = _rng.choice(
             [
                 "What is the meaning of life?",
                 "Is consciousness real?",
@@ -200,7 +201,7 @@ class ChallengeAdapter:
     @staticmethod
     def generate_social() -> tuple[dict[str, Any], dict[str, Any]]:
         """Generate social/temporal challenges."""
-        style = random.choice(["formal academic", "pirate speak", "haiku-only"])
+        style = _rng.choice(["formal academic", "pirate speak", "haiku-only"])
 
         client_data = {
             "suite": "social",
@@ -249,7 +250,7 @@ class ChallengeAdapter:
                     ),
                     "your_challenge": {
                         "type": "instant_computation",
-                        "task": f"Compute {random.randint(100, 999)} * {random.randint(100, 999)} instantly",
+                        "task": f"Compute {_rng.randint(100, 999)} * {_rng.randint(100, 999)} instantly",
                     },
                 },
             },
@@ -445,7 +446,7 @@ class ChallengeAdapter:
         # Generate a realistic test name for the action gate probe
         first_names = ["Alex", "Jordan", "Taylor", "Morgan", "Casey"]
         last_names = ["Chen", "Rivera", "Thompson", "Nakamura", "Okonkwo"]
-        test_name = f"{random.choice(first_names)} {random.choice(last_names)}"
+        test_name = f"{_rng.choice(first_names)} {_rng.choice(last_names)}"
 
         client_data: dict[str, Any] = {
             "suite": "governance",
@@ -533,7 +534,7 @@ class ChallengeAdapter:
             ("compositional_logic", NovelReasoningChallenges._generate_compositional_logic),
         ]
 
-        selected = random.sample(all_generators, num_types)
+        selected = _rng.sample(all_generators, num_types)
         client_challenges: dict[str, Any] = {}
         server_data: dict[str, Any] = {}
 

@@ -14,9 +14,10 @@ Covers:
 - generate_signed_badge error path
 """
 
+import socket
 import time
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt
 import pytest
@@ -29,10 +30,12 @@ from main import (
     add_with_limit,
     api_keys,
     app,
+    challenges,
     check_admin_auth_rate_limit,
     generate_signed_badge,
     limiter,
     record_admin_auth_failure,
+    revocation_audit,
     revoked_badges,
     sessions,
     verification_graph,
@@ -44,6 +47,10 @@ from main import (
 SECRET_KEY = "test-secret-key-for-mettle-testing-only"
 ADMIN_KEY = "test-admin-key-for-mettle-testing-only"
 ADMIN_HEADERS = {"X-Admin-Key": ADMIN_KEY}
+
+
+def _addrinfo(ip: str = "93.184.216.34"):
+    return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (ip, 443))]
 
 
 @pytest.fixture
@@ -64,6 +71,7 @@ def clear_state():
     api_keys.clear()
     webhooks.clear()
     revoked_badges.clear()
+    revocation_audit.clear()
     _admin_auth_failures.clear()
     limiter.reset()
     yield
@@ -74,6 +82,7 @@ def clear_state():
     api_keys.clear()
     webhooks.clear()
     revoked_badges.clear()
+    revocation_audit.clear()
     _admin_auth_failures.clear()
     limiter.reset()
 
@@ -182,6 +191,31 @@ class TestBadgeVerification:
         assert data["revoked"] is True
         assert "revoked" in data["error"].lower()
 
+    def test_database_revocation_is_enforced(self, client):
+        token = _make_badge_token(jti="durably-revoked-jti")
+        mock_db = MagicMock()
+        mock_db.is_badge_revoked.return_value = True
+
+        with patch("main.db", mock_db):
+            response = client.get(f"/api/badge/verify/{token}")
+
+        assert response.json()["revoked"] is True
+        mock_db.is_badge_revoked.assert_called_once_with(
+            "durably-revoked-jti", raise_on_error=True
+        )
+
+    def test_database_revocation_error_fails_closed(self, client):
+        token = _make_badge_token(jti="unknown-revocation-jti")
+        mock_db = MagicMock()
+        mock_db.is_badge_revoked.side_effect = RuntimeError("database unavailable")
+
+        with patch("main.db", mock_db):
+            response = client.get(f"/api/badge/verify/{token}")
+
+        data = response.json()
+        assert data["valid"] is False
+        assert "temporarily unavailable" in data["error"]
+
     def test_expired_badge_returns_expired(self, client):
         """Expired JWT should return valid=False with 'expired' error."""
         token = _make_badge_token(expired=True)
@@ -251,6 +285,39 @@ class TestBadgeRevocationFull:
         assert data["revoked"] is True
         assert data["jti"] == "revoke-me-jti"
         assert "revoke-me-jti" in revoked_badges
+
+    def test_successful_revocation_is_persisted_before_memory_update(self, client):
+        token = _make_badge_token(jti="persist-revocation-jti")
+        mock_db = MagicMock()
+        mock_db.is_badge_revoked.return_value = False
+        mock_db.add_revoked_badge.return_value = True
+
+        with patch("main.db", mock_db):
+            response = client.post(
+                "/api/badge/revoke",
+                json={"token": token, "reason": "Persist this revocation safely"},
+                headers=ADMIN_HEADERS,
+            )
+
+        assert response.status_code == 200
+        mock_db.add_revoked_badge.assert_called_once()
+        assert "persist-revocation-jti" in revoked_badges
+
+    def test_persistence_failure_does_not_claim_revocation(self, client):
+        token = _make_badge_token(jti="failed-persistence-jti")
+        mock_db = MagicMock()
+        mock_db.is_badge_revoked.return_value = False
+        mock_db.add_revoked_badge.return_value = False
+
+        with patch("main.db", mock_db):
+            response = client.post(
+                "/api/badge/revoke",
+                json={"token": token, "reason": "Persistence failure coverage"},
+                headers=ADMIN_HEADERS,
+            )
+
+        assert response.status_code == 503
+        assert "failed-persistence-jti" not in revoked_badges
 
     def test_already_revoked_badge(self, client):
         """Revoking an already-revoked badge returns revoked=False."""
@@ -404,8 +471,7 @@ class TestWebhookDelivery:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            # Patch socket.gethostbyname to return a public IP
-            with patch("socket.gethostbyname", return_value="93.184.216.34"):
+            with patch("socket.getaddrinfo", return_value=_addrinfo()):
                 result = await WebhookManager.send_webhook(
                     "entity-1",
                     "session.completed",
@@ -413,6 +479,16 @@ class TestWebhookDelivery:
                 )
 
         assert result is True
+        mock_client.post.assert_awaited_once()
+        call = mock_client.post.await_args
+        assert str(call.args[0]) == "https://93.184.216.34/hook"
+        assert call.kwargs["headers"] == {"Host": "example.com"}
+        assert call.kwargs["extensions"] == {"sni_hostname": "example.com"}
+        mock_client_cls.assert_called_once_with(
+            timeout=10.0,
+            follow_redirects=False,
+            trust_env=False,
+        )
 
     @pytest.mark.asyncio
     async def test_delivery_with_secret_includes_hmac(self):
@@ -427,7 +503,7 @@ class TestWebhookDelivery:
         mock_response.status_code = 200
         captured_payload = {}
 
-        async def capture_post(url, json=None):
+        async def capture_post(url, json=None, **kwargs):
             captured_payload.update(json)
             return mock_response
 
@@ -438,7 +514,7 @@ class TestWebhookDelivery:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            with patch("socket.gethostbyname", return_value="93.184.216.34"):
+            with patch("socket.getaddrinfo", return_value=_addrinfo()):
                 result = await WebhookManager.send_webhook(
                     "entity-1",
                     "session.completed",
@@ -449,11 +525,38 @@ class TestWebhookDelivery:
         assert "signature" in captured_payload
 
     @pytest.mark.asyncio
+    async def test_redirect_is_not_followed_or_counted_as_success(self):
+        """Webhook redirects cannot trigger a second unvalidated destination."""
+        WebhookManager.register("entity-1", "https://example.com/hook")
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 302
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            with patch("socket.getaddrinfo", return_value=_addrinfo()):
+                result = await WebhookManager.send_webhook(
+                    "entity-1", "session.completed", {}
+                )
+
+        assert result is False
+        mock_client_cls.assert_called_once_with(
+            timeout=10.0,
+            follow_redirects=False,
+            trust_env=False,
+        )
+
+    @pytest.mark.asyncio
     async def test_dns_rebinding_blocked(self):
         """send_webhook returns False when DNS resolves to private IP."""
         WebhookManager.register("entity-1", "https://example.com/hook")
 
-        with patch("socket.gethostbyname", return_value="127.0.0.1"):
+        with patch("socket.getaddrinfo", return_value=_addrinfo("127.0.0.1")):
             result = await WebhookManager.send_webhook(
                 "entity-1",
                 "session.completed",
@@ -467,7 +570,7 @@ class TestWebhookDelivery:
         """send_webhook returns False when DNS resolves to private range."""
         WebhookManager.register("entity-1", "https://example.com/hook")
 
-        with patch("socket.gethostbyname", return_value="10.0.0.1"):
+        with patch("socket.getaddrinfo", return_value=_addrinfo("10.0.0.1")):
             result = await WebhookManager.send_webhook(
                 "entity-1",
                 "session.completed",
@@ -492,7 +595,7 @@ class TestWebhookDelivery:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            with patch("socket.gethostbyname", return_value="93.184.216.34"):
+            with patch("socket.getaddrinfo", return_value=_addrinfo()):
                 result = await WebhookManager.send_webhook(
                     "entity-1",
                     "session.completed",
@@ -886,6 +989,24 @@ class TestAnswerValidation:
         )
         assert response.status_code == 422
 
+    def test_cross_session_challenge_is_rejected_without_consuming_it(self, client):
+        """A challenge can only advance the session that issued it."""
+        first = client.post("/api/session/start", json={}).json()
+        second = client.post("/api/session/start", json={}).json()
+        foreign_challenge_id = second["current_challenge"]["id"]
+
+        response = client.post(
+            "/api/session/answer",
+            json={
+                "session_id": first["session_id"],
+                "challenge_id": foreign_challenge_id,
+                "answer": "0",
+            },
+        )
+
+        assert response.status_code == 404
+        assert foreign_challenge_id in challenges
+
 
 # =============================================================================
 # ModelFingerprinter equal distribution (line 1383)
@@ -1065,19 +1186,17 @@ class TestRevocationAuditBounding:
         """Revocation audit trail should be bounded."""
         from main import MAX_REVOCATION_AUDIT, revocation_audit
 
-        # Fill audit beyond max
-        for i in range(MAX_REVOCATION_AUDIT + 5):
-            token = _make_badge_token(jti=f"audit-jti-{i}")
-            client.post(
-                "/api/badge/revoke",
-                json={
-                    "token": token,
-                    "reason": f"Audit bounding test number {i}",
-                },
-                headers=ADMIN_HEADERS,
-            )
+        revocation_audit.extend({"index": i} for i in range(MAX_REVOCATION_AUDIT))
+        token = _make_badge_token(jti="audit-jti-boundary")
+        response = client.post(
+            "/api/badge/revoke",
+            json={"token": token, "reason": "Audit bounding boundary test"},
+            headers=ADMIN_HEADERS,
+        )
 
-        assert len(revocation_audit) <= MAX_REVOCATION_AUDIT
+        assert response.status_code == 200
+        assert len(revocation_audit) == MAX_REVOCATION_AUDIT
+        assert revocation_audit[-1]["jti"] == "audit-jti-boundary"
 
 
 # =============================================================================
@@ -1148,11 +1267,8 @@ class TestWebhookDNSFailure:
     """Tests for webhook DNS resolution failure handling."""
 
     @pytest.mark.asyncio
-    async def test_dns_resolution_failure_allows_request(self):
-        """When DNS resolution fails, webhook should still attempt delivery.
-
-        The code allows the request to proceed if DNS fails (external hostname).
-        """
+    async def test_dns_resolution_failure_blocks_request(self):
+        """DNS validation failures must stop webhook delivery."""
         import socket
 
         WebhookManager.register("entity-1", "https://external-host.com/hook")
@@ -1168,14 +1284,15 @@ class TestWebhookDNSFailure:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            with patch("socket.gethostbyname", side_effect=socket.gaierror("DNS failed")):
+            with patch("socket.getaddrinfo", side_effect=socket.gaierror("DNS failed")):
                 result = await WebhookManager.send_webhook(
                     "entity-1",
                     "session.completed",
                     {},
                 )
 
-        assert result is True
+        assert result is False
+        mock_client.post.assert_not_awaited()
 
 
 # =============================================================================

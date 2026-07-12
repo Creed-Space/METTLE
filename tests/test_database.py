@@ -272,6 +272,12 @@ class TestIsBadgeRevoked:
         with patch.object(db, "get_db", side_effect=Exception("db error")):
             assert db.is_badge_revoked("err") is False
 
+    def test_is_badge_revoked_can_fail_closed(self, isolated_db):
+        db = isolated_db
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            with pytest.raises(RuntimeError, match="status unavailable"):
+                db.is_badge_revoked("err", raise_on_error=True)
+
 
 class TestGetRevokedBadges:
     def test_empty_list_when_none(self, isolated_db):
@@ -288,6 +294,9 @@ class TestGetRevokedBadges:
         assert len(result) == 2
         jtis = {r["jti"] for r in result}
         assert jtis == {"jti-a", "jti-b"}
+        assert next(r for r in result if r["jti"] == "jti-a")["evidence"] == {
+            "detail": "a"
+        }
         # Verify structure
         for badge in result:
             assert "jti" in badge
@@ -318,6 +327,26 @@ class TestGetRevokedBadges:
         with patch.object(db, "get_db", side_effect=Exception("db error")):
             result = db.get_revoked_badges()
             assert result == []
+
+    def test_get_revoked_badges_can_fail_closed(self, isolated_db):
+        db = isolated_db
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            with pytest.raises(RuntimeError, match="audit unavailable"):
+                db.get_revoked_badges(raise_on_error=True)
+
+
+class TestCountRevokedBadges:
+    def test_counts_durable_revocations(self, isolated_db):
+        db = isolated_db
+        db.add_revoked_badge("count-1", "e1", "reason", None)
+        db.add_revoked_badge("count-2", "e2", "reason", None)
+        assert db.count_revoked_badges() == 2
+
+    def test_count_can_fail_closed(self, isolated_db):
+        db = isolated_db
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            with pytest.raises(RuntimeError, match="audit unavailable"):
+                db.count_revoked_badges(raise_on_error=True)
 
 
 # ── API Key Operations ───────────────────────────────────────────────────────
@@ -638,6 +667,13 @@ class TestDatabaseUrlRewriting:
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
         assert url == "sqlite:///test.db"
+
+    def test_prefixed_database_url_takes_precedence(self, monkeypatch):
+        import database
+
+        monkeypatch.setenv("DATABASE_URL", "postgresql://legacy/db")
+        monkeypatch.setenv("METTLE_DATABASE_URL", "postgresql://prefixed/db")
+        assert database._database_url_from_env() == "postgresql://prefixed/db"
 
 
 class TestModuleLevelInit:

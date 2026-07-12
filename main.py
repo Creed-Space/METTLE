@@ -14,7 +14,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, TypedDict, cast
 
 import jwt
 import structlog
@@ -44,13 +44,35 @@ from config import get_settings
 # Configuration
 settings = get_settings()
 
+class DatabaseLayer(Protocol):
+    """Operations used from the optional persistence module."""
+
+    def init_db(self) -> None: ...
+    def save_api_key(self, api_key: str, tier: str, entity_id: str | None) -> bool: ...
+    def save_verification_record(self, entity_id: str, ip_address: str, passed: bool) -> bool: ...
+    def is_badge_revoked(self, jti: str, *, raise_on_error: bool = False) -> bool: ...
+    def add_revoked_badge(
+        self, jti: str, entity_id: str | None, reason: str, evidence: dict | None
+    ) -> bool: ...
+    def get_revoked_badges(
+        self, limit: int = 100, *, raise_on_error: bool = False
+    ) -> list[dict]: ...
+    def count_revoked_badges(self, *, raise_on_error: bool = False) -> int: ...
+    def save_webhook(
+        self, entity_id: str, url: str, events: list[str], secret: str | None
+    ) -> bool: ...
+    def delete_webhook(self, entity_id: str) -> bool: ...
+
+
 # Database layer (optional)
-db = None
+db: DatabaseLayer | None = None
 if settings.use_database:
     try:
         from urllib.parse import urlparse
 
-        import database as db
+        import database as database_module
+
+        db = cast(DatabaseLayer, database_module)
 
         # SECURITY: Redact credentials from database URL before logging
         logger_temp = structlog.get_logger()
@@ -221,7 +243,7 @@ class CollusionDetector:
     SYNC_THRESHOLD = 5  # Max verifications in window to be suspicious
 
     @staticmethod
-    def record_verification(entity_id: str, ip_address: str, passed: bool) -> None:
+    def record_verification(entity_id: str | None, ip_address: str, passed: bool) -> None:
         """Record a verification for pattern analysis."""
         if not entity_id:
             return
@@ -441,9 +463,14 @@ async def lifespan(app: FastAPI):
     global startup_time
     startup_time = datetime.now(timezone.utc)
 
-    # Validate production config
     if settings.is_production and not settings.secret_key:
         raise RuntimeError("SECRET_KEY environment variable required in production")
+
+    if db:
+        try:
+            db.init_db()
+        except Exception as exc:
+            raise RuntimeError("Database initialization failed") from exc
 
     logger.info(
         "mettle_starting",
@@ -473,9 +500,12 @@ async def lifespan(app: FastAPI):
     try:
         from mettle.signing import init_signing
 
-        init_signing()
+        signing_available = init_signing()
+        if settings.is_production and not signing_available:
+            raise RuntimeError("VCP attestation signing is unavailable in production")
     except ImportError:
-        pass
+        if settings.is_production:
+            raise RuntimeError("VCP attestation signing dependencies are unavailable")
 
     # Start cleanup task
     cleanup_task = asyncio.create_task(cleanup_expired_sessions())
@@ -560,7 +590,7 @@ app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
-    allow_credentials=True,
+    allow_credentials=settings.allowed_origins != "*",
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -949,6 +979,22 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
         logger.warning("session_invalid", session_id=body.session_id)
         raise HTTPException(status_code=404, detail="Session not found or invalid")
 
+    # Bind the submitted challenge to this session and its current position
+    # before touching the global one-time challenge store. Without this check,
+    # a valid challenge ID from another session could be consumed and credited
+    # to the wrong session.
+    current_index = len(session.results)
+    if (
+        current_index >= len(session.challenges)
+        or session.challenges[current_index].id != body.challenge_id
+    ):
+        logger.warning(
+            "challenge_session_mismatch",
+            session_id=body.session_id,
+            challenge_id=body.challenge_id,
+        )
+        raise HTTPException(status_code=404, detail="Challenge not found or already answered")
+
     # Get and remove challenge atomically to prevent race conditions
     # SECURITY: Using pop() instead of get()+del prevents double-submission attacks
     challenge_data = challenges.pop(body.challenge_id, None)
@@ -1226,14 +1272,25 @@ async def verify_badge(request: Request, token: str):
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
 
-        # Check revocation (will be implemented in Task 3)
+        # Revocation is process-local when persistence is disabled and durable
+        # when the database layer is enabled. Database errors fail closed.
         jti = payload.get("jti")
-        if jti and jti in revoked_badges:
-            return BadgeVerifyResponse(
-                valid=False,
-                error="Badge has been revoked",
-                revoked=True,
-            )
+        if jti:
+            try:
+                is_revoked = jti in revoked_badges or bool(
+                    db and db.is_badge_revoked(jti, raise_on_error=True)
+                )
+            except RuntimeError:
+                return BadgeVerifyResponse(
+                    valid=False,
+                    error="Badge revocation status is temporarily unavailable",
+                )
+            if is_revoked:
+                return BadgeVerifyResponse(
+                    valid=False,
+                    error="Badge has been revoked",
+                    revoked=True,
+                )
 
         # Extract expiry info
         exp = payload.get("exp")
@@ -1253,10 +1310,6 @@ async def verify_badge(request: Request, token: str):
 
 
 # === Revocation Endpoints ===
-
-# Audit trail for revocations
-revocation_audit: list[dict[str, Any]] = []
-
 
 class RevokeBadgeRequest(BaseModel):
     """Request to revoke a badge."""
@@ -1331,14 +1384,29 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
     if not jti:
         raise HTTPException(status_code=400, detail="Badge has no revocable ID (jti)")
 
-    if jti in revoked_badges:
+    try:
+        already_revoked = jti in revoked_badges or bool(
+            db and db.is_badge_revoked(jti, raise_on_error=True)
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail="Revocation service temporarily unavailable") from e
+
+    if already_revoked:
         return RevokeBadgeResponse(
             revoked=False,
             jti=jti,
             message="Badge already revoked",
         )
 
-    # Add to revocation dict with memory limit
+    if db and not db.add_revoked_badge(
+        jti,
+        payload.get("entity_id"),
+        body.reason,
+        body.evidence,
+    ):
+        raise HTTPException(status_code=503, detail="Failed to persist badge revocation")
+
+    # Add to revocation dict with memory limit after durable storage succeeds.
     add_with_limit(revoked_badges, jti, time.time(), MAX_REVOKED_BADGES)
 
     # Create audit record with memory limit
@@ -1394,6 +1462,18 @@ async def list_revocations(request: Request):
     if not verify_admin_key(admin_key, ip_address):
         raise HTTPException(status_code=401, detail="Admin authorization required")
 
+    if db:
+        try:
+            return {
+                "revoked_count": db.count_revoked_badges(raise_on_error=True),
+                "audit": db.get_revoked_badges(100, raise_on_error=True),
+            }
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Revocation audit is temporarily unavailable",
+            ) from exc
+
     return {
         "revoked_count": len(revoked_badges),
         "audit": revocation_audit[-100:],  # Last 100 revocations
@@ -1403,11 +1483,17 @@ async def list_revocations(request: Request):
 # === Model Fingerprinting ===
 
 
+class FingerprintSignature(TypedDict):
+    patterns: list[str]
+    avg_response_length: tuple[int, int]
+    formatting_style: str
+
+
 class ModelFingerprinter:
     """Identify model family through behavioral signatures."""
 
     # Known model family signatures
-    SIGNATURES = {
+    SIGNATURES: dict[str, FingerprintSignature] = {
         "claude": {
             "patterns": ["I'd be happy to", "I cannot", "I should note"],
             "avg_response_length": (50, 200),
@@ -1615,36 +1701,75 @@ class WebhookManager:
         try:
             import ipaddress
             import socket
-            from urllib.parse import urlparse
+            from urllib.parse import urlparse, urlunparse
 
             import httpx
 
-            # SECURITY: Validate resolved IP at request time to prevent DNS rebinding
-            # The URL was validated at registration, but DNS could change
+            # Validate every resolved address immediately before delivery, then
+            # connect to one of those exact IPs. Re-resolving the hostname inside
+            # the HTTP client would leave a DNS-rebinding TOCTOU gap.
             parsed = urlparse(url)
             hostname = parsed.hostname
-            if hostname:
-                try:
-                    # Resolve hostname to IP
-                    resolved_ip = socket.gethostbyname(hostname)
-                    ip_obj = ipaddress.ip_address(resolved_ip)
+            if not hostname:
+                return False
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            try:
+                resolved: set[str] = set()
+                for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM):
+                    raw_address = item[4][0]
+                    if not isinstance(raw_address, str):
+                        raise ValueError("DNS resolver returned a non-string address")
+                    resolved.add(raw_address.split("%", 1)[0])
+                if not resolved:
+                    return False
+                resolved_ips = {address: ipaddress.ip_address(address) for address in resolved}
+                blocked = [address for address, ip in resolved_ips.items() if not ip.is_global]
+                if blocked:
+                    logger.warning(
+                        "webhook_blocked_dns_rebind",
+                        entity_id=entity_id,
+                        url=url[:50],
+                        resolved_ips=sorted(blocked),
+                    )
+                    return False
+            except (socket.gaierror, ValueError) as e:
+                logger.warning(
+                    "webhook_dns_validation_failed",
+                    entity_id=entity_id,
+                    url=url[:50],
+                    error=type(e).__name__,
+                )
+                return False
 
-                    # Block private/internal IPs
-                    if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
-                        logger.warning(
-                            "webhook_blocked_dns_rebind",
-                            entity_id=entity_id,
-                            url=url[:50],
-                            resolved_ip=resolved_ip,
-                        )
-                        return False
-                except (socket.gaierror, ValueError):
-                    # DNS resolution failed or invalid IP - allow (external hostname)
-                    pass
+            resolved_ip = sorted(resolved)[0]
+            ip_for_url = f"[{resolved_ip}]" if resolved_ips[resolved_ip].version == 6 else resolved_ip
+            include_port = parsed.port is not None
+            pinned_netloc = f"{ip_for_url}:{port}" if include_port else ip_for_url
+            pinned_url = urlunparse(
+                (
+                    parsed.scheme,
+                    pinned_netloc,
+                    parsed.path or "/",
+                    parsed.params,
+                    parsed.query,
+                    "",
+                )
+            )
+            host_for_header = f"[{hostname}]" if ":" in hostname else hostname
+            host_header = f"{host_for_header}:{port}" if include_port else host_for_header
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(url, json=webhook_payload)
-                success = response.status_code < 400
+            async with httpx.AsyncClient(
+                timeout=10.0,
+                follow_redirects=False,
+                trust_env=False,
+            ) as client:
+                response = await client.post(
+                    pinned_url,
+                    json=webhook_payload,
+                    headers={"Host": host_header},
+                    extensions={"sni_hostname": hostname},
+                )
+                success = 200 <= response.status_code < 300
 
                 logger.info(
                     "webhook_sent",
@@ -1695,7 +1820,12 @@ class WebhookRegisterRequest(BaseModel):
 
     entity_id: str = Field(..., description="Entity ID to register webhook for", max_length=128)
     url: str = Field(..., description="Webhook URL to POST events to", max_length=2048)
-    events: list[str] | None = Field(None, description="Events to subscribe to (default: all)")
+    events: list[str] | None = Field(
+        None,
+        min_length=1,
+        max_length=4,
+        description="Events to subscribe to (default: all)",
+    )
     secret: str | None = Field(None, description="Secret for HMAC signing (min 32 chars)")
 
     @field_validator("secret")
@@ -1724,6 +1854,11 @@ class WebhookRegisterRequest(BaseModel):
         # Must be HTTP or HTTPS
         if parsed.scheme not in ("http", "https"):
             raise ValueError("Webhook URL must use HTTP or HTTPS")
+        if not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("Webhook URL must have a hostname and cannot include credentials")
+        allowed_ports = {80, 443} if not settings.is_production else {443}
+        if parsed.port is not None and parsed.port not in allowed_ports:
+            raise ValueError("Webhook URL uses a disallowed port")
 
         # SECURITY: Require HTTPS in production to prevent credential leakage
         if settings.is_production and parsed.scheme != "https":
@@ -1748,7 +1883,7 @@ class WebhookRegisterRequest(BaseModel):
             # Not an IP address — that's fine, check for suspicious hostnames below
             ip = None
 
-        if ip is not None and (ip.is_private or ip.is_loopback or ip.is_link_local):
+        if ip is not None and not ip.is_global:
             raise ValueError("Webhook URL cannot target private/internal IPs")
 
         # Block internal network patterns

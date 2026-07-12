@@ -3,7 +3,19 @@
 import warnings
 from unittest.mock import patch
 
+import pytest
+
 from config import Settings, get_settings
+
+PRODUCTION_ENV = {
+    "METTLE_ENVIRONMENT": "production",
+    "METTLE_ALLOWED_ORIGINS": "https://mettle.sh",
+    "METTLE_SECRET_KEY": "s" * 32,
+    "METTLE_ADMIN_API_KEY": "a" * 32,
+    "METTLE_VCP_SIGNING_KEY": "test-pem",
+    "METTLE_USE_DATABASE": "true",
+    "METTLE_DATABASE_URL": "postgresql://db.example/mettle",
+}
 
 
 class TestAllowedOriginsList:
@@ -28,26 +40,14 @@ class TestAllowedOriginsList:
 class TestProductionValidation:
     """Test production config validator (covers lines 89-91)."""
 
-    def test_production_wildcard_origins_warns(self):
-        env = {
-            "METTLE_ENVIRONMENT": "production",
-            "METTLE_ALLOWED_ORIGINS": "*",
-            "METTLE_SECRET_KEY": "prod-secret",
-        }
+    def test_production_wildcard_origins_rejected(self):
+        env = {**PRODUCTION_ENV, "METTLE_ALLOWED_ORIGINS": "*"}
         with patch.dict("os.environ", env, clear=True):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                s = Settings(_env_file=None)
-                assert s.is_production is True
-                security_warnings = [x for x in w if "SECURITY WARNING" in str(x.message)]
-                assert len(security_warnings) >= 1
+            with pytest.raises(ValueError, match="trusted origins"):
+                Settings(_env_file=None)
 
     def test_production_specific_origins_no_warning(self):
-        env = {
-            "METTLE_ENVIRONMENT": "production",
-            "METTLE_ALLOWED_ORIGINS": "https://app.creed.space",
-            "METTLE_SECRET_KEY": "prod-secret",
-        }
+        env = {**PRODUCTION_ENV, "METTLE_ALLOWED_ORIGINS": "https://app.creed.space"}
         with patch.dict("os.environ", env, clear=True):
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
@@ -73,12 +73,20 @@ class TestIsProduction:
     """Test is_production property."""
 
     def test_production(self):
-        with patch.dict("os.environ", {"METTLE_ENVIRONMENT": "production"}, clear=True):
+        with patch.dict(
+            "os.environ",
+            PRODUCTION_ENV,
+            clear=True,
+        ):
             s = Settings(_env_file=None)
         assert s.is_production is True
 
     def test_production_case_insensitive(self):
-        with patch.dict("os.environ", {"METTLE_ENVIRONMENT": "Production"}, clear=True):
+        with patch.dict(
+            "os.environ",
+            {**PRODUCTION_ENV, "METTLE_ENVIRONMENT": "Production"},
+            clear=True,
+        ):
             s = Settings(_env_file=None)
         assert s.is_production is True
 

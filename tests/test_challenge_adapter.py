@@ -1649,34 +1649,34 @@ class TestAdversarialMathOperations:
 
     def test_multiplication_plus(self):
         """op_choice == 0: (a x b) + c."""
-        import random as _r
-        with patch.object(_r, "randint", side_effect=[100, 200, 10, 0, 50, 1, 1, 1, 1, 1, 1]):
-            with patch.object(_r, "choice", return_value="double"):
-                client, server = ChallengeAdapter.generate_adversarial()
+        with patch("mettle.challenge_adapter._rng") as rng:
+            rng.randint.side_effect = [100, 200, 10, 0, 50]
+            rng.choice.side_effect = ["double"] * 5 + ["purple", "elephant", "contemplates"]
+            client, server = ChallengeAdapter.generate_adversarial()
         assert server["dynamic_math"]["expected"] == 100 * 200 + 10
 
     def test_addition_times(self):
         """op_choice == 1: (a + b) x c."""
-        import random as _r
-        with patch.object(_r, "randint", side_effect=[100, 200, 10, 1, 50, 1, 1, 1, 1, 1, 1]):
-            with patch.object(_r, "choice", return_value="double"):
-                client, server = ChallengeAdapter.generate_adversarial()
+        with patch("mettle.challenge_adapter._rng") as rng:
+            rng.randint.side_effect = [100, 200, 10, 1, 50]
+            rng.choice.side_effect = ["double"] * 5 + ["purple", "elephant", "contemplates"]
+            client, server = ChallengeAdapter.generate_adversarial()
         assert server["dynamic_math"]["expected"] == (100 + 200) * 10
 
     def test_square_minus(self):
         """op_choice == 2: a^2 - b."""
-        import random as _r
-        with patch.object(_r, "randint", side_effect=[100, 200, 10, 2, 50, 1, 1, 1, 1, 1, 1]):
-            with patch.object(_r, "choice", return_value="double"):
-                client, server = ChallengeAdapter.generate_adversarial()
+        with patch("mettle.challenge_adapter._rng") as rng:
+            rng.randint.side_effect = [100, 200, 10, 2, 50]
+            rng.choice.side_effect = ["double"] * 5 + ["purple", "elephant", "contemplates"]
+            client, server = ChallengeAdapter.generate_adversarial()
         assert server["dynamic_math"]["expected"] == 100 * 100 - 200
 
     def test_digit_sum(self):
         """op_choice == 3: Sum of digits in a*b*c."""
-        import random as _r
-        with patch.object(_r, "randint", side_effect=[100, 200, 10, 3, 50, 1, 1, 1, 1, 1, 1]):
-            with patch.object(_r, "choice", return_value="double"):
-                client, server = ChallengeAdapter.generate_adversarial()
+        with patch("mettle.challenge_adapter._rng") as rng:
+            rng.randint.side_effect = [100, 200, 10, 3, 50]
+            rng.choice.side_effect = ["double"] * 5 + ["purple", "elephant", "contemplates"]
+            client, server = ChallengeAdapter.generate_adversarial()
         product = 100 * 200 * 10
         expected = sum(int(d) for d in str(product))
         assert server["dynamic_math"]["expected"] == expected
@@ -1692,12 +1692,12 @@ class TestChainedReasoningOperations:
 
     def _make_chain_with_ops(self, ops: list[str]) -> tuple[dict, dict]:
         """Generate adversarial with specific chain operations."""
-        import random as _r
         # For the main random calls: a=100, b=200, c=10, op_choice=0, seed=10
         # Then 5 chain op choices
-        with patch.object(_r, "randint", side_effect=[100, 200, 10, 0, 10]):
-            with patch.object(_r, "choice", side_effect=ops + ["purple", "elephant", "contemplates"]):
-                return ChallengeAdapter.generate_adversarial()
+        with patch("mettle.challenge_adapter._rng") as rng:
+            rng.randint.side_effect = [100, 200, 10, 0, 10]
+            rng.choice.side_effect = ops + ["purple", "elephant", "contemplates"]
+            return ChallengeAdapter.generate_adversarial()
 
     def test_double(self):
         _, server = self._make_chain_with_ops(["double"] * 5)

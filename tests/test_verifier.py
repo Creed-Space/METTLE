@@ -90,10 +90,10 @@ class TestVerifyTokenPrediction:
         result = verify_token_prediction(sample_token_challenge, "FOX", 1000)
         assert result.passed
 
-    def test_contained_in_response(self, sample_token_challenge):
-        """Test token contained in response passes."""
+    def test_answer_wrapper_is_rejected(self, sample_token_challenge):
+        """Only the requested missing token is accepted."""
         result = verify_token_prediction(sample_token_challenge, "The answer is fox", 1000)
-        assert result.passed
+        assert not result.passed
 
     def test_wrong_token(self, sample_token_challenge):
         """Test wrong token fails."""

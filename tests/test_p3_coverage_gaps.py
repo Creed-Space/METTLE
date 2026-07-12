@@ -1,7 +1,7 @@
 """Tests for remaining P3 coverage gaps.
 
 Covers:
-- config.py: allowed_origins_list when not "*", production CORS warning
+- config.py: allowed_origins_list when not "*", production CORS validation
 - mettle/vcp.py: constitution_ref when constitution_id is None, empty VCP token,
   line without colon, persona adherence with non-numeric value
 - mettle/session_manager.py: intent-provenance with vcp_token, unknown suite in generator
@@ -24,7 +24,7 @@ from red_team.instrumented_agent import InstrumentedMettleAgent
 
 
 # ---------------------------------------------------------------------------
-# config.py gaps: allowed_origins_list (line 78), production warning (lines 89-91)
+# config.py gaps: allowed_origins_list and production validation
 # ---------------------------------------------------------------------------
 
 
@@ -48,20 +48,25 @@ class TestConfigAllowedOrigins:
         assert s.allowed_origins_list == ["http://a.com", "http://b.com"]
 
 
-class TestConfigProductionWarning:
-    """Test production validation warning for CORS wildcard."""
+class TestConfigProductionValidation:
+    """Test production validation for CORS wildcard."""
 
-    def test_production_cors_wildcard_warning(self) -> None:
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+    def test_production_cors_wildcard_rejected(self) -> None:
+        with pytest.raises(ValueError, match="trusted origins"):
             Settings(environment="production", allowed_origins="*")
-            cors_warnings = [x for x in w if "CORS" in str(x.message)]
-            assert len(cors_warnings) >= 1
 
     def test_production_specific_origins_no_warning(self) -> None:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            Settings(environment="production", allowed_origins="http://example.com")
+            Settings(
+                environment="production",
+                allowed_origins="https://example.com",
+                secret_key="s" * 32,
+                admin_api_key="a" * 32,
+                vcp_signing_key="test-pem",
+                use_database=True,
+                database_url="postgresql://db.example/mettle",
+            )
             cors_warnings = [x for x in w if "CORS" in str(x.message)]
             assert len(cors_warnings) == 0
 

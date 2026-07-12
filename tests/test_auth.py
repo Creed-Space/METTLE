@@ -1,5 +1,6 @@
 """Tests for mettle/auth.py — API key bearer authentication."""
 
+import hashlib
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -16,7 +17,7 @@ class TestRequireAuthenticatedUser:
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="key1")
         result = await require_authenticated_user(creds)
         assert isinstance(result, AuthenticatedUser)
-        assert result.user_id == "key:key1..."
+        assert result.user_id == f"key:{hashlib.sha256(b'key1').hexdigest()[:12]}"
 
     @pytest.mark.asyncio
     async def test_second_valid_key(self, monkeypatch):
@@ -25,7 +26,7 @@ class TestRequireAuthenticatedUser:
         monkeypatch.setenv("METTLE_DEV_MODE", "false")
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="key2")
         result = await require_authenticated_user(creds)
-        assert result.user_id == "key:key2..."
+        assert result.user_id == f"key:{hashlib.sha256(b'key2').hexdigest()[:12]}"
 
     @pytest.mark.asyncio
     async def test_invalid_key_raises_401(self, monkeypatch):
@@ -46,7 +47,20 @@ class TestRequireAuthenticatedUser:
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="anything")
         result = await require_authenticated_user(creds)
         assert isinstance(result, AuthenticatedUser)
-        assert result.user_id == "key:anything..."
+        assert result.user_id == f"key:{hashlib.sha256(b'anything').hexdigest()[:12]}"
+
+    @pytest.mark.asyncio
+    async def test_dev_mode_cannot_bypass_production_auth(self, monkeypatch):
+        """Production ignores an accidentally enabled development bypass."""
+        monkeypatch.setenv("METTLE_API_KEYS", "")
+        monkeypatch.setenv("METTLE_DEV_MODE", "true")
+        monkeypatch.setenv("METTLE_ENVIRONMENT", "production")
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="anything")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_authenticated_user(creds)
+
+        assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
     async def test_empty_api_keys_rejects(self, monkeypatch):
@@ -69,13 +83,14 @@ class TestRequireAuthenticatedUser:
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_user_id_truncation(self, monkeypatch):
-        """User ID truncates key to first 8 chars."""
+    async def test_user_id_uses_non_secret_fingerprint(self, monkeypatch):
+        """User IDs use a one-way key fingerprint rather than a secret prefix."""
         monkeypatch.setenv("METTLE_API_KEYS", "abcdefghijklmnop")
         monkeypatch.setenv("METTLE_DEV_MODE", "false")
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="abcdefghijklmnop")
         result = await require_authenticated_user(creds)
-        assert result.user_id == "key:abcdefgh..."
+        expected = hashlib.sha256(b"abcdefghijklmnop").hexdigest()[:12]
+        assert result.user_id == f"key:{expected}"
 
 
 class TestAuthenticatedUserModel:

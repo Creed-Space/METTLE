@@ -47,9 +47,11 @@ def init_signing() -> bool:
 
     # Try settings first (.env support), fall back to raw env var
     pem_key = None
+    dev_mode = (os.environ.get("METTLE_DEV_MODE") or "false").lower() == "true"
     try:
         from mettle.app_config import settings
         pem_key = settings.vcp_signing_key or None
+        dev_mode = settings.dev_mode or dev_mode
     except Exception as settings_error:
         logger.debug("Mettle settings unavailable for VCP signing key lookup: %s", settings_error)
     if not pem_key:
@@ -65,7 +67,13 @@ def init_signing() -> bool:
             _initialized = True
             return False
     else:
-        # Generate ephemeral key for dev
+        if not dev_mode:
+            logger.error(
+                "METTLE_VCP_SIGNING_KEY is required outside explicit development mode"
+            )
+            _initialized = True
+            return False
+        # Ephemeral keys are suitable only for explicit development sessions.
         _private_key = Ed25519PrivateKey.generate()
         _public_key = _private_key.public_key()
         logger.info("Generated ephemeral Ed25519 key for VCP attestation signing (dev mode)")

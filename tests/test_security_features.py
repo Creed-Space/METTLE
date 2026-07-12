@@ -1,5 +1,7 @@
 """Tests for METTLE security features."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
 from main import (
@@ -724,3 +726,34 @@ class TestBadgeRevocation:
         data = response.json()
         assert "revoked_count" in data
         assert "audit" in data
+
+    def test_list_revocations_uses_durable_database_audit(self, client):
+        mock_db = MagicMock()
+        mock_db.count_revoked_badges.return_value = 2
+        mock_db.get_revoked_badges.return_value = [
+            {"jti": "durable-jti", "reason": "persisted"}
+        ]
+
+        with patch("main.db", mock_db):
+            response = client.get(
+                "/api/badge/revocations",
+                headers={"X-Admin-Key": "test-admin-key-for-mettle-testing-only"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "revoked_count": 2,
+            "audit": [{"jti": "durable-jti", "reason": "persisted"}],
+        }
+
+    def test_list_revocations_database_failure_returns_503(self, client):
+        mock_db = MagicMock()
+        mock_db.count_revoked_badges.side_effect = RuntimeError("database unavailable")
+
+        with patch("main.db", mock_db):
+            response = client.get(
+                "/api/badge/revocations",
+                headers={"X-Admin-Key": "test-admin-key-for-mettle-testing-only"},
+            )
+
+        assert response.status_code == 503

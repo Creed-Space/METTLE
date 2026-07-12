@@ -242,6 +242,44 @@ class TestLifespan:
                     pass
 
     @pytest.mark.asyncio
+    async def test_lifespan_production_signing_failure_raises(self):
+        """Production cannot start while VCP attestations would be unsigned."""
+        mock_app = MagicMock()
+        mock_app.state = MagicMock()
+
+        with patch("main.settings") as mock_settings:
+            mock_settings.is_production = True
+            mock_settings.secret_key = SECRET_KEY
+            mock_settings.environment = "production"
+            mock_settings.api_version = "0.2.0"
+
+            with patch("main.db", None), patch(
+                "mettle.signing.init_signing", return_value=False
+            ), pytest.raises(RuntimeError, match="signing is unavailable"):
+                async with lifespan(mock_app):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_lifespan_database_initialization_failure_raises(self):
+        """Configured persistence must initialize successfully before serving."""
+        mock_app = MagicMock()
+        mock_app.state = MagicMock()
+        mock_db = MagicMock()
+        mock_db.init_db.side_effect = RuntimeError("database unavailable")
+
+        with patch("main.settings") as mock_settings:
+            mock_settings.is_production = False
+            mock_settings.secret_key = SECRET_KEY
+            mock_settings.environment = "test"
+            mock_settings.api_version = "0.2.0"
+
+            with patch("main.db", mock_db), pytest.raises(
+                RuntimeError, match="Database initialization failed"
+            ):
+                async with lifespan(mock_app):
+                    pass
+
+    @pytest.mark.asyncio
     async def test_lifespan_redis_unavailable_logged(self):
         """Lifespan logs warning when Redis connection fails."""
         mock_app = MagicMock()
@@ -491,8 +529,8 @@ class TestWebhookDNSErrors:
     """Test webhook send when DNS resolution fails."""
 
     @pytest.mark.asyncio
-    async def test_dns_gaierror_allows_send(self):
-        """DNS resolution failure (gaierror) allows the request to proceed."""
+    async def test_dns_gaierror_blocks_send(self):
+        """DNS resolution failure (gaierror) blocks the request."""
         WebhookManager.register("test-entity", "https://example.com/webhook")
 
         mock_response = MagicMock()
@@ -503,16 +541,17 @@ class TestWebhookDNSErrors:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("socket.gethostbyname", side_effect=socket.gaierror("DNS failed")):
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror("DNS failed")):
             with patch("httpx.AsyncClient", return_value=mock_client):
                 result = await WebhookManager.send_webhook(
                     "test-entity", "session.completed", {"test": True}
                 )
-        assert result is True
+        assert result is False
+        mock_client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_dns_value_error_allows_send(self):
-        """ValueError from IP parsing allows the request to proceed."""
+    async def test_dns_value_error_blocks_send(self):
+        """Invalid resolved IP data blocks the request."""
         WebhookManager.register("test-entity", "https://example.com/webhook")
 
         mock_response = MagicMock()
@@ -523,13 +562,17 @@ class TestWebhookDNSErrors:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("socket.gethostbyname", return_value="not-an-ip"):
+        invalid_addrinfo = [
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("not-an-ip", 443))
+        ]
+        with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
             with patch("ipaddress.ip_address", side_effect=ValueError("Invalid IP")):
                 with patch("httpx.AsyncClient", return_value=mock_client):
                     result = await WebhookManager.send_webhook(
                         "test-entity", "session.completed", {"test": True}
                     )
-        assert result is True
+        assert result is False
+        mock_client.post.assert_not_awaited()
 
 
 # ============================================================
