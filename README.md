@@ -196,6 +196,7 @@ Sessions can include an operator commitment for Platinum-tier accountability:
     "operator_commitment": {
         "operator_pseudonym": "anon-42",
         "operator_public_key": "-----BEGIN PUBLIC KEY-----\n...",
+        "challenge_nonce": "<nonce from POST /api/mettle/operator/challenge>",
         "signed_commitment": "<base64 Ed25519 signature>",
         "contact_method": "email_hash",
         "contact_hash": "sha256:..."
@@ -203,7 +204,21 @@ Sessions can include an operator commitment for Platinum-tier accountability:
 }
 ```
 
-The signed commitment message must be exactly: `I accept accountability for agent {entity_id}`
+**The commitment is nonce-bound (proof of liveness).** First request a single-use challenge:
+
+```bash
+POST /api/mettle/operator/challenge   {"entity_id": "agent-xyz"}
+# -> { "nonce": "...", "expires_at": "...", "message_to_sign": "METTLE-OPERATOR-COMMITMENT-v1|<nonce>|agent-xyz|<expires_at>" }
+```
+
+Ed25519-sign `message_to_sign` **verbatim** and submit the signature as `signed_commitment`, along
+with the `challenge_nonce`. The nonce is **single-use**, bound to that `entity_id`, and expires.
+
+> **Changed (2026-07-12):** the old message was the *static* string
+> `I accept accountability for agent {entity_id}`. That made the commitment a **bearer artifact** —
+> a captured signature could be replayed on a new session forever, so it proved the operator's key
+> had signed once, ever, not that the operator was live. `entity_id` is now **required** whenever an
+> `operator_commitment` is supplied (a commitment must name the agent it vouches for).
 
 ### Response Attestations
 

@@ -208,7 +208,12 @@ class OperatorAttestation(BaseModel):
     operator_pseudonym: str = Field(description="Operator identifier (can be pseudonymous)")
     operator_public_key: str = Field(description="Ed25519 public key (PEM format)")
     operator_signed_commitment: str = Field(
-        description="Operator signs: 'I accept accountability for agent {entity_id}'"
+        description=(
+            "Operator signs a nonce-bound commitment: "
+            "'METTLE-OPERATOR-COMMITMENT-v1|{nonce}|{entity_id}|{expires_at}'. "
+            "The single-use nonce is what proves the operator was live, not merely that their key "
+            "once signed a string."
+        )
     )
     commitment_timestamp: datetime = Field(description="When commitment was signed")
     contact_method: str = Field(

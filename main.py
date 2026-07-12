@@ -567,11 +567,18 @@ async def cleanup_expired_sessions():
             del sessions[sid]
         for cid in expired_challenges:
             del challenges[cid]
-        if expired_sessions or expired_challenges:
+
+        # Operator-challenge nonces are DURABLE (a table, not a dict), so nothing evicts them
+        # implicitly. Without this the table grows without bound. Best-effort by design: the
+        # purge never raises, so housekeeping cannot take down the cleanup loop.
+        expired_nonces = db.purge_expired_operator_challenges() if db is not None else 0
+
+        if expired_sessions or expired_challenges or expired_nonces:
             logger.info(
                 "cleanup_expired",
                 sessions_removed=len(expired_sessions),
                 challenges_removed=len(expired_challenges),
+                operator_nonces_purged=expired_nonces,
             )
 
 

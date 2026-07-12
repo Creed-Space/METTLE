@@ -182,10 +182,20 @@ async def create_session(request: CreateSessionRequest, user: AuthUser, mgr: Met
     """
     operator_commitment: dict[str, Any] | None = None
     if request.operator_commitment:
+        # A commitment is a statement ABOUT a named agent, so it is meaningless without one.
+        # Coercing a missing entity_id to "unknown" here would be worse than useless: the nonce is
+        # issued bound to a real entity_id, so the rebuilt message could never match and every
+        # anonymous commitment would fail with a confusing signature error instead of the real
+        # reason. Reject it plainly.
+        if not request.entity_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="operator_commitment requires entity_id: a commitment must name the agent it vouches for.",
+            )
         try:
             operator_commitment = _verify_and_consume_operator_commitment(
                 request.operator_commitment.model_dump(),
-                request.entity_id or "unknown",
+                request.entity_id,
             )
         except OperatorChallengeStoreUnavailable as e:
             logger.error("Operator challenge store unavailable during session creation", exc_info=True)

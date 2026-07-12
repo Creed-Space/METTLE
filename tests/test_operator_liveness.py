@@ -126,6 +126,84 @@ def test_commitment_message_is_domain_separated():
     assert msg.startswith(b"METTLE-OPERATOR-COMMITMENT-v1|")
 
 
+# --- End-to-end: the path a real operator actually walks ------------------------------------
+
+
+def _commitment_for(priv, pem, nonce, entity_id, expires_at):
+    import base64
+
+    sig = priv.sign(operator_commitment_message(nonce, entity_id, expires_at))
+    return {
+        "operator_pseudonym": "anon-42",
+        "operator_public_key": pem,
+        "challenge_nonce": nonce,
+        "signed_commitment": base64.b64encode(sig).decode(),
+        "contact_method": "email_hash",
+        "contact_hash": "sha256:abc",
+    }
+
+
+def test_end_to_end_challenge_sign_consume_then_attest():
+    """challenge -> sign -> consume at creation -> attestation verifies at result.
+
+    This drives the whole contract, not just the units: the unit tests would all still pass if
+    the two halves disagreed about the message bytes.
+    """
+    from mettle.router import _build_operator_attestation, _verify_and_consume_operator_commitment
+
+    priv, pem = _keypair()
+    ch = database.create_operator_challenge("agent-xyz")
+
+    commitment = _commitment_for(priv, pem, ch["nonce"], "agent-xyz", ch["expires_at"].isoformat())
+
+    # Session creation: consumes the nonce once and binds the expiry into the stored commitment.
+    bound = _verify_and_consume_operator_commitment(commitment, "agent-xyz")
+    assert bound["challenge_expires_at"] == ch["expires_at"].isoformat()
+
+    # Result time: rebuilds and re-verifies the signature. Idempotent -- must NOT burn the nonce,
+    # because callers may fetch a result repeatedly.
+    for _ in range(3):
+        att = _build_operator_attestation(bound, "agent-xyz")
+        assert att is not None
+        assert att.operator_pseudonym == "anon-42"
+
+
+def test_end_to_end_replayed_commitment_is_rejected_at_session_creation():
+    """Capture a valid commitment, replay it on a SECOND session. This is the whole point."""
+    from mettle.router import _verify_and_consume_operator_commitment
+
+    priv, pem = _keypair()
+    ch = database.create_operator_challenge("agent-xyz")
+    commitment = _commitment_for(priv, pem, ch["nonce"], "agent-xyz", ch["expires_at"].isoformat())
+
+    _verify_and_consume_operator_commitment(commitment, "agent-xyz")  # session 1: fine
+
+    with pytest.raises(ValueError, match="already been used"):
+        _verify_and_consume_operator_commitment(commitment, "agent-xyz")  # session 2: REJECTED
+
+
+def test_commitment_without_a_nonce_is_rejected():
+    from mettle.router import _verify_and_consume_operator_commitment
+
+    priv, pem = _keypair()
+    bad = _commitment_for(priv, pem, "n", "agent-xyz", "2026-01-01T00:00:00+00:00")
+    del bad["challenge_nonce"]
+
+    with pytest.raises(ValueError, match="requires a challenge_nonce"):
+        _verify_and_consume_operator_commitment(bad, "agent-xyz")
+
+
+def test_attestation_refuses_a_commitment_missing_its_challenge_binding():
+    """A commitment with no challenge binding must not silently produce an attestation."""
+    from mettle.router import _build_operator_attestation
+
+    priv, pem = _keypair()
+    unbound = _commitment_for(priv, pem, "n", "agent-xyz", "2026-01-01T00:00:00+00:00")
+    unbound.pop("challenge_nonce")
+
+    assert _build_operator_attestation(unbound, "agent-xyz") is None
+
+
 # --- Attestation envelope integrity --------------------------------------------------------
 
 
