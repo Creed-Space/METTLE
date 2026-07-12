@@ -38,3 +38,14 @@ def test_frontend_cli_examples_use_supported_flags() -> None:
     assert "--difficulty" not in docs_page
     assert "five-challenge" in homepage
     assert "five-challenge" in docs_page
+
+
+def test_static_site_advertises_published_package() -> None:
+    """The production site must use the current PyPI installation command."""
+    static_homepage = _read("static/index.html")
+    static_docs = _read("static/docs.html")
+
+    assert "pip install mettle-verifier" in static_homepage
+    assert "pip install mettle-verifier" in static_docs
+    assert "PyPI: mettle-verifier, coming soon" not in static_homepage
+    assert "PyPI: mettle-verifier, coming soon" not in static_docs
