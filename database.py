@@ -270,6 +270,23 @@ def get_revoked_badges(limit: int = 100) -> list[dict]:
         return []
 
 
+def get_all_revoked_badges_strict(limit: int = 100_000) -> list[dict]:
+    """Load the full revoked-badge set for building an in-memory replica.
+
+    Unlike :func:`get_revoked_badges`, this PROPAGATES errors instead of returning ``[]``,
+    so the caller can tell "there are no revocations" apart from "the store could not be
+    read". The latter must NOT be mistaken for an empty set, or the replica would mark
+    itself loaded-and-empty and start verifying revoked badges. Returns ``jti`` +
+    ``revoked_at`` only (all the replica needs).
+    """
+    with get_db() as db:
+        results = db.query(DBRevokedBadge).order_by(DBRevokedBadge.revoked_at.desc()).limit(limit).all()
+        return [
+            {"jti": r.jti, "revoked_at": r.revoked_at.isoformat() if r.revoked_at else None}
+            for r in results
+        ]
+
+
 # === API Key Operations ===
 
 
