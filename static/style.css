@@ -281,17 +281,11 @@ a:hover {
     line-height: 1.08;
     margin-bottom: var(--space-xs);
     animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) 0.2s both;
-    background: var(--gradient-heading);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-text);
 }
 
 .hero-heading .highlight {
-    background: linear-gradient(120deg, #5eead4, #2dd4bf 40%, #14b8a6 60%, #2dd4bf);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--mettle-primary-light);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -435,10 +429,7 @@ a:hover {
     text-align: center;
     margin-bottom: var(--space-md);
     letter-spacing: -0.02em;
-    background: var(--gradient-heading);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-text);
 }
 
 .section-description {
@@ -787,8 +778,8 @@ a:hover {
     font-style: italic;
     padding: var(--space-sm) var(--space-md);
     background: rgba(255, 255, 255, 0.04);
-    border-left: 2px solid rgba(20, 184, 166, 0.5);
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    border: 1px solid rgba(20, 184, 166, 0.25);
+    border-radius: var(--radius-sm);
     margin-bottom: var(--space-md);
 }
 

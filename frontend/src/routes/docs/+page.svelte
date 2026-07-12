@@ -892,11 +892,11 @@ console.log(<span class="tok-str">'Issuer:'</span>, notarized.issuer); <span
     padding: var(--space-sm) var(--space-md);
     background: color-mix(in srgb, var(--color-teal) 6%, transparent);
     border-radius: var(--radius-md);
-    border-left: 2px solid var(--mettle-primary);
+    border: 1px solid color-mix(in srgb, var(--mettle-primary) 40%, transparent);
   }
   .qs-step-optional {
-    border-left-color: rgba(20, 184, 166, 0.4);
-    border-left-style: dashed;
+    border-color: rgba(20, 184, 166, 0.3);
+    border-style: dashed;
   }
   .qs-num {
     width: 24px;

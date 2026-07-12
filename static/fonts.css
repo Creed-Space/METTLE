@@ -1,6 +1,8 @@
 /* Self-hosted brand type (latin subsets): Space Grotesk, Inter, JetBrains Mono.
    OFL-licensed; fetched from Google Fonts, served first-party. */
 
+/* impeccable-disable overused-font: Inter and Space Grotesk are established METTLE brand faces. */
+
 /* Inter 400 (latin) */
 @font-face {
   font-family: 'Inter';

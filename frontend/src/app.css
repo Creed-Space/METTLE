@@ -3,6 +3,8 @@
  * Creed Space canonical teal glass design tokens
  */
 
+/* impeccable-disable overused-font: Inter is METTLE's established UI face; IBM Plex is reserved for the ratified wordmark. */
+
 @font-face {
   font-family: "Inter";
   src: url("/fonts/inter-roman-latin.woff2") format("woff2");

@@ -1021,10 +1021,7 @@
   }
 
   .hero-heading .highlight {
-    background: linear-gradient(135deg, #2dd4bf, #14b8a6, #0f766e);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-teal-light);
   }
 
   .hero-subtitle {
@@ -1418,8 +1415,8 @@
     font-style: italic;
     padding: var(--space-sm) var(--space-md);
     background: rgba(255, 255, 255, 0.02);
-    border-left: 2px solid hsla(var(--suite-hue), 70%, 55%, 0.3);
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    border: 1px solid hsla(var(--suite-hue), 70%, 55%, 0.2);
+    border-radius: var(--radius-sm);
     margin-bottom: var(--space-md);
   }
 
