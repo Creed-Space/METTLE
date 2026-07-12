@@ -905,7 +905,7 @@
           </div>
           <div class="badge-item">
             <i class="fa-solid fa-flask-vial" aria-hidden="true"></i>
-            <span>117 Tests</span>
+            <span>CI Verified</span>
           </div>
         </div>
       </ScrollReveal>
@@ -932,7 +932,7 @@
           </div>
           <h2 class="cta-heading">Not what you know &mdash; how you think.</h2>
           <p>
-            Eleven suites. Seven questions. Every session procedurally
+            Twelve suites. Seven questions. Every session procedurally
             generated.
             <br />
             Identity verification for an age where agents must trust each other to
