@@ -238,7 +238,7 @@ class TestBadgeVerification:
 
     def test_wrong_secret_returns_invalid(self, client):
         """Token signed with wrong secret should fail verification."""
-        token = _make_badge_token(secret="wrong-secret-key")
+        token = _make_badge_token(secret="wrong-secret-key-that-is-at-least-32-bytes")
 
         response = client.get(f"/api/badge/verify/{token}")
 

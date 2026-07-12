@@ -101,19 +101,19 @@ def solve_challenge(challenge: dict[str, Any]) -> str:
             return str(chain[-1])
 
         # Parse and compute from the prompt instructions
-        value = 0
+        chain_value = 0
         for line in prompt.split("\n"):
             line_lower = line.lower().strip()
             start_match = re.search(r"start with (\d+)", line_lower)
             if start_match:
-                value = int(start_match.group(1))
+                chain_value = int(start_match.group(1))
             elif "double" in line_lower:
-                value *= 2
+                chain_value *= 2
             elif "add 10" in line_lower:
-                value += 10
+                chain_value += 10
             elif "subtract 5" in line_lower:
-                value -= 5
-        return str(value)
+                chain_value -= 5
+        return str(chain_value)
 
     elif challenge_type == "consistency":
         # Consistent answers separated by |

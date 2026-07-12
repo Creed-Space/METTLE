@@ -1306,7 +1306,9 @@ a:hover {
 .progress-fill {
     height: 100%;
     background: var(--mettle-primary);
-    transition: width 0.3s ease;
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 0.3s ease;
 }
 
 .progress-text {

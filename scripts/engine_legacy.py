@@ -89,7 +89,7 @@ def speed_challenge(use_api: bool = False) -> dict[str, Any]:
             max_tokens=50,
             messages=[{"role": "user", "content": f"{question} Reply with just the number."}],
         )
-        answer_text = response.content[0].text.strip()
+        answer_text = getattr(response.content[0], "text", "").strip()
         # Extract number
         match = re.search(r"\d+", answer_text)
         computed = int(match.group()) if match else 0

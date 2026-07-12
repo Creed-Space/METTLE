@@ -370,31 +370,32 @@
     width: 100%;
     background: var(--color-text);
     border-radius: 2px;
-    transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    transition:
+      transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 0.2s ease-out;
     position: absolute;
     left: 0;
+    top: 0;
   }
 
   .hamburger span:nth-child(1) {
-    top: 0;
+    transform: translateY(0);
   }
   .hamburger span:nth-child(2) {
-    top: 8px;
+    transform: translateY(8px);
   }
   .hamburger span:nth-child(3) {
-    top: 16px;
+    transform: translateY(16px);
   }
   .hamburger.open span:nth-child(1) {
-    transform: rotate(45deg);
-    top: 8px;
+    transform: translateY(8px) rotate(45deg);
   }
   .hamburger.open span:nth-child(2) {
     opacity: 0;
-    transform: translateX(-10px);
+    transform: translate(-10px, 8px);
   }
   .hamburger.open span:nth-child(3) {
-    transform: rotate(-45deg);
-    top: 8px;
+    transform: translateY(8px) rotate(-45deg);
   }
 
   /* Mobile Nav */

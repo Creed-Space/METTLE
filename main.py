@@ -582,7 +582,7 @@ api_router = APIRouter(prefix="/api")
 
 # Add rate limit handler
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, cast(Any, _rate_limit_exceeded_handler))
 
 # Add middlewares
 app.add_middleware(SecurityHeadersMiddleware)

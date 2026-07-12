@@ -132,7 +132,7 @@ function stopTimer() {
 // Progress
 function updateProgress() {
     const progress = (state.completedChallenges / state.totalChallenges) * 100;
-    elements.progressFill.style.width = `${progress}%`;
+    elements.progressFill.style.transform = `scaleX(${progress / 100})`;
     elements.progressText.textContent = `Challenge ${state.completedChallenges + 1} of ${state.totalChallenges}`;
 }
 
