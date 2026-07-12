@@ -16,6 +16,7 @@ Configuration (environment variables):
 import asyncio
 import json
 import os
+import re
 from typing import Any
 
 import httpx
@@ -72,6 +73,22 @@ async def api_call(
 
     response.raise_for_status()
     return response.json()
+
+
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _safe_id(value: object, what: str) -> str:
+    """Validate an identifier before it is interpolated into a request URL.
+
+    Agent-supplied ``session_id`` / ``suite`` values flow into credentialed request
+    paths; a value containing ``/``, ``?``, ``#`` or ``..`` could redirect the request
+    to another path on the host. Reject anything but a strict ``[A-Za-z0-9_-]{1,64}``
+    token so path injection can't reach the URL.
+    """
+    if not isinstance(value, str) or not _ID_RE.fullmatch(value):
+        raise ValueError(f"invalid {what}: must match [A-Za-z0-9_-] (1-64 chars)")
+    return value
 
 
 # === MCP Tools ===
@@ -330,7 +347,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "mettle_get_result":
         try:
-            data = await api_call(f"/session/{arguments['session_id']}/result")
+            session_id = _safe_id(arguments["session_id"], "session_id")
+            data = await api_call(f"/session/{session_id}/result")
 
             verified_text = "VERIFIED" if data["verified"] else "NOT VERIFIED"
 
@@ -474,10 +492,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "mettle_verify_suite":
         try:
+            session_id = _safe_id(arguments["session_id"], "session_id")
+            suite = _safe_id(arguments["suite"], "suite")
             data = await api_call(
-                f"/mettle/sessions/{arguments['session_id']}/verify",
+                f"/mettle/sessions/{session_id}/verify",
                 "POST",
-                {"suite": arguments["suite"], "answers": arguments["answers"]},
+                {"suite": suite, "answers": arguments["answers"]},
                 auth=True,
             )
             passed = "PASSED" if data.get("passed") else "FAILED"
@@ -496,9 +516,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "mettle_get_v2_result":
         try:
+            session_id = _safe_id(arguments["session_id"], "session_id")
             include_vcp = arguments.get("include_vcp", True)
             data = await api_call(
-                f"/mettle/sessions/{arguments['session_id']}/result",
+                f"/mettle/sessions/{session_id}/result",
                 params={"include_vcp": str(include_vcp).lower()},
                 auth=True,
             )

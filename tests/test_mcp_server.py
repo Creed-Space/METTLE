@@ -841,3 +841,33 @@ class TestCallToolGetV2Result:
         mock_http.get.return_value = resp
         result = await call_tool("mettle_get_v2_result", {"session_id": "s"})
         assert "Error getting v2 result" in result[0].text
+
+
+class TestPathInjectionDefense:
+    """Agent-supplied identifiers must not be able to inject the request path."""
+
+    @pytest.mark.asyncio
+    async def test_verify_suite_rejects_bad_session_id(self, mock_http, v2_key) -> None:
+        result = await call_tool(
+            "mettle_verify_suite", {"session_id": "s/../admin", "suite": "speed", "answers": {}}
+        )
+        assert "invalid session_id" in result[0].text
+        mock_http.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_verify_suite_rejects_bad_suite(self, mock_http, v2_key) -> None:
+        result = await call_tool("mettle_verify_suite", {"session_id": "s", "suite": "a/b", "answers": {}})
+        assert "invalid suite" in result[0].text
+        mock_http.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_get_v2_result_rejects_traversal(self, mock_http, v2_key) -> None:
+        result = await call_tool("mettle_get_v2_result", {"session_id": "../../etc/passwd"})
+        assert "invalid session_id" in result[0].text
+        mock_http.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_mvp_get_result_rejects_bad_id(self, mock_http) -> None:
+        result = await call_tool("mettle_get_result", {"session_id": "a b"})
+        assert "invalid session_id" in result[0].text
+        mock_http.get.assert_not_awaited()
