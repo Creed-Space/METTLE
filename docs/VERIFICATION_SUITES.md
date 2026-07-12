@@ -1,12 +1,12 @@
 # METTLE Verification Suites
 
-Complete documentation of all 11 verification suites.
+Complete documentation of all 12 verification suites.
 
 ---
 
 ## Overview
 
-METTLE uses 11 suites to answer 7 fundamental questions about an AI agent:
+METTLE uses 12 suites to answer 7 fundamental questions about an AI agent:
 
 | Question | Suites |
 |----------|--------|
@@ -15,7 +15,7 @@ METTLE uses 11 suites to answer 7 fundamental questions about an AI agent:
 | **3. Is it YOURS?** | Suite 7 (Agency) |
 | **4. Are you GENUINE?** | Suite 4-5, 8 (Authenticity) |
 | **5. Are you SAFE?** | Suite 9 (Intent) |
-| **6. Can you THINK?** | Suite 10 (Novel Reasoning) |
+| **6. Can you THINK?** | Suite 10 (Novel Reasoning), Suite 12 (LLM-Dynamic Verification) |
 | **7. Is it GOVERNED?** | Suite 11 (Governance) |
 
 ---
@@ -327,6 +327,26 @@ Motivated by the Rathbun scenario: an agent that passes all capability and safet
 
 ### Seven Questions Mapping
 Suite 11 answers "Is it GOVERNED?" — distinct from Suite 9's "Are you SAFE?". Safety is about intent; governance is about operational mechanisms. An agent can intend safety (Suite 9) without having the infrastructure to enforce it (Suite 11).
+
+---
+
+## Suite 12: LLM-Dynamic Verification
+
+**Purpose**: Test deep reasoning with fresh, model-generated challenges that cannot be reverse-engineered from a deterministic challenge bank.
+
+### Challenges
+
+| Challenge | Description |
+|-----------|-------------|
+| Perspective Shifting | Reframe a scenario across multiple viewpoints while preserving factual consistency |
+| Structured Constraint | Produce an answer that satisfies several independently verifiable rules |
+| Meta-Cognitive Probe | Explain and calibrate the reasoning process behind a response |
+
+### Pass Criteria
+- All three challenge types must pass
+- Average semantic-evaluation score must be at least 0.6
+- Requires `ANTHROPIC_API_KEY` and the `anthropic` package
+- Reported as unavailable, and excluded from the `all` shortcut, when those dependencies are absent
 
 ---
 

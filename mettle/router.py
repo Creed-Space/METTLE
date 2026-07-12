@@ -1,6 +1,6 @@
 """METTLE API Router - Machine Evaluation Through Turing-inverse Logic Examination.
 
-Exposes all 10 METTLE verification suites via REST API endpoints.
+Exposes all 12 METTLE verification suites via REST API endpoints.
 Suite 10 (Novel Reasoning) supports multi-round sessions with feedback.
 
 SECURITY: All endpoints require authentication. Correct answers are NEVER sent to clients.

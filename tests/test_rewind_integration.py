@@ -496,7 +496,7 @@ class TestNovelReasoningFlow:
 
 
 class TestAllSuitesSmoke:
-    """Verify all 10 suites can be created and verified."""
+    """Verify all 12 registered suites can be created and verified."""
 
     def test_create_all_suites(self, client: TestClient) -> None:
         """Create session with all suites."""

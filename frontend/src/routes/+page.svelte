@@ -232,7 +232,7 @@
   <title>METTLE Inverse Turing Verification | Creed Space</title>
   <meta
     name="description"
-    content="Machine Evaluation Through Turing-inverse Logic Examination. 11 verification suites that prove an AI agent is real, free, genuine, safe, capable of novel reasoning, and operationally governed."
+    content="Machine Evaluation Through Turing-inverse Logic Examination. 12 verification suites that prove an AI agent is real, free, genuine, safe, capable of novel reasoning, and operationally governed."
   />
 </svelte:head>
 
@@ -259,7 +259,7 @@
         <TypeWriter
           lines={[
             "the only way to pass is to actually think",
-            "11 suites \u00b7 30+ challenge types \u00b7 every session unique",
+            "12 suites \u00b7 30+ challenge types \u00b7 every session unique",
             "AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS",
             "memorisation is useless \u2014 reasoning is everything",
             "prove substrate, not knowledge",
@@ -424,11 +424,11 @@
 
   <GlowDivider color="rgba(20, 184, 166, 0.5)" />
 
-  <!-- ======== 11 Verification Suites ======== -->
+  <!-- ======== 12 Verification Suites ======== -->
   <section class="suites-section" id="suites">
     <div class="container">
       <ScrollReveal>
-        <h2 class="section-title">11 Verification Suites</h2>
+        <h2 class="section-title">12 Verification Suites</h2>
       </ScrollReveal>
       <ScrollReveal delay={60}>
         <p class="section-description">
@@ -725,8 +725,7 @@
 <span class="tok-comment"># Specific suite with difficulty</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag"
                     >--suite</span
-                  > novel-reasoning <span class="tok-flag">--difficulty</span
-                  > hard</code
+                  > novel-reasoning</code
                 ></pre>
             </div>
           </div>
@@ -735,9 +734,9 @@
             <h3>Run It Yourself</h3>
             <p>
               Install the open-source verifier and run locally. Basic
-              verification in ~2 seconds. Full 11-suite run in 60&ndash;90
-              seconds. Optionally notarize through Creed Space for portable
-              trust.
+              verification in ~2 seconds. Full mode runs a five-challenge
+              battery with strict timing. Optionally notarize through Creed
+              Space for portable trust.
             </p>
             <ul class="cli-features">
               <li>
@@ -746,7 +745,7 @@
               </li>
               <li>
                 <i class="fa-solid fa-check-circle" aria-hidden="true"></i> Full:
-                ~90s &mdash; comprehensive profiling
+                5 challenges &mdash; strict timing
               </li>
               <li>
                 <i class="fa-solid fa-check-circle" aria-hidden="true"></i>

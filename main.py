@@ -2195,7 +2195,7 @@ if _static_dir.exists():
 # === Mount API Router ===
 app.include_router(api_router)
 
-# === Mount METTLE Router (10-suite sessions, VCP attestation, Ed25519 signing) ===
+# === Mount METTLE Router (12-suite sessions, VCP attestation, Ed25519 signing) ===
 from mettle.router import router as mettle_router  # noqa: E402 — intentional late import; router depends on app being fully constructed
 
 app.include_router(mettle_router)

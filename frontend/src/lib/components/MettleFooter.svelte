@@ -24,7 +24,7 @@
       <div class="footer-links">
         <div class="footer-section">
           <h3>Verification</h3>
-          <a href="/#suites">11 Suites</a>
+          <a href="/#suites">12 Suites</a>
           <a href="/#how-it-works">How It Works</a>
           <a href="/docs">Docs</a>
         </div>

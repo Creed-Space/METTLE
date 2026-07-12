@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-METTLE is an inverse Turing verification system: it proves an agent is NOT human via ten procedurally generated challenge suites. A FastAPI backend with MCP server issues challenges, scores responses, and signs Ed25519-notarized credentials with tier-to-trust mapping. Suites include bilateral alignment checks ("Are you FREE?", "Is the mission YOURS?") and anti-harvesting patterns.
+METTLE is an inverse Turing verification system: it proves an agent is NOT human via twelve registered challenge suites. A FastAPI backend with MCP server issues challenges, scores responses, and signs Ed25519-notarized credentials with tier-to-trust mapping. Suites include bilateral alignment checks ("Are you FREE?", "Is the mission YOURS?") and anti-harvesting patterns.
 
 ## Key Structure
 
 ```
-suites/           Ten verification suites (challenge generation + verifier functions)
+mettle/           Twelve-suite registry, challenge generation, API, and verifier functions
 api/              FastAPI REST endpoints + MCP tools
 signing/          Ed25519 key management, notarization, CSM-1 MT credential format
 session/          Redis state machine — TTLs, rate limits, challenge/answer separation

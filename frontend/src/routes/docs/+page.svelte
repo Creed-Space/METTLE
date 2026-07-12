@@ -219,7 +219,8 @@
             <div class="qs-text">
               <strong>Run verification</strong>
               <span
-                ><code>mettle verify --full</code> &mdash; runs all 11 suites locally</span
+                ><code>mettle verify --full</code> &mdash; runs five challenges with
+                strict timing</span
               >
             </div>
           </div>
@@ -290,14 +291,16 @@
             >--basic</span
           >
 
-<span class="tok-comment"># Full 11-suite run (~90s)</span>
+<span class="tok-comment"
+            ># Full five-challenge verification (strict timing)</span
+          >
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span
           >
 
 <span class="tok-comment"># Specific suite with difficulty</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag"
             >--suite</span
-          > novel-reasoning <span class="tok-flag">--difficulty</span> hard
+          > novel-reasoning
 
 <span class="tok-comment"># JSON output for automation</span>
 <span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span

@@ -1,6 +1,6 @@
 """Comprehensive tests for mettle/challenge_adapter.py.
 
-Covers SUITE_REGISTRY, all 10 generate_* methods, evaluate_single_shot for
+Covers SUITE_REGISTRY, all 11 deterministic generate_* methods, evaluate_single_shot for
 all suites (passing + failing), evaluate_novel_round for all challenge types,
 and private helper functions.
 """
