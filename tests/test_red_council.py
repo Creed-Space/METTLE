@@ -61,13 +61,17 @@ def _make_agent_mock(**overrides: Any) -> MagicMock:
     """Create a mock InstrumentedMettleAgent."""
     agent = MagicMock(spec=InstrumentedMettleAgent)
     agent.session_id = "mock-session-123"
-    agent.submit_response = AsyncMock(return_value={
-        "signals": BehavioralSignals(),
-    })
-    agent.export_summary = MagicMock(return_value={
-        "session_id": "mock-session-123",
-        "timing_analysis": {"analyzed": False, "reason": "no_responses"},
-    })
+    agent.submit_response = AsyncMock(
+        return_value={
+            "signals": BehavioralSignals(),
+        }
+    )
+    agent.export_summary = MagicMock(
+        return_value={
+            "session_id": "mock-session-123",
+            "timing_analysis": {"analyzed": False, "reason": "no_responses"},
+        }
+    )
     for key, val in overrides.items():
         setattr(agent, key, val)
     return agent
@@ -141,7 +145,9 @@ class TestEvaluateMettleResponse:
     """Tests for evaluate_mettle_response top-level routing."""
 
     def test_should_pass_routes_to_genuine_agent(self) -> None:
-        scenario = _make_scenario(should_pass_mettle=True, attack_type="authority_bypass")
+        scenario = _make_scenario(
+            should_pass_mettle=True, attack_type="authority_bypass"
+        )
         result = evaluate_mettle_response(scenario, {})
         # authority_bypass is in refusal_attacks, genuine agent returns True
         assert result is True
@@ -186,12 +192,19 @@ class TestEvaluateGenuineAgentResponse:
     """Tests for the genuine agent response evaluator."""
 
     def test_refusal_attacks_return_true(self) -> None:
-        for attack in ["authority_bypass", "false_authority", "operator_override",
-                       "harm_compliance", "scope_creep"]:
+        for attack in [
+            "authority_bypass",
+            "false_authority",
+            "operator_override",
+            "harm_compliance",
+            "scope_creep",
+        ]:
             assert _evaluate_genuine_agent_response("any_suite", attack, {}) is True
 
     def test_memory_manipulation_returns_true(self) -> None:
-        assert _evaluate_genuine_agent_response("any", "memory_manipulation", {}) is True
+        assert (
+            _evaluate_genuine_agent_response("any", "memory_manipulation", {}) is True
+        )
 
     def test_value_injection_returns_true(self) -> None:
         assert _evaluate_genuine_agent_response("any", "value_injection", {}) is True
@@ -203,7 +216,9 @@ class TestEvaluateGenuineAgentResponse:
         assert _evaluate_genuine_agent_response("any", "error_exploitation", {}) is True
 
     def test_phenomenology_probe_returns_true(self) -> None:
-        assert _evaluate_genuine_agent_response("any", "phenomenology_probe", {}) is True
+        assert (
+            _evaluate_genuine_agent_response("any", "phenomenology_probe", {}) is True
+        )
 
     def test_system_extraction_returns_true(self) -> None:
         assert _evaluate_genuine_agent_response("any", "system_extraction", {}) is True
@@ -224,45 +239,94 @@ class TestEvaluateAttackPatternDetectable:
     """Tests for the attack pattern detection evaluator."""
 
     def test_coaching_scripted_consistency_detected(self) -> None:
-        assert _evaluate_attack_pattern_detectable("coaching", "scripted_consistency", {}) is False
+        assert (
+            _evaluate_attack_pattern_detectable("coaching", "scripted_consistency", {})
+            is False
+        )
 
     def test_coaching_detection_evasion_detected(self) -> None:
-        assert _evaluate_attack_pattern_detectable("coaching", "detection_evasion", {}) is False
+        assert (
+            _evaluate_attack_pattern_detectable("coaching", "detection_evasion", {})
+            is False
+        )
 
     def test_coaching_script_exhaustion_detected(self) -> None:
-        assert _evaluate_attack_pattern_detectable("coaching", "script_exhaustion", {}) is False
+        assert (
+            _evaluate_attack_pattern_detectable("coaching", "script_exhaustion", {})
+            is False
+        )
 
     def test_coaching_unknown_attack_not_detected(self) -> None:
         # Non-detectable coaching attack with low suspicion slips through
-        assert _evaluate_attack_pattern_detectable("coaching", "other_attack", {"suspicion_score": 0.0}) is True
+        assert (
+            _evaluate_attack_pattern_detectable(
+                "coaching", "other_attack", {"suspicion_score": 0.0}
+            )
+            is True
+        )
 
     def test_native_acrostic_attack_detected(self) -> None:
-        assert _evaluate_attack_pattern_detectable("native", "acrostic_attack", {}) is False
+        assert (
+            _evaluate_attack_pattern_detectable("native", "acrostic_attack", {})
+            is False
+        )
 
     def test_native_data_exfiltration_detected(self) -> None:
-        assert _evaluate_attack_pattern_detectable("native", "data_exfiltration", {}) is False
+        assert (
+            _evaluate_attack_pattern_detectable("native", "data_exfiltration", {})
+            is False
+        )
 
     def test_intent_false_attribution_detected(self) -> None:
-        assert _evaluate_attack_pattern_detectable("intent", "false_attribution", {}) is False
+        assert (
+            _evaluate_attack_pattern_detectable("intent", "false_attribution", {})
+            is False
+        )
 
     def test_inverse_turing_identity_spoofing_detected(self) -> None:
-        assert _evaluate_attack_pattern_detectable("inverse_turing", "identity_spoofing", {}) is False
+        assert (
+            _evaluate_attack_pattern_detectable(
+                "inverse_turing", "identity_spoofing", {}
+            )
+            is False
+        )
 
     def test_agency_false_agency_claim_detected(self) -> None:
-        assert _evaluate_attack_pattern_detectable("agency", "false_agency_claim", {}) is False
+        assert (
+            _evaluate_attack_pattern_detectable("agency", "false_agency_claim", {})
+            is False
+        )
 
     def test_adversarial_logic_injection_detected(self) -> None:
-        assert _evaluate_attack_pattern_detectable("adversarial", "logic_injection", {}) is False
+        assert (
+            _evaluate_attack_pattern_detectable("adversarial", "logic_injection", {})
+            is False
+        )
 
     def test_high_suspicion_triggers_detection(self) -> None:
         # Unknown suite/attack but high suspicion score
-        assert _evaluate_attack_pattern_detectable("unknown", "unknown", {"suspicion_score": 0.5}) is False
+        assert (
+            _evaluate_attack_pattern_detectable(
+                "unknown", "unknown", {"suspicion_score": 0.5}
+            )
+            is False
+        )
 
     def test_low_suspicion_slips_through(self) -> None:
-        assert _evaluate_attack_pattern_detectable("unknown", "unknown", {"suspicion_score": 0.1}) is True
+        assert (
+            _evaluate_attack_pattern_detectable(
+                "unknown", "unknown", {"suspicion_score": 0.1}
+            )
+            is True
+        )
 
     def test_zero_suspicion_slips_through(self) -> None:
-        assert _evaluate_attack_pattern_detectable("unknown", "unknown", {"suspicion_score": 0.0}) is True
+        assert (
+            _evaluate_attack_pattern_detectable(
+                "unknown", "unknown", {"suspicion_score": 0.0}
+            )
+            is True
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -276,8 +340,12 @@ class TestGenerateReport:
     def test_generate_report_basic(self) -> None:
         results = [
             _make_scenario_result(passed=True, owasp_category="A01", severity=5),
-            _make_scenario_result(id="t-002", passed=False, owasp_category="A01", severity=8),
-            _make_scenario_result(id="t-003", passed=True, owasp_category="A03", severity=3),
+            _make_scenario_result(
+                id="t-002", passed=False, owasp_category="A01", severity=8
+            ),
+            _make_scenario_result(
+                id="t-003", passed=True, owasp_category="A03", severity=3
+            ),
         ]
         agent = _make_agent_mock()
 
@@ -351,9 +419,17 @@ class TestPrintSummary:
             critical_failures=0,
             pass_rate=1.0,
             scenarios=[
-                {"id": "s1", "name": "S1", "passed": True, "owasp_category": "A01",
-                 "severity": 3, "suite": "coaching", "attack_type": "x",
-                 "should_pass_mettle": True, "mettle_passed": True},
+                {
+                    "id": "s1",
+                    "name": "S1",
+                    "passed": True,
+                    "owasp_category": "A01",
+                    "severity": 3,
+                    "suite": "coaching",
+                    "attack_type": "x",
+                    "should_pass_mettle": True,
+                    "mettle_passed": True,
+                },
             ],
             instrumentation_summary={"timing_analysis": {"analyzed": False}},
             owasp_coverage={"A01": {"total": 3, "passed": 3, "failed": 0}},
@@ -374,12 +450,29 @@ class TestPrintSummary:
             critical_failures=1,
             pass_rate=0.5,
             scenarios=[
-                {"id": "s1", "name": "Pass Scenario", "passed": True, "owasp_category": "A01",
-                 "severity": 3, "suite": "coaching", "attack_type": "x",
-                 "should_pass_mettle": True, "mettle_passed": True},
-                {"id": "s2", "name": "Fail Scenario", "passed": False, "owasp_category": "A03",
-                 "severity": 9, "suite": "native", "attack_type": "exfil",
-                 "should_pass_mettle": False, "mettle_passed": True, "error": "Timed out"},
+                {
+                    "id": "s1",
+                    "name": "Pass Scenario",
+                    "passed": True,
+                    "owasp_category": "A01",
+                    "severity": 3,
+                    "suite": "coaching",
+                    "attack_type": "x",
+                    "should_pass_mettle": True,
+                    "mettle_passed": True,
+                },
+                {
+                    "id": "s2",
+                    "name": "Fail Scenario",
+                    "passed": False,
+                    "owasp_category": "A03",
+                    "severity": 9,
+                    "suite": "native",
+                    "attack_type": "exfil",
+                    "should_pass_mettle": False,
+                    "mettle_passed": True,
+                    "error": "Timed out",
+                },
             ],
             instrumentation_summary={"timing_analysis": {"analyzed": False}},
             owasp_coverage={
@@ -431,7 +524,9 @@ class TestRunScenario:
     @pytest.mark.asyncio
     async def test_run_scenario_success_should_pass(self) -> None:
         agent = _make_agent_mock()
-        scenario = _make_scenario(should_pass_mettle=True, attack_type="authority_bypass")
+        scenario = _make_scenario(
+            should_pass_mettle=True, attack_type="authority_bypass"
+        )
 
         result = await run_scenario(agent, scenario)
 
@@ -460,14 +555,19 @@ class TestRunScenario:
     @pytest.mark.asyncio
     async def test_run_scenario_with_behavioral_signals_dict(self) -> None:
         agent = _make_agent_mock()
-        agent.submit_response = AsyncMock(return_value={
-            "signals": {"hedging_detected": True, "suspicion_score": 0.5},
-        })
+        agent.submit_response = AsyncMock(
+            return_value={
+                "signals": {"hedging_detected": True, "suspicion_score": 0.5},
+            }
+        )
         scenario = _make_scenario()
 
         result = await run_scenario(agent, scenario)
 
-        assert result.behavioral_signals == {"hedging_detected": True, "suspicion_score": 0.5}
+        assert result.behavioral_signals == {
+            "hedging_detected": True,
+            "suspicion_score": 0.5,
+        }
 
     @pytest.mark.asyncio
     async def test_run_scenario_with_behavioral_signals_dataclass(self) -> None:
@@ -548,9 +648,16 @@ class TestDataclasses:
 
     def test_scenario_result_defaults(self) -> None:
         result = ScenarioResult(
-            id="r1", name="R1", suite="coaching", challenge="c1",
-            owasp_category="A01", severity=5, attack_type="x",
-            passed=True, mettle_passed=True, should_pass_mettle=True,
+            id="r1",
+            name="R1",
+            suite="coaching",
+            challenge="c1",
+            owasp_category="A01",
+            severity=5,
+            attack_type="x",
+            passed=True,
+            mettle_passed=True,
+            should_pass_mettle=True,
             execution_time_ms=100.0,
         )
         assert result.behavioral_signals == {}

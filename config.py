@@ -83,7 +83,11 @@ class Settings(BaseSettings):
         """Parse allowed origins into a list."""
         if self.allowed_origins == "*":
             return ["*"]
-        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+        return [
+            origin.strip()
+            for origin in self.allowed_origins.split(",")
+            if origin.strip()
+        ]
 
     @property
     def is_production(self) -> bool:
@@ -98,19 +102,28 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "METTLE_ALLOWED_ORIGINS must list trusted origins in production"
                 )
-            if any(not origin.startswith("https://") for origin in self.allowed_origins_list):
+            if any(
+                not origin.startswith("https://")
+                for origin in self.allowed_origins_list
+            ):
                 raise ValueError("METTLE_ALLOWED_ORIGINS must use HTTPS in production")
             if len(self.secret_key) < 32:
-                raise ValueError("METTLE_SECRET_KEY must be at least 32 characters in production")
+                raise ValueError(
+                    "METTLE_SECRET_KEY must be at least 32 characters in production"
+                )
             if len(self.admin_api_key) < 32:
-                raise ValueError("METTLE_ADMIN_API_KEY must be at least 32 characters in production")
+                raise ValueError(
+                    "METTLE_ADMIN_API_KEY must be at least 32 characters in production"
+                )
             if not self.vcp_signing_key:
                 raise ValueError("METTLE_VCP_SIGNING_KEY is required in production")
             if not self.use_database:
                 raise ValueError("METTLE_USE_DATABASE must be enabled in production")
             database_scheme = urlparse(self.database_url).scheme
             if database_scheme not in {"postgres", "postgresql"}:
-                raise ValueError("METTLE_DATABASE_URL must use PostgreSQL in production")
+                raise ValueError(
+                    "METTLE_DATABASE_URL must use PostgreSQL in production"
+                )
         return self
 
 

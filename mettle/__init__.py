@@ -12,7 +12,13 @@ from .models import (
     MettleSession,
     VerificationResult,
 )
-from .vcp import VCPTokenClaim, build_mettle_attestation, compute_tier, format_csm1_line, parse_csm1_token
+from .vcp import (
+    VCPTokenClaim,
+    build_mettle_attestation,
+    compute_tier,
+    format_csm1_line,
+    parse_csm1_token,
+)
 from .verifier import compute_mettle_result, verify_response
 
 __all__ = [

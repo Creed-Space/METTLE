@@ -49,7 +49,9 @@ def verify_agent(entity_id: str, difficulty: str = "basic") -> dict:
             print(f"  Prompt: {prompt[:60]}...")
 
             # Generate answer based on challenge type
-            answer = generate_answer(challenge_type, prompt, current_challenge.get("data", {}))
+            answer = generate_answer(
+                challenge_type, prompt, current_challenge.get("data", {})
+            )
 
             # Submit answer
             response = client.post(
@@ -89,7 +91,7 @@ def verify_agent(entity_id: str, difficulty: str = "basic") -> dict:
 def safe_math_eval(expr: str) -> int:
     """Safely evaluate simple math expressions (+ - * only)."""
     # Only allow digits, spaces, and basic operators
-    if not re.match(r'^[\d\s\+\-\*]+$', expr):
+    if not re.match(r"^[\d\s\+\-\*]+$", expr):
         return 0
 
     # Parse and compute safely
@@ -97,21 +99,21 @@ def safe_math_eval(expr: str) -> int:
         # Simple recursive descent for + and -
         result = 0
         current = 0
-        op = '+'
+        op = "+"
 
-        for char in expr + '+':
+        for char in expr + "+":
             if char.isdigit():
                 current = current * 10 + int(char)
-            elif char in '+-*':
-                if op == '+':
+            elif char in "+-*":
+                if op == "+":
                     result += current
-                elif op == '-':
+                elif op == "-":
                     result -= current
-                elif op == '*':
+                elif op == "*":
                     result *= current
                 current = 0
                 op = char
-            elif char == ' ':
+            elif char == " ":
                 continue
 
         return result

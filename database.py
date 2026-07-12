@@ -22,6 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
+
 def _database_url_from_env() -> str:
     """Resolve the configured URL, preferring the documented METTLE prefix."""
     return (
@@ -120,7 +121,9 @@ class DBVerificationRecord(Base):
     entity_id = Column(String(128), index=True, nullable=False)
     ip_address = Column(String(45), index=True, nullable=False)
     passed = Column(Boolean, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
 
 
 # === Database Functions ===
@@ -147,7 +150,9 @@ def get_db():
 # === Session Operations ===
 
 
-def save_session(session_id: str, entity_id: str | None, difficulty: str, challenges: list) -> bool:
+def save_session(
+    session_id: str, entity_id: str | None, difficulty: str, challenges: list
+) -> bool:
     """Save a new session to database."""
     try:
         with get_db() as db:
@@ -155,7 +160,9 @@ def save_session(session_id: str, entity_id: str | None, difficulty: str, challe
                 session_id=session_id,
                 entity_id=entity_id,
                 difficulty=difficulty,
-                challenges_json=json.dumps([c.model_dump() for c in challenges], default=str),
+                challenges_json=json.dumps(
+                    [c.model_dump() for c in challenges], default=str
+                ),
             )
             db.add(db_session)
             db.commit()
@@ -169,7 +176,9 @@ def get_session(session_id: str) -> dict | None:
     """Get session from database."""
     try:
         with get_db() as db:
-            result = db.query(DBSession).filter(DBSession.session_id == session_id).first()
+            result = (
+                db.query(DBSession).filter(DBSession.session_id == session_id).first()
+            )
             if result:
                 return {
                     "session_id": result.session_id,
@@ -186,13 +195,19 @@ def get_session(session_id: str) -> dict | None:
         return None
 
 
-def update_session_results(session_id: str, results: list, completed: bool = False) -> bool:
+def update_session_results(
+    session_id: str, results: list, completed: bool = False
+) -> bool:
     """Update session results."""
     try:
         with get_db() as db:
-            db_session = db.query(DBSession).filter(DBSession.session_id == session_id).first()
+            db_session = (
+                db.query(DBSession).filter(DBSession.session_id == session_id).first()
+            )
             if db_session:
-                db_session.results_json = json.dumps([r.model_dump() for r in results], default=str)
+                db_session.results_json = json.dumps(
+                    [r.model_dump() for r in results], default=str
+                )
                 db_session.completed = completed
                 if completed:
                     db_session.completed_at = datetime.now(timezone.utc)
@@ -207,7 +222,9 @@ def update_session_results(session_id: str, results: list, completed: bool = Fal
 # === Revocation Operations ===
 
 
-def add_revoked_badge(jti: str, entity_id: str | None, reason: str, evidence: dict | None) -> bool:
+def add_revoked_badge(
+    jti: str, entity_id: str | None, reason: str, evidence: dict | None
+) -> bool:
     """Add a badge to the revocation list."""
     try:
         with get_db() as db:
@@ -242,13 +259,20 @@ def get_revoked_badges(limit: int = 100, *, raise_on_error: bool = False) -> lis
     """Get list of revoked badges."""
     try:
         with get_db() as db:
-            results = db.query(DBRevokedBadge).order_by(DBRevokedBadge.revoked_at.desc()).limit(limit).all()
+            results = (
+                db.query(DBRevokedBadge)
+                .order_by(DBRevokedBadge.revoked_at.desc())
+                .limit(limit)
+                .all()
+            )
             return [
                 {
                     "jti": r.jti,
                     "entity_id": r.entity_id,
                     "reason": r.reason,
-                    "evidence": json.loads(r.evidence_json) if r.evidence_json else None,
+                    "evidence": json.loads(r.evidence_json)
+                    if r.evidence_json
+                    else None,
                     "revoked_at": r.revoked_at.isoformat() if r.revoked_at else None,
                 }
                 for r in results
@@ -303,7 +327,9 @@ def get_api_key(api_key: str) -> dict | None:
                     "entity_id": result.entity_id,
                     "usage_date": result.usage_date,
                     "usage_count": result.usage_count,
-                    "created_at": result.created_at.isoformat() if result.created_at else None,
+                    "created_at": result.created_at.isoformat()
+                    if result.created_at
+                    else None,
                 }
             return None
     except Exception as exc:
@@ -330,7 +356,9 @@ def update_api_key_usage(api_key: str, usage_date: str, usage_count: int) -> boo
 # === Webhook Operations ===
 
 
-def save_webhook(entity_id: str, url: str, events: list[str], secret: str | None) -> bool:
+def save_webhook(
+    entity_id: str, url: str, events: list[str], secret: str | None
+) -> bool:
     """Save a webhook registration."""
     try:
         with get_db() as db:
@@ -354,13 +382,17 @@ def get_webhook(entity_id: str) -> dict | None:
     """Get webhook for an entity."""
     try:
         with get_db() as db:
-            result = db.query(DBWebhook).filter(DBWebhook.entity_id == entity_id).first()
+            result = (
+                db.query(DBWebhook).filter(DBWebhook.entity_id == entity_id).first()
+            )
             if result:
                 return {
                     "url": result.url,
                     "events": json.loads(result.events_json),
                     "secret": result.secret,
-                    "created_at": result.created_at.isoformat() if result.created_at else None,
+                    "created_at": result.created_at.isoformat()
+                    if result.created_at
+                    else None,
                 }
             return None
     except Exception as exc:
@@ -372,7 +404,9 @@ def delete_webhook(entity_id: str) -> bool:
     """Delete a webhook registration."""
     try:
         with get_db() as db:
-            result = db.query(DBWebhook).filter(DBWebhook.entity_id == entity_id).delete()
+            result = (
+                db.query(DBWebhook).filter(DBWebhook.entity_id == entity_id).delete()
+            )
             db.commit()
             return result > 0
     except Exception as exc:
@@ -396,7 +430,9 @@ def save_verification_record(entity_id: str, ip_address: str, passed: bool) -> b
             db.commit()
             return True
     except Exception as exc:
-        logger.exception("Failed to save verification record for entity '%s': %s", entity_id, exc)
+        logger.exception(
+            "Failed to save verification record for entity '%s': %s", entity_id, exc
+        )
         return False
 
 
@@ -442,7 +478,9 @@ def get_entity_verification_count(entity_id: str, hours: int = 1) -> int:
                 .count()
             )
     except Exception as exc:
-        logger.exception("Failed to count verifications for entity '%s': %s", entity_id, exc)
+        logger.exception(
+            "Failed to count verifications for entity '%s': %s", entity_id, exc
+        )
         return 0
 
 

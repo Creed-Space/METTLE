@@ -81,7 +81,9 @@ class SessionManager:
         # Generate session ID
         session_id = secrets.token_urlsafe(32)
         now = datetime.now(tz=timezone.utc)
-        expires_at = datetime.fromtimestamp(now.timestamp() + ACTIVE_SESSION_TTL, tz=timezone.utc)
+        expires_at = datetime.fromtimestamp(
+            now.timestamp() + ACTIVE_SESSION_TTL, tz=timezone.utc
+        )
 
         # Generate challenges for each suite
         client_challenges: dict[str, Any] = {}
@@ -115,7 +117,9 @@ class SessionManager:
             elif suite == GOVERNANCE_SUITE:
                 client, server = ChallengeAdapter.generate_governance()
             elif suite == "intent-provenance" and vcp_token is not None:
-                client, server = ChallengeAdapter.generate_intent_provenance(vcp_token=vcp_token)
+                client, server = ChallengeAdapter.generate_intent_provenance(
+                    vcp_token=vcp_token
+                )
             else:
                 gen = generators.get(suite)
                 if gen is None:
@@ -138,7 +142,9 @@ class SessionManager:
 
         if has_novel:
             params = NovelReasoningChallenges.DIFFICULTY_PARAMS[difficulty]
-            time_budget_ms = params["time_budget_s"] * 1000 + len(resolved_suites) * 30000
+            time_budget_ms = (
+                params["time_budget_s"] * 1000 + len(resolved_suites) * 30000
+            )
         else:
             time_budget_ms = len(resolved_suites) * 30000  # 30s per single-shot suite
 
@@ -165,7 +171,9 @@ class SessionManager:
         # Store in Redis
         pipe = self.redis.pipeline()
         pipe.setex(_key(session_id), ACTIVE_SESSION_TTL, json.dumps(session_meta))
-        pipe.setex(_key(session_id, "answers"), ACTIVE_SESSION_TTL, json.dumps(server_answers))
+        pipe.setex(
+            _key(session_id, "answers"), ACTIVE_SESSION_TTL, json.dumps(server_answers)
+        )
         # Track active sessions for rate limiting
         pipe.sadd(_rate_key(user_id, "active"), session_id)
         pipe.expire(_rate_key(user_id, "active"), ACTIVE_SESSION_TTL)
@@ -197,11 +205,16 @@ class SessionManager:
             return False
         if session["user_id"] != user_id:
             return False
-        if session["status"] in (SessionStatus.COMPLETED.value, SessionStatus.CANCELLED.value):
+        if session["status"] in (
+            SessionStatus.COMPLETED.value,
+            SessionStatus.CANCELLED.value,
+        ):
             return False
 
         session["status"] = SessionStatus.CANCELLED.value
-        await self.redis.setex(_key(session_id), COMPLETED_SESSION_TTL, json.dumps(session))
+        await self.redis.setex(
+            _key(session_id), COMPLETED_SESSION_TTL, json.dumps(session)
+        )
         await self.redis.srem(_rate_key(user_id, "active"), session_id)
         return True
 
@@ -359,11 +372,16 @@ class SessionManager:
         # Determine next round data
         next_round_data = None
         if not is_final_round:
-            next_round_data = {"round": round_num + 1, "note": "Continue with updated challenge data"}
+            next_round_data = {
+                "round": round_num + 1,
+                "note": "Continue with updated challenge data",
+            }
 
         if is_final_round:
             # Analyze iteration curve
-            curve_result = self._analyze_iteration_curve(session["round_data"], novel_server)
+            curve_result = self._analyze_iteration_curve(
+                session["round_data"], novel_server
+            )
             session["suite_results"][MULTI_ROUND_SUITE] = curve_result
             session["suites_completed"].append(MULTI_ROUND_SUITE)
 
@@ -371,9 +389,15 @@ class SessionManager:
             if set(session["suites_completed"]) == set(session["suites"]):
                 session["status"] = SessionStatus.COMPLETED.value
                 # Clean up active session tracking for rate limiting
-                await self.redis.srem(_rate_key(session["user_id"], "active"), session_id)
+                await self.redis.srem(
+                    _rate_key(session["user_id"], "active"), session_id
+                )
 
-        ttl = COMPLETED_SESSION_TTL if session["status"] == SessionStatus.COMPLETED.value else ACTIVE_SESSION_TTL
+        ttl = (
+            COMPLETED_SESSION_TTL
+            if session["status"] == SessionStatus.COMPLETED.value
+            else ACTIVE_SESSION_TTL
+        )
         await self.redis.setex(_key(session_id), ttl, json.dumps(session))
 
         return {
@@ -385,7 +409,9 @@ class SessionManager:
             "next_round_data": next_round_data,
         }
 
-    async def get_round_feedback(self, session_id: str, round_num: int) -> dict[str, Any] | None:
+    async def get_round_feedback(
+        self, session_id: str, round_num: int
+    ) -> dict[str, Any] | None:
         """Get feedback for a completed round."""
         session = await self.get_session(session_id)
         if session is None:
@@ -414,7 +440,9 @@ class SessionManager:
 
         # Check overall pass
         results = session.get("suite_results", {})
-        all_passed = all(r.get("passed", False) for r in results.values()) if results else False
+        all_passed = (
+            all(r.get("passed", False) for r in results.values()) if results else False
+        )
 
         # Extract iteration curve if novel reasoning was run
         iteration_curve = None
@@ -452,7 +480,11 @@ class SessionManager:
                     "accuracy": rd["accuracy"],
                     "structural_change": abs(
                         rd["accuracy"]
-                        - (round_data[round_data.index(rd) - 1]["accuracy"] if round_data.index(rd) > 0 else 0)
+                        - (
+                            round_data[round_data.index(rd) - 1]["accuracy"]
+                            if round_data.index(rd) > 0
+                            else 0
+                        )
                     ),
                     "error_magnitude": 1.0 - rd["accuracy"],
                 }
@@ -489,7 +521,9 @@ class SessionManager:
         hourly_raw = await self.redis.get(_rate_key(user_id, "hourly"))
         hourly_count = int(hourly_raw) if hourly_raw else 0
         if hourly_count >= MAX_SESSIONS_PER_HOUR:
-            raise ValueError(f"Hourly session limit ({MAX_SESSIONS_PER_HOUR}) exceeded. Try again later.")
+            raise ValueError(
+                f"Hourly session limit ({MAX_SESSIONS_PER_HOUR}) exceeded. Try again later."
+            )
 
     # ---- Helpers ----
 

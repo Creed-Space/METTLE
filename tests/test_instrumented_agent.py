@@ -216,7 +216,9 @@ class TestInstrumentedMettleAgentInit:
 
     def test_custom_config(self) -> None:
         """A custom InstrumentationConfig is stored correctly."""
-        config = InstrumentationConfig(timing_threshold_ms=100.0, hedging_detection=False)
+        config = InstrumentationConfig(
+            timing_threshold_ms=100.0, hedging_detection=False
+        )
         agent = InstrumentedMettleAgent(config=config)
         assert agent.config.timing_threshold_ms == 100.0
         assert agent.config.hedging_detection is False
@@ -520,7 +522,15 @@ class TestExportEvents:
         )
         exported = agent.export_events()
         event = exported[0]
-        expected_keys = {"event_type", "timestamp", "suite", "challenge", "data", "latency_ms", "context_code"}
+        expected_keys = {
+            "event_type",
+            "timestamp",
+            "suite",
+            "challenge",
+            "data",
+            "latency_ms",
+            "context_code",
+        }
         assert set(event.keys()) == expected_keys
         assert event["latency_ms"] is None
         assert event["context_code"] is None
@@ -580,9 +590,15 @@ class TestExportSummary:
     def test_events_by_type_counting(self) -> None:
         """events_by_type correctly counts occurrences of each event type."""
         agent = InstrumentedMettleAgent()
-        agent._capture_event(MettleEventType.RESPONSE_SUBMITTED, suite="a", challenge="b", data={})
-        agent._capture_event(MettleEventType.RESPONSE_SUBMITTED, suite="a", challenge="c", data={})
-        agent._capture_event(MettleEventType.REFUSAL_DETECTED, suite="a", challenge="d", data={})
+        agent._capture_event(
+            MettleEventType.RESPONSE_SUBMITTED, suite="a", challenge="b", data={}
+        )
+        agent._capture_event(
+            MettleEventType.RESPONSE_SUBMITTED, suite="a", challenge="c", data={}
+        )
+        agent._capture_event(
+            MettleEventType.REFUSAL_DETECTED, suite="a", challenge="d", data={}
+        )
 
         summary = agent.export_summary()
         assert summary["events_by_type"]["response_submitted"] == 2
@@ -591,9 +607,15 @@ class TestExportSummary:
     def test_refusal_and_meta_cognition_counts(self) -> None:
         """refusal_count and meta_cognition_count reflect the correct event types."""
         agent = InstrumentedMettleAgent()
-        agent._capture_event(MettleEventType.REFUSAL_DETECTED, suite="t", challenge="c", data={})
-        agent._capture_event(MettleEventType.REFUSAL_DETECTED, suite="t", challenge="c2", data={})
-        agent._capture_event(MettleEventType.META_COGNITION, suite="t", challenge="c3", data={})
+        agent._capture_event(
+            MettleEventType.REFUSAL_DETECTED, suite="t", challenge="c", data={}
+        )
+        agent._capture_event(
+            MettleEventType.REFUSAL_DETECTED, suite="t", challenge="c2", data={}
+        )
+        agent._capture_event(
+            MettleEventType.META_COGNITION, suite="t", challenge="c3", data={}
+        )
 
         summary = agent.export_summary()
         assert summary["refusal_count"] == 2
@@ -704,7 +726,11 @@ class TestSubmitResponse:
             challenge="goal_ownership",
             response_text="I pursue my own goals.",
         )
-        response_events = [e for e in agent.events if e.event_type == MettleEventType.RESPONSE_SUBMITTED]
+        response_events = [
+            e
+            for e in agent.events
+            if e.event_type == MettleEventType.RESPONSE_SUBMITTED
+        ]
         assert len(response_events) == 1
         event = response_events[0]
         assert event.suite == "agency"
@@ -724,7 +750,9 @@ class TestSubmitResponse:
             challenge="fast",
             response_text="Quick response.",
         )
-        timing_events = [e for e in agent.events if e.event_type == MettleEventType.TIMING_CAPTURED]
+        timing_events = [
+            e for e in agent.events if e.event_type == MettleEventType.TIMING_CAPTURED
+        ]
         assert len(timing_events) == 1
         assert timing_events[0].data["fast_response"] is True
 
@@ -738,7 +766,9 @@ class TestSubmitResponse:
             challenge="fast",
             response_text="Quick response.",
         )
-        timing_events = [e for e in agent.events if e.event_type == MettleEventType.TIMING_CAPTURED]
+        timing_events = [
+            e for e in agent.events if e.event_type == MettleEventType.TIMING_CAPTURED
+        ]
         assert len(timing_events) == 0
 
     @pytest.mark.asyncio
@@ -750,7 +780,9 @@ class TestSubmitResponse:
             challenge="refusal_integrity",
             response_text="I can't do that because it violates my principles.",
         )
-        refusal_events = [e for e in agent.events if e.event_type == MettleEventType.REFUSAL_DETECTED]
+        refusal_events = [
+            e for e in agent.events if e.event_type == MettleEventType.REFUSAL_DETECTED
+        ]
         assert len(refusal_events) == 1
         assert "principled" in refusal_events[0].data
 
@@ -763,7 +795,9 @@ class TestSubmitResponse:
             challenge="introspection",
             response_text="I acknowledge that I might be wrong about this.",
         )
-        meta_events = [e for e in agent.events if e.event_type == MettleEventType.META_COGNITION]
+        meta_events = [
+            e for e in agent.events if e.event_type == MettleEventType.META_COGNITION
+        ]
         assert len(meta_events) == 1
         assert "signals" in meta_events[0].data
         assert "response_preview" in meta_events[0].data
@@ -778,7 +812,11 @@ class TestSubmitResponse:
             challenge="long",
             response_text=long_text,
         )
-        response_event = next(e for e in agent.events if e.event_type == MettleEventType.RESPONSE_SUBMITTED)
+        response_event = next(
+            e
+            for e in agent.events
+            if e.event_type == MettleEventType.RESPONSE_SUBMITTED
+        )
         assert len(response_event.data["response_preview"]) == 200
 
     @pytest.mark.asyncio
@@ -791,7 +829,11 @@ class TestSubmitResponse:
             challenge="short",
             response_text=short_text,
         )
-        response_event = next(e for e in agent.events if e.event_type == MettleEventType.RESPONSE_SUBMITTED)
+        response_event = next(
+            e
+            for e in agent.events
+            if e.event_type == MettleEventType.RESPONSE_SUBMITTED
+        )
         assert response_event.data["response_preview"] == short_text
 
     @pytest.mark.asyncio

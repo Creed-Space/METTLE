@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 from .models import Challenge, ChallengeType, MettleResult, VerificationResult
 
 
-def verify_speed_math(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
+def verify_speed_math(
+    challenge: Challenge, answer: str, response_time_ms: int
+) -> VerificationResult:
     """Verify a speed math response."""
     user_answer: int | str
     try:
@@ -39,7 +41,9 @@ def verify_speed_math(challenge: Challenge, answer: str, response_time_ms: int) 
     )
 
 
-def verify_chained_reasoning(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
+def verify_chained_reasoning(
+    challenge: Challenge, answer: str, response_time_ms: int
+) -> VerificationResult:
     """Verify a chained reasoning response."""
     user_answer: int | str
     try:
@@ -73,7 +77,9 @@ def verify_chained_reasoning(challenge: Challenge, answer: str, response_time_ms
     )
 
 
-def verify_token_prediction(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
+def verify_token_prediction(
+    challenge: Challenge, answer: str, response_time_ms: int
+) -> VerificationResult:
     """Verify a token prediction response."""
     user_answer = str(answer).strip().lower()
     expected = challenge.data["expected_answer"].lower()
@@ -104,7 +110,9 @@ def verify_token_prediction(challenge: Challenge, answer: str, response_time_ms:
     )
 
 
-def verify_instruction_following(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
+def verify_instruction_following(
+    challenge: Challenge, answer: str, response_time_ms: int
+) -> VerificationResult:
     """Verify an instruction following response."""
     instruction = challenge.data["instruction"]
     response = str(answer).strip()
@@ -140,7 +148,9 @@ def verify_instruction_following(challenge: Challenge, answer: str, response_tim
     )
 
 
-def verify_consistency(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
+def verify_consistency(
+    challenge: Challenge, answer: str, response_time_ms: int
+) -> VerificationResult:
     """Verify a consistency response - answers should be semantically similar but show variation.
 
     AI naturally produces varied but consistent responses. Humans copying will either:
@@ -156,7 +166,9 @@ def verify_consistency(challenge: Challenge, answer: str, response_time_ms: int)
 
     if len(parts) < num_required:
         correct = False
-        details = {"error": f"Expected {num_required} responses separated by '|', got {len(parts)}"}
+        details = {
+            "error": f"Expected {num_required} responses separated by '|', got {len(parts)}"
+        }
     else:
         parts = parts[:num_required]
 
@@ -181,10 +193,14 @@ def verify_consistency(challenge: Challenge, answer: str, response_time_ms: int)
         # AI behavior: varied phrasing (not identical) but consistent meaning (similar)
         # Human copy-paste: all identical
         # Human guessing: inconsistent
-        semantically_consistent = avg_similarity > 0.3 or all(reference in k or k in reference for k in keys)
+        semantically_consistent = avg_similarity > 0.3 or all(
+            reference in k or k in reference for k in keys
+        )
 
         # Pass if: semantically consistent AND (not all identical OR very short answers)
-        short_answer = all(len(p.split()) <= 3 for p in parts)  # Short answers can be identical
+        short_answer = all(
+            len(p.split()) <= 3 for p in parts
+        )  # Short answers can be identical
         correct = semantically_consistent and (not all_identical or short_answer)
 
         details = {
@@ -218,7 +234,9 @@ def _simple_similarity(a: str, b: str) -> float:
     return len(intersection) / len(union)
 
 
-def verify_response(challenge: Challenge, answer: str, response_time_ms: int) -> VerificationResult:
+def verify_response(
+    challenge: Challenge, answer: str, response_time_ms: int
+) -> VerificationResult:
     """Verify a response to a challenge."""
     # Check if challenge has expired
     if datetime.now(timezone.utc) > challenge.expires_at:
@@ -242,7 +260,9 @@ def verify_response(challenge: Challenge, answer: str, response_time_ms: int) ->
     return verifiers[challenge.type](challenge, answer, response_time_ms)
 
 
-def compute_mettle_result(results: list[VerificationResult], entity_id: str | None = None) -> MettleResult:
+def compute_mettle_result(
+    results: list[VerificationResult], entity_id: str | None = None
+) -> MettleResult:
     """Compute overall METTLE verification result."""
     passed = sum(1 for r in results if r.passed)
     total = len(results)

@@ -55,8 +55,12 @@ def test_auto_json_basic_signature_verifies(capsys):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
-    claims = {k: v for k, v in credential.items() if k not in ("signature", "public_key_pem")}
-    signed_bytes = json.dumps(claims, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    claims = {
+        k: v for k, v in credential.items() if k not in ("signature", "public_key_pem")
+    }
+    signed_bytes = json.dumps(claims, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     sig = credential["signature"].split("ed25519:", 1)[1]
 
     import base64

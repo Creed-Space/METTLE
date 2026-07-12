@@ -14,7 +14,11 @@ _test_app = FastAPI()
 
 
 @_test_app.get("/protected")
-async def protected_route(user: AuthenticatedUser = pytest.importorskip("fastapi").Depends(require_authenticated_user)):
+async def protected_route(
+    user: AuthenticatedUser = pytest.importorskip("fastapi").Depends(
+        require_authenticated_user
+    ),
+):
     return {"user_id": user.user_id}
 
 
@@ -35,22 +39,36 @@ class TestRequireAuthenticatedUser:
     """Test require_authenticated_user dependency via TestClient."""
 
     def test_valid_api_key(self, auth_client):
-        with patch.dict("os.environ", {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": "my-secret-key,other-key"}):
-            resp = auth_client.get("/protected", headers={"Authorization": "Bearer my-secret-key"})
+        with patch.dict(
+            "os.environ",
+            {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": "my-secret-key,other-key"},
+        ):
+            resp = auth_client.get(
+                "/protected", headers={"Authorization": "Bearer my-secret-key"}
+            )
         assert resp.status_code == 200
         expected = hashlib.sha256(b"my-secret-key").hexdigest()[:12]
         assert resp.json()["user_id"] == f"key:{expected}"
 
     def test_dev_mode_accepts_any_key(self, auth_client):
-        with patch.dict("os.environ", {"METTLE_DEV_MODE": "true", "METTLE_API_KEYS": ""}):
-            resp = auth_client.get("/protected", headers={"Authorization": "Bearer anything-goes"})
+        with patch.dict(
+            "os.environ", {"METTLE_DEV_MODE": "true", "METTLE_API_KEYS": ""}
+        ):
+            resp = auth_client.get(
+                "/protected", headers={"Authorization": "Bearer anything-goes"}
+            )
         assert resp.status_code == 200
         expected = hashlib.sha256(b"anything-goes").hexdigest()[:12]
         assert resp.json()["user_id"] == f"key:{expected}"
 
     def test_invalid_key_returns_401(self, auth_client):
-        with patch.dict("os.environ", {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": "valid-key-only"}):
-            resp = auth_client.get("/protected", headers={"Authorization": "Bearer wrong-key"})
+        with patch.dict(
+            "os.environ",
+            {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": "valid-key-only"},
+        ):
+            resp = auth_client.get(
+                "/protected", headers={"Authorization": "Bearer wrong-key"}
+            )
         assert resp.status_code == 401
         assert resp.json()["detail"] == "Invalid API key"
 
@@ -61,19 +79,30 @@ class TestRequireAuthenticatedUser:
 
     def test_empty_api_keys_env(self, auth_client):
         """When METTLE_API_KEYS is empty string, split produces [''], key won't match."""
-        with patch.dict("os.environ", {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": ""}):
-            resp = auth_client.get("/protected", headers={"Authorization": "Bearer some-key"})
+        with patch.dict(
+            "os.environ", {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": ""}
+        ):
+            resp = auth_client.get(
+                "/protected", headers={"Authorization": "Bearer some-key"}
+            )
         assert resp.status_code == 401
 
     def test_dev_mode_case_insensitive(self, auth_client):
-        with patch.dict("os.environ", {"METTLE_DEV_MODE": "True", "METTLE_API_KEYS": ""}):
+        with patch.dict(
+            "os.environ", {"METTLE_DEV_MODE": "True", "METTLE_API_KEYS": ""}
+        ):
             resp = auth_client.get("/protected", headers={"Authorization": "Bearer x"})
         assert resp.status_code == 200
 
     def test_user_id_fingerprint(self, auth_client):
         """user_id does not reveal any literal API-key prefix."""
-        with patch.dict("os.environ", {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": "abcdefghijklmnop"}):
-            resp = auth_client.get("/protected", headers={"Authorization": "Bearer abcdefghijklmnop"})
+        with patch.dict(
+            "os.environ",
+            {"METTLE_DEV_MODE": "false", "METTLE_API_KEYS": "abcdefghijklmnop"},
+        ):
+            resp = auth_client.get(
+                "/protected", headers={"Authorization": "Bearer abcdefghijklmnop"}
+            )
         assert resp.status_code == 200
         expected = hashlib.sha256(b"abcdefghijklmnop").hexdigest()[:12]
         assert resp.json()["user_id"] == f"key:{expected}"

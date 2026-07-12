@@ -51,11 +51,7 @@ class TestCreateSessionCoverage:
         """intent-provenance suite with vcp_token triggers VCP-enhanced path (line 101)."""
         mgr = SessionManager(mock_redis)
 
-        vcp_token = (
-            "VCP:3.1:agent-42\n"
-            "C:professional.safe@2.0.0\n"
-            "P:advisor:4\n"
-        )
+        vcp_token = "VCP:3.1:agent-42\nC:professional.safe@2.0.0\nP:advisor:4\n"
 
         session_id, client_challenges, session_meta = await mgr.create_session(
             user_id="test-user",

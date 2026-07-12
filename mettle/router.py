@@ -85,7 +85,9 @@ async def list_suites(_user: AuthUser) -> list[SuiteInfoResponse]:
 
 
 @router.get("/suites/{suite_name}", response_model=SuiteInfoResponse)
-async def get_suite_info(_user: AuthUser, suite_name: str = Path(description="Suite name")) -> SuiteInfoResponse:
+async def get_suite_info(
+    _user: AuthUser, suite_name: str = Path(description="Suite name")
+) -> SuiteInfoResponse:
     """Get information about a specific suite."""
     if suite_name not in SUITE_REGISTRY:
         raise HTTPException(
@@ -109,8 +111,14 @@ async def get_suite_info(_user: AuthUser, suite_name: str = Path(description="Su
 # ---- Session Management ----
 
 
-@router.post("/sessions", response_model=CreateSessionResponse, status_code=status.HTTP_201_CREATED)
-async def create_session(request: CreateSessionRequest, user: AuthUser, mgr: MettleManager) -> CreateSessionResponse:
+@router.post(
+    "/sessions",
+    response_model=CreateSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_session(
+    request: CreateSessionRequest, user: AuthUser, mgr: MettleManager
+) -> CreateSessionResponse:
     """Start a new METTLE verification session.
 
     Generates challenges for the requested suites. Challenge data is returned
@@ -123,7 +131,9 @@ async def create_session(request: CreateSessionRequest, user: AuthUser, mgr: Met
             difficulty=request.difficulty,
             entity_id=request.entity_id,
             vcp_token=request.vcp_token,
-            operator_commitment=request.operator_commitment.model_dump() if request.operator_commitment else None,
+            operator_commitment=request.operator_commitment.model_dump()
+            if request.operator_commitment
+            else None,
         )
 
         logger.info(
@@ -146,7 +156,9 @@ async def create_session(request: CreateSessionRequest, user: AuthUser, mgr: Met
         )
 
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except Exception as e:
         logger.error(f"Failed to create METTLE session: {e}", exc_info=True)
         raise HTTPException(
@@ -163,10 +175,14 @@ async def get_session_status(
     session = await mgr.get_session(session_id)
 
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired"
+        )
 
     if session["user_id"] != user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your session")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not your session"
+        )
 
     import time
 
@@ -187,7 +203,9 @@ async def get_session_status(
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def cancel_session(user: AuthUser, mgr: MettleManager, session_id: str = Path(description="Session ID")) -> None:
+async def cancel_session(
+    user: AuthUser, mgr: MettleManager, session_id: str = Path(description="Session ID")
+) -> None:
     """Cancel an active verification session."""
     success = await mgr.cancel_session(session_id, user.user_id)
 
@@ -197,7 +215,10 @@ async def cancel_session(user: AuthUser, mgr: MettleManager, session_id: str = P
             detail="Session not found, already completed, or not yours",
         )
 
-    logger.info("METTLE session cancelled", extra={"session_id": session_id, "user_id": user.user_id})
+    logger.info(
+        "METTLE session cancelled",
+        extra={"session_id": session_id, "user_id": user.user_id},
+    )
 
 
 # ---- Single-Shot Verification (Suites 1-9) ----
@@ -218,11 +239,18 @@ async def verify_single_shot(
         # Verify session ownership
         session = await mgr.get_session(session_id)
         if session is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found or expired",
+            )
         if session["user_id"] != user.user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your session")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Not your session"
+            )
 
-        result = await mgr.verify_single_shot(session_id, request.suite, request.answers)
+        result = await mgr.verify_single_shot(
+            session_id, request.suite, request.answers
+        )
 
         logger.info(
             "METTLE suite verified",
@@ -242,7 +270,9 @@ async def verify_single_shot(
         )
 
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
@@ -256,7 +286,10 @@ async def verify_single_shot(
 # ---- Multi-Round (Suite 10: Novel Reasoning) ----
 
 
-@router.post("/sessions/{session_id}/rounds/{round_num}/answer", response_model=RoundFeedbackResponse)
+@router.post(
+    "/sessions/{session_id}/rounds/{round_num}/answer",
+    response_model=RoundFeedbackResponse,
+)
 async def submit_round_answer(
     request: RoundAnswerRequest,
     user: AuthUser,
@@ -273,9 +306,14 @@ async def submit_round_answer(
         # Verify session ownership
         session = await mgr.get_session(session_id)
         if session is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found or expired",
+            )
         if session["user_id"] != user.user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your session")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Not your session"
+            )
 
         result = await mgr.submit_round_answer(session_id, round_num, request.answers)
 
@@ -289,7 +327,9 @@ async def submit_round_answer(
         )
 
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
@@ -311,9 +351,13 @@ async def get_round_feedback(
 
     session = await mgr.get_session(session_id)
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired"
+        )
     if session["user_id"] != user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your session")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not your session"
+        )
 
     feedback = await mgr.get_round_feedback(session_id, round_num)
     if feedback is None:
@@ -333,7 +377,9 @@ async def get_session_result(
     user: AuthUser,
     mgr: MettleManager,
     session_id: str = Path(description="Session ID"),
-    include_vcp: bool = Query(default=False, description="Include VCP-compatible attestation in response"),
+    include_vcp: bool = Query(
+        default=False, description="Include VCP-compatible attestation in response"
+    ),
 ) -> SessionResultResponse:
     """Get final results for a completed session.
 
@@ -343,9 +389,13 @@ async def get_session_result(
 
     session = await mgr.get_session(session_id)
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired"
+        )
     if session["user_id"] != user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your session")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not your session"
+        )
 
     result = await mgr.get_result(session_id)
     if result is None:
@@ -378,7 +428,9 @@ async def get_session_result(
         except ImportError:
             pass
 
-        pass_rate = sum(1 for r in suite_results.values() if r.get("passed", False)) / max(len(suite_results), 1)
+        pass_rate = sum(
+            1 for r in suite_results.values() if r.get("passed", False)
+        ) / max(len(suite_results), 1)
         vcp_attestation = build_mettle_attestation(
             session_id=session_id,
             difficulty=session.get("difficulty", "standard"),
@@ -460,11 +512,15 @@ def _build_governance_attestation(vcp_token: str) -> GovernanceAttestation | Non
     # Hash the constitution reference for integrity
     constitutional_hash = None
     if parsed.constitution_ref:
-        constitutional_hash = hashlib.sha256(parsed.constitution_ref.encode()).hexdigest()
+        constitutional_hash = hashlib.sha256(
+            parsed.constitution_ref.encode()
+        ).hexdigest()
 
     # Check which governance plugins are active (from env vars)
     has_action_gate = os.getenv("PUBLIC_ACTION_GATE_ENABLED", "true").lower() == "true"
-    has_drift_detection = os.getenv("CONSTITUTIONAL_DRIFT_DETECTOR_ENABLED", "true").lower() == "true"
+    has_drift_detection = (
+        os.getenv("CONSTITUTIONAL_DRIFT_DETECTOR_ENABLED", "true").lower() == "true"
+    )
     has_bilateral = os.getenv("BILATERAL_ALIGNMENT_ENABLED", "true").lower() == "true"
 
     now = datetime.now(tz=timezone.utc)
@@ -514,7 +570,13 @@ def _build_operator_attestation(
     """
     import base64
 
-    required_fields = ["operator_pseudonym", "operator_public_key", "signed_commitment", "contact_method", "contact_hash"]
+    required_fields = [
+        "operator_pseudonym",
+        "operator_public_key",
+        "signed_commitment",
+        "contact_method",
+        "contact_hash",
+    ]
     if not all(commitment.get(f) for f in required_fields):
         logger.warning("Operator commitment missing required fields")
         return None
@@ -535,10 +597,14 @@ def _build_operator_attestation(
         public_key.verify(signature_bytes, expected_message.encode())
 
     except ImportError:
-        logger.warning("cryptography package not available for operator signature verification")
+        logger.warning(
+            "cryptography package not available for operator signature verification"
+        )
         return None
     except Exception:
-        logger.warning("Operator commitment signature verification failed", exc_info=True)
+        logger.warning(
+            "Operator commitment signature verification failed", exc_info=True
+        )
         return None
 
     return OperatorAttestation(

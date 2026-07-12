@@ -50,10 +50,13 @@ def init_signing() -> bool:
     dev_mode = (os.environ.get("METTLE_DEV_MODE") or "false").lower() == "true"
     try:
         from mettle.app_config import settings
+
         pem_key = settings.vcp_signing_key or None
         dev_mode = settings.dev_mode or dev_mode
     except Exception as settings_error:
-        logger.debug("Mettle settings unavailable for VCP signing key lookup: %s", settings_error)
+        logger.debug(
+            "Mettle settings unavailable for VCP signing key lookup: %s", settings_error
+        )
     if not pem_key:
         pem_key = os.environ.get("METTLE_VCP_SIGNING_KEY")
 
@@ -76,7 +79,9 @@ def init_signing() -> bool:
         # Ephemeral keys are suitable only for explicit development sessions.
         _private_key = Ed25519PrivateKey.generate()
         _public_key = _private_key.public_key()
-        logger.info("Generated ephemeral Ed25519 key for VCP attestation signing (dev mode)")
+        logger.info(
+            "Generated ephemeral Ed25519 key for VCP attestation signing (dev mode)"
+        )
 
     _initialized = True
     return True
@@ -120,7 +125,9 @@ def get_public_key_pem() -> str | None:
     try:
         from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-        pem = _public_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode("ascii")
+        pem = _public_key.public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        ).decode("ascii")
     except Exception as exc:
         logger.debug("Failed to serialize VCP public key: %s", exc)
     return pem
@@ -188,7 +195,9 @@ def load_or_create_cli_keypair() -> tuple[Any, str]:
             load_pem_private_key,
         )
     except ImportError as e:
-        raise RuntimeError("The 'cryptography' package is required for credential signing") from e
+        raise RuntimeError(
+            "The 'cryptography' package is required for credential signing"
+        ) from e
 
     from pathlib import Path
 

@@ -31,10 +31,19 @@ jobs:
         run: |
           ruff check . --ignore E501
 
+      - name: Check Python formatting
+        run: |
+          ruff format --check .
+
       - name: Type check with mypy
         run: |
           git ls-files -z '*.py' ':(exclude)**/__main__.py' \
             | xargs -0 mypy --ignore-missing-imports --check-untyped-defs
+
+      - name: Check for unused Python code
+        run: |
+          vulture main.py config.py database.py mcp_server.py \
+            mettle red_team scripts/engine.py --min-confidence 80
 
       - name: Run tests with coverage
         env:
@@ -42,7 +51,26 @@ jobs:
           METTLE_ADMIN_API_KEY: "ci-test-admin-key-12345"
           METTLE_ENVIRONMENT: "test"
         run: |
-          pytest tests/ -v --tb=short --cov=. --cov-report=xml --cov-report=term-missing --reruns 2 --reruns-delay 1
+          pytest tests/ -v --tb=short \
+            --cov=main --cov=config --cov=database --cov=mcp_server \
+            --cov=mettle --cov=red_team --cov=scripts.engine \
+            --cov-report=xml --cov-report=term-missing --cov-fail-under=90 \
+            --reruns 2 --reruns-delay 1
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Check frontend formatting
+        run: npm --prefix frontend run format:check
+
+      - name: Check frontend types
+        run: npm --prefix frontend run check
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+      - name: Check frontend design
+        run: npm --prefix frontend run design:check
 
       - name: Upload coverage
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238  # v4
@@ -68,7 +96,37 @@ jobs:
 
       - name: Security scan with bandit
         run: |
-          bandit -q -r . -x ./tests,./frontend --skip B101
+          bandit -q -r main.py config.py database.py mcp_server.py \
+            mettle red_team scripts/engine.py --skip B101
+
+      - name: Scan for committed secrets
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          binary_suffixes = {
+              ".gz", ".ico", ".jpeg", ".jpg", ".mp3", ".mp4", ".pdf",
+              ".png", ".ttf", ".wav", ".webp", ".woff", ".woff2", ".zip",
+          }
+          tracked = subprocess.check_output(
+              ["git", "ls-files", "-z"], text=False
+          ).decode().split("\0")
+          files = [
+              filename
+              for filename in tracked
+              if filename
+              and not filename.startswith("memory/")
+              and filename != ".secrets.baseline"
+              and Path(filename).suffix.lower() not in binary_suffixes
+          ]
+          raise SystemExit(
+              subprocess.run(
+                  ["detect-secrets-hook", "--baseline", ".secrets.baseline", *files],
+                  check=False,
+              ).returncode
+          )
+          PY
 
       - name: Audit Python dependencies
         run: |

@@ -262,9 +262,7 @@ class TestSubmitResponseWithClient:
         agent.session_id = "sess-timeout"
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            side_effect=httpx.TimeoutException("Timed out")
-        )
+        mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timed out"))
         agent._client = mock_client
 
         result = await agent.submit_response(

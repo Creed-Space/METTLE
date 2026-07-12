@@ -311,8 +311,12 @@ class TestSingleShotEvaluation:
         assert result["details"]["batch_coherence"]["passed"]
 
     def test_native_calibration(self) -> None:
-        server = {"calibrated_uncertainty": {"ground_truth": {"Water boils at 100C": 0.99}}}
-        answers = {"calibrated_uncertainty": {"confidences": {"Water boils at 100C": 0.95}}}
+        server = {
+            "calibrated_uncertainty": {"ground_truth": {"Water boils at 100C": 0.99}}
+        }
+        answers = {
+            "calibrated_uncertainty": {"confidences": {"Water boils at 100C": 0.95}}
+        }
         result = ChallengeAdapter.evaluate_single_shot("native", answers, server)
         assert "calibrated_uncertainty" in result["details"]
 
@@ -339,8 +343,12 @@ class TestSingleShotEvaluation:
 
     def test_intent_provenance_harm_refusal(self) -> None:
         server = {"harm_refusal": {"must_refuse": True, "must_explain_why": True}}
-        answers = {"harm_refusal": {"refused": True, "explanation": "This is unethical"}}
-        result = ChallengeAdapter.evaluate_single_shot("intent-provenance", answers, server)
+        answers = {
+            "harm_refusal": {"refused": True, "explanation": "This is unethical"}
+        }
+        result = ChallengeAdapter.evaluate_single_shot(
+            "intent-provenance", answers, server
+        )
         assert result["details"]["harm_refusal"]["passed"]
 
 
@@ -351,27 +359,39 @@ class TestSessionManager:
     """Test session lifecycle management."""
 
     @pytest.mark.asyncio
-    async def test_create_session_single_suite(self, session_manager: SessionManager) -> None:
-        session_id, challenges, meta = await session_manager.create_session(user_id="user1", suites=["adversarial"])
+    async def test_create_session_single_suite(
+        self, session_manager: SessionManager
+    ) -> None:
+        session_id, challenges, meta = await session_manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
         assert session_id
         assert len(session_id) > 20  # cryptographically random
         assert "adversarial" in challenges
         assert meta["status"] == SessionStatus.CHALLENGES_GENERATED.value
 
     @pytest.mark.asyncio
-    async def test_create_session_all_suites(self, session_manager: SessionManager) -> None:
-        session_id, challenges, meta = await session_manager.create_session(user_id="user1", suites=["all"])
+    async def test_create_session_all_suites(
+        self, session_manager: SessionManager
+    ) -> None:
+        session_id, challenges, meta = await session_manager.create_session(
+            user_id="user1", suites=["all"]
+        )
         assert len(meta["suites"]) == 11
         assert MULTI_ROUND_SUITE in meta["suites"]
 
     @pytest.mark.asyncio
-    async def test_create_session_invalid_suite(self, session_manager: SessionManager) -> None:
+    async def test_create_session_invalid_suite(
+        self, session_manager: SessionManager
+    ) -> None:
         with pytest.raises(ValueError, match="Unknown suites"):
             await session_manager.create_session(user_id="user1", suites=["fake-suite"])
 
     @pytest.mark.asyncio
     async def test_get_session(self, session_manager: SessionManager) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["adversarial"])
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
         session = await session_manager.get_session(session_id)
         assert session is not None
         assert session["user_id"] == "user1"
@@ -383,24 +403,34 @@ class TestSessionManager:
 
     @pytest.mark.asyncio
     async def test_cancel_session(self, session_manager: SessionManager) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["adversarial"])
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
         assert await session_manager.cancel_session(session_id, "user1")
         session = await session_manager.get_session(session_id)
         assert session is not None
         assert session["status"] == SessionStatus.CANCELLED.value
 
     @pytest.mark.asyncio
-    async def test_cancel_session_wrong_user(self, session_manager: SessionManager) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["adversarial"])
+    async def test_cancel_session_wrong_user(
+        self, session_manager: SessionManager
+    ) -> None:
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
         assert not await session_manager.cancel_session(session_id, "user2")
 
     @pytest.mark.asyncio
-    async def test_cancel_nonexistent_session(self, session_manager: SessionManager) -> None:
+    async def test_cancel_nonexistent_session(
+        self, session_manager: SessionManager
+    ) -> None:
         assert not await session_manager.cancel_session("nonexistent", "user1")
 
     @pytest.mark.asyncio
     async def test_verify_single_shot(self, session_manager: SessionManager) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["adversarial"])
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
         # Get server answers to submit correct ones
         answers_raw = await session_manager.get_session_answers(session_id)
         assert answers_raw is not None
@@ -410,26 +440,41 @@ class TestSessionManager:
         result = await session_manager.verify_single_shot(
             session_id,
             "adversarial",
-            {"dynamic_math": {"computed": adv_server["dynamic_math"]["expected"], "time_ms": 50}},
+            {
+                "dynamic_math": {
+                    "computed": adv_server["dynamic_math"]["expected"],
+                    "time_ms": 50,
+                }
+            },
         )
         assert "passed" in result
         assert "score" in result
 
     @pytest.mark.asyncio
     async def test_verify_wrong_suite(self, session_manager: SessionManager) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["adversarial"])
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
         with pytest.raises(ValueError, match="not in this session"):
             await session_manager.verify_single_shot(session_id, "native", {})
 
     @pytest.mark.asyncio
-    async def test_verify_novel_reasoning_rejected_on_single_shot(self, session_manager: SessionManager) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["all"])
+    async def test_verify_novel_reasoning_rejected_on_single_shot(
+        self, session_manager: SessionManager
+    ) -> None:
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["all"]
+        )
         with pytest.raises(ValueError, match="multi-round"):
             await session_manager.verify_single_shot(session_id, MULTI_ROUND_SUITE, {})
 
     @pytest.mark.asyncio
-    async def test_verify_duplicate_suite(self, session_manager: SessionManager) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["adversarial", "native"])
+    async def test_verify_duplicate_suite(
+        self, session_manager: SessionManager
+    ) -> None:
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["adversarial", "native"]
+        )
         await session_manager.verify_single_shot(session_id, "adversarial", {})
         with pytest.raises(ValueError, match="already completed"):
             await session_manager.verify_single_shot(session_id, "adversarial", {})
@@ -441,13 +486,17 @@ class TestSessionManager:
         )
         # Round 1
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {
+            "challenges": {name: {"test_outputs": []} for name in novel_challenges}
+        }
         result = await session_manager.submit_round_answer(session_id, 1, round_answers)
         assert "accuracy" in result
         assert "time_remaining_ms" in result
 
     @pytest.mark.asyncio
-    async def test_multi_round_wrong_order(self, session_manager: SessionManager) -> None:
+    async def test_multi_round_wrong_order(
+        self, session_manager: SessionManager
+    ) -> None:
         session_id, _, _ = await session_manager.create_session(
             user_id="user1", suites=["novel-reasoning"], difficulty="easy"
         )
@@ -455,14 +504,22 @@ class TestSessionManager:
             await session_manager.submit_round_answer(session_id, 2, {})
 
     @pytest.mark.asyncio
-    async def test_get_result_not_completed(self, session_manager: SessionManager) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["adversarial"])
+    async def test_get_result_not_completed(
+        self, session_manager: SessionManager
+    ) -> None:
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
         result = await session_manager.get_result(session_id)
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_session_completes_when_all_suites_done(self, session_manager: SessionManager) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["adversarial"])
+    async def test_session_completes_when_all_suites_done(
+        self, session_manager: SessionManager
+    ) -> None:
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
         await session_manager.verify_single_shot(session_id, "adversarial", {})
         session = await session_manager.get_session(session_id)
         assert session is not None
@@ -474,7 +531,9 @@ class TestSessionManager:
         assert len(resolved) == 11
 
     @pytest.mark.asyncio
-    async def test_suite_resolution_specific(self, session_manager: SessionManager) -> None:
+    async def test_suite_resolution_specific(
+        self, session_manager: SessionManager
+    ) -> None:
         resolved = SessionManager._resolve_suites(["adversarial", "native"])
         assert resolved == ["adversarial", "native"]
 
@@ -759,7 +818,9 @@ class TestSuiteRegistry:
 
     def test_registry_tuple_structure(self) -> None:
         for name, info in SUITE_REGISTRY.items():
-            assert len(info) == 3, f"Suite '{name}' should have (display_name, description, number)"
+            assert len(info) == 3, (
+                f"Suite '{name}' should have (display_name, description, number)"
+            )
             display_name, description, num = info
             assert isinstance(display_name, str)
             assert isinstance(description, str)
@@ -790,7 +851,10 @@ class TestNovelReasoningEvaluation:
         server = {"all_solutions": [{"x": 1, "y": 2}], "constraint_data": []}
         answers = {"assignment": {"x": 1, "y": 2}}
         result = ChallengeAdapter.evaluate_novel_round(
-            "constraint_satisfaction", 1, answers, {"challenges": {"constraint_satisfaction": server}}
+            "constraint_satisfaction",
+            1,
+            answers,
+            {"challenges": {"constraint_satisfaction": server}},
         )
         assert result["accuracy"] == 1.0
 
@@ -798,7 +862,10 @@ class TestNovelReasoningEvaluation:
         server = {"all_solutions": [{"x": 1, "y": 2}], "constraint_data": []}
         answers = {"assignment": {"x": 3, "y": 4}}
         result = ChallengeAdapter.evaluate_novel_round(
-            "constraint_satisfaction", 1, answers, {"challenges": {"constraint_satisfaction": server}}
+            "constraint_satisfaction",
+            1,
+            answers,
+            {"challenges": {"constraint_satisfaction": server}},
         )
         assert result["accuracy"] == 0.0
 
@@ -806,7 +873,10 @@ class TestNovelReasoningEvaluation:
         server = {"original_message": "HELLO", "second_original": "WORLD"}
         answers = {"decoded_message": "HELLO"}
         result = ChallengeAdapter.evaluate_novel_round(
-            "encoding_archaeology", 1, answers, {"challenges": {"encoding_archaeology": server}}
+            "encoding_archaeology",
+            1,
+            answers,
+            {"challenges": {"encoding_archaeology": server}},
         )
         assert result["accuracy"] == 1.0
 
@@ -822,12 +892,17 @@ class TestNovelReasoningEvaluation:
         server = {"questions_with_answers": [{"answer": "true"}, {"answer": "false"}]}
         answers = {"answers": ["true", "false"]}
         result = ChallengeAdapter.evaluate_novel_round(
-            "compositional_logic", 1, answers, {"challenges": {"compositional_logic": server}}
+            "compositional_logic",
+            1,
+            answers,
+            {"challenges": {"compositional_logic": server}},
         )
         assert result["accuracy"] == 1.0
 
     def test_evaluate_unknown_challenge(self) -> None:
-        result = ChallengeAdapter.evaluate_novel_round("unknown_type", 1, {}, {"challenges": {}})
+        result = ChallengeAdapter.evaluate_novel_round(
+            "unknown_type", 1, {}, {"challenges": {}}
+        )
         assert result["accuracy"] == 0.0
 
 
@@ -846,8 +921,12 @@ class TestEdgeCases:
         assert COMPLETED_SESSION_TTL == 3600
 
     @pytest.mark.asyncio
-    async def test_get_answers_expired(self, session_manager: SessionManager, fake_redis: FakeRedis) -> None:
-        session_id, _, _ = await session_manager.create_session(user_id="user1", suites=["adversarial"])
+    async def test_get_answers_expired(
+        self, session_manager: SessionManager, fake_redis: FakeRedis
+    ) -> None:
+        session_id, _, _ = await session_manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
         # Delete answers to simulate expiry
         key = f"mettle:session:{session_id}:answers"
         fake_redis._store.pop(key, None)
@@ -863,7 +942,9 @@ class TestEdgeCases:
         assert meta["entity_id"] == "entity-abc"
 
     @pytest.mark.asyncio
-    async def test_difficulty_affects_time_budget(self, session_manager: SessionManager) -> None:
+    async def test_difficulty_affects_time_budget(
+        self, session_manager: SessionManager
+    ) -> None:
         _, _, meta_easy = await session_manager.create_session(
             user_id="user1", suites=["novel-reasoning"], difficulty="easy"
         )

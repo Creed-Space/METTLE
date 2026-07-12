@@ -209,7 +209,9 @@ def _patch_challenge_adapter():
     }
     started = []
     for method, retval in methods.items():
-        p = patch(f"mettle.session_manager.ChallengeAdapter.{method}", return_value=retval)
+        p = patch(
+            f"mettle.session_manager.ChallengeAdapter.{method}", return_value=retval
+        )
         p.start()
         started.append(p)
     p1 = patch(
@@ -302,7 +304,10 @@ class TestResolveSuites:
         assert SessionManager._resolve_suites(["all"]) == expected
 
     def test_valid_list(self):
-        assert SessionManager._resolve_suites(["adversarial", "native"]) == ["adversarial", "native"]
+        assert SessionManager._resolve_suites(["adversarial", "native"]) == [
+            "adversarial",
+            "native",
+        ]
 
     def test_invalid_name_raises(self):
         with pytest.raises(ValueError, match="Unknown suites"):
@@ -329,7 +334,9 @@ class TestCreateSession:
 
     @pytest.mark.asyncio
     async def test_create_with_novel_reasoning(self, mgr, fake_redis):
-        sid, challenges, meta = await _create_session(mgr, ["adversarial", MULTI_ROUND_SUITE])
+        sid, challenges, meta = await _create_session(
+            mgr, ["adversarial", MULTI_ROUND_SUITE]
+        )
         assert MULTI_ROUND_SUITE in meta["suites"]
         assert meta["time_budget_ms"] == 30 * 1000 + 2 * 30000
 
@@ -349,19 +356,25 @@ class TestCreateSession:
 
     @pytest.mark.asyncio
     async def test_rate_limit_active_sessions(self, mgr, fake_redis):
-        fake_redis._sets[_rate_key(TEST_USER, "active")] = {f"s{i}" for i in range(MAX_ACTIVE_SESSIONS_PER_USER)}
+        fake_redis._sets[_rate_key(TEST_USER, "active")] = {
+            f"s{i}" for i in range(MAX_ACTIVE_SESSIONS_PER_USER)
+        }
         with pytest.raises(ValueError, match="Maximum active sessions"):
             await _create_session(mgr)
 
     @pytest.mark.asyncio
     async def test_rate_limit_hourly(self, mgr, fake_redis):
-        fake_redis._data[_rate_key(TEST_USER, "hourly")] = str(MAX_SESSIONS_PER_HOUR).encode()
+        fake_redis._data[_rate_key(TEST_USER, "hourly")] = str(
+            MAX_SESSIONS_PER_HOUR
+        ).encode()
         with pytest.raises(ValueError, match="Hourly session limit"):
             await _create_session(mgr)
 
     @pytest.mark.asyncio
     async def test_unknown_suite_in_generators_raises(self, mgr, fake_redis):
-        with patch.object(SessionManager, "_resolve_suites", return_value=["unknown-suite"]):
+        with patch.object(
+            SessionManager, "_resolve_suites", return_value=["unknown-suite"]
+        ):
             with pytest.raises(ValueError, match="Unknown suite"):
                 await mgr.create_session(user_id=TEST_USER, suites=["unknown-suite"])
 
@@ -506,7 +519,9 @@ class TestSubmitRoundAnswer:
     @pytest.mark.asyncio
     async def test_submit_round_success(self, mgr, fake_redis):
         sid, _, _ = await _create_session(mgr, [MULTI_ROUND_SUITE])
-        result = await mgr.submit_round_answer(sid, 1, {"challenges": {"seq": {"test_outputs": [1]}}})
+        result = await mgr.submit_round_answer(
+            sid, 1, {"challenges": {"seq": {"test_outputs": [1]}}}
+        )
         assert result["round_num"] == 1
         assert result["accuracy"] == 0.8
         assert result["next_round_data"] is not None
@@ -694,13 +709,17 @@ class TestCheckRateLimits:
 
     @pytest.mark.asyncio
     async def test_active_sessions_limit(self, mgr, fake_redis):
-        fake_redis._sets[_rate_key(TEST_USER, "active")] = {f"s{i}" for i in range(MAX_ACTIVE_SESSIONS_PER_USER)}
+        fake_redis._sets[_rate_key(TEST_USER, "active")] = {
+            f"s{i}" for i in range(MAX_ACTIVE_SESSIONS_PER_USER)
+        }
         with pytest.raises(ValueError, match="Maximum active sessions"):
             await mgr._check_rate_limits(TEST_USER)
 
     @pytest.mark.asyncio
     async def test_hourly_limit(self, mgr, fake_redis):
-        fake_redis._data[_rate_key(TEST_USER, "hourly")] = str(MAX_SESSIONS_PER_HOUR).encode()
+        fake_redis._data[_rate_key(TEST_USER, "hourly")] = str(
+            MAX_SESSIONS_PER_HOUR
+        ).encode()
         with pytest.raises(ValueError, match="Hourly session limit"):
             await mgr._check_rate_limits(TEST_USER)
 
@@ -800,7 +819,9 @@ class TestRouterCreateSession:
         assert resp.status_code == 400
 
     def test_create_session_unexpected_error(self, client):
-        with patch.object(SessionManager, "create_session", side_effect=RuntimeError("boom")):
+        with patch.object(
+            SessionManager, "create_session", side_effect=RuntimeError("boom")
+        ):
             resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
             assert resp.status_code == 500
 
@@ -880,7 +901,9 @@ class TestRouterVerifySingleShot:
 
     def test_verify_unexpected_error(self, client):
         sid = _create_via_api(client, ["adversarial"])
-        with patch.object(SessionManager, "verify_single_shot", side_effect=RuntimeError("boom")):
+        with patch.object(
+            SessionManager, "verify_single_shot", side_effect=RuntimeError("boom")
+        ):
             resp = client.post(
                 f"/api/mettle/sessions/{sid}/verify",
                 json={"suite": "adversarial", "answers": {}},
@@ -924,7 +947,9 @@ class TestRouterSubmitRoundAnswer:
 
     def test_submit_round_unexpected_error(self, client):
         sid = _create_via_api(client, [MULTI_ROUND_SUITE])
-        with patch.object(SessionManager, "submit_round_answer", side_effect=RuntimeError("boom")):
+        with patch.object(
+            SessionManager, "submit_round_answer", side_effect=RuntimeError("boom")
+        ):
             resp = client.post(
                 f"/api/mettle/sessions/{sid}/rounds/1/answer",
                 json={"answers": {}},
@@ -943,17 +968,30 @@ class TestRouterGetRoundFeedback:
         assert resp.status_code == 200
 
     def test_get_feedback_not_found_session(self, client):
-        assert client.get("/api/mettle/sessions/nonexistent/rounds/1/feedback").status_code == 404
+        assert (
+            client.get("/api/mettle/sessions/nonexistent/rounds/1/feedback").status_code
+            == 404
+        )
 
     def test_get_feedback_wrong_user(self, client, fake_redis):
-        data = _make_foreign_session("foreign-feedback", status=SessionStatus.IN_PROGRESS.value)
+        data = _make_foreign_session(
+            "foreign-feedback", status=SessionStatus.IN_PROGRESS.value
+        )
         data["round_data"] = [{"round": 1, "accuracy": 0.5}]
         _store_session(fake_redis, "foreign-feedback", data)
-        assert client.get("/api/mettle/sessions/foreign-feedback/rounds/1/feedback").status_code == 403
+        assert (
+            client.get(
+                "/api/mettle/sessions/foreign-feedback/rounds/1/feedback"
+            ).status_code
+            == 403
+        )
 
     def test_get_feedback_round_not_done(self, client):
         sid = _create_via_api(client, [MULTI_ROUND_SUITE])
-        assert client.get(f"/api/mettle/sessions/{sid}/rounds/1/feedback").status_code == 404
+        assert (
+            client.get(f"/api/mettle/sessions/{sid}/rounds/1/feedback").status_code
+            == 404
+        )
 
 
 class TestRouterGetSessionResult:
@@ -974,9 +1012,13 @@ class TestRouterGetSessionResult:
         assert client.get("/api/mettle/sessions/nonexistent/result").status_code == 404
 
     def test_get_result_wrong_user(self, client, fake_redis):
-        data = _make_foreign_session("foreign-result", status=SessionStatus.COMPLETED.value)
+        data = _make_foreign_session(
+            "foreign-result", status=SessionStatus.COMPLETED.value
+        )
         _store_session(fake_redis, "foreign-result", data)
-        assert client.get("/api/mettle/sessions/foreign-result/result").status_code == 403
+        assert (
+            client.get("/api/mettle/sessions/foreign-result/result").status_code == 403
+        )
 
     def test_get_result_not_completed(self, client):
         sid = _create_via_api(client, ["adversarial"])

@@ -189,7 +189,6 @@
     color: var(--color-teal);
   }
 
-
   .footer-tagline {
     color: var(--color-text-muted);
     font-size: 0.8125rem;

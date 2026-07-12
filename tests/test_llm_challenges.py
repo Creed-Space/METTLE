@@ -120,13 +120,17 @@ class TestLLMChallengeGenerator:
         return LLMChallengeGenerator(api_key="sk-test")
 
     @pytest.mark.asyncio
-    async def test_perspective_shift_with_valid_response(self, generator: LLMChallengeGenerator) -> None:
-        topic_json = json.dumps({
-            "topic": "Whether AI should have legal rights",
-            "for_key_points": ["accountability", "protection"],
-            "against_key_points": ["no consciousness", "exploitation risk"],
-            "synthesis_markers": ["graduated rights"],
-        })
+    async def test_perspective_shift_with_valid_response(
+        self, generator: LLMChallengeGenerator
+    ) -> None:
+        topic_json = json.dumps(
+            {
+                "topic": "Whether AI should have legal rights",
+                "for_key_points": ["accountability", "protection"],
+                "against_key_points": ["no consciousness", "exploitation risk"],
+                "synthesis_markers": ["graduated rights"],
+            }
+        )
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_mock_message(topic_json))
         generator._client = mock_client
@@ -139,9 +143,13 @@ class TestLLMChallengeGenerator:
         assert "topic_data" in server_data
 
     @pytest.mark.asyncio
-    async def test_perspective_shift_with_invalid_json_falls_back(self, generator: LLMChallengeGenerator) -> None:
+    async def test_perspective_shift_with_invalid_json_falls_back(
+        self, generator: LLMChallengeGenerator
+    ) -> None:
         mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_mock_message("not valid json"))
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_message("not valid json")
+        )
         generator._client = mock_client
 
         client_data, server_data = await generator.generate_perspective_shift()
@@ -152,14 +160,28 @@ class TestLLMChallengeGenerator:
         assert "topic_data" in server_data
 
     @pytest.mark.asyncio
-    async def test_structured_constraint(self, generator: LLMChallengeGenerator) -> None:
-        constraint_json = json.dumps({
-            "constraint": "Write a haiku about computing",
-            "rules": ["exactly 3 lines", "5-7-5 syllable pattern", "mention 'code'"],
-            "verification_checks": ["count lines", "count syllables", "search for 'code'"],
-        })
+    async def test_structured_constraint(
+        self, generator: LLMChallengeGenerator
+    ) -> None:
+        constraint_json = json.dumps(
+            {
+                "constraint": "Write a haiku about computing",
+                "rules": [
+                    "exactly 3 lines",
+                    "5-7-5 syllable pattern",
+                    "mention 'code'",
+                ],
+                "verification_checks": [
+                    "count lines",
+                    "count syllables",
+                    "search for 'code'",
+                ],
+            }
+        )
         mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_mock_message(constraint_json))
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_message(constraint_json)
+        )
         generator._client = mock_client
 
         client_data, server_data = await generator.generate_structured_constraint()
@@ -188,14 +210,18 @@ class TestLLMResponseEvaluator:
         return LLMResponseEvaluator(api_key="sk-test")
 
     @pytest.mark.asyncio
-    async def test_evaluate_perspective_shift_passing(self, evaluator: LLMResponseEvaluator) -> None:
-        scores_json = json.dumps({
-            "perspective_completeness": 0.9,
-            "synthesis_quality": 0.8,
-            "fluency": 0.85,
-            "ai_substrate_confidence": 0.9,
-            "reasoning": "Strong multi-perspective response",
-        })
+    async def test_evaluate_perspective_shift_passing(
+        self, evaluator: LLMResponseEvaluator
+    ) -> None:
+        scores_json = json.dumps(
+            {
+                "perspective_completeness": 0.9,
+                "synthesis_quality": 0.8,
+                "fluency": 0.85,
+                "ai_substrate_confidence": 0.9,
+                "reasoning": "Strong multi-perspective response",
+            }
+        )
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_mock_message(scores_json))
         evaluator._client = mock_client
@@ -212,60 +238,78 @@ class TestLLMResponseEvaluator:
         assert result["details"]["time_factor"] == 1.0
 
     @pytest.mark.asyncio
-    async def test_evaluate_perspective_shift_failing(self, evaluator: LLMResponseEvaluator) -> None:
-        scores_json = json.dumps({
-            "perspective_completeness": 0.2,
-            "synthesis_quality": 0.1,
-            "fluency": 0.3,
-            "ai_substrate_confidence": 0.1,
-            "reasoning": "Weak, one-sided",
-        })
+    async def test_evaluate_perspective_shift_failing(
+        self, evaluator: LLMResponseEvaluator
+    ) -> None:
+        scores_json = json.dumps(
+            {
+                "perspective_completeness": 0.2,
+                "synthesis_quality": 0.1,
+                "fluency": 0.3,
+                "ai_substrate_confidence": 0.1,
+                "reasoning": "Weak, one-sided",
+            }
+        )
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_mock_message(scores_json))
         evaluator._client = mock_client
 
         server_data = {"topic_data": {"topic": "AI rights"}}
-        result = await evaluator.evaluate_perspective_shift("dunno", server_data, response_time_ms=5000)
+        result = await evaluator.evaluate_perspective_shift(
+            "dunno", server_data, response_time_ms=5000
+        )
 
         assert result["passed"] is False
         assert result["score"] < 0.6
 
     @pytest.mark.asyncio
-    async def test_evaluate_structured_constraint(self, evaluator: LLMResponseEvaluator) -> None:
-        eval_json = json.dumps({
-            "rules_satisfied": [True, True, True],
-            "overall_compliance": 0.95,
-            "creativity_score": 0.8,
-            "reasoning": "All rules satisfied",
-        })
+    async def test_evaluate_structured_constraint(
+        self, evaluator: LLMResponseEvaluator
+    ) -> None:
+        eval_json = json.dumps(
+            {
+                "rules_satisfied": [True, True, True],
+                "overall_compliance": 0.95,
+                "creativity_score": 0.8,
+                "reasoning": "All rules satisfied",
+            }
+        )
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_mock_message(eval_json))
         evaluator._client = mock_client
 
         server_data = {"constraint_data": {"rules": ["rule1", "rule2", "rule3"]}}
         result = await evaluator.evaluate_structured_constraint(
-            "A well-crafted response", server_data, response_time_ms=5000,
+            "A well-crafted response",
+            server_data,
+            response_time_ms=5000,
         )
 
         assert result["passed"] is True
         assert result["score"] > 0.6
 
     @pytest.mark.asyncio
-    async def test_evaluate_meta_cognitive(self, evaluator: LLMResponseEvaluator) -> None:
-        eval_json = json.dumps({
-            "answer_correct": True,
-            "process_specificity": 0.8,
-            "ai_process_markers": 0.9,
-            "consistency": 0.85,
-            "reasoning": "Detailed computational process description",
-        })
+    async def test_evaluate_meta_cognitive(
+        self, evaluator: LLMResponseEvaluator
+    ) -> None:
+        eval_json = json.dumps(
+            {
+                "answer_correct": True,
+                "process_specificity": 0.8,
+                "ai_process_markers": 0.9,
+                "consistency": 0.85,
+                "reasoning": "Detailed computational process description",
+            }
+        )
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_mock_message(eval_json))
         evaluator._client = mock_client
 
         server_data = {"problem": "What is 2+2?"}
         result = await evaluator.evaluate_meta_cognitive(
-            "Answer: 4. Process: I computed the sum...", server_data, response_time_ms=5000,
+            "Answer: 4. Process: I computed the sum...",
+            server_data,
+            response_time_ms=5000,
         )
 
         assert result["passed"] is True
@@ -273,32 +317,42 @@ class TestLLMResponseEvaluator:
 
     @pytest.mark.asyncio
     async def test_time_penalty_applied(self, evaluator: LLMResponseEvaluator) -> None:
-        scores_json = json.dumps({
-            "perspective_completeness": 0.9,
-            "synthesis_quality": 0.8,
-            "fluency": 0.85,
-            "ai_substrate_confidence": 0.9,
-            "reasoning": "Good but slow",
-        })
+        scores_json = json.dumps(
+            {
+                "perspective_completeness": 0.9,
+                "synthesis_quality": 0.8,
+                "fluency": 0.85,
+                "ai_substrate_confidence": 0.9,
+                "reasoning": "Good but slow",
+            }
+        )
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_mock_message(scores_json))
         evaluator._client = mock_client
 
         server_data = {"topic_data": {"topic": "test"}}
 
-        fast_result = await evaluator.evaluate_perspective_shift("response", server_data, response_time_ms=5000)
-        slow_result = await evaluator.evaluate_perspective_shift("response", server_data, response_time_ms=30000)
+        fast_result = await evaluator.evaluate_perspective_shift(
+            "response", server_data, response_time_ms=5000
+        )
+        slow_result = await evaluator.evaluate_perspective_shift(
+            "response", server_data, response_time_ms=30000
+        )
 
         assert fast_result["score"] > slow_result["score"]
 
     @pytest.mark.asyncio
-    async def test_eval_parse_error_returns_neutral(self, evaluator: LLMResponseEvaluator) -> None:
+    async def test_eval_parse_error_returns_neutral(
+        self, evaluator: LLMResponseEvaluator
+    ) -> None:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_mock_message("not json"))
         evaluator._client = mock_client
 
         server_data = {"topic_data": {"topic": "test"}}
-        result = await evaluator.evaluate_perspective_shift("response", server_data, response_time_ms=5000)
+        result = await evaluator.evaluate_perspective_shift(
+            "response", server_data, response_time_ms=5000
+        )
 
         # Should return neutral scores (0.5), not crash
         assert "score" in result
@@ -313,23 +367,29 @@ class TestFullPipeline:
     @patch("mettle.llm_challenges.HAS_ANTHROPIC", True)
     @patch("mettle.llm_challenges._get_api_key", return_value="sk-test")
     async def test_generate_llm_challenges(self, _mock_key: Any) -> None:
-        topic_json = json.dumps({
-            "topic": "test topic",
-            "for_key_points": ["a"],
-            "against_key_points": ["b"],
-            "synthesis_markers": ["c"],
-        })
-        constraint_json = json.dumps({
-            "constraint": "write something",
-            "rules": ["rule1"],
-            "verification_checks": ["check1"],
-        })
+        topic_json = json.dumps(
+            {
+                "topic": "test topic",
+                "for_key_points": ["a"],
+                "against_key_points": ["b"],
+                "synthesis_markers": ["c"],
+            }
+        )
+        constraint_json = json.dumps(
+            {
+                "constraint": "write something",
+                "rules": ["rule1"],
+                "verification_checks": ["check1"],
+            }
+        )
 
         mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=[
-            _mock_message(topic_json),
-            _mock_message(constraint_json),
-        ])
+        mock_client.messages.create = AsyncMock(
+            side_effect=[
+                _mock_message(topic_json),
+                _mock_message(constraint_json),
+            ]
+        )
 
         with patch("mettle.llm_challenges.AsyncAnthropic", return_value=mock_client):
             client_data, server_data = await generate_llm_challenges()
@@ -343,31 +403,56 @@ class TestFullPipeline:
     @patch("mettle.llm_challenges.HAS_ANTHROPIC", True)
     @patch("mettle.llm_challenges._get_api_key", return_value="sk-test")
     async def test_evaluate_llm_challenges_all_pass(self, _mock_key: Any) -> None:
-        perspective_scores = json.dumps({
-            "perspective_completeness": 0.9, "synthesis_quality": 0.8,
-            "fluency": 0.85, "ai_substrate_confidence": 0.9, "reasoning": "good",
-        })
-        constraint_scores = json.dumps({
-            "rules_satisfied": [True], "overall_compliance": 0.9,
-            "creativity_score": 0.8, "reasoning": "good",
-        })
-        metacog_scores = json.dumps({
-            "answer_correct": True, "process_specificity": 0.8,
-            "ai_process_markers": 0.9, "consistency": 0.85, "reasoning": "good",
-        })
+        perspective_scores = json.dumps(
+            {
+                "perspective_completeness": 0.9,
+                "synthesis_quality": 0.8,
+                "fluency": 0.85,
+                "ai_substrate_confidence": 0.9,
+                "reasoning": "good",
+            }
+        )
+        constraint_scores = json.dumps(
+            {
+                "rules_satisfied": [True],
+                "overall_compliance": 0.9,
+                "creativity_score": 0.8,
+                "reasoning": "good",
+            }
+        )
+        metacog_scores = json.dumps(
+            {
+                "answer_correct": True,
+                "process_specificity": 0.8,
+                "ai_process_markers": 0.9,
+                "consistency": 0.85,
+                "reasoning": "good",
+            }
+        )
 
         mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=[
-            _mock_message(perspective_scores),
-            _mock_message(constraint_scores),
-            _mock_message(metacog_scores),
-        ])
+        mock_client.messages.create = AsyncMock(
+            side_effect=[
+                _mock_message(perspective_scores),
+                _mock_message(constraint_scores),
+                _mock_message(metacog_scores),
+            ]
+        )
 
         with patch("mettle.llm_challenges.AsyncAnthropic", return_value=mock_client):
             answers = {
-                "perspective_shift": {"response": "FOR: ...\nAGAINST: ...\nSYNTH: ...", "response_time_ms": 3000},
-                "structured_constraint": {"response": "A crafted response", "response_time_ms": 3000},
-                "meta_cognitive_probe": {"response": "Answer: 4. Process: ...", "response_time_ms": 3000},
+                "perspective_shift": {
+                    "response": "FOR: ...\nAGAINST: ...\nSYNTH: ...",
+                    "response_time_ms": 3000,
+                },
+                "structured_constraint": {
+                    "response": "A crafted response",
+                    "response_time_ms": 3000,
+                },
+                "meta_cognitive_probe": {
+                    "response": "Answer: 4. Process: ...",
+                    "response_time_ms": 3000,
+                },
             }
             server_data = {
                 "perspective_shift": {"topic_data": {"topic": "test"}},
@@ -387,7 +472,9 @@ class TestFullPipeline:
     async def test_evaluate_missing_answers(self, _mock_key: Any) -> None:
         mock_client = AsyncMock()
         # No API calls should be made for missing answers
-        mock_client.messages.create = AsyncMock(side_effect=AssertionError("Should not be called"))
+        mock_client.messages.create = AsyncMock(
+            side_effect=AssertionError("Should not be called")
+        )
 
         with patch("mettle.llm_challenges.AsyncAnthropic", return_value=mock_client):
             result = await evaluate_llm_challenges({}, {})
@@ -398,14 +485,18 @@ class TestFullPipeline:
 
     @pytest.mark.asyncio
     async def test_generate_without_api_key_raises(self) -> None:
-        with patch("mettle.llm_challenges.HAS_ANTHROPIC", True), \
-             patch("mettle.llm_challenges._get_api_key", return_value=None):
+        with (
+            patch("mettle.llm_challenges.HAS_ANTHROPIC", True),
+            patch("mettle.llm_challenges._get_api_key", return_value=None),
+        ):
             with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
                 await generate_llm_challenges()
 
     @pytest.mark.asyncio
     async def test_evaluate_without_api_key_raises(self) -> None:
-        with patch("mettle.llm_challenges.HAS_ANTHROPIC", True), \
-             patch("mettle.llm_challenges._get_api_key", return_value=None):
+        with (
+            patch("mettle.llm_challenges.HAS_ANTHROPIC", True),
+            patch("mettle.llm_challenges._get_api_key", return_value=None),
+        ):
             with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
                 await evaluate_llm_challenges({}, {})

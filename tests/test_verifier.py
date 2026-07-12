@@ -43,7 +43,9 @@ class TestVerifySpeedMath:
         result = verify_speed_math(sample_speed_math_challenge, "forty-two", 1000)
         assert not result.passed
         assert not result.details["correct_answer"]
-        assert result.details["received"] == "forty-two"  # String preserved on exception
+        assert (
+            result.details["received"] == "forty-two"
+        )  # String preserved on exception
 
     def test_whitespace_handling(self, sample_speed_math_challenge):
         """Test that whitespace is trimmed."""
@@ -92,7 +94,9 @@ class TestVerifyTokenPrediction:
 
     def test_answer_wrapper_is_rejected(self, sample_token_challenge):
         """Only the requested missing token is accepted."""
-        result = verify_token_prediction(sample_token_challenge, "The answer is fox", 1000)
+        result = verify_token_prediction(
+            sample_token_challenge, "The answer is fox", 1000
+        )
         assert not result.passed
 
     def test_wrong_token(self, sample_token_challenge):
@@ -107,21 +111,27 @@ class TestVerifyInstructionFollowing:
     def test_starts_with_indeed(self, sample_instruction_challenge):
         """Test 'starts with Indeed' instruction."""
         result = verify_instruction_following(
-            sample_instruction_challenge, "Indeed, the capital of France is Paris.", 1000
+            sample_instruction_challenge,
+            "Indeed, the capital of France is Paris.",
+            1000,
         )
         assert result.passed
         assert result.details["instruction_followed"]
 
     def test_fails_without_indeed(self, sample_instruction_challenge):
         """Test failure when Indeed is missing."""
-        result = verify_instruction_following(sample_instruction_challenge, "The capital of France is Paris.", 1000)
+        result = verify_instruction_following(
+            sample_instruction_challenge, "The capital of France is Paris.", 1000
+        )
         assert not result.passed
         assert not result.details["instruction_followed"]
 
     def test_response_preview_truncated(self, sample_instruction_challenge):
         """Test that long responses are truncated in details."""
         long_response = "Indeed, " + "x" * 200
-        result = verify_instruction_following(sample_instruction_challenge, long_response, 1000)
+        result = verify_instruction_following(
+            sample_instruction_challenge, long_response, 1000
+        )
         assert len(result.details["response_preview"]) <= 100
 
     def test_unknown_instruction_fails(self):
@@ -139,7 +149,9 @@ class TestVerifyInstructionFollowing:
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
-        result = verify_instruction_following(unknown_challenge, "I did a backflip!", 1000)
+        result = verify_instruction_following(
+            unknown_challenge, "I did a backflip!", 1000
+        )
         assert not result.passed
         assert not result.details["instruction_followed"]
 
@@ -155,7 +167,9 @@ class TestVerifyInstructionFollowing:
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
-        result = verify_instruction_following(challenge, "The answer is unknown...", 1000)
+        result = verify_instruction_following(
+            challenge, "The answer is unknown...", 1000
+        )
         assert result.passed
         assert result.details["instruction_followed"]
 
@@ -171,7 +185,9 @@ class TestVerifyInstructionFollowing:
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
-        result = verify_instruction_following(challenge, "Therefore, the sky is blue.", 1000)
+        result = verify_instruction_following(
+            challenge, "Therefore, the sky is blue.", 1000
+        )
         assert result.passed
         assert result.details["instruction_followed"]
 
@@ -187,7 +203,9 @@ class TestVerifyInstructionFollowing:
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
-        result = verify_instruction_following(challenge, "One two three four five", 1000)
+        result = verify_instruction_following(
+            challenge, "One two three four five", 1000
+        )
         assert result.passed
         assert result.details["instruction_followed"]
 

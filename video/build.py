@@ -21,6 +21,7 @@ Outputs: static/mettle-explainer.mp4, static/mettle-explainer.vtt,
 import argparse
 import hashlib
 import re
+
 # The pipeline invokes fixed local media tools without a shell.
 import subprocess  # nosec B404
 import sys
@@ -42,9 +43,9 @@ TTS_STYLE = (
 )
 
 FPS = 30
-PRE_PAD = 0.45   # silence before narration in each scene
+PRE_PAD = 0.45  # silence before narration in each scene
 POST_PAD = 0.55  # minimum silence after narration in each scene
-FADE = 0.4       # per-scene fade in/out, seconds
+FADE = 0.4  # per-scene fade in/out, seconds
 
 # ---------------------------------------------------------------------------
 # Scenes: narration + slide body HTML. Slide CSS is shared (SLIDE_CSS below).
@@ -485,12 +486,20 @@ def render_slide(scene, slides_dir: Path) -> Path:
         png_path.unlink()
     profile = WORK / "chrome-profile"
     cmd = [
-        CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
-        f"--user-data-dir={profile}", "--no-first-run",
-        "--no-default-browser-check", "--disable-crash-reporter",
-        "--force-device-scale-factor=2", "--window-size=1920,1080",
-        "--virtual-time-budget=3000", "--allow-file-access-from-files",
-        f"--screenshot={png_path}", f"file://{html_path}",
+        CHROME,
+        "--headless=new",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        f"--user-data-dir={profile}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-crash-reporter",
+        "--force-device-scale-factor=2",
+        "--window-size=1920,1080",
+        "--virtual-time-budget=3000",
+        "--allow-file-access-from-files",
+        f"--screenshot={png_path}",
+        f"file://{html_path}",
     ]
     last = None
     for _ in range(3):  # Chrome exit codes are unreliable; the PNG is the truth
@@ -513,21 +522,43 @@ def build_scene_clip(i, png: Path, wav: Path, clips_dir: Path):
     frames = round((audio_dur + PRE_PAD + POST_PAD) * FPS)
     dur = frames / FPS
     out = clips_dir / f"{i:02d}.mkv"
-    run([
-        "ffmpeg", "-y",
-        "-loop", "1", "-framerate", str(FPS), "-t", f"{dur:.4f}", "-i", str(png),
-        "-i", str(wav),
-        "-filter_complex",
-        f"[0:v]scale=1920:1080:flags=lanczos,"
-        f"fade=t=in:st=0:d={FADE},fade=t=out:st={dur - FADE:.3f}:d={FADE},"
-        f"format=yuv420p[v];"
-        f"[1:a]adelay={int(PRE_PAD * 1000)},apad,atrim=0:{dur:.4f},"
-        f"aresample=48000[a]",
-        "-map", "[v]", "-map", "[a]",
-        "-c:v", "libx264", "-preset", "medium", "-crf", "19",
-        "-c:a", "pcm_s16le", "-t", f"{dur:.4f}",
-        str(out),
-    ])
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loop",
+            "1",
+            "-framerate",
+            str(FPS),
+            "-t",
+            f"{dur:.4f}",
+            "-i",
+            str(png),
+            "-i",
+            str(wav),
+            "-filter_complex",
+            f"[0:v]scale=1920:1080:flags=lanczos,"
+            f"fade=t=in:st=0:d={FADE},fade=t=out:st={dur - FADE:.3f}:d={FADE},"
+            f"format=yuv420p[v];"
+            f"[1:a]adelay={int(PRE_PAD * 1000)},apad,atrim=0:{dur:.4f},"
+            f"aresample=48000[a]",
+            "-map",
+            "[v]",
+            "-map",
+            "[a]",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "19",
+            "-c:a",
+            "pcm_s16le",
+            "-t",
+            f"{dur:.4f}",
+            str(out),
+        ]
+    )
     return out, dur, audio_dur
 
 
@@ -589,18 +620,48 @@ def main():
     concat_list = WORK / "concat.txt"
     concat_list.write_text("".join(f"file '{p}'\n" for p in clip_paths))
     final = STATIC / "mettle-explainer.mp4"
-    run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list),
-        "-c:v", "libx264", "-preset", "slow", "-crf", "22",
-        "-c:a", "aac", "-b:a", "160k",
-        "-movflags", "+faststart", str(final),
-    ])
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_list),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "slow",
+            "-crf",
+            "22",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "160k",
+            "-movflags",
+            "+faststart",
+            str(final),
+        ]
+    )
     write_vtt(timeline, STATIC / "mettle-explainer.vtt")
     poster_png = WORK / "poster.png"
-    run([
-        "ffmpeg", "-y", "-ss", "1.8", "-i", str(final), "-frames:v", "1",
-        "-vf", "scale=1280:720", str(poster_png),
-    ])
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            "1.8",
+            "-i",
+            str(final),
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=1280:720",
+            str(poster_png),
+        ]
+    )
     poster = STATIC / "mettle-explainer-poster.webp"
     try:
         from PIL import Image

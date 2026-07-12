@@ -88,9 +88,7 @@
       <span class="mettle-logo-icon" aria-hidden="true">
         <img src="/favicon.svg" alt="" width="28" height="28" />
       </span>
-      <span class="mettle-logo-text">
-        METTLE
-      </span>
+      <span class="mettle-logo-text"> METTLE </span>
     </a>
 
     <!-- Desktop Nav -->

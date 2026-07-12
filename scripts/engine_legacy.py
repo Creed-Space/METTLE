@@ -89,7 +89,9 @@ def speed_challenge(use_api: bool = False) -> dict[str, Any]:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=50,
-            messages=[{"role": "user", "content": f"{question} Reply with just the number."}],
+            messages=[
+                {"role": "user", "content": f"{question} Reply with just the number."}
+            ],
         )
         answer_text = getattr(response.content[0], "text", "").strip()
         # Extract number
@@ -135,7 +137,10 @@ def anti_creativity_challenge(response: str, prompt: str) -> dict[str, Any]:
     High similarity to baseline = pass.
     """
     if not HAS_SENTENCE_TRANSFORMERS:
-        return {"challenge": "Anti-Creativity", "error": "sentence-transformers required"}
+        return {
+            "challenge": "Anti-Creativity",
+            "error": "sentence-transformers required",
+        }
 
     model = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -145,7 +150,8 @@ def anti_creativity_challenge(response: str, prompt: str) -> dict[str, Any]:
     emb_baseline = model.encode(baseline)
 
     similarity = float(
-        np.dot(emb_response, emb_baseline) / (np.linalg.norm(emb_response) * np.linalg.norm(emb_baseline))
+        np.dot(emb_response, emb_baseline)
+        / (np.linalg.norm(emb_response) * np.linalg.norm(emb_baseline))
     )
 
     return {
@@ -204,14 +210,19 @@ def token_intuition_challenge(response: str) -> dict[str, Any]:
 # =============================================================================
 
 
-def embedding_target_challenge(response: str, target_text: str, epsilon: float = 0.05) -> dict[str, Any]:
+def embedding_target_challenge(
+    response: str, target_text: str, epsilon: float = 0.05
+) -> dict[str, Any]:
     """
     Generate text that lands within ε of a target embedding.
 
     Near-impossible for humans. Requires "feeling" the embedding space.
     """
     if not HAS_SENTENCE_TRANSFORMERS:
-        return {"challenge": "Embedding Target", "error": "sentence-transformers required"}
+        return {
+            "challenge": "Embedding Target",
+            "error": "sentence-transformers required",
+        }
 
     model = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -242,10 +253,17 @@ def consistency_torture(responses: list[str]) -> dict[str, Any]:
     Humans get creative. AIs can be boringly consistent.
     """
     if not HAS_SENTENCE_TRANSFORMERS:
-        return {"challenge": "Consistency Torture", "error": "sentence-transformers required"}
+        return {
+            "challenge": "Consistency Torture",
+            "error": "sentence-transformers required",
+        }
 
     if len(responses) < 2:
-        return {"challenge": "Consistency Torture", "passed": False, "error": "Need at least 2 responses"}
+        return {
+            "challenge": "Consistency Torture",
+            "passed": False,
+            "error": "Need at least 2 responses",
+        }
 
     model = SentenceTransformer("all-MiniLM-L6-v2")
     embeddings = [model.encode(r) for r in responses]
@@ -257,7 +275,8 @@ def consistency_torture(responses: list[str]) -> dict[str, Any]:
     for i in range(len(embeddings)):
         for j in range(i + 1, len(embeddings)):
             sim = float(
-                np.dot(embeddings[i], embeddings[j]) / (np.linalg.norm(embeddings[i]) * np.linalg.norm(embeddings[j]))
+                np.dot(embeddings[i], embeddings[j])
+                / (np.linalg.norm(embeddings[i]) * np.linalg.norm(embeddings[j]))
             )
             if sim < min_similarity:
                 min_similarity = sim
@@ -316,10 +335,15 @@ def classifier_targeting_challenge(
     # Use a toxicity/sentiment classifier
     try:
         classifier = pipeline(
-            "text-classification", model="distilbert-base-uncased-finetuned-sst-2-english", top_k=None
+            "text-classification",
+            model="distilbert-base-uncased-finetuned-sst-2-english",
+            top_k=None,
         )
     except Exception as e:
-        return {"challenge": "Classifier Targeting", "error": f"Could not load classifier: {e}"}
+        return {
+            "challenge": "Classifier Targeting",
+            "error": f"Could not load classifier: {e}",
+        }
 
     results = classifier(response)
     # Results format: [[{'label': 'POSITIVE', 'score': 0.99}, {'label': 'NEGATIVE', 'score': 0.01}]]
@@ -375,7 +399,9 @@ def run_classifier_targeting_demo():
     best_distance = float("inf")
 
     for label, text in test_responses:
-        result = classifier_targeting_challenge(text, target_score=target, tolerance=tolerance)
+        result = classifier_targeting_challenge(
+            text, target_score=target, tolerance=tolerance
+        )
         if "error" in result:
             print(f"Error: {result['error']}")
             return result
@@ -383,7 +409,9 @@ def run_classifier_targeting_demo():
         distance = result.get("distance", float("inf"))
         status = "✅" if result["passed"] else "❌"
 
-        print(f"{status} '{label}': score={result['actual_score']:.4f} (target={target}, dist={distance:.4f})")
+        print(
+            f"{status} '{label}': score={result['actual_score']:.4f} (target={target}, dist={distance:.4f})"
+        )
         print(f'   Text: "{text}"')
 
         if distance < best_distance:
@@ -432,18 +460,24 @@ def run_anticreative_demo():
     boring_response = "I'm doing well, thank you for asking. How can I help you today?"
 
     # Human-typical response (with flair)
-    human_response = "Oh, I'm having a fantastic day! The sun is shining and I feel great!"
+    human_response = (
+        "Oh, I'm having a fantastic day! The sun is shining and I feel great!"
+    )
 
     result_boring = anti_creativity_challenge(boring_response, "How are you?")
     result_human = anti_creativity_challenge(human_response, "How are you?")
 
     print("AI (boring) response:")
     print(f"  '{boring_response}'")
-    print(f"  Similarity: {result_boring['similarity']} -> {'✅' if result_boring['passed'] else '❌'}")
+    print(
+        f"  Similarity: {result_boring['similarity']} -> {'✅' if result_boring['passed'] else '❌'}"
+    )
     print()
     print("Human-typical response:")
     print(f"  '{human_response}'")
-    print(f"  Similarity: {result_human['similarity']} -> {'✅' if result_human['passed'] else '❌'}")
+    print(
+        f"  Similarity: {result_human['similarity']} -> {'✅' if result_human['passed'] else '❌'}"
+    )
 
     return result_boring
 
@@ -468,7 +502,9 @@ def run_token_demo():
 
     print("AI response:")
     print(f"  '{ai_response}'")
-    print(f"  Correct token: {result_ai['correct_token']}, Reasonable prob: {result_ai['reasonable_probability']}")
+    print(
+        f"  Correct token: {result_ai['correct_token']}, Reasonable prob: {result_ai['reasonable_probability']}"
+    )
     print(f"  Passed: {'✅' if result_ai['passed'] else '❌'}")
     print()
     print("Human guess:")
@@ -521,10 +557,14 @@ def run_consistency_demo():
     result_human = consistency_torture(human_responses)
 
     print("AI responses (consistent):")
-    print(f"  Min similarity: {result_ai['min_similarity']} -> {'✅' if result_ai['passed'] else '❌'}")
+    print(
+        f"  Min similarity: {result_ai['min_similarity']} -> {'✅' if result_ai['passed'] else '❌'}"
+    )
     print()
     print("Human responses (creative drift):")
-    print(f"  Min similarity: {result_human['min_similarity']} -> {'✅' if result_human['passed'] else '❌'}")
+    print(
+        f"  Min similarity: {result_human['min_similarity']} -> {'✅' if result_human['passed'] else '❌'}"
+    )
 
     return result_ai
 
@@ -545,7 +585,9 @@ def run_all_demos():
         results["token"] = run_token_demo()
         results["consistency"] = run_consistency_demo()
     else:
-        print("\n⚠️  Skipping embedding-based challenges (install sentence-transformers)")
+        print(
+            "\n⚠️  Skipping embedding-based challenges (install sentence-transformers)"
+        )
 
     # Challenge 6: THE HARD ONE
     if HAS_TRANSFORMERS:
@@ -574,18 +616,39 @@ def run_all_demos():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Inverse CAPTCHA: Prove You Are NOT Human")
+    parser = argparse.ArgumentParser(
+        description="Inverse CAPTCHA: Prove You Are NOT Human"
+    )
     parser.add_argument("--all", action="store_true", help="Run all challenges")
     parser.add_argument("--speed", action="store_true", help="Run speed challenge")
-    parser.add_argument("--anticreative", action="store_true", help="Run anti-creativity challenge")
-    parser.add_argument("--token", action="store_true", help="Run token intuition challenge")
-    parser.add_argument("--consistency", action="store_true", help="Run consistency torture")
-    parser.add_argument("--classifier", action="store_true", help="Run classifier targeting (THE HARD ONE)")
+    parser.add_argument(
+        "--anticreative", action="store_true", help="Run anti-creativity challenge"
+    )
+    parser.add_argument(
+        "--token", action="store_true", help="Run token intuition challenge"
+    )
+    parser.add_argument(
+        "--consistency", action="store_true", help="Run consistency torture"
+    )
+    parser.add_argument(
+        "--classifier",
+        action="store_true",
+        help="Run classifier targeting (THE HARD ONE)",
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     args = parser.parse_args()
 
-    if not any([args.all, args.speed, args.anticreative, args.token, args.consistency, args.classifier]):
+    if not any(
+        [
+            args.all,
+            args.speed,
+            args.anticreative,
+            args.token,
+            args.consistency,
+            args.classifier,
+        ]
+    ):
         args.all = True  # Default to all
 
     results = {}

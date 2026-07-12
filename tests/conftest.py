@@ -49,17 +49,21 @@ def client():
 
     def lenient_time(func):
         """Wrapper to make time limits very lenient."""
+
         def wrapper(*args, **kwargs):
             challenge = func(*args, **kwargs)
             challenge.time_limit_ms = _TEST_TIME_LIMIT
             return challenge
+
         return wrapper
 
     # Apply lenient timing to all challenge generators
     challenger.generate_speed_math_challenge = lenient_time(original_speed)
     challenger.generate_chained_reasoning_challenge = lenient_time(original_chained)
     challenger.generate_token_prediction_challenge = lenient_time(original_token)
-    challenger.generate_instruction_following_challenge = lenient_time(original_instruction)
+    challenger.generate_instruction_following_challenge = lenient_time(
+        original_instruction
+    )
     challenger.generate_consistency_challenge = lenient_time(original_consistency)
 
     yield TestClient(app)
@@ -134,7 +138,11 @@ def sample_chained_challenge():
         id="mtl_test_chained",
         type=ChallengeType.CHAINED_REASONING,
         prompt="Follow these steps and give the final number:\n1. Start with 10\n2. Double it\n3. Add 10",
-        data={"expected_answer": 30, "chain": [10, 20, 30], "instructions": ["Start with 10", "Double it", "Add 10"]},
+        data={
+            "expected_answer": 30,
+            "chain": [10, 20, 30],
+            "instructions": ["Start with 10", "Double it", "Add 10"],
+        },
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=10000,
     )

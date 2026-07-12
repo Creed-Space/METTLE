@@ -44,12 +44,15 @@ from config import get_settings
 # Configuration
 settings = get_settings()
 
+
 class DatabaseLayer(Protocol):
     """Operations used from the optional persistence module."""
 
     def init_db(self) -> None: ...
     def save_api_key(self, api_key: str, tier: str, entity_id: str | None) -> bool: ...
-    def save_verification_record(self, entity_id: str, ip_address: str, passed: bool) -> bool: ...
+    def save_verification_record(
+        self, entity_id: str, ip_address: str, passed: bool
+    ) -> bool: ...
     def is_badge_revoked(self, jti: str, *, raise_on_error: bool = False) -> bool: ...
     def add_revoked_badge(
         self, jti: str, entity_id: str | None, reason: str, evidence: dict | None
@@ -120,7 +123,12 @@ MAX_AUTH_FAILURES = 10000
 _BIND_ALL_INTERFACES = str(ipaddress.IPv4Address(0))
 _LOOPBACK_IPV4 = str(ipaddress.IPv4Address("127.0.0.1"))
 _LOOPBACK_IPV6 = str(ipaddress.IPv6Address("::1"))
-_BLOCKED_LOCALHOST_HOSTS = {"localhost", _LOOPBACK_IPV4, _LOOPBACK_IPV6, _BIND_ALL_INTERFACES}
+_BLOCKED_LOCALHOST_HOSTS = {
+    "localhost",
+    _LOOPBACK_IPV4,
+    _LOOPBACK_IPV6,
+    _BIND_ALL_INTERFACES,
+}
 
 
 def add_with_limit(store: dict, key: str, value: Any, max_size: int) -> None:
@@ -142,11 +150,17 @@ revoked_badges: dict[str, float] = {}  # JTI -> revocation timestamp (bounded di
 revocation_audit: list[dict[str, Any]] = []  # Audit trail
 
 # Collusion detection - track verification patterns
-verification_graph: dict[str, list[dict[str, Any]]] = {}  # entity_id -> list of verifications
-verification_timestamps: list[tuple[str, float]] = []  # (entity_id, timestamp) for timing analysis
+verification_graph: dict[
+    str, list[dict[str, Any]]
+] = {}  # entity_id -> list of verifications
+verification_timestamps: list[
+    tuple[str, float]
+] = []  # (entity_id, timestamp) for timing analysis
 
 # API Key tiers for rate limiting
-api_keys: dict[str, dict[str, Any]] = {}  # api_key -> {tier, entity_id, created_at, usage_today}
+api_keys: dict[
+    str, dict[str, Any]
+] = {}  # api_key -> {tier, entity_id, created_at, usage_today}
 
 
 class RateTier:
@@ -215,7 +229,9 @@ class RateTier:
         return True, f"OK ({tier} tier)"
 
     @staticmethod
-    def register_key(api_key: str, tier: str, entity_id: str | None = None) -> dict[str, Any]:
+    def register_key(
+        api_key: str, tier: str, entity_id: str | None = None
+    ) -> dict[str, Any]:
         """Register a new API key with a tier."""
         if tier not in RateTier.TIERS:
             raise ValueError(f"Invalid tier: {tier}")
@@ -243,7 +259,9 @@ class CollusionDetector:
     SYNC_THRESHOLD = 5  # Max verifications in window to be suspicious
 
     @staticmethod
-    def record_verification(entity_id: str | None, ip_address: str, passed: bool) -> None:
+    def record_verification(
+        entity_id: str | None, ip_address: str, passed: bool
+    ) -> None:
         """Record a verification for pattern analysis."""
         if not entity_id:
             return
@@ -289,22 +307,34 @@ class CollusionDetector:
                     ip_entities.add(eid)
 
         if len(ip_entities) >= CollusionDetector.CLIQUE_THRESHOLD:
-            warnings.append(f"IP {ip_address[:8]}... verified {len(ip_entities)} different entities")
+            warnings.append(
+                f"IP {ip_address[:8]}... verified {len(ip_entities)} different entities"
+            )
             risk_score += 0.3
 
         # Check 2: Synchronized timing (burst of verifications)
         now = time.time()
-        recent = [t for _, t in verification_timestamps if now - t < CollusionDetector.TIME_WINDOW_SECONDS]
+        recent = [
+            t
+            for _, t in verification_timestamps
+            if now - t < CollusionDetector.TIME_WINDOW_SECONDS
+        ]
         if len(recent) >= CollusionDetector.SYNC_THRESHOLD:
-            warnings.append(f"{len(recent)} verifications in {CollusionDetector.TIME_WINDOW_SECONDS}s window")
+            warnings.append(
+                f"{len(recent)} verifications in {CollusionDetector.TIME_WINDOW_SECONDS}s window"
+            )
             risk_score += 0.2
 
         # Check 3: Entity verified too frequently
         if entity_id in verification_graph:
             entity_records = verification_graph[entity_id]
-            recent_entity = [r for r in entity_records if now - r["timestamp"] < 3600]  # Last hour
+            recent_entity = [
+                r for r in entity_records if now - r["timestamp"] < 3600
+            ]  # Last hour
             if len(recent_entity) > 10:
-                warnings.append(f"Entity verified {len(recent_entity)} times in last hour")
+                warnings.append(
+                    f"Entity verified {len(recent_entity)} times in last hour"
+                )
                 risk_score += 0.2
 
         return {
@@ -319,11 +349,13 @@ class CollusionDetector:
         return {
             "tracked_entities": len(verification_graph),
             "recent_verifications": len(verification_timestamps),
-            "unique_ips": len(set(
-                r["ip_address"]
-                for records in verification_graph.values()
-                for r in records[-10:]
-            )),
+            "unique_ips": len(
+                set(
+                    r["ip_address"]
+                    for records in verification_graph.values()
+                    for r in records[-10:]
+                )
+            ),
         }
 
 
@@ -420,7 +452,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com"
         )
         if settings.is_production:
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
         return response
 
 
@@ -442,7 +476,9 @@ async def cleanup_expired_sessions():
     while True:
         await asyncio.sleep(300)  # Run every 5 minutes
         cutoff = time.time() - 1800  # 30 minutes TTL
-        expired_sessions = [sid for sid, s in sessions.items() if s.started_at.timestamp() < cutoff]
+        expired_sessions = [
+            sid for sid, s in sessions.items() if s.started_at.timestamp() < cutoff
+        ]
         expired_challenges = [cid for cid, (_, t) in challenges.items() if t < cutoff]
         for sid in expired_sessions:
             del sessions[sid]
@@ -614,7 +650,7 @@ class StartSessionRequest(BaseModel):
 
     @field_validator("entity_id")
     @classmethod
-    def validate_entity_id(cls, v: str | None) -> str | None:
+    def validate_entity_id(_cls, v: str | None) -> str | None:
         """Sanitize entity_id."""
         if v is not None:
             # Strip whitespace and limit characters
@@ -671,7 +707,7 @@ class SubmitAnswerRequest(BaseModel):
 
     @field_validator("answer")
     @classmethod
-    def validate_answer(cls, v: str) -> str:
+    def validate_answer(_cls, v: str) -> str:
         """Sanitize and validate answer."""
         if len(v) > 1024:
             raise ValueError("Answer exceeds maximum length of 1024 characters")
@@ -682,7 +718,9 @@ class SubmitAnswerResponse(BaseModel):
     """Response after submitting an answer."""
 
     result: VerificationResult = Field(description="Result of this challenge")
-    next_challenge: Challenge | None = Field(description="Next challenge, or null if complete")
+    next_challenge: Challenge | None = Field(
+        description="Next challenge, or null if complete"
+    )
     session_complete: bool = Field(description="Whether session is complete")
     challenges_remaining: int = Field(description="Number of challenges left")
 
@@ -704,8 +742,12 @@ class BadgeVerifyResponse(BaseModel):
         description="Badge payload if valid",
     )
     error: str | None = Field(default=None, description="Error message if invalid")
-    expires_at: str | None = Field(default=None, description="When the badge expires (ISO format)")
-    revoked: bool = Field(default=False, description="Whether the badge has been revoked")
+    expires_at: str | None = Field(
+        default=None, description="When the badge expires (ISO format)"
+    )
+    revoked: bool = Field(
+        default=False, description="Whether the badge has been revoked"
+    )
 
 
 # === API Endpoints (mounted at /api) ===
@@ -798,7 +840,9 @@ async def start_session(
 
     # Check for collusion patterns
     ip_address = get_remote_address(request)
-    collusion_check = CollusionDetector.check_collusion(body.entity_id or "", ip_address)
+    collusion_check = CollusionDetector.check_collusion(
+        body.entity_id or "", ip_address
+    )
 
     # Log if collusion detected (but don't block - allow verification to proceed)
     if collusion_check.get("flagged"):
@@ -825,7 +869,9 @@ async def start_session(
 
     # Store first challenge with timestamp
     first_challenge = challenge_list[0]
-    add_with_limit(challenges, first_challenge.id, (first_challenge, time.time()), MAX_CHALLENGES)
+    add_with_limit(
+        challenges, first_challenge.id, (first_challenge, time.time()), MAX_CHALLENGES
+    )
 
     # Log session start
     logger.info(
@@ -924,21 +970,30 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
             add_with_limit(sessions, session_id, session, MAX_SESSIONS)
 
             first_challenge = challenge_list[0]
-            add_with_limit(challenges, first_challenge.id, (first_challenge, time.time()), MAX_CHALLENGES)
+            add_with_limit(
+                challenges,
+                first_challenge.id,
+                (first_challenge, time.time()),
+                MAX_CHALLENGES,
+            )
 
-            results.append({
-                "entity_id": entity_id,
-                "session_id": session_id,
-                "challenge_id": first_challenge.id,
-                "total_challenges": len(challenge_list),
-            })
+            results.append(
+                {
+                    "entity_id": entity_id,
+                    "session_id": session_id,
+                    "challenge_id": first_challenge.id,
+                    "total_challenges": len(challenge_list),
+                }
+            )
         except Exception as e:
             logger.warning("batch_start_failed", entity_id=entity_id, error=str(e))
             failed += 1
-            results.append({
-                "entity_id": entity_id,
-                "error": str(e),
-            })
+            results.append(
+                {
+                    "entity_id": entity_id,
+                    "error": str(e),
+                }
+            )
 
     logger.info(
         "batch_sessions_started",
@@ -993,7 +1048,9 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
             session_id=body.session_id,
             challenge_id=body.challenge_id,
         )
-        raise HTTPException(status_code=404, detail="Challenge not found or already answered")
+        raise HTTPException(
+            status_code=404, detail="Challenge not found or already answered"
+        )
 
     # Get and remove challenge atomically to prevent race conditions
     # SECURITY: Using pop() instead of get()+del prevents double-submission attacks
@@ -1004,7 +1061,9 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
             session_id=body.session_id,
             challenge_id=body.challenge_id,
         )
-        raise HTTPException(status_code=404, detail="Challenge not found or already answered")
+        raise HTTPException(
+            status_code=404, detail="Challenge not found or already answered"
+        )
 
     challenge, issued_at = challenge_data
 
@@ -1033,7 +1092,9 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
 
     if challenges_remaining > 0:
         next_challenge = session.challenges[current_index]
-        add_with_limit(challenges, next_challenge.id, (next_challenge, time.time()), MAX_CHALLENGES)
+        add_with_limit(
+            challenges, next_challenge.id, (next_challenge, time.time()), MAX_CHALLENGES
+        )
         session_complete = False
     else:
         next_challenge = None
@@ -1077,7 +1138,10 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
                     WebhookManager.send_webhook(
                         session.entity_id,
                         "badge.issued",
-                        {"session_id": body.session_id, "pass_rate": final_result.pass_rate},
+                        {
+                            "session_id": body.session_id,
+                            "pass_rate": final_result.pass_rate,
+                        },
                     )
                 )
 
@@ -1311,12 +1375,17 @@ async def verify_badge(request: Request, token: str):
 
 # === Revocation Endpoints ===
 
+
 class RevokeBadgeRequest(BaseModel):
     """Request to revoke a badge."""
 
     token: str = Field(..., description="The badge token to revoke")
-    reason: str = Field(..., min_length=10, max_length=500, description="Reason for revocation")
-    evidence: dict[str, Any] | None = Field(None, description="Optional evidence supporting revocation")
+    reason: str = Field(
+        ..., min_length=10, max_length=500, description="Reason for revocation"
+    )
+    evidence: dict[str, Any] | None = Field(
+        None, description="Optional evidence supporting revocation"
+    )
 
 
 class RevokeBadgeResponse(BaseModel):
@@ -1362,9 +1431,13 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
         )
 
     if not settings.admin_api_key:
-        raise HTTPException(status_code=503, detail="Revocation service not configured (no admin key)")
+        raise HTTPException(
+            status_code=503, detail="Revocation service not configured (no admin key)"
+        )
     if not verify_admin_key(admin_key, ip_address):
-        raise HTTPException(status_code=401, detail="Admin authorization required for badge revocation")
+        raise HTTPException(
+            status_code=401, detail="Admin authorization required for badge revocation"
+        )
 
     if not settings.secret_key:
         raise HTTPException(status_code=400, detail="Badge signing not configured")
@@ -1389,7 +1462,9 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
             db and db.is_badge_revoked(jti, raise_on_error=True)
         )
     except RuntimeError as e:
-        raise HTTPException(status_code=503, detail="Revocation service temporarily unavailable") from e
+        raise HTTPException(
+            status_code=503, detail="Revocation service temporarily unavailable"
+        ) from e
 
     if already_revoked:
         return RevokeBadgeResponse(
@@ -1404,7 +1479,9 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
         body.reason,
         body.evidence,
     ):
-        raise HTTPException(status_code=503, detail="Failed to persist badge revocation")
+        raise HTTPException(
+            status_code=503, detail="Failed to persist badge revocation"
+        )
 
     # Add to revocation dict with memory limit after durable storage succeeds.
     add_with_limit(revoked_badges, jti, time.time(), MAX_REVOKED_BADGES)
@@ -1522,7 +1599,9 @@ class ModelFingerprinter:
         if not responses:
             return {"error": "No responses to analyze", "scores": {}}
 
-        scores: dict[str, float] = {family: 0.0 for family in ModelFingerprinter.SIGNATURES}
+        scores: dict[str, float] = {
+            family: 0.0 for family in ModelFingerprinter.SIGNATURES
+        }
 
         # Concatenate responses for analysis
         combined = " ".join(responses).lower()
@@ -1722,8 +1801,12 @@ class WebhookManager:
                     resolved.add(raw_address.split("%", 1)[0])
                 if not resolved:
                     return False
-                resolved_ips = {address: ipaddress.ip_address(address) for address in resolved}
-                blocked = [address for address, ip in resolved_ips.items() if not ip.is_global]
+                resolved_ips = {
+                    address: ipaddress.ip_address(address) for address in resolved
+                }
+                blocked = [
+                    address for address, ip in resolved_ips.items() if not ip.is_global
+                ]
                 if blocked:
                     logger.warning(
                         "webhook_blocked_dns_rebind",
@@ -1742,7 +1825,11 @@ class WebhookManager:
                 return False
 
             resolved_ip = sorted(resolved)[0]
-            ip_for_url = f"[{resolved_ip}]" if resolved_ips[resolved_ip].version == 6 else resolved_ip
+            ip_for_url = (
+                f"[{resolved_ip}]"
+                if resolved_ips[resolved_ip].version == 6
+                else resolved_ip
+            )
             include_port = parsed.port is not None
             pinned_netloc = f"{ip_for_url}:{port}" if include_port else ip_for_url
             pinned_url = urlunparse(
@@ -1756,7 +1843,9 @@ class WebhookManager:
                 )
             )
             host_for_header = f"[{hostname}]" if ":" in hostname else hostname
-            host_header = f"{host_for_header}:{port}" if include_port else host_for_header
+            host_header = (
+                f"{host_for_header}:{port}" if include_port else host_for_header
+            )
 
             async with httpx.AsyncClient(
                 timeout=10.0,
@@ -1781,11 +1870,18 @@ class WebhookManager:
                 )
                 return success
         except Exception as e:
-            logger.warning("webhook_failed", entity_id=entity_id, webhook_event=event, error=str(e))
+            logger.warning(
+                "webhook_failed", entity_id=entity_id, webhook_event=event, error=str(e)
+            )
             return False
 
     @staticmethod
-    def register(entity_id: str, url: str, events: list[str] | None = None, secret: str | None = None) -> dict:
+    def register(
+        entity_id: str,
+        url: str,
+        events: list[str] | None = None,
+        secret: str | None = None,
+    ) -> dict:
         """Register a webhook for an entity."""
         events_list = events or WebhookManager.EVENTS
         config = {
@@ -1818,7 +1914,9 @@ class WebhookManager:
 class WebhookRegisterRequest(BaseModel):
     """Request to register a webhook."""
 
-    entity_id: str = Field(..., description="Entity ID to register webhook for", max_length=128)
+    entity_id: str = Field(
+        ..., description="Entity ID to register webhook for", max_length=128
+    )
     url: str = Field(..., description="Webhook URL to POST events to", max_length=2048)
     events: list[str] | None = Field(
         None,
@@ -1826,19 +1924,23 @@ class WebhookRegisterRequest(BaseModel):
         max_length=4,
         description="Events to subscribe to (default: all)",
     )
-    secret: str | None = Field(None, description="Secret for HMAC signing (min 32 chars)")
+    secret: str | None = Field(
+        None, description="Secret for HMAC signing (min 32 chars)"
+    )
 
     @field_validator("secret")
     @classmethod
-    def validate_secret(cls, v: str | None) -> str | None:
+    def validate_secret(_cls, v: str | None) -> str | None:
         """SECURITY: Ensure webhook secrets have minimum entropy."""
         if v is not None and len(v) < 32:
-            raise ValueError("Webhook secret must be at least 32 characters for security")
+            raise ValueError(
+                "Webhook secret must be at least 32 characters for security"
+            )
         return v
 
     @field_validator("url")
     @classmethod
-    def validate_webhook_url(cls, v: str) -> str:
+    def validate_webhook_url(_cls, v: str) -> str:
         """SECURITY: Block SSRF attacks via webhook URLs.
 
         Prevents requests to:
@@ -1855,7 +1957,9 @@ class WebhookRegisterRequest(BaseModel):
         if parsed.scheme not in ("http", "https"):
             raise ValueError("Webhook URL must use HTTP or HTTPS")
         if not parsed.hostname or parsed.username or parsed.password:
-            raise ValueError("Webhook URL must have a hostname and cannot include credentials")
+            raise ValueError(
+                "Webhook URL must have a hostname and cannot include credentials"
+            )
         allowed_ports = {80, 443} if not settings.is_production else {443}
         if parsed.port is not None and parsed.port not in allowed_ports:
             raise ValueError("Webhook URL uses a disallowed port")

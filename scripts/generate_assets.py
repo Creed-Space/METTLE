@@ -106,15 +106,27 @@ def generate_og_image():
     # Try to load fonts
     try:
         # macOS system fonts
-        title_font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 100)
-        subtitle_font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 36)
-        small_font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 28)
+        title_font = ImageFont.truetype(
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf", 100
+        )
+        subtitle_font = ImageFont.truetype(
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf", 36
+        )
+        small_font = ImageFont.truetype(
+            "/System/Library/Fonts/Supplemental/Arial.ttf", 28
+        )
     except OSError:
         try:
             # Linux system fonts
-            title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 100)
-            subtitle_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-            small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+            title_font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 100
+            )
+            subtitle_font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36
+            )
+            small_font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28
+            )
         except OSError:
             # Fallback to default
             title_font = ImageFont.load_default()

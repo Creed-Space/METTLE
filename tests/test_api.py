@@ -27,7 +27,9 @@ class TestSecurityAnswerLeakage:
         """Answers must not be in start session response."""
         response = client.post("/api/session/start", json={"difficulty": "basic"})
         challenge = response.json()["current_challenge"]
-        assert "expected_answer" not in challenge["data"], "SECURITY: expected_answer exposed!"
+        assert "expected_answer" not in challenge["data"], (
+            "SECURITY: expected_answer exposed!"
+        )
         assert "chain" not in challenge["data"], "SECURITY: chain exposed!"
 
     def test_answer_response_no_expected_answer(self, client):
@@ -39,11 +41,18 @@ class TestSecurityAnswerLeakage:
 
         # Submit any answer
         response = client.post(
-            "/api/session/answer", json={"session_id": session_id, "challenge_id": challenge["id"], "answer": "test"}
+            "/api/session/answer",
+            json={
+                "session_id": session_id,
+                "challenge_id": challenge["id"],
+                "answer": "test",
+            },
         )
         next_challenge = response.json().get("next_challenge")
         if next_challenge:
-            assert "expected_answer" not in next_challenge["data"], "SECURITY: expected_answer exposed!"
+            assert "expected_answer" not in next_challenge["data"], (
+                "SECURITY: expected_answer exposed!"
+            )
             assert "chain" not in next_challenge["data"], "SECURITY: chain exposed!"
 
 
@@ -81,7 +90,10 @@ class TestStartSession:
 
     def test_start_session_with_entity_id(self, client):
         """Test starting session with entity ID."""
-        response = client.post("/api/session/start", json={"difficulty": "basic", "entity_id": "test-agent-001"})
+        response = client.post(
+            "/api/session/start",
+            json={"difficulty": "basic", "entity_id": "test-agent-001"},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["session_id"].startswith("ses_")
@@ -125,7 +137,12 @@ class TestSubmitAnswer:
 
         # Submit answer
         response = client.post(
-            "/api/session/answer", json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer}
+            "/api/session/answer",
+            json={
+                "session_id": session_id,
+                "challenge_id": challenge["id"],
+                "answer": answer,
+            },
         )
         assert response.status_code == 200
         data = response.json()
@@ -137,7 +154,11 @@ class TestSubmitAnswer:
         # Use valid format IDs that don't exist
         response = client.post(
             "/api/session/answer",
-            json={"session_id": "ses_000000000000000000000000", "challenge_id": "mtl_000000000000000000000000", "answer": "test"},
+            json={
+                "session_id": "ses_000000000000000000000000",
+                "challenge_id": "mtl_000000000000000000000000",
+                "answer": "test",
+            },
         )
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
@@ -150,7 +171,12 @@ class TestSubmitAnswer:
 
         # Use valid format ID that doesn't exist
         response = client.post(
-            "/api/session/answer", json={"session_id": session_id, "challenge_id": "mtl_000000000000000000000000", "answer": "test"}
+            "/api/session/answer",
+            json={
+                "session_id": session_id,
+                "challenge_id": "mtl_000000000000000000000000",
+                "answer": "test",
+            },
         )
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
@@ -166,7 +192,12 @@ class TestSubmitAnswer:
         answer = self._solve_challenge(challenge)
 
         response = client.post(
-            "/api/session/answer", json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer}
+            "/api/session/answer",
+            json={
+                "session_id": session_id,
+                "challenge_id": challenge["id"],
+                "answer": answer,
+            },
         )
         data = response.json()
 
@@ -240,7 +271,9 @@ class TestGetSession:
     def _complete_session(self, client, difficulty: str) -> str:
         """Helper to complete a session."""
         # Start session
-        start_response = client.post("/api/session/start", json={"difficulty": difficulty})
+        start_response = client.post(
+            "/api/session/start", json={"difficulty": difficulty}
+        )
         start_data = start_response.json()
         session_id = start_data["session_id"]
 
@@ -250,7 +283,11 @@ class TestGetSession:
             answer = TestSubmitAnswer()._solve_challenge(challenge)
             response = client.post(
                 "/api/session/answer",
-                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
+                json={
+                    "session_id": session_id,
+                    "challenge_id": challenge["id"],
+                    "answer": answer,
+                },
             )
             data = response.json()
             if data["session_complete"]:
@@ -298,7 +335,10 @@ class TestCompleteSessionFlow:
     def test_complete_basic_session(self, client):
         """Test completing a basic session."""
         # Start
-        start_response = client.post("/api/session/start", json={"difficulty": "basic", "entity_id": "test-agent"})
+        start_response = client.post(
+            "/api/session/start",
+            json={"difficulty": "basic", "entity_id": "test-agent"},
+        )
         assert start_response.status_code == 200
         start_data = start_response.json()
         session_id = start_data["session_id"]
@@ -312,7 +352,11 @@ class TestCompleteSessionFlow:
             answer = TestSubmitAnswer()._solve_challenge(challenge)
             response = client.post(
                 "/api/session/answer",
-                json={"session_id": session_id, "challenge_id": challenge["id"], "answer": answer},
+                json={
+                    "session_id": session_id,
+                    "challenge_id": challenge["id"],
+                    "answer": answer,
+                },
             )
             assert response.status_code == 200
             data = response.json()
@@ -337,7 +381,15 @@ class TestCompleteSessionFlow:
         # Try to submit another answer (use valid format ID)
         # SECURITY: Error message is intentionally generic to prevent session enumeration
         response = client.post(
-            "/api/session/answer", json={"session_id": session_id, "challenge_id": "mtl_000000000000000000000000", "answer": "test"}
+            "/api/session/answer",
+            json={
+                "session_id": session_id,
+                "challenge_id": "mtl_000000000000000000000000",
+                "answer": "test",
+            },
         )
         assert response.status_code == 404  # Generic "not found" for security
-        assert "not found" in response.json()["detail"].lower() or "invalid" in response.json()["detail"].lower()
+        assert (
+            "not found" in response.json()["detail"].lower()
+            or "invalid" in response.json()["detail"].lower()
+        )

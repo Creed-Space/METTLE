@@ -70,6 +70,8 @@ def isolated_db():
 
     yield database
 
+    test_engine.dispose()
+    original_engine.dispose()
     database.engine = original_engine
     database.SessionLocal = original_session_local
 
@@ -229,9 +231,7 @@ class TestUpdateSessionResults:
 class TestAddRevokedBadge:
     def test_add_revoked_badge_success(self, isolated_db):
         db = isolated_db
-        result = db.add_revoked_badge(
-            "jti-1", "entity-1", "cheating", {"score": 0.1}
-        )
+        result = db.add_revoked_badge("jti-1", "entity-1", "cheating", {"score": 0.1})
         assert result is True
 
     def test_add_revoked_badge_none_evidence(self, isolated_db):
@@ -439,9 +439,7 @@ class TestSaveWebhook:
 
     def test_save_webhook_none_secret(self, isolated_db):
         db = isolated_db
-        result = db.save_webhook(
-            "entity-2", "https://example.com/hook", ["all"], None
-        )
+        result = db.save_webhook("entity-2", "https://example.com/hook", ["all"], None)
         assert result is True
 
     def test_save_webhook_upsert_replaces_existing(self, isolated_db):
@@ -690,7 +688,13 @@ class TestModuleLevelInit:
         import database
 
         table_names = set(database.Base.metadata.tables.keys())
-        expected = {"sessions", "revoked_badges", "api_keys", "webhooks", "verification_records"}
+        expected = {
+            "sessions",
+            "revoked_badges",
+            "api_keys",
+            "webhooks",
+            "verification_records",
+        }
         assert expected.issubset(table_names)
 
 
@@ -762,7 +766,9 @@ class TestEdgeCases:
         """Multiple sessions should be stored and retrieved independently."""
         db = isolated_db
         for i in range(5):
-            db.save_session(f"multi-{i}", f"entity-{i}", "basic", [MockChallenge(id=f"ch-{i}")])
+            db.save_session(
+                f"multi-{i}", f"entity-{i}", "basic", [MockChallenge(id=f"ch-{i}")]
+            )
 
         for i in range(5):
             sess = db.get_session(f"multi-{i}")

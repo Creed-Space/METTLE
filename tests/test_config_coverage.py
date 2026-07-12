@@ -41,7 +41,9 @@ class TestAllowedOriginsList:
 
     def test_single_origin(self):
         """Single non-wildcard origin returns list of one."""
-        s = SettingsFactory(allowed_origins="https://example.com", _env_file="nonexistent.env")
+        s = SettingsFactory(
+            allowed_origins="https://example.com", _env_file="nonexistent.env"
+        )
         assert s.allowed_origins_list == ["https://example.com"]
 
 

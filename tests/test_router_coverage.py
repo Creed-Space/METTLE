@@ -238,6 +238,7 @@ class TestCreateSessionGenericException:
         # Create a SessionManager that raises a generic exception on create_session
         async def mock_get_manager() -> SessionManager:
             mgr = SessionManager(fake_redis)
+
             # Monkey-patch create_session to raise a generic exception
             async def exploding(*args: Any, **kwargs: Any) -> Any:
                 raise RuntimeError("Redis connection lost")
@@ -434,16 +435,12 @@ class TestGetSessionResultVCPAttestation:
         result_app = _build_app(user, fake_redis)
         result_client = TestClient(result_app)
 
-        resp = result_client.get(
-            f"/api/mettle/sessions/{session_id}/result"
-        )
+        resp = result_client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 200
         data = resp.json()
         assert data["vcp_attestation"] is None
 
-    def test_include_vcp_with_signing_available(
-        self, fake_redis: FakeRedis
-    ) -> None:
+    def test_include_vcp_with_signing_available(self, fake_redis: FakeRedis) -> None:
         """Lines 364-368: when mettle.signing.is_available() is True,
         sign_fn is set and signature is produced."""
         user = _make_mock_user()
@@ -454,8 +451,10 @@ class TestGetSessionResultVCPAttestation:
 
         # Mock the signing module so is_available returns True and
         # sign_attestation returns a fake signature
-        with patch("mettle.signing.is_available", return_value=True), \
-             patch("mettle.signing.sign_attestation", return_value="fake_sig_base64"):
+        with (
+            patch("mettle.signing.is_available", return_value=True),
+            patch("mettle.signing.sign_attestation", return_value="fake_sig_base64"),
+        ):
             resp = result_client.get(
                 f"/api/mettle/sessions/{session_id}/result?include_vcp=true"
             )
@@ -466,9 +465,7 @@ class TestGetSessionResultVCPAttestation:
         assert att is not None
         assert att["signature"] == "ed25519:fake_sig_base64"
 
-    def test_include_vcp_signing_import_error(
-        self, fake_redis: FakeRedis
-    ) -> None:
+    def test_include_vcp_signing_import_error(self, fake_redis: FakeRedis) -> None:
         """Lines 369-370: when mettle.signing raises ImportError,
         sign_fn stays None and attestation has no signature."""
         user = _make_mock_user()
@@ -479,6 +476,7 @@ class TestGetSessionResultVCPAttestation:
 
         # Make the import of mettle.signing fail inside the endpoint
         import builtins
+
         original_import = builtins.__import__
 
         def import_blocker(name: str, *args: Any, **kwargs: Any) -> Any:
@@ -509,12 +507,15 @@ class TestWellKnownVCPKeys:
 
     def test_vcp_keys_normal(self, client: TestClient) -> None:
         """Lines 393-396: when mettle.signing is available, returns key info."""
-        with patch("mettle.signing.get_public_key_info", return_value={
-            "key_id": "mettle-vcp-v1",
-            "algorithm": "Ed25519",
-            "public_key_pem": "-----BEGIN PUBLIC KEY-----\nfake\n-----END PUBLIC KEY-----",
-            "available": True,
-        }):
+        with patch(
+            "mettle.signing.get_public_key_info",
+            return_value={
+                "key_id": "mettle-vcp-v1",
+                "algorithm": "Ed25519",
+                "public_key_pem": "-----BEGIN PUBLIC KEY-----\nfake\n-----END PUBLIC KEY-----",
+                "available": True,
+            },
+        ):
             resp = client.get("/api/mettle/.well-known/vcp-keys")
         assert resp.status_code == 200
         data = resp.json()
@@ -525,6 +526,7 @@ class TestWellKnownVCPKeys:
         """Lines 397-404: when mettle.signing cannot be imported, returns
         fallback dict with available=False."""
         import builtins
+
         original_import = builtins.__import__
 
         def import_blocker(name: str, *args: Any, **kwargs: Any) -> Any:

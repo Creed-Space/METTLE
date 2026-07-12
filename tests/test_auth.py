@@ -87,7 +87,9 @@ class TestRequireAuthenticatedUser:
         """User IDs use a one-way key fingerprint rather than a secret prefix."""
         monkeypatch.setenv("METTLE_API_KEYS", "abcdefghijklmnop")
         monkeypatch.setenv("METTLE_DEV_MODE", "false")
-        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="abcdefghijklmnop")
+        creds = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials="abcdefghijklmnop"
+        )
         result = await require_authenticated_user(creds)
         expected = hashlib.sha256(b"abcdefghijklmnop").hexdigest()[:12]
         assert result.user_id == f"key:{expected}"

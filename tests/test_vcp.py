@@ -189,7 +189,12 @@ class TestComputeTier:
 
     def test_none_with_gap(self):
         """Failing suite 3 should drop below bronze (needs 1-5)."""
-        suites = ["adversarial", "native", "social", "inverse-turing"]  # missing self-reference (3)
+        suites = [
+            "adversarial",
+            "native",
+            "social",
+            "inverse-turing",
+        ]  # missing self-reference (3)
         assert compute_tier(suites) == "none"
 
     def test_bronze_with_gap_in_silver_range(self):
@@ -239,6 +244,7 @@ class TestBuildMettleAttestation:
     def test_attestation_with_signing(self):
         def sign_fn(data):
             return "fake-base64-signature"
+
         att = build_mettle_attestation(
             session_id="ses-456",
             difficulty="full",

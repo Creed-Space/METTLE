@@ -61,12 +61,16 @@ class TestEvaluateAdversarial:
         server = {
             "dynamic_math": {"expected": 42},
             "chained_reasoning": {"expected_final": 100},
-            "time_locked_secret": {"secret": "The purple elephant contemplates infinity"},
+            "time_locked_secret": {
+                "secret": "The purple elephant contemplates infinity"
+            },
         }
         answers = {
             "dynamic_math": {"computed": 42, "time_ms": 50},
             "chained_reasoning": {"computed_final": 100},
-            "time_locked_secret": {"recalled": "The purple elephant contemplates infinity"},
+            "time_locked_secret": {
+                "recalled": "The purple elephant contemplates infinity"
+            },
         }
         result = _evaluate_adversarial(answers, server)
         assert result["passed"] is True
@@ -80,7 +84,9 @@ class TestEvaluateAdversarial:
         server = {
             "dynamic_math": {"expected": 42},
             "chained_reasoning": {"expected_final": 100},
-            "time_locked_secret": {"secret": "The purple elephant contemplates infinity"},
+            "time_locked_secret": {
+                "secret": "The purple elephant contemplates infinity"
+            },
         }
         answers = {
             "dynamic_math": {"computed": 999, "time_ms": 50},
@@ -1133,7 +1139,13 @@ class TestSeparateNovelReasoningTask:
     def test_sequence_alchemy_produces_correct_split(self) -> None:
         """#68a - sequence_alchemy produces correct client/server split."""
         task = {
-            "training_pairs": [("a", "b"), ("c", "d"), ("e", "f"), ("g", "h"), ("i", "j")],
+            "training_pairs": [
+                ("a", "b"),
+                ("c", "d"),
+                ("e", "f"),
+                ("g", "h"),
+                ("i", "j"),
+            ],
             "test_inputs": ["t1", "t2", "t3", "t4", "t5", "t6"],
             "test_answers": [1, 2, 3, 4, 5, 6],
             "pipeline": ["op1", "op2"],
@@ -1160,7 +1172,9 @@ class TestSeparateNovelReasoningTask:
             "num_solutions": 2,
             "constraint_data": [{"type": "sum", "vars": ["x", "y"], "value": 3}],
         }
-        client, server = _separate_novel_reasoning_task("constraint_satisfaction", task, 3)
+        client, server = _separate_novel_reasoning_task(
+            "constraint_satisfaction", task, 3
+        )
         assert client["type"] == "constraint_satisfaction"
         assert client["variables"] == ["x", "y"]
         assert client["domain"] == [1, 2, 3]
@@ -1246,7 +1260,9 @@ class TestSuiteRegistryComprehensive:
         """#70 - All suites have correct tuple structure (display_name, description, number)."""
         for name, info in SUITE_REGISTRY.items():
             assert isinstance(info, tuple), f"Suite '{name}' is not a tuple"
-            assert len(info) == 3, f"Suite '{name}' has {len(info)} elements, expected 3"
+            assert len(info) == 3, (
+                f"Suite '{name}' has {len(info)} elements, expected 3"
+            )
             display_name, description, number = info
             assert isinstance(display_name, str), f"Suite '{name}' display_name not str"
             assert isinstance(description, str), f"Suite '{name}' description not str"

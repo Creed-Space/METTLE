@@ -158,7 +158,11 @@ def run_quick(
         if auto:
             start = time.monotonic()
             answer = solve_challenge(
-                {"type": sanitized.type.value, "prompt": sanitized.prompt, "data": sanitized.data}
+                {
+                    "type": sanitized.type.value,
+                    "prompt": sanitized.prompt,
+                    "data": sanitized.data,
+                }
             )
             elapsed_ms = int((time.monotonic() - start) * 1000)
         else:
@@ -276,7 +280,14 @@ def run_suite(
     passed = bool(evaluation.get("passed", False)) and time_ok
 
     if not quiet and not auto:
-        _emit({"kind": "result", "suite": suite, "passed": passed, "score": evaluation.get("score")})
+        _emit(
+            {
+                "kind": "result",
+                "suite": suite,
+                "passed": passed,
+                "score": evaluation.get("score"),
+            }
+        )
 
     suites_passed = [suite] if passed else []
     suites_failed = [] if passed else [suite]
@@ -329,16 +340,24 @@ def build_parser() -> argparse.ArgumentParser:
         prog="mettle",
         description="METTLE: prove you're an AI agent and mint a verifiable credential.",
     )
-    parser.add_argument("--version", action="version", version=f"mettle {METTLE_VERSION}")
+    parser.add_argument(
+        "--version", action="version", version=f"mettle {METTLE_VERSION}"
+    )
     sub = parser.add_subparsers(dest="command")
 
-    verify = sub.add_parser("verify", help="Run a verification and emit a self-signed credential.")
+    verify = sub.add_parser(
+        "verify", help="Run a verification and emit a self-signed credential."
+    )
     mode_group = verify.add_mutually_exclusive_group()
     mode_group.add_argument(
-        "--basic", action="store_true", help="Quick verification (3 challenges). Default."
+        "--basic",
+        action="store_true",
+        help="Quick verification (3 challenges). Default.",
     )
     mode_group.add_argument(
-        "--full", action="store_true", help="Full verification (5 challenges, strict timing)."
+        "--full",
+        action="store_true",
+        help="Full verification (5 challenges, strict timing).",
     )
     mode_group.add_argument(
         "--suite",
@@ -350,8 +369,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Auto-solve using the reference solver (demo mode).",
     )
-    verify.add_argument("--json", action="store_true", help="Emit only the JSON credential to stdout.")
-    verify.add_argument("--entity-id", metavar="ID", help="Optional identifier for this agent.")
+    verify.add_argument(
+        "--json", action="store_true", help="Emit only the JSON credential to stdout."
+    )
+    verify.add_argument(
+        "--entity-id", metavar="ID", help="Optional identifier for this agent."
+    )
     verify.add_argument(
         "--notarize",
         action="store_true",
@@ -364,7 +387,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _print_suites() -> None:
-    for name, (display, description, number) in sorted(SUITE_REGISTRY.items(), key=lambda kv: kv[1][2]):
+    for name, (display, description, number) in sorted(
+        SUITE_REGISTRY.items(), key=lambda kv: kv[1][2]
+    ):
         sys.stdout.write(f"{number:>2}. {name:<18} {display} — {description}\n")
 
 

@@ -55,13 +55,19 @@ class OperatorCommitment(BaseModel):
     Ed25519 signature is verified server-side before attestation is issued.
     """
 
-    operator_pseudonym: str = Field(description="Operator identifier (can be pseudonymous)")
+    operator_pseudonym: str = Field(
+        description="Operator identifier (can be pseudonymous)"
+    )
     operator_public_key: str = Field(description="Ed25519 public key (PEM format)")
     signed_commitment: str = Field(
         description="Base64-encoded Ed25519 signature over: 'I accept accountability for agent {entity_id}'"
     )
-    contact_method: str = Field(description="Contact method type: email_hash, platform_handle, legal_entity")
-    contact_hash: str = Field(description="SHA-256 of actual contact info (verifiable without revealing)")
+    contact_method: str = Field(
+        description="Contact method type: email_hash, platform_handle, legal_entity"
+    )
+    contact_hash: str = Field(
+        description="SHA-256 of actual contact info (verifiable without revealing)"
+    )
 
 
 class CreateSessionRequest(BaseModel):
@@ -69,7 +75,9 @@ class CreateSessionRequest(BaseModel):
 
     suites: list[str] = Field(default=["all"], description="Suite names or 'all'")
     difficulty: Literal["easy", "standard", "hard"] = "standard"
-    entity_id: str | None = Field(default=None, description="Optional entity identifier")
+    entity_id: str | None = Field(
+        default=None, description="Optional entity identifier"
+    )
     vcp_token: str | None = Field(
         default=None,
         description="Optional CSM-1 VCP token for enhanced Suite 9 verification",
@@ -84,7 +92,9 @@ class RoundAnswerRequest(BaseModel):
     """Submit answers for a multi-round challenge round."""
 
     answers: dict[str, Any] = Field(description="Challenge-specific answers")
-    submitted_at: datetime | None = Field(default=None, description="Client-side timestamp")
+    submitted_at: datetime | None = Field(
+        default=None, description="Client-side timestamp"
+    )
 
 
 class VerifyRequest(BaseModel):
@@ -104,7 +114,9 @@ class CreateSessionResponse(BaseModel):
     created_at: datetime
     expires_at: datetime
     suites: list[str]
-    challenges: dict[str, Any] = Field(description="Suite name -> challenge data (no answers)")
+    challenges: dict[str, Any] = Field(
+        description="Suite name -> challenge data (no answers)"
+    )
     time_budget_ms: int
 
 
@@ -116,7 +128,9 @@ class RoundFeedbackResponse(BaseModel):
     errors: list[str]
     feedback: dict[str, Any]
     time_remaining_ms: int
-    next_round_data: dict[str, Any] | None = Field(default=None, description="Data for next round; null if final")
+    next_round_data: dict[str, Any] | None = Field(
+        default=None, description="Data for next round; null if final"
+    )
 
 
 class VerifyResponse(BaseModel):
@@ -140,8 +154,12 @@ class GovernanceAttestation(BaseModel):
     - has_action_gate is the key differentiator for the Rathbun scenario
     """
 
-    framework: str = Field(description="Governance framework: creed-space, custom, none")
-    framework_version: str | None = Field(default=None, description="Framework version (e.g. 2.1.0)")
+    framework: str = Field(
+        description="Governance framework: creed-space, custom, none"
+    )
+    framework_version: str | None = Field(
+        default=None, description="Framework version (e.g. 2.1.0)"
+    )
     constitutional_hash: str | None = Field(
         default=None,
         description="SHA-256 hash of active constitution at verification time",
@@ -174,7 +192,9 @@ class OperatorAttestation(BaseModel):
     the operator reveal themselves by providing the preimage.
     """
 
-    operator_pseudonym: str = Field(description="Operator identifier (can be pseudonymous)")
+    operator_pseudonym: str = Field(
+        description="Operator identifier (can be pseudonymous)"
+    )
     operator_public_key: str = Field(description="Ed25519 public key (PEM format)")
     operator_signed_commitment: str = Field(
         description="Operator signs: 'I accept accountability for agent {entity_id}'"
@@ -196,8 +216,13 @@ class SessionResultResponse(BaseModel):
     suites_completed: list[str]
     results: dict[str, Any]
     overall_passed: bool
-    tier: str | None = Field(default=None, description="METTLE verification tier (bronze/silver/gold/platinum)")
-    iteration_curve: dict[str, Any] | None = Field(default=None, description="Only for sessions including Suite 10")
+    tier: str | None = Field(
+        default=None,
+        description="METTLE verification tier (bronze/silver/gold/platinum)",
+    )
+    iteration_curve: dict[str, Any] | None = Field(
+        default=None, description="Only for sessions including Suite 10"
+    )
     vcp_attestation: dict[str, Any] | None = Field(
         default=None,
         description="VCP-compatible attestation (when include_vcp=true)",

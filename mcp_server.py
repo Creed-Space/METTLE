@@ -39,7 +39,9 @@ http_client = httpx.AsyncClient(timeout=30.0)
 # === Helper Functions ===
 
 
-async def api_call(endpoint: str, method: str = "GET", json: dict | None = None) -> dict:
+async def api_call(
+    endpoint: str, method: str = "GET", json: dict | None = None
+) -> dict:
     """Make an API call to METTLE."""
     url = f"{API_URL}{endpoint}"
 
@@ -184,7 +186,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 )
             ]
         except httpx.HTTPStatusError as e:
-            return [TextContent(type="text", text=f"Error starting session: {e.response.text}")]
+            return [
+                TextContent(
+                    type="text", text=f"Error starting session: {e.response.text}"
+                )
+            ]
         except Exception as e:
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
@@ -226,7 +232,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
             return [TextContent(type="text", text=response_text)]
         except httpx.HTTPStatusError as e:
-            return [TextContent(type="text", text=f"Error submitting answer: {e.response.text}")]
+            return [
+                TextContent(
+                    type="text", text=f"Error submitting answer: {e.response.text}"
+                )
+            ]
         except Exception as e:
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
@@ -252,13 +262,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             response_text += "\nChallenge Results:\n"
             for r in data["results"]:
                 status = "PASS" if r["passed"] else "FAIL"
-                response_text += (
-                    f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
-                )
+                response_text += f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
 
             return [TextContent(type="text", text=response_text)]
         except httpx.HTTPStatusError as e:
-            return [TextContent(type="text", text=f"Error getting result: {e.response.text}")]
+            return [
+                TextContent(
+                    type="text", text=f"Error getting result: {e.response.text}"
+                )
+            ]
         except Exception as e:
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
@@ -314,13 +326,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             response_text += "\nChallenge Details:\n"
             for r in result["results"]:
                 status = "PASS" if r["passed"] else "FAIL"
-                response_text += (
-                    f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
-                )
+                response_text += f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
 
             return [TextContent(type="text", text=response_text)]
         except httpx.HTTPStatusError as e:
-            return [TextContent(type="text", text=f"Error in auto-verification: {e.response.text}")]
+            return [
+                TextContent(
+                    type="text", text=f"Error in auto-verification: {e.response.text}"
+                )
+            ]
         except Exception as e:
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
@@ -331,7 +345,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 async def main():  # pragma: no cover
     """Run the MCP server."""
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        await server.run(
+            read_stream, write_stream, server.create_initialization_options()
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

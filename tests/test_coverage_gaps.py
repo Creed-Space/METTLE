@@ -74,12 +74,19 @@ class TestRateTierUsageTracking:
 
     def test_session_limit_resets_on_new_day(self):
         """Usage count resets when the date changes."""
-        api_keys["mtl_test"] = {"tier": "free", "usage_date": "2025-01-01", "usage_count": 99}
+        api_keys["mtl_test"] = {
+            "tier": "free",
+            "usage_date": "2025-01-01",
+            "usage_count": 99,
+        }
         allowed, msg = RateTier.check_limit("mtl_test", "session")
         assert allowed is True
         # Count was reset to 0, then incremented to 1
         assert api_keys["mtl_test"]["usage_count"] == 1
-        assert api_keys["mtl_test"]["usage_date"] == datetime.now(timezone.utc).date().isoformat()
+        assert (
+            api_keys["mtl_test"]["usage_date"]
+            == datetime.now(timezone.utc).date().isoformat()
+        )
 
     def test_session_limit_reached(self):
         """Returns False when daily session limit is exhausted."""
@@ -117,7 +124,9 @@ class TestCollusionDetectorEdgeCases:
 
         # Fill the graph to capacity
         for i in range(MAX_VERIFICATION_GRAPH):
-            verification_graph[f"entity-{i}"] = [{"timestamp": time.time(), "ip_address": "1.1.1.1", "passed": True}]
+            verification_graph[f"entity-{i}"] = [
+                {"timestamp": time.time(), "ip_address": "1.1.1.1", "passed": True}
+            ]
 
         assert "entity-0" in verification_graph
 
@@ -152,7 +161,9 @@ class TestCollusionDetectorEdgeCases:
         mock_db = MagicMock()
         with patch("main.db", mock_db):
             CollusionDetector.record_verification("entity-1", "1.1.1.1", True)
-        mock_db.save_verification_record.assert_called_once_with("entity-1", "1.1.1.1", True)
+        mock_db.save_verification_record.assert_called_once_with(
+            "entity-1", "1.1.1.1", True
+        )
 
 
 # ============================================================
@@ -190,7 +201,10 @@ class TestHSTSProductionHeader:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.admin_api_key = ADMIN_KEY
             response = client.get("/api/health")
-        assert response.headers.get("Strict-Transport-Security") == "max-age=31536000; includeSubDomains"
+        assert (
+            response.headers.get("Strict-Transport-Security")
+            == "max-age=31536000; includeSubDomains"
+        )
 
 
 # ============================================================
@@ -253,9 +267,11 @@ class TestLifespan:
             mock_settings.environment = "production"
             mock_settings.api_version = "0.2.0"
 
-            with patch("main.db", None), patch(
-                "mettle.signing.init_signing", return_value=False
-            ), pytest.raises(RuntimeError, match="signing is unavailable"):
+            with (
+                patch("main.db", None),
+                patch("mettle.signing.init_signing", return_value=False),
+                pytest.raises(RuntimeError, match="signing is unavailable"),
+            ):
                 async with lifespan(mock_app):
                     pass
 
@@ -273,8 +289,9 @@ class TestLifespan:
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
 
-            with patch("main.db", mock_db), pytest.raises(
-                RuntimeError, match="Database initialization failed"
+            with (
+                patch("main.db", mock_db),
+                pytest.raises(RuntimeError, match="Database initialization failed"),
             ):
                 async with lifespan(mock_app):
                     pass
@@ -361,7 +378,9 @@ class TestBatchStartFailure:
     def test_batch_start_with_failing_entity(self, client):
         """Failed entity in batch is counted and error reported."""
         RateTier.register_key("batch-fail-key", "pro", "batch-owner")
-        with patch("main.generate_challenge_set", side_effect=Exception("Test failure")):
+        with patch(
+            "main.generate_challenge_set", side_effect=Exception("Test failure")
+        ):
             response = client.post(
                 "/api/session/batch",
                 json={
@@ -430,7 +449,10 @@ class TestBadgeRevokeSigningNotConfigured:
             mock_settings.is_production = False
             response = client.post(
                 "/api/badge/revoke",
-                json={"token": "any-token", "reason": "Test revocation reason for testing purposes"},
+                json={
+                    "token": "any-token",
+                    "reason": "Test revocation reason for testing purposes",
+                },
                 headers=ADMIN_HEADERS,
             )
         assert response.status_code == 400
@@ -475,7 +497,10 @@ class TestRevocationAuditOverflow:
 
         response = client.post(
             "/api/badge/revoke",
-            json={"token": token, "reason": "Test revocation reason for testing purposes"},
+            json={
+                "token": token,
+                "reason": "Test revocation reason for testing purposes",
+            },
             headers=ADMIN_HEADERS,
         )
         assert response.status_code == 200
@@ -563,7 +588,13 @@ class TestWebhookDNSErrors:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         invalid_addrinfo = [
-            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("not-an-ip", 443))
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("not-an-ip", 443),
+            )
         ]
         with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
             with patch("ipaddress.ip_address", side_effect=ValueError("Invalid IP")):
@@ -737,7 +768,9 @@ class TestLifespanSigningInit:
                     original_import = __import__
 
                     def patched_import(name, *args, **kwargs):
-                        if name == "mettle.signing" and "init_signing" in str(kwargs.get("fromlist", [])):
+                        if name == "mettle.signing" and "init_signing" in str(
+                            kwargs.get("fromlist", [])
+                        ):
                             raise ImportError("No signing module")
                         return original_import(name, *args, **kwargs)
 

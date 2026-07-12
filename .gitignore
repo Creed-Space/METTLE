@@ -43,7 +43,6 @@ mettle.db
 # Node / Frontend
 node_modules/
 .svelte-kit/
-package-lock.json
 
 # OS
 .DS_Store

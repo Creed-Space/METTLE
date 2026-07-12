@@ -56,7 +56,9 @@ class TestInitSigning:
         )
 
         key = Ed25519PrivateKey.generate()
-        pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()).decode()
+        pem = key.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        ).decode()
         monkeypatch.setenv("METTLE_VCP_SIGNING_KEY", pem)
 
         # Patch settings to return empty so env var path is used
@@ -73,7 +75,9 @@ class TestInitSigning:
         monkeypatch.setenv("METTLE_VCP_SIGNING_KEY", "not-a-valid-pem-key")
 
         # Patch settings to return the invalid key (settings is imported inside init_signing)
-        mock_settings = type("MockSettings", (), {"vcp_signing_key": "not-a-valid-pem-key"})()
+        mock_settings = type(
+            "MockSettings", (), {"vcp_signing_key": "not-a-valid-pem-key"}
+        )()
         with patch("mettle.app_config.settings", mock_settings):
             result = signing.init_signing()
 
@@ -107,7 +111,9 @@ class TestInitSigning:
         )
 
         key = Ed25519PrivateKey.generate()
-        pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()).decode()
+        pem = key.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        ).decode()
 
         mock_settings = type("MockSettings", (), {"vcp_signing_key": pem})()
         with patch("mettle.app_config.settings", mock_settings):

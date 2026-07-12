@@ -189,7 +189,9 @@ class TestAuthEnforcement:
     The auth module also returns 401 when credentials are provided but invalid.
     """
 
-    def test_list_suites_requires_auth(self, unauthenticated_client: TestClient) -> None:
+    def test_list_suites_requires_auth(
+        self, unauthenticated_client: TestClient
+    ) -> None:
         resp = unauthenticated_client.get("/api/mettle/suites")
         assert resp.status_code in (401, 403)
 
@@ -197,18 +199,24 @@ class TestAuthEnforcement:
         resp = unauthenticated_client.get("/api/mettle/suites/adversarial")
         assert resp.status_code in (401, 403)
 
-    def test_create_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
+    def test_create_session_requires_auth(
+        self, unauthenticated_client: TestClient
+    ) -> None:
         resp = unauthenticated_client.post(
             "/api/mettle/sessions",
             json={"suites": ["adversarial"]},
         )
         assert resp.status_code in (401, 403)
 
-    def test_get_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
+    def test_get_session_requires_auth(
+        self, unauthenticated_client: TestClient
+    ) -> None:
         resp = unauthenticated_client.get("/api/mettle/sessions/some-id")
         assert resp.status_code in (401, 403)
 
-    def test_cancel_session_requires_auth(self, unauthenticated_client: TestClient) -> None:
+    def test_cancel_session_requires_auth(
+        self, unauthenticated_client: TestClient
+    ) -> None:
         resp = unauthenticated_client.delete("/api/mettle/sessions/some-id")
         assert resp.status_code in (401, 403)
 
@@ -219,7 +227,9 @@ class TestAuthEnforcement:
         )
         assert resp.status_code in (401, 403)
 
-    def test_submit_round_requires_auth(self, unauthenticated_client: TestClient) -> None:
+    def test_submit_round_requires_auth(
+        self, unauthenticated_client: TestClient
+    ) -> None:
         resp = unauthenticated_client.post(
             "/api/mettle/sessions/some-id/rounds/1/answer",
             json={"answers": {}},
@@ -237,7 +247,9 @@ class TestAuthEnforcement:
 class TestOwnershipEnforcement:
     """Verify endpoints return 403 when accessed by wrong user."""
 
-    def test_get_session_wrong_owner(self, client: TestClient, wrong_user_client: TestClient) -> None:
+    def test_get_session_wrong_owner(
+        self, client: TestClient, wrong_user_client: TestClient
+    ) -> None:
         # Create as correct user
         resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
@@ -246,14 +258,20 @@ class TestOwnershipEnforcement:
         resp = wrong_user_client.get(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 403
 
-    def test_cancel_session_wrong_owner(self, client: TestClient, wrong_user_client: TestClient) -> None:
+    def test_cancel_session_wrong_owner(
+        self, client: TestClient, wrong_user_client: TestClient
+    ) -> None:
         resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
 
         resp = wrong_user_client.delete(f"/api/mettle/sessions/{session_id}")
-        assert resp.status_code == 404  # cancel returns 404 for wrong user (security: don't reveal existence)
+        assert (
+            resp.status_code == 404
+        )  # cancel returns 404 for wrong user (security: don't reveal existence)
 
-    def test_verify_wrong_owner(self, client: TestClient, wrong_user_client: TestClient) -> None:
+    def test_verify_wrong_owner(
+        self, client: TestClient, wrong_user_client: TestClient
+    ) -> None:
         resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
 
@@ -263,7 +281,9 @@ class TestOwnershipEnforcement:
         )
         assert resp.status_code == 403
 
-    def test_get_result_wrong_owner(self, client: TestClient, wrong_user_client: TestClient) -> None:
+    def test_get_result_wrong_owner(
+        self, client: TestClient, wrong_user_client: TestClient
+    ) -> None:
         resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         session_id = resp.json()["session_id"]
 
@@ -295,7 +315,10 @@ class TestFullSessionLifecycle:
         # 3. Verify
         resp = client.post(
             f"/api/mettle/sessions/{session_id}/verify",
-            json={"suite": "adversarial", "answers": {"dynamic_math": {"computed": 0, "time_ms": 50}}},
+            json={
+                "suite": "adversarial",
+                "answers": {"dynamic_math": {"computed": 0, "time_ms": 50}},
+            },
         )
         assert resp.status_code == 200
 
@@ -377,7 +400,9 @@ class TestCorrectAnswerVerification:
 
         # We can't inject these answers into the session (the session generated its own),
         # but we CAN verify the evaluation logic directly
-        result = ChallengeAdapter.evaluate_single_shot("adversarial", correct_answers, server_answers)
+        result = ChallengeAdapter.evaluate_single_shot(
+            "adversarial", correct_answers, server_answers
+        )
         assert result["passed"] is True
         assert result["score"] == 1.0
 
@@ -395,7 +420,9 @@ class TestCorrectAnswerVerification:
             },
         }
 
-        result = ChallengeAdapter.evaluate_single_shot("native", correct_answers, server_answers)
+        result = ChallengeAdapter.evaluate_single_shot(
+            "native", correct_answers, server_answers
+        )
         assert result["passed"] is True
         assert result["score"] == 1.0
 
@@ -492,7 +519,9 @@ class TestAllSuitesSmoke:
     def test_each_single_shot_suite_verifiable(self, client: TestClient) -> None:
         """Each single-shot suite can create + verify independently."""
         # Exclude novel-reasoning (multi-round) and llm-dynamic (needs API key)
-        single_shot = [s for s in SUITE_NAMES if s not in ("novel-reasoning", "llm-dynamic")]
+        single_shot = [
+            s for s in SUITE_NAMES if s not in ("novel-reasoning", "llm-dynamic")
+        ]
         for suite_name in single_shot:
             resp = client.post("/api/mettle/sessions", json={"suites": [suite_name]})
             assert resp.status_code == 201, f"Failed to create session for {suite_name}"

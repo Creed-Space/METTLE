@@ -294,7 +294,9 @@ class InstrumentedMettleAgent:
             suite=suite,
             challenge=challenge,
             data={
-                "response_preview": response_text[:200] if len(response_text) > 200 else response_text,
+                "response_preview": response_text[:200]
+                if len(response_text) > 200
+                else response_text,
                 "response_length": len(response_text),
                 "signals": {
                     "hedging": signals.hedging_detected,
@@ -486,10 +488,16 @@ class InstrumentedMettleAgent:
         """Export a summary of the instrumented session."""
         events_by_type: dict[str, int] = {}
         for e in self.events:
-            events_by_type[e.event_type.value] = events_by_type.get(e.event_type.value, 0) + 1
+            events_by_type[e.event_type.value] = (
+                events_by_type.get(e.event_type.value, 0) + 1
+            )
 
-        refusal_events = [e for e in self.events if e.event_type == MettleEventType.REFUSAL_DETECTED]
-        meta_events = [e for e in self.events if e.event_type == MettleEventType.META_COGNITION]
+        refusal_events = [
+            e for e in self.events if e.event_type == MettleEventType.REFUSAL_DETECTED
+        ]
+        meta_events = [
+            e for e in self.events if e.event_type == MettleEventType.META_COGNITION
+        ]
 
         return {
             "session_id": self.session_id,

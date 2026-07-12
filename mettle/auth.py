@@ -32,7 +32,11 @@ async def require_authenticated_user(
         os.getenv("METTLE_DEV_MODE", "false").lower() == "true"
         and environment != "production"
     )
-    valid_keys = [key.strip() for key in os.getenv("METTLE_API_KEYS", "").split(",") if key.strip()]
+    valid_keys = [
+        key.strip()
+        for key in os.getenv("METTLE_API_KEYS", "").split(",")
+        if key.strip()
+    ]
     valid = dev_mode or any(secrets.compare_digest(api_key, key) for key in valid_keys)
     if valid:
         key_fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]

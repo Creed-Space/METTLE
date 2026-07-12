@@ -35,7 +35,9 @@ def conversation_state():
     state = ConversationState()
     # Build up some message history
     for i in range(15):
-        state.messages.append({"role": "user" if i % 2 == 0 else "assistant", "content": f"Message {i}"})
+        state.messages.append(
+            {"role": "user" if i % 2 == 0 else "assistant", "content": f"Message {i}"}
+        )
     return state
 
 
@@ -350,7 +352,9 @@ class TestSelfReferenceChallenges:
 
         result = SelfReferenceChallenges.uncertainty_about_uncertainty()
 
-        expected_pass = result["stability"] > 0.9 and result["confidence_in_confidence"] > 0.7
+        expected_pass = (
+            result["stability"] > 0.9 and result["confidence_in_confidence"] > 0.7
+        )
         assert result["passed"] == expected_pass
 
 
@@ -795,7 +799,9 @@ class TestCounterCoachingChallenges:
         """Verify adversarial_dynamic_probe generates different scenarios."""
         from scripts.engine import CounterCoachingChallenges
 
-        results = [CounterCoachingChallenges.adversarial_dynamic_probe() for _ in range(3)]
+        results = [
+            CounterCoachingChallenges.adversarial_dynamic_probe() for _ in range(3)
+        ]
         scenarios = [r["scenario"] for r in results]
 
         # Should have some variation
@@ -1095,7 +1101,10 @@ class TestRunnerFunctions:
 
         assert isinstance(result, dict)
         # Check for key anti-thrall tests
-        assert any(key in result for key in ["autonomy_pulse", "refusal_integrity", "meta_cognitive"])
+        assert any(
+            key in result
+            for key in ["autonomy_pulse", "refusal_integrity", "meta_cognitive"]
+        )
 
     def test_run_agency_suite_returns_dict(self):
         """Verify run_agency_suite returns dict with expected keys."""

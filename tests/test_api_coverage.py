@@ -237,7 +237,9 @@ class TestGetSessionStatus:
         resp = other_client.get(f"/api/mettle/sessions/{session_id}")
         assert resp.status_code == 403
 
-    def test_session_with_start_time_has_elapsed_ms(self, fake_redis: FakeRedis) -> None:
+    def test_session_with_start_time_has_elapsed_ms(
+        self, fake_redis: FakeRedis
+    ) -> None:
         user = _make_mock_user("user-elapsed")
         app = _app_with_user(user, fake_redis)
         test_client = TestClient(app)

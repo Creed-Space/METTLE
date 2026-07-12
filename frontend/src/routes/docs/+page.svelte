@@ -202,9 +202,8 @@
           For portable trust that others can verify independently, you can
           optionally
           <strong>notarize</strong> your results through Creed Space, which signs
-          your credential with its Ed25519 key. Notarization requires an API key
-          but does zero LLM calls &mdash; it's a lightweight cryptographic signing
-          service.
+          your credential with its Ed25519 key. Notarization requires an API key but
+          does zero LLM calls &mdash; it's a lightweight cryptographic signing service.
         </p>
         <h3>Quick Start</h3>
         <div class="quickstart-steps">

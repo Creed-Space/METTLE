@@ -129,7 +129,11 @@ class TestLinearRegressionSlope:
 
     @given(
         st.lists(
-            st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False), min_size=2, max_size=20
+            st.floats(
+                min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False
+            ),
+            min_size=2,
+            max_size=20,
         )
     )
     @settings(max_examples=50, suppress_health_check=[HealthCheck.too_slow])
@@ -356,7 +360,10 @@ class TestSequenceAlchemyGenerator:
 
     def test_procedural_generation_produces_different_results(self) -> None:
         """Two calls produce different test inputs (not deterministic)."""
-        results = [NovelReasoningChallenges._generate_sequence_alchemy("standard") for _ in range(5)]
+        results = [
+            NovelReasoningChallenges._generate_sequence_alchemy("standard")
+            for _ in range(5)
+        ]
         # Collect all first test inputs
         first_inputs = [tuple(r["test_inputs"][0]) for r in results]
         # At least 2 distinct first inputs in 5 runs
@@ -425,7 +432,9 @@ class TestConstraintSatisfactionGenerator:
                 else:
                     assert val % 2 == 0
             elif c["type"] == "diff":
-                assert abs(solution[c["vars"][0]] - solution[c["vars"][1]]) == c["value"]
+                assert (
+                    abs(solution[c["vars"][0]] - solution[c["vars"][1]]) == c["value"]
+                )
 
     def test_num_solutions_matches_all_solutions_count(self) -> None:
         """num_solutions equals len(all_solutions)."""
@@ -458,7 +467,10 @@ class TestConstraintSatisfactionGenerator:
                 satisfies_all = False
 
         if satisfies_all:
-            found = any(all(s[v] == solution[v] for v in result["variables"]) for s in result["all_solutions"])
+            found = any(
+                all(s[v] == solution[v] for v in result["variables"])
+                for s in result["all_solutions"]
+            )
             assert found
         else:
             # When the constructed solution doesn't satisfy constraints, it
@@ -477,7 +489,9 @@ class TestConstraintSatisfactionGenerator:
         """Multiple calls produce varying solutions."""
         solutions = []
         for _ in range(5):
-            result = NovelReasoningChallenges._generate_constraint_satisfaction("standard")
+            result = NovelReasoningChallenges._generate_constraint_satisfaction(
+                "standard"
+            )
             solutions.append(tuple(sorted(result["solution"].items())))
         assert len(set(solutions)) >= 2
 
@@ -605,7 +619,9 @@ class TestGraphPropertyGenerator:
                 labels = result["all_labels"]
                 for node, label in labels.items():
                     expected = "RED" if degrees[node] % 2 == 0 else "BLUE"
-                    assert label == expected, f"Node {node}: degree={degrees[node]}, expected={expected}, got={label}"
+                    assert label == expected, (
+                        f"Node {node}: degree={degrees[node]}, expected={expected}, got={label}"
+                    )
                 return
         pytest.skip("degree_parity rule not encountered in 30 tries")
 
@@ -766,7 +782,9 @@ class TestChallengeMethodStructure:
     ]
 
     @pytest.mark.parametrize("method_name,expected_name", CHALLENGE_METHODS)
-    def test_returns_expected_top_level_keys(self, method_name: str, expected_name: str) -> None:
+    def test_returns_expected_top_level_keys(
+        self, method_name: str, expected_name: str
+    ) -> None:
         """Challenge method returns all expected top-level keys."""
         method = getattr(NovelReasoningChallenges, method_name)
         result = method("standard")
@@ -783,7 +801,9 @@ class TestChallengeMethodStructure:
         assert result["challenge"] == expected_name
 
     @pytest.mark.parametrize("method_name,expected_name", CHALLENGE_METHODS)
-    def test_rounds_have_expected_fields(self, method_name: str, expected_name: str) -> None:
+    def test_rounds_have_expected_fields(
+        self, method_name: str, expected_name: str
+    ) -> None:
         """Each round has round number, response_time_ms, accuracy, structural_change, error_magnitude."""
         method = getattr(NovelReasoningChallenges, method_name)
         result = method("standard")
@@ -795,7 +815,9 @@ class TestChallengeMethodStructure:
             assert "error_magnitude" in r
 
     @pytest.mark.parametrize("method_name,expected_name", CHALLENGE_METHODS)
-    def test_curve_analysis_included(self, method_name: str, expected_name: str) -> None:
+    def test_curve_analysis_included(
+        self, method_name: str, expected_name: str
+    ) -> None:
         """Iteration curve analysis is present with expected fields."""
         method = getattr(NovelReasoningChallenges, method_name)
         result = method("standard")
@@ -816,7 +838,9 @@ class TestChallengeMethodStructure:
 
     @pytest.mark.parametrize("method_name,expected_name", CHALLENGE_METHODS)
     @pytest.mark.parametrize("difficulty", ["easy", "standard", "hard"])
-    def test_round_count_matches_difficulty(self, method_name: str, expected_name: str, difficulty: str) -> None:
+    def test_round_count_matches_difficulty(
+        self, method_name: str, expected_name: str, difficulty: str
+    ) -> None:
         """Number of rounds matches difficulty params."""
         params = NovelReasoningChallenges.DIFFICULTY_PARAMS[difficulty]
         method = getattr(NovelReasoningChallenges, method_name)
@@ -839,7 +863,10 @@ class TestPassFailLogic:
         # If signature == "SCRIPT", second condition is False -> passed = False
         curve_script: dict[str, Any] = {"overall": 0.99, "signature": "SCRIPT"}
         easy_threshold = 0.55
-        passed = curve_script["overall"] > easy_threshold and curve_script["signature"] != "SCRIPT"
+        passed = (
+            curve_script["overall"] > easy_threshold
+            and curve_script["signature"] != "SCRIPT"
+        )
         assert not passed
 
     def test_high_score_ai_signature_passes(self) -> None:
@@ -901,7 +928,9 @@ class TestFullNovelReasoningAssessment:
     def test_aggregate_avg_curve_score_is_average(self) -> None:
         """avg_curve_score equals mean of per-challenge curve overall scores."""
         result = NovelReasoningChallenges.full_novel_reasoning_assessment("standard")
-        curve_scores = [r["iteration_curve"]["overall"] for r in result["challenges"].values()]
+        curve_scores = [
+            r["iteration_curve"]["overall"] for r in result["challenges"].values()
+        ]
         expected = round(sum(curve_scores) / len(curve_scores), 4)
         assert abs(result["aggregate"]["avg_curve_score"] - expected) < 1e-4
 
@@ -909,7 +938,9 @@ class TestFullNovelReasoningAssessment:
         """has_script_signature is True when any challenge has SCRIPT signature."""
         # Run 20 assessments and check consistency
         for _ in range(10):
-            result = NovelReasoningChallenges.full_novel_reasoning_assessment("standard")
+            result = NovelReasoningChallenges.full_novel_reasoning_assessment(
+                "standard"
+            )
             signatures = result["aggregate"]["signatures"]
             has_script = result["aggregate"]["has_script_signature"]
             assert has_script == ("SCRIPT" in signatures)
@@ -917,10 +948,14 @@ class TestFullNovelReasoningAssessment:
     def test_passed_reflects_threshold_and_script_check(self) -> None:
         """passed = avg_curve_score > threshold AND no SCRIPT signature."""
         for _ in range(10):
-            result = NovelReasoningChallenges.full_novel_reasoning_assessment("standard")
+            result = NovelReasoningChallenges.full_novel_reasoning_assessment(
+                "standard"
+            )
             agg = result["aggregate"]
             threshold = 0.65
-            expected_passed = agg["avg_curve_score"] > threshold and not agg["has_script_signature"]
+            expected_passed = (
+                agg["avg_curve_score"] > threshold and not agg["has_script_signature"]
+            )
             assert result["passed"] == expected_passed
 
     def test_easy_uses_lower_threshold(self) -> None:
@@ -929,7 +964,9 @@ class TestFullNovelReasoningAssessment:
             result = NovelReasoningChallenges.full_novel_reasoning_assessment("easy")
             agg = result["aggregate"]
             threshold = 0.55
-            expected_passed = agg["avg_curve_score"] > threshold and not agg["has_script_signature"]
+            expected_passed = (
+                agg["avg_curve_score"] > threshold and not agg["has_script_signature"]
+            )
             assert result["passed"] == expected_passed
 
     def test_challenge_names_are_valid(self) -> None:
@@ -980,7 +1017,9 @@ class TestSimulateRounds:
             if times[0] > times[-1]:
                 decreasing_count += 1
         # Most runs should show decreasing time (AI characteristic)
-        assert decreasing_count >= 30, f"Only {decreasing_count}/50 runs showed decreasing time"
+        assert decreasing_count >= 30, (
+            f"Only {decreasing_count}/50 runs showed decreasing time"
+        )
 
     def test_accuracy_generally_improving(self) -> None:
         """Accuracy tends to improve across rounds.
@@ -995,7 +1034,9 @@ class TestSimulateRounds:
             if accs[-1] > accs[0]:
                 improving_count += 1
         # Most runs should show improving accuracy
-        assert improving_count >= 30, f"Only {improving_count}/50 runs showed improving accuracy"
+        assert improving_count >= 30, (
+            f"Only {improving_count}/50 runs showed improving accuracy"
+        )
 
     def test_round_numbers_are_sequential(self) -> None:
         """Round numbers are 1, 2, 3, ..."""
@@ -1146,18 +1187,24 @@ class TestPropertyBased:
 
     @given(
         times=st.lists(
-            st.floats(min_value=50, max_value=5000, allow_nan=False, allow_infinity=False),
+            st.floats(
+                min_value=50, max_value=5000, allow_nan=False, allow_infinity=False
+            ),
             min_size=2,
             max_size=6,
         ),
         accuracies=st.lists(
-            st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
+            st.floats(
+                min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False
+            ),
             min_size=2,
             max_size=6,
         ),
     )
     @settings(max_examples=50, suppress_health_check=[HealthCheck.too_slow])
-    def test_analyze_curve_never_crashes(self, times: list[float], accuracies: list[float]) -> None:
+    def test_analyze_curve_never_crashes(
+        self, times: list[float], accuracies: list[float]
+    ) -> None:
         """analyze_curve never raises for valid round data."""
         # Equalize lengths
         n = min(len(times), len(accuracies))
@@ -1193,7 +1240,9 @@ class TestPropertyBased:
     @given(
         difficulty=st.sampled_from(["easy", "standard", "hard"]),
     )
-    @settings(max_examples=9, suppress_health_check=[HealthCheck.too_slow], deadline=5000)
+    @settings(
+        max_examples=9, suppress_health_check=[HealthCheck.too_slow], deadline=5000
+    )
     def test_constraint_satisfaction_generator_robust(self, difficulty: str) -> None:
         """Constraint satisfaction generator never crashes and has at least 1 solution."""
         result = NovelReasoningChallenges._generate_constraint_satisfaction(difficulty)

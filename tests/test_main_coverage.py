@@ -256,7 +256,10 @@ class TestBadgeVerification:
         assert response.status_code == 200
         data = response.json()
         assert data["valid"] is False
-        assert "not configured" in data["error"].lower() or "signing key" in data["error"].lower()
+        assert (
+            "not configured" in data["error"].lower()
+            or "signing key" in data["error"].lower()
+        )
 
 
 # =============================================================================
@@ -389,7 +392,10 @@ class TestBadgeRevocationFull:
             )
 
         assert response.status_code == 400
-        assert "signing" in response.json()["detail"].lower() or "configured" in response.json()["detail"].lower()
+        assert (
+            "signing" in response.json()["detail"].lower()
+            or "configured" in response.json()["detail"].lower()
+        )
 
     def test_no_admin_key_configured_returns_503(self, client):
         """When admin_api_key is not set, revocation returns 503."""
@@ -433,7 +439,9 @@ class TestWebhookDelivery:
     @pytest.mark.asyncio
     async def test_entity_not_registered_returns_false(self):
         """send_webhook returns False for unregistered entity."""
-        result = await WebhookManager.send_webhook("unknown-entity", "session.completed", {})
+        result = await WebhookManager.send_webhook(
+            "unknown-entity", "session.completed", {}
+        )
         assert result is False
 
     @pytest.mark.asyncio
@@ -452,7 +460,9 @@ class TestWebhookDelivery:
     @pytest.mark.asyncio
     async def test_event_not_subscribed_returns_false(self):
         """send_webhook returns False when event not in subscribed list."""
-        WebhookManager.register("entity-1", "https://example.com/hook", ["session.started"])
+        WebhookManager.register(
+            "entity-1", "https://example.com/hook", ["session.started"]
+        )
         result = await WebhookManager.send_webhook("entity-1", "badge.issued", {})
         assert result is False
 
@@ -587,8 +597,7 @@ class TestWebhookDelivery:
         """
         WebhookManager.register("entity-1", "https://example.com/hook")
 
-        with patch("httpx.AsyncClient") as mock_client_cls, \
-             patch("main.logger"):
+        with patch("httpx.AsyncClient") as mock_client_cls, patch("main.logger"):
             mock_client = AsyncMock()
             mock_client.post.side_effect = Exception("Connection refused")
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -802,7 +811,9 @@ class TestCollusionDetectorMemoryBounds:
     def test_verification_graph_bounds_records_per_entity(self):
         """Records per entity should be bounded at 100."""
         for i in range(110):
-            CollusionDetector.record_verification("entity-big", f"10.0.0.{i % 256}", True)
+            CollusionDetector.record_verification(
+                "entity-big", f"10.0.0.{i % 256}", True
+            )
 
         assert len(verification_graph["entity-big"]) <= 100
 
@@ -1276,8 +1287,7 @@ class TestWebhookDNSFailure:
         mock_response = AsyncMock()
         mock_response.status_code = 200
 
-        with patch("httpx.AsyncClient") as mock_client_cls, \
-             patch("main.logger"):
+        with patch("httpx.AsyncClient") as mock_client_cls, patch("main.logger"):
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

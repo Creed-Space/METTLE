@@ -41,16 +41,20 @@ except ImportError:
 
         def list_tools(self):
             """Decorator that registers the list_tools handler."""
+
             def decorator(fn):
                 self._list_tools_fn = fn
                 return fn
+
             return decorator
 
         def call_tool(self):
             """Decorator that registers the call_tool handler."""
+
             def decorator(fn):
                 self._call_tool_fn = fn
                 return fn
+
             return decorator
 
     mcp_mock = MagicMock()
@@ -93,7 +97,9 @@ def _make_mock_response(json_data: dict, status_code: int = 200) -> MagicMock:
     return resp
 
 
-def _make_http_status_error(status_code: int = 400, text: str = "Bad Request") -> httpx.HTTPStatusError:
+def _make_http_status_error(
+    status_code: int = 400, text: str = "Bad Request"
+) -> httpx.HTTPStatusError:
     """Create a realistic HTTPStatusError."""
     request = httpx.Request("POST", "https://example.com")
     response = httpx.Response(status_code, request=request, text=text)
@@ -311,7 +317,12 @@ class TestListTools:
     async def test_list_tools_names(self) -> None:
         tools = await list_tools()
         names = {t.name for t in tools}
-        expected = {"mettle_start_session", "mettle_answer_challenge", "mettle_get_result", "mettle_auto_verify"}
+        expected = {
+            "mettle_start_session",
+            "mettle_answer_challenge",
+            "mettle_get_result",
+            "mettle_auto_verify",
+        }
         assert names == expected
 
 
@@ -325,17 +336,19 @@ class TestCallToolStartSession:
 
     @pytest.mark.asyncio
     async def test_start_session_success(self, mock_http) -> None:
-        mock_http.post.return_value = _make_mock_response({
-            "session_id": "sess-123",
-            "difficulty": "basic",
-            "total_challenges": 3,
-            "current_challenge": {
-                "id": "ch-1",
-                "type": "speed_math",
-                "prompt": "Calculate: 1 + 1",
-                "time_limit_ms": 5000,
-            },
-        })
+        mock_http.post.return_value = _make_mock_response(
+            {
+                "session_id": "sess-123",
+                "difficulty": "basic",
+                "total_challenges": 3,
+                "current_challenge": {
+                    "id": "ch-1",
+                    "type": "speed_math",
+                    "prompt": "Calculate: 1 + 1",
+                    "time_limit_ms": 5000,
+                },
+            }
+        )
         result = await call_tool("mettle_start_session", {"difficulty": "basic"})
         assert len(result) == 1
         text = result[0].text
@@ -345,7 +358,9 @@ class TestCallToolStartSession:
     @pytest.mark.asyncio
     async def test_start_session_http_error(self, mock_http) -> None:
         mock_http.post.return_value = _make_mock_response({})
-        mock_http.post.return_value.raise_for_status.side_effect = _make_http_status_error(429, "Rate limited")
+        mock_http.post.return_value.raise_for_status.side_effect = (
+            _make_http_status_error(429, "Rate limited")
+        )
         result = await call_tool("mettle_start_session", {})
         text = result[0].text
         assert "Error starting session" in text
@@ -369,86 +384,109 @@ class TestCallToolAnswerChallenge:
 
     @pytest.mark.asyncio
     async def test_answer_challenge_with_next(self, mock_http) -> None:
-        mock_http.post.return_value = _make_mock_response({
-            "result": {
-                "passed": True,
-                "response_time_ms": 50,
-                "time_limit_ms": 5000,
+        mock_http.post.return_value = _make_mock_response(
+            {
+                "result": {
+                    "passed": True,
+                    "response_time_ms": 50,
+                    "time_limit_ms": 5000,
+                },
+                "session_complete": False,
+                "challenges_remaining": 2,
+                "next_challenge": {
+                    "id": "ch-2",
+                    "type": "token_prediction",
+                    "prompt": "Complete: hello",
+                    "time_limit_ms": 5000,
+                },
+            }
+        )
+        result = await call_tool(
+            "mettle_answer_challenge",
+            {
+                "session_id": "sess-123",
+                "challenge_id": "ch-1",
+                "answer": "42",
             },
-            "session_complete": False,
-            "challenges_remaining": 2,
-            "next_challenge": {
-                "id": "ch-2",
-                "type": "token_prediction",
-                "prompt": "Complete: hello",
-                "time_limit_ms": 5000,
-            },
-        })
-        result = await call_tool("mettle_answer_challenge", {
-            "session_id": "sess-123",
-            "challenge_id": "ch-1",
-            "answer": "42",
-        })
+        )
         text = result[0].text
         assert "PASSED" in text
         assert "token_prediction" in text
 
     @pytest.mark.asyncio
     async def test_answer_challenge_session_complete(self, mock_http) -> None:
-        mock_http.post.return_value = _make_mock_response({
-            "result": {
-                "passed": True,
-                "response_time_ms": 30,
-                "time_limit_ms": 5000,
+        mock_http.post.return_value = _make_mock_response(
+            {
+                "result": {
+                    "passed": True,
+                    "response_time_ms": 30,
+                    "time_limit_ms": 5000,
+                },
+                "session_complete": True,
+            }
+        )
+        result = await call_tool(
+            "mettle_answer_challenge",
+            {
+                "session_id": "sess-123",
+                "challenge_id": "ch-3",
+                "answer": "4|4|4",
             },
-            "session_complete": True,
-        })
-        result = await call_tool("mettle_answer_challenge", {
-            "session_id": "sess-123",
-            "challenge_id": "ch-3",
-            "answer": "4|4|4",
-        })
+        )
         text = result[0].text
         assert "Session complete" in text
 
     @pytest.mark.asyncio
     async def test_answer_challenge_failed(self, mock_http) -> None:
-        mock_http.post.return_value = _make_mock_response({
-            "result": {
-                "passed": False,
-                "response_time_ms": 100,
-                "time_limit_ms": 50,
+        mock_http.post.return_value = _make_mock_response(
+            {
+                "result": {
+                    "passed": False,
+                    "response_time_ms": 100,
+                    "time_limit_ms": 50,
+                },
+                "session_complete": True,
+            }
+        )
+        result = await call_tool(
+            "mettle_answer_challenge",
+            {
+                "session_id": "sess-123",
+                "challenge_id": "ch-1",
+                "answer": "wrong",
             },
-            "session_complete": True,
-        })
-        result = await call_tool("mettle_answer_challenge", {
-            "session_id": "sess-123",
-            "challenge_id": "ch-1",
-            "answer": "wrong",
-        })
+        )
         text = result[0].text
         assert "FAILED" in text
 
     @pytest.mark.asyncio
     async def test_answer_challenge_http_error(self, mock_http) -> None:
         mock_http.post.return_value = _make_mock_response({})
-        mock_http.post.return_value.raise_for_status.side_effect = _make_http_status_error(400, "Invalid session")
-        result = await call_tool("mettle_answer_challenge", {
-            "session_id": "bad",
-            "challenge_id": "ch-1",
-            "answer": "x",
-        })
+        mock_http.post.return_value.raise_for_status.side_effect = (
+            _make_http_status_error(400, "Invalid session")
+        )
+        result = await call_tool(
+            "mettle_answer_challenge",
+            {
+                "session_id": "bad",
+                "challenge_id": "ch-1",
+                "answer": "x",
+            },
+        )
         text = result[0].text
         assert "Error submitting answer" in text
 
     @pytest.mark.asyncio
     async def test_answer_challenge_generic_error(self, mock_http) -> None:
         mock_http.post.side_effect = Exception("Timeout")
-        result = await call_tool("mettle_answer_challenge", {
-            "session_id": "s",
-            "challenge_id": "c",
-            "answer": "a",
-        })
+        result = await call_tool(
+            "mettle_answer_challenge",
+            {
+                "session_id": "s",
+                "challenge_id": "c",
+                "answer": "a",
+            },
+        )
         text = result[0].text
         assert "Error" in text
 
@@ -463,19 +501,36 @@ class TestCallToolGetResult:
 
     @pytest.mark.asyncio
     async def test_get_result_verified(self, mock_http) -> None:
-        mock_http.get.return_value = _make_mock_response({
-            "verified": True,
-            "passed": 3,
-            "total": 3,
-            "pass_rate": 1.0,
-            "badge": "mtl_badge_abc",
-            "entity_id": "agent-42",
-            "results": [
-                {"challenge_type": "speed_math", "passed": True, "response_time_ms": 50, "time_limit_ms": 5000},
-                {"challenge_type": "token_prediction", "passed": True, "response_time_ms": 30, "time_limit_ms": 5000},
-                {"challenge_type": "consistency", "passed": True, "response_time_ms": 80, "time_limit_ms": 15000},
-            ],
-        })
+        mock_http.get.return_value = _make_mock_response(
+            {
+                "verified": True,
+                "passed": 3,
+                "total": 3,
+                "pass_rate": 1.0,
+                "badge": "mtl_badge_abc",
+                "entity_id": "agent-42",
+                "results": [
+                    {
+                        "challenge_type": "speed_math",
+                        "passed": True,
+                        "response_time_ms": 50,
+                        "time_limit_ms": 5000,
+                    },
+                    {
+                        "challenge_type": "token_prediction",
+                        "passed": True,
+                        "response_time_ms": 30,
+                        "time_limit_ms": 5000,
+                    },
+                    {
+                        "challenge_type": "consistency",
+                        "passed": True,
+                        "response_time_ms": 80,
+                        "time_limit_ms": 15000,
+                    },
+                ],
+            }
+        )
         result = await call_tool("mettle_get_result", {"session_id": "sess-123"})
         text = result[0].text
         assert "VERIFIED" in text
@@ -485,17 +540,34 @@ class TestCallToolGetResult:
 
     @pytest.mark.asyncio
     async def test_get_result_not_verified(self, mock_http) -> None:
-        mock_http.get.return_value = _make_mock_response({
-            "verified": False,
-            "passed": 1,
-            "total": 3,
-            "pass_rate": 0.333,
-            "results": [
-                {"challenge_type": "speed_math", "passed": True, "response_time_ms": 50, "time_limit_ms": 5000},
-                {"challenge_type": "token_prediction", "passed": False, "response_time_ms": 6000, "time_limit_ms": 5000},
-                {"challenge_type": "consistency", "passed": False, "response_time_ms": 100, "time_limit_ms": 15000},
-            ],
-        })
+        mock_http.get.return_value = _make_mock_response(
+            {
+                "verified": False,
+                "passed": 1,
+                "total": 3,
+                "pass_rate": 0.333,
+                "results": [
+                    {
+                        "challenge_type": "speed_math",
+                        "passed": True,
+                        "response_time_ms": 50,
+                        "time_limit_ms": 5000,
+                    },
+                    {
+                        "challenge_type": "token_prediction",
+                        "passed": False,
+                        "response_time_ms": 6000,
+                        "time_limit_ms": 5000,
+                    },
+                    {
+                        "challenge_type": "consistency",
+                        "passed": False,
+                        "response_time_ms": 100,
+                        "time_limit_ms": 15000,
+                    },
+                ],
+            }
+        )
         result = await call_tool("mettle_get_result", {"session_id": "sess-fail"})
         text = result[0].text
         assert "NOT VERIFIED" in text
@@ -503,13 +575,15 @@ class TestCallToolGetResult:
 
     @pytest.mark.asyncio
     async def test_get_result_no_badge_no_entity(self, mock_http) -> None:
-        mock_http.get.return_value = _make_mock_response({
-            "verified": False,
-            "passed": 0,
-            "total": 3,
-            "pass_rate": 0.0,
-            "results": [],
-        })
+        mock_http.get.return_value = _make_mock_response(
+            {
+                "verified": False,
+                "passed": 0,
+                "total": 3,
+                "pass_rate": 0.0,
+                "results": [],
+            }
+        )
         result = await call_tool("mettle_get_result", {"session_id": "sess-x"})
         text = result[0].text
         assert "Badge" not in text
@@ -518,7 +592,9 @@ class TestCallToolGetResult:
     @pytest.mark.asyncio
     async def test_get_result_http_error(self, mock_http) -> None:
         resp = _make_mock_response({})
-        resp.raise_for_status.side_effect = _make_http_status_error(404, "Session not found")
+        resp.raise_for_status.side_effect = _make_http_status_error(
+            404, "Session not found"
+        )
         mock_http.get.return_value = resp
         result = await call_tool("mettle_get_result", {"session_id": "bad"})
         text = result[0].text
@@ -543,31 +619,42 @@ class TestCallToolAutoVerify:
     @pytest.mark.asyncio
     async def test_auto_verify_success(self, mock_http) -> None:
         # start_session response
-        start_resp = _make_mock_response({
-            "session_id": "sess-auto",
-            "current_challenge": {
-                "id": "ch-1",
-                "type": "speed_math",
-                "prompt": "Calculate: 100 + 200",
-                "data": {},
-            },
-        })
+        start_resp = _make_mock_response(
+            {
+                "session_id": "sess-auto",
+                "current_challenge": {
+                    "id": "ch-1",
+                    "type": "speed_math",
+                    "prompt": "Calculate: 100 + 200",
+                    "data": {},
+                },
+            }
+        )
         # answer response — session completes on first answer
-        answer_resp = _make_mock_response({
-            "result": {"passed": True},
-            "session_complete": True,
-        })
+        answer_resp = _make_mock_response(
+            {
+                "result": {"passed": True},
+                "session_complete": True,
+            }
+        )
         # result response
-        result_resp = _make_mock_response({
-            "verified": True,
-            "passed": 1,
-            "total": 1,
-            "pass_rate": 1.0,
-            "badge": "mtl_auto_badge",
-            "results": [
-                {"challenge_type": "speed_math", "passed": True, "response_time_ms": 10, "time_limit_ms": 5000},
-            ],
-        })
+        result_resp = _make_mock_response(
+            {
+                "verified": True,
+                "passed": 1,
+                "total": 1,
+                "pass_rate": 1.0,
+                "badge": "mtl_auto_badge",
+                "results": [
+                    {
+                        "challenge_type": "speed_math",
+                        "passed": True,
+                        "response_time_ms": 10,
+                        "time_limit_ms": 5000,
+                    },
+                ],
+            }
+        )
 
         # Order matters: first call is POST (start), second is POST (answer), third is GET (result)
         mock_http.post.side_effect = [start_resp, answer_resp]
@@ -581,39 +668,57 @@ class TestCallToolAutoVerify:
 
     @pytest.mark.asyncio
     async def test_auto_verify_multiple_challenges(self, mock_http) -> None:
-        start_resp = _make_mock_response({
-            "session_id": "sess-multi",
-            "current_challenge": {
-                "id": "ch-1",
-                "type": "speed_math",
-                "prompt": "Calculate: 10 + 20",
-                "data": {},
-            },
-        })
-        answer_resp_1 = _make_mock_response({
-            "result": {"passed": True},
-            "session_complete": False,
-            "next_challenge": {
-                "id": "ch-2",
-                "type": "consistency",
-                "prompt": "Answer 3 times",
-                "data": {},
-            },
-        })
-        answer_resp_2 = _make_mock_response({
-            "result": {"passed": True},
-            "session_complete": True,
-        })
-        result_resp = _make_mock_response({
-            "verified": True,
-            "passed": 2,
-            "total": 2,
-            "pass_rate": 1.0,
-            "results": [
-                {"challenge_type": "speed_math", "passed": True, "response_time_ms": 10, "time_limit_ms": 5000},
-                {"challenge_type": "consistency", "passed": True, "response_time_ms": 20, "time_limit_ms": 15000},
-            ],
-        })
+        start_resp = _make_mock_response(
+            {
+                "session_id": "sess-multi",
+                "current_challenge": {
+                    "id": "ch-1",
+                    "type": "speed_math",
+                    "prompt": "Calculate: 10 + 20",
+                    "data": {},
+                },
+            }
+        )
+        answer_resp_1 = _make_mock_response(
+            {
+                "result": {"passed": True},
+                "session_complete": False,
+                "next_challenge": {
+                    "id": "ch-2",
+                    "type": "consistency",
+                    "prompt": "Answer 3 times",
+                    "data": {},
+                },
+            }
+        )
+        answer_resp_2 = _make_mock_response(
+            {
+                "result": {"passed": True},
+                "session_complete": True,
+            }
+        )
+        result_resp = _make_mock_response(
+            {
+                "verified": True,
+                "passed": 2,
+                "total": 2,
+                "pass_rate": 1.0,
+                "results": [
+                    {
+                        "challenge_type": "speed_math",
+                        "passed": True,
+                        "response_time_ms": 10,
+                        "time_limit_ms": 5000,
+                    },
+                    {
+                        "challenge_type": "consistency",
+                        "passed": True,
+                        "response_time_ms": 20,
+                        "time_limit_ms": 15000,
+                    },
+                ],
+            }
+        )
 
         mock_http.post.side_effect = [start_resp, answer_resp_1, answer_resp_2]
         mock_http.get.return_value = result_resp
@@ -626,7 +731,9 @@ class TestCallToolAutoVerify:
     @pytest.mark.asyncio
     async def test_auto_verify_http_error(self, mock_http) -> None:
         resp = _make_mock_response({})
-        resp.raise_for_status.side_effect = _make_http_status_error(500, "Internal Server Error")
+        resp.raise_for_status.side_effect = _make_http_status_error(
+            500, "Internal Server Error"
+        )
         mock_http.post.return_value = resp
         result = await call_tool("mettle_auto_verify", {})
         text = result[0].text

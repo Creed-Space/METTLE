@@ -30,12 +30,18 @@ class TestAllowedOriginsList:
         assert s.allowed_origins_list == ["*"]
 
     def test_comma_separated(self):
-        with patch.dict("os.environ", {"METTLE_ALLOWED_ORIGINS": "http://a.com, http://b.com"}, clear=True):
+        with patch.dict(
+            "os.environ",
+            {"METTLE_ALLOWED_ORIGINS": "http://a.com, http://b.com"},
+            clear=True,
+        ):
             s = SettingsFactory(_env_file=None)
         assert s.allowed_origins_list == ["http://a.com", "http://b.com"]
 
     def test_single_origin(self):
-        with patch.dict("os.environ", {"METTLE_ALLOWED_ORIGINS": "http://only.com"}, clear=True):
+        with patch.dict(
+            "os.environ", {"METTLE_ALLOWED_ORIGINS": "http://only.com"}, clear=True
+        ):
             s = SettingsFactory(_env_file=None)
         assert s.allowed_origins_list == ["http://only.com"]
 
@@ -55,7 +61,9 @@ class TestProductionValidation:
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 SettingsFactory(_env_file=None)
-                security_warnings = [x for x in w if "SECURITY WARNING" in str(x.message)]
+                security_warnings = [
+                    x for x in w if "SECURITY WARNING" in str(x.message)
+                ]
                 assert len(security_warnings) == 0
 
     def test_development_wildcard_no_warning(self):
@@ -68,7 +76,9 @@ class TestProductionValidation:
                 warnings.simplefilter("always")
                 s = SettingsFactory(_env_file=None)
                 assert s.is_production is False
-                security_warnings = [x for x in w if "SECURITY WARNING" in str(x.message)]
+                security_warnings = [
+                    x for x in w if "SECURITY WARNING" in str(x.message)
+                ]
                 assert len(security_warnings) == 0
 
 
@@ -94,7 +104,9 @@ class TestIsProduction:
         assert s.is_production is True
 
     def test_development_not_production(self):
-        with patch.dict("os.environ", {"METTLE_ENVIRONMENT": "development"}, clear=True):
+        with patch.dict(
+            "os.environ", {"METTLE_ENVIRONMENT": "development"}, clear=True
+        ):
             s = SettingsFactory(_env_file=None)
         assert s.is_production is False
 

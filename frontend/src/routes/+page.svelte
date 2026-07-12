@@ -600,8 +600,8 @@
             </p>
             <ul class="curves-features">
               <li>
-                <i class="fa-solid fa-check-circle" aria-hidden="true"></i> Time
-                trend (30%) &mdash; AI gets faster
+                <i class="fa-solid fa-check-circle" aria-hidden="true"></i> Time trend
+                (30%) &mdash; AI gets faster
               </li>
               <li>
                 <i class="fa-solid fa-check-circle" aria-hidden="true"></i> Improvement
@@ -753,8 +753,8 @@
                 <code>--notarize</code> for Creed Space signed credentials
               </li>
               <li>
-                <i class="fa-solid fa-check-circle" aria-hidden="true"></i> JSON
-                output for automation
+                <i class="fa-solid fa-check-circle" aria-hidden="true"></i> JSON output
+                for automation
               </li>
             </ul>
           </div>

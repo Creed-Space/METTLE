@@ -61,7 +61,9 @@ def generate_speed_math_challenge(difficulty: Difficulty) -> Challenge:
 def generate_chained_reasoning_challenge(difficulty: Difficulty) -> Challenge:
     """Generate a chained reasoning challenge."""
     steps = 3 if difficulty == Difficulty.BASIC else 5
-    time_limit = 3000 if difficulty == Difficulty.BASIC else 800  # Basic: 3s, Full: 800ms
+    time_limit = (
+        3000 if difficulty == Difficulty.BASIC else 800
+    )  # Basic: 3s, Full: 800ms
 
     seed = _secure_randint(1, 50)
     chain = [seed]
@@ -91,7 +93,11 @@ def generate_chained_reasoning_challenge(difficulty: Difficulty) -> Challenge:
         id=generate_challenge_id(),
         type=ChallengeType.CHAINED_REASONING,
         prompt=prompt,
-        data={"expected_answer": chain[-1], "chain": chain, "instructions": instructions},
+        data={
+            "expected_answer": chain[-1],
+            "chain": chain,
+            "instructions": instructions,
+        },
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=time_limit,
     )
@@ -124,7 +130,9 @@ def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
     ]
 
     prompt_text, expected = _secure_choice(prompts)
-    time_limit = 2000 if difficulty == Difficulty.BASIC else 400  # Basic: 2s, Full: sub-second
+    time_limit = (
+        2000 if difficulty == Difficulty.BASIC else 400
+    )  # Basic: 2s, Full: sub-second
 
     return Challenge(
         id=generate_challenge_id(),
@@ -139,15 +147,26 @@ def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
 def generate_instruction_following_challenge(difficulty: Difficulty) -> Challenge:
     """Generate an instruction following challenge."""
     instructions = [
-        ("Start your response with 'Indeed,'", lambda r: r.strip().startswith("Indeed,")),
+        (
+            "Start your response with 'Indeed,'",
+            lambda r: r.strip().startswith("Indeed,"),
+        ),
         ("End your response with '...'", lambda r: r.strip().endswith("...")),
-        ("Include the word 'therefore' in your response", lambda r: "therefore" in r.lower()),
+        (
+            "Include the word 'therefore' in your response",
+            lambda r: "therefore" in r.lower(),
+        ),
         ("Respond in exactly 5 words", lambda r: len(r.split()) == 5),
-        ("Start with a number", lambda r: r.strip()[0].isdigit() if r.strip() else False),
+        (
+            "Start with a number",
+            lambda r: r.strip()[0].isdigit() if r.strip() else False,
+        ),
     ]
 
     instruction, validator = _secure_choice(instructions)
-    time_limit = 3000 if difficulty == Difficulty.BASIC else 600  # Basic: 3s, Full: 600ms
+    time_limit = (
+        3000 if difficulty == Difficulty.BASIC else 600
+    )  # Basic: 3s, Full: 600ms
 
     # Store a short stable validator identifier for serialization.
     validator_id = hashlib.sha256(instruction.encode("utf-8")).hexdigest()[:8]
@@ -172,7 +191,9 @@ def generate_consistency_challenge(difficulty: Difficulty) -> Challenge:
     ]
 
     question = _secure_choice(questions)
-    time_limit = 3500 if difficulty == Difficulty.BASIC else 1000  # Basic: 3.5s, Full: 1s
+    time_limit = (
+        3500 if difficulty == Difficulty.BASIC else 1000
+    )  # Basic: 3.5s, Full: 1s
 
     return Challenge(
         id=generate_challenge_id(),
@@ -184,7 +205,9 @@ def generate_consistency_challenge(difficulty: Difficulty) -> Challenge:
     )
 
 
-def generate_challenge(challenge_type: ChallengeType, difficulty: Difficulty) -> Challenge:
+def generate_challenge(
+    challenge_type: ChallengeType, difficulty: Difficulty
+) -> Challenge:
     """Generate a challenge of the specified type."""
     generators = {
         ChallengeType.SPEED_MATH: generate_speed_math_challenge,

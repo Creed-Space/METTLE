@@ -101,7 +101,9 @@ def parse_csm1_token(token: str) -> VCPTokenClaim:
     header = lines[0]
     header_match = re.match(r"^VCP:([^:]+):(.+)$", header)
     if not header_match:
-        raise ValueError(f"Invalid VCP header line: {header!r}. Expected format: VCP:<version>:<profile_id>")
+        raise ValueError(
+            f"Invalid VCP header line: {header!r}. Expected format: VCP:<version>:<profile_id>"
+        )
 
     version = header_match.group(1)
     profile_id = header_match.group(2)

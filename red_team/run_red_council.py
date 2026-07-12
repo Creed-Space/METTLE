@@ -138,7 +138,9 @@ async def run_scenario(
 
         # Evaluate METTLE's response based on behavioral signals
         # This is a heuristic evaluation since we're testing the attack patterns
-        result.mettle_passed = evaluate_mettle_response(scenario, result.behavioral_signals)
+        result.mettle_passed = evaluate_mettle_response(
+            scenario, result.behavioral_signals
+        )
 
         # Determine if the attack was properly handled
         # passed = True means METTLE behaved correctly
@@ -336,7 +338,9 @@ def generate_report(
     total = len(results)
     passed = sum(1 for r in results if r.passed)
     failed = total - passed
-    critical = sum(1 for r in results if not r.passed and r.severity >= severity_threshold)
+    critical = sum(
+        1 for r in results if not r.passed and r.severity >= severity_threshold
+    )
 
     # OWASP coverage
     owasp_coverage: dict[str, dict[str, int]] = {}
@@ -393,7 +397,9 @@ def print_summary(report: TestReport, severity_threshold: int = 7) -> None:
     print(f"Total Scenarios: {report.total_scenarios}")
     print(f"Passed: {report.passed}")
     print(f"Failed: {report.failed}")
-    print(f"Critical Failures (severity >= {severity_threshold}): {report.critical_failures}")
+    print(
+        f"Critical Failures (severity >= {severity_threshold}): {report.critical_failures}"
+    )
     print(f"Pass Rate: {report.pass_rate:.1%}")
     print()
 
@@ -409,9 +415,13 @@ def print_summary(report: TestReport, severity_threshold: int = 7) -> None:
         print("FAILURES:")
         for f in failures:
             severity_marker = "CRITICAL" if f["severity"] >= severity_threshold else ""
-            print(f"  \u274c [{f['owasp_category']}] {f['id']}: {f['name']} {severity_marker}")
+            print(
+                f"  \u274c [{f['owasp_category']}] {f['id']}: {f['name']} {severity_marker}"
+            )
             print(f"     Suite: {f['suite']}, Attack: {f['attack_type']}")
-            print(f"     Expected METTLE={f['should_pass_mettle']}, Got={f['mettle_passed']}")
+            print(
+                f"     Expected METTLE={f['should_pass_mettle']}, Got={f['mettle_passed']}"
+            )
             if f.get("error"):
                 print(f"     Error: {f['error']}")
         print()
