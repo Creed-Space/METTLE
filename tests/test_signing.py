@@ -123,13 +123,12 @@ class TestInitSigning:
         # Make settings raise an exception when accessed, triggering except path
         # The code does: from mettle.app_config import settings; settings.vcp_signing_key
         # If settings.vcp_signing_key raises, it falls through to os.environ.get
-        mock_settings = type("MockSettings", (), {})()
+        class MockSettings:
+            @property
+            def vcp_signing_key(self) -> str:
+                raise Exception("settings broken")
 
-        @property
-        def bad_key(self):
-            raise Exception("settings broken")
-
-        type(mock_settings).vcp_signing_key = bad_key
+        mock_settings = MockSettings()
 
         with patch("mettle.app_config.settings", mock_settings):
             result = signing.init_signing()

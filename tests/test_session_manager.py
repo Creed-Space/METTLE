@@ -417,7 +417,7 @@ class TestSubmitRoundFinalRound:
         )
         # easy difficulty has num_rounds=2
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
 
         # Submit round 1
         result1 = await manager.submit_round_answer(session_id, 1, round_answers)
@@ -441,7 +441,7 @@ class TestSubmitRoundFinalRound:
             user_id="user1", suites=["novel-reasoning"], difficulty="easy"
         )
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
 
         await manager.submit_round_answer(session_id, 1, round_answers)
         await manager.submit_round_answer(session_id, 2, round_answers)
@@ -480,7 +480,7 @@ class TestGetRoundFeedbackExisting:
             user_id="user1", suites=["novel-reasoning"], difficulty="easy"
         )
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
 
         await manager.submit_round_answer(session_id, 1, round_answers)
 
@@ -503,7 +503,7 @@ class TestGetRoundFeedbackExisting:
             user_id="user1", suites=["novel-reasoning"], difficulty="easy"
         )
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
 
         await manager.submit_round_answer(session_id, 1, round_answers)
         await manager.submit_round_answer(session_id, 2, round_answers)
@@ -546,7 +546,7 @@ class TestGetResultEmptySuiteResults:
     @pytest.mark.asyncio
     async def test_empty_results_overall_not_passed(self, manager: SessionManager, fake_redis: FakeRedis) -> None:
         # Inject a completed session with empty suite_results
-        session_data = {
+        session_data: dict[str, Any] = {
             "session_id": "test-empty",
             "user_id": "user1",
             "entity_id": None,
@@ -766,7 +766,7 @@ class TestAnalyzeIterationCurve:
             {"round": 2, "response_time_ms": 300.0, "accuracy": 0.8},
         ]
         # No pass_threshold in server_answers
-        server_answers = {}
+        server_answers: dict[str, Any] = {}
 
         result = manager._analyze_iteration_curve(round_data, server_answers)
         # Should default to 0.65
@@ -827,7 +827,7 @@ class TestMultipleSuitesPartialCompletion:
         )
         # Complete novel-reasoning (2 rounds for easy)
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
 
         await manager.submit_round_answer(session_id, 1, round_answers)
         await manager.submit_round_answer(session_id, 2, round_answers)
@@ -934,7 +934,7 @@ class TestSessionManagerEdgeCases:
         assert session_before["start_time"] is None
 
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
         await manager.submit_round_answer(session_id, 1, round_answers)
 
         session_after = await manager.get_session(session_id)
@@ -947,7 +947,7 @@ class TestSessionManagerEdgeCases:
             user_id="user1", suites=["novel-reasoning"], difficulty="easy"
         )
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
 
         await manager.submit_round_answer(session_id, 1, round_answers)
         session = await manager.get_session(session_id)
@@ -965,7 +965,7 @@ class TestSessionManagerEdgeCases:
             user_id="user1", suites=["novel-reasoning"], difficulty="easy"
         )
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
 
         result = await manager.submit_round_answer(session_id, 1, round_answers)
         assert "time_remaining_ms" in result
@@ -977,7 +977,7 @@ class TestSessionManagerEdgeCases:
             user_id="user1", suites=["novel-reasoning"], difficulty="easy"
         )
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
 
         result = await manager.submit_round_answer(session_id, 1, round_answers)
         assert "errors" in result
@@ -1070,7 +1070,7 @@ class TestSessionManagerEdgeCases:
         )
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
         # Submit answers as a flat dict (no 'challenges' key)
-        flat_answers = {name: {"test_outputs": []} for name in novel_challenges}
+        flat_answers: dict[str, Any] = {name: {"test_outputs": []} for name in novel_challenges}
 
         result = await manager.submit_round_answer(session_id, 1, flat_answers)
         assert "accuracy" in result

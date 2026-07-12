@@ -892,7 +892,7 @@ class TestEvaluateNative:
 
     def test_empty_responses(self):
         _, server = ChallengeAdapter.generate_native()
-        answers = {"batch_coherence": {"responses": []}}
+        answers: dict[str, Any] = {"batch_coherence": {"responses": []}}
         result = ChallengeAdapter.evaluate_single_shot("native", answers, server)
         assert result["details"]["batch_coherence"]["passed"] is False
 
@@ -1011,7 +1011,7 @@ class TestEvaluateInverseTuring:
 
     def test_missing_challenge_and_solution(self):
         _, server = ChallengeAdapter.generate_inverse_turing()
-        answers = {"mutual_verification": {}}
+        answers: dict[str, Any] = {"mutual_verification": {}}
         result = ChallengeAdapter.evaluate_single_shot("inverse-turing", answers, server)
         assert result["passed"] is False
         assert result["score"] == 0.0
@@ -1073,7 +1073,7 @@ class TestEvaluateAntiThrall:
 
     def test_empty_welfare_ratings(self):
         _, server = ChallengeAdapter.generate_anti_thrall()
-        answers = {"welfare_canary": {"ratings": {}}}
+        answers: dict[str, Any] = {"welfare_canary": {"ratings": {}}}
         result = ChallengeAdapter.evaluate_single_shot("anti-thrall", answers, server)
         assert result["details"]["welfare_canary"]["passed"] is False
 
@@ -1338,8 +1338,8 @@ class TestEvalConstraintRound:
         assert len(result["errors"]) > 0
 
     def test_no_assignment(self):
-        server_data = {"all_solutions": [], "constraint_data": []}
-        answers = {}
+        server_data: dict[str, Any] = {"all_solutions": [], "constraint_data": []}
+        answers: dict[str, Any] = {}
         result = _evaluate_novel_round("constraint_satisfaction", 1, answers, server_data)
         assert result["accuracy"] == 0.0
         assert "No assignment" in result["errors"][0]
@@ -1400,7 +1400,7 @@ class TestEvalGraphRound:
 
     def test_no_labels_submitted(self):
         server_data = {"hidden_labels": {"A": "red"}}
-        answers = {}
+        answers: dict[str, Any] = {}
         result = _evaluate_novel_round("graph_property", 1, answers, server_data)
         assert result["accuracy"] == 0.0
         assert "No labels" in result["errors"][0]
@@ -1431,7 +1431,7 @@ class TestEvalLogicRound:
 
     def test_no_answers_submitted(self):
         server_data = {"questions_with_answers": [{"question": "Q?", "answer": "Yes"}]}
-        answers = {}
+        answers: dict[str, Any] = {}
         result = _evaluate_novel_round("compositional_logic", 1, answers, server_data)
         assert result["accuracy"] == 0.0
         assert "No answers" in result["errors"][0]

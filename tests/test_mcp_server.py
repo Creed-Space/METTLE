@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import sys
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -59,9 +60,9 @@ except ImportError:
     sys.modules["mcp.types"] = MagicMock()
 
     # Wire up the fakes BEFORE mcp_server imports them
-    sys.modules["mcp.server"].Server = _FakeServer
-    sys.modules["mcp.types"].TextContent = _FakeTextContent
-    sys.modules["mcp.types"].Tool = _FakeTool
+    cast(Any, sys.modules["mcp.server"]).Server = _FakeServer
+    cast(Any, sys.modules["mcp.types"]).TextContent = _FakeTextContent
+    cast(Any, sys.modules["mcp.types"]).Tool = _FakeTool
 
 import httpx  # noqa: E402
 

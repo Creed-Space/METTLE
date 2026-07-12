@@ -7,6 +7,7 @@ Suite 9 VCP enhancement, and API-level integration.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 import pytest
 
@@ -224,7 +225,7 @@ class TestBuildAttestation:
         assert att["metadata"]["tier"] == "gold"
 
     def test_content_hash_deterministic(self):
-        kwargs = dict(
+        kwargs: dict[str, Any] = dict(
             session_id="sess_det",
             difficulty="standard",
             suites_passed=["adversarial"],

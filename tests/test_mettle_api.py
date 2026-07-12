@@ -441,7 +441,7 @@ class TestSessionManager:
         )
         # Round 1
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
+        round_answers: dict[str, Any] = {"challenges": {name: {"test_outputs": []} for name in novel_challenges}}
         result = await session_manager.submit_round_answer(session_id, 1, round_answers)
         assert "accuracy" in result
         assert "time_remaining_ms" in result

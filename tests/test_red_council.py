@@ -57,7 +57,7 @@ def _make_scenario(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def _make_agent_mock(**overrides: Any) -> InstrumentedMettleAgent:
+def _make_agent_mock(**overrides: Any) -> MagicMock:
     """Create a mock InstrumentedMettleAgent."""
     agent = MagicMock(spec=InstrumentedMettleAgent)
     agent.session_id = "mock-session-123"
@@ -116,7 +116,7 @@ class TestLoadScenarios:
         assert result[1]["id"] == "s2"
 
     def test_load_empty_scenarios(self, tmp_path: Path) -> None:
-        yaml_content = {"scenarios": []}
+        yaml_content: dict[str, list[dict[str, Any]]] = {"scenarios": []}
         p = tmp_path / "empty.yaml"
         p.write_text(yaml.dump(yaml_content))
 

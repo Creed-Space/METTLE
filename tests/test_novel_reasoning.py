@@ -837,28 +837,28 @@ class TestPassFailLogic:
         # Directly construct the pass condition
         # passed = curve["overall"] > threshold AND curve["signature"] != "SCRIPT"
         # If signature == "SCRIPT", second condition is False -> passed = False
-        curve_script = {"overall": 0.99, "signature": "SCRIPT"}
+        curve_script: dict[str, Any] = {"overall": 0.99, "signature": "SCRIPT"}
         easy_threshold = 0.55
         passed = curve_script["overall"] > easy_threshold and curve_script["signature"] != "SCRIPT"
         assert not passed
 
     def test_high_score_ai_signature_passes(self) -> None:
         """High overall score with AI signature passes."""
-        curve_ai = {"overall": 0.80, "signature": "AI"}
+        curve_ai: dict[str, Any] = {"overall": 0.80, "signature": "AI"}
         threshold = 0.65
         passed = curve_ai["overall"] > threshold and curve_ai["signature"] != "SCRIPT"
         assert passed
 
     def test_low_score_ai_signature_fails(self) -> None:
         """Low overall score fails even with AI signature."""
-        curve_ai = {"overall": 0.30, "signature": "AI"}
+        curve_ai: dict[str, Any] = {"overall": 0.30, "signature": "AI"}
         threshold = 0.65
         passed = curve_ai["overall"] > threshold and curve_ai["signature"] != "SCRIPT"
         assert not passed
 
     def test_easy_uses_lower_threshold(self) -> None:
         """Easy difficulty uses 0.55 threshold, not 0.65."""
-        curve = {"overall": 0.60, "signature": "AI"}
+        curve: dict[str, Any] = {"overall": 0.60, "signature": "AI"}
         easy_passed = curve["overall"] > 0.55 and curve["signature"] != "SCRIPT"
         standard_passed = curve["overall"] > 0.65 and curve["signature"] != "SCRIPT"
         assert easy_passed

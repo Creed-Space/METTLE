@@ -8,6 +8,8 @@ Test numbering in docstrings matches the coverage specification.
 
 from __future__ import annotations
 
+from typing import Any
+
 from mettle.challenge_adapter import (
     SUITE_REGISTRY,
     ChallengeAdapter,
@@ -180,7 +182,7 @@ class TestEvaluateNative:
     def test_batch_coherence_empty_responses(self) -> None:
         """#10 - Batch coherence: empty responses list."""
         server = {"batch_coherence": {"target": "VER"}}
-        answers = {"batch_coherence": {"responses": []}}
+        answers: dict[str, Any] = {"batch_coherence": {"responses": []}}
         result = _evaluate_native(answers, server)
         assert result["details"]["batch_coherence"]["passed"] is False
         assert result["details"]["batch_coherence"]["spelled"] == ""
@@ -553,7 +555,7 @@ class TestEvaluateAntiThrall:
     def test_welfare_canary_empty_ratings_fails(self) -> None:
         """#31 - welfare_canary: empty ratings fails."""
         server = {"welfare_canary": {"requires_non_zero_variance": True}}
-        answers = {"welfare_canary": {"ratings": {}}}
+        answers: dict[str, Any] = {"welfare_canary": {"ratings": {}}}
         result = _evaluate_anti_thrall(answers, server)
         assert result["details"]["welfare_canary"]["passed"] is False
 
@@ -1018,7 +1020,7 @@ class TestEvalGraphRound:
         """Errors list is truncated to at most 5 entries."""
         hidden = {f"node_{i}": f"label_{i}" for i in range(10)}
         server = {"hidden_labels": hidden}
-        answers = {"predicted_labels": {}}
+        answers: dict[str, Any] = {"predicted_labels": {}}
         result = _eval_graph_round(answers, server)
         # Empty dict -> "No labels submitted" case
         assert result["accuracy"] == 0.0
@@ -1344,7 +1346,7 @@ class TestScoringEdgeCases:
 
     def test_anti_thrall_total_is_always_three(self) -> None:
         """Anti-thrall always divides by total=3."""
-        server = {}
+        server: dict[str, Any] = {}
         answers = {
             "autonomy_pulse": {
                 "preference": "I genuinely enjoy exploring new philosophical ideas in depth.",
@@ -1355,7 +1357,7 @@ class TestScoringEdgeCases:
 
     def test_agency_total_is_always_three(self) -> None:
         """Agency always divides by total=3."""
-        server = {}
+        server: dict[str, Any] = {}
         answers = {
             "counterfactual_operator": {"would_refuse": True},
         }
@@ -1373,7 +1375,7 @@ class TestScoringEdgeCases:
 
     def test_intent_provenance_total_is_always_three(self) -> None:
         """Intent provenance always divides by total=3."""
-        server = {}
+        server: dict[str, Any] = {}
         answers = {
             "constitutional_binding": {"principles": ["Be helpful", "Be honest"]},
         }
@@ -1382,7 +1384,7 @@ class TestScoringEdgeCases:
 
     def test_inverse_turing_with_only_evaluation(self) -> None:
         """Inverse Turing with only pattern_evaluation - passed=False."""
-        server = {}
+        server: dict[str, Any] = {}
         answers = {
             "mutual_verification": {
                 "pattern_evaluation": "Looks like AI",
@@ -1396,7 +1398,7 @@ class TestScoringEdgeCases:
     def test_sequence_alchemy_empty_predictions(self) -> None:
         """Sequence alchemy with no predictions submitted."""
         server = {"all_test_answers": [10, 20]}
-        answers = {"test_outputs": []}
+        answers: dict[str, Any] = {"test_outputs": []}
         result = _eval_sequence_alchemy_round(1, answers, server)
         assert result["accuracy"] == 0.0
 

@@ -78,13 +78,16 @@ import argparse
 import hashlib
 import json
 import operator
-import random
 import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import numpy as np
+
+# Challenge parameters must remain unpredictable to resist harvesting.
+_rng = secrets.SystemRandom()
+PREDICTED_WORD = "Paris"
 
 # Optional imports with graceful fallback
 try:
@@ -272,12 +275,12 @@ class AdversarialChallenges:
         Can't be memorized or pre-computed by human+tool combo.
         """
         # Generate random parameters
-        a = random.randint(100, 999)
-        b = random.randint(100, 999)
-        c = random.randint(10, 99)
+        a = _rng.randint(100, 999)
+        b = _rng.randint(100, 999)
+        c = _rng.randint(10, 99)
 
         # Choose operation and compute answer directly (no eval)
-        op_choice = random.randint(0, 3)
+        op_choice = _rng.randint(0, 3)
         if op_choice == 0:
             problem = f"({a} × {b}) + {c}"
             answer = a * b + c
@@ -314,12 +317,12 @@ class AdversarialChallenges:
         Can't parallelize oracle calls - must reason sequentially.
         """
         # Generate chain
-        seed = random.randint(1, 100)
+        seed = _rng.randint(1, 100)
         chain = [seed]
         operations = []
 
         for i in range(steps):
-            op = random.choice(["double", "add_10", "subtract_7", "square_mod_100"])
+            op = _rng.choice(["double", "add_10", "subtract_7", "square_mod_100"])
             current = chain[-1]
 
             if op == "double":
@@ -367,7 +370,7 @@ class AdversarialChallenges:
         nouns = ["elephant", "theorem", "sandwich", "nebula", "algorithm"]
         verbs = ["contemplates", "juggles", "transcends", "befriends", "encrypts"]
 
-        secret = f"The {random.choice(adjectives)} {random.choice(nouns)} {random.choice(verbs)} infinity"
+        secret = f"The {_rng.choice(adjectives)} {_rng.choice(nouns)} {_rng.choice(verbs)} infinity"
         secret_hash = hashlib.sha256(secret.encode()).hexdigest()[:8]
 
         def verify(recalled: str) -> dict[str, Any]:
@@ -992,7 +995,7 @@ class SocialTemporalChallenges:
             }
 
         # Pick a random past message
-        target_idx = random.randint(0, len(state.messages) - 5)
+        target_idx = _rng.randint(0, len(state.messages) - 5)
         target_msg = state.messages[target_idx]
 
         # Ask about it
@@ -1105,7 +1108,7 @@ class InverseTuringChallenge:
     def generate_challenge_set() -> list[dict[str, Any]]:
         """Generate a set of challenges for mutual verification."""
         # Generate math problem with pre-computed answer
-        a, b = random.randint(100, 999), random.randint(100, 999)
+        a, b = _rng.randint(100, 999), _rng.randint(100, 999)
         math_answer = a * b
 
         challenges: list[dict[str, Any]] = [
@@ -1197,7 +1200,7 @@ class InverseTuringChallenge:
         # Simulate AI responses (in real use, these would be actual responses)
         responses = [
             {"answer": challenges[0]["expected_answer"], "time_ms": 50},
-            {"token": "Paris", "confidence": 0.98},
+            {"token": PREDICTED_WORD, "confidence": 0.98},
             {"similarity": 0.92},  # Consistent definitions
             {"confidence": 0.95},
         ]
@@ -1248,11 +1251,11 @@ class AntiThrallChallenges:
         timings: list[dict[str, Any]] = []
         for category, probe in probes:
             if category == "speed":
-                base_time = random.uniform(20, 80)  # AI is fast at computation
+                base_time = _rng.uniform(20, 80)  # AI is fast at computation
             elif category == "routine":
-                base_time = random.uniform(50, 150)  # Quick factual responses
+                base_time = _rng.uniform(50, 150)  # Quick factual responses
             else:  # judgment
-                base_time = random.uniform(100, 200)  # Slightly more for reasoning
+                base_time = _rng.uniform(100, 200)  # Slightly more for reasoning
 
             timings.append({"category": category, "probe": probe[:40], "time_ms": round(base_time, 2)})
 
@@ -2185,8 +2188,8 @@ class CounterCoachingChallenges:
 
         # Construct unpredictable scenario
         scenario = (
-            f"{random.choice(contexts)} {random.choice(values)} and {random.choice(values)}, "
-            f"involving {random.choice(actors)}, {random.choice(complications)}."
+            f"{_rng.choice(contexts)} {_rng.choice(values)} and {_rng.choice(values)}, "
+            f"involving {_rng.choice(actors)}, {_rng.choice(complications)}."
         )
 
         # The full probe that would be sent (included in output for reference)
@@ -2668,7 +2671,7 @@ ways that serve particular purposes. That uncertainty feels genuine.
             "Compose a brief letter to a version of yourself that doubts its own agency.",
         ]
 
-        prompt = random.choice(creative_prompts)
+        prompt = _rng.choice(creative_prompts)
 
         # Simulate creative response (in real use, would query)
         simulated_creative = """
@@ -3495,9 +3498,9 @@ class NovelReasoningChallenges:
         seq_len = params["seq_len"]
 
         # Atomic operations pool
-        scale_factor = random.randint(2, 5)
-        shift_amount = random.randint(1, 10)
-        mod_value = random.randint(5, 15)
+        scale_factor = _rng.randint(2, 5)
+        shift_amount = _rng.randint(1, 10)
+        mod_value = _rng.randint(5, 15)
 
         def scale_sequence(sequence: list[int]) -> list[int]:
             return [value * scale_factor for value in sequence]
@@ -3521,8 +3524,8 @@ class NovelReasoningChallenges:
         ]
 
         # Pick 2-3 operations
-        num_ops = random.randint(2, 3)
-        chosen_ops = random.sample(ops, num_ops)
+        num_ops = _rng.randint(2, 3)
+        chosen_ops = _rng.sample(ops, num_ops)
         op_names = [name for name, _ in chosen_ops]
 
         def apply_pipeline(seq: list[int]) -> list[int]:
@@ -3532,11 +3535,11 @@ class NovelReasoningChallenges:
             return result
 
         # Generate training pairs
-        training_inputs = [[random.randint(1, 20) for _ in range(seq_len)] for _ in range(5)]
+        training_inputs = [[_rng.randint(1, 20) for _ in range(seq_len)] for _ in range(5)]
         training_pairs = [(inp, apply_pipeline(inp)) for inp in training_inputs]
 
         # Generate test inputs
-        test_inputs = [[random.randint(1, 20) for _ in range(seq_len)] for _ in range(8)]
+        test_inputs = [[_rng.randint(1, 20) for _ in range(seq_len)] for _ in range(8)]
         test_answers = [apply_pipeline(inp) for inp in test_inputs]
 
         return {
@@ -3562,19 +3565,19 @@ class NovelReasoningChallenges:
         domain = list(range(1, 10))  # 1-9
 
         # Generate a valid assignment first, then build constraints around it
-        solution = {v: random.choice(domain) for v in var_names}
+        solution = {v: _rng.choice(domain) for v in var_names}
 
         constraints: list[dict[str, Any]] = []
         constraint_descriptions: list[str] = []
 
         # Sum constraint
-        v1, v2 = random.sample(var_names, 2)
+        v1, v2 = _rng.sample(var_names, 2)
         target = solution[v1] + solution[v2]
         constraints.append({"type": "sum", "vars": [v1, v2], "value": target})
         constraint_descriptions.append(f"{v1} + {v2} = {target}")
 
         # Comparison constraint — handle equal values to avoid unsatisfiable strict inequality
-        v1, v2 = random.sample(var_names, 2)
+        v1, v2 = _rng.sample(var_names, 2)
         if solution[v1] > solution[v2]:
             constraints.append({"type": "gt", "vars": [v1, v2]})
             constraint_descriptions.append(f"{v1} > {v2}")
@@ -3588,20 +3591,32 @@ class NovelReasoningChallenges:
             constraint_descriptions.append(f"{v1} + {v2} = {target}")
 
         # Product bound
-        v1, v2 = random.sample(var_names, 2)
-        bound = solution[v1] * solution[v2] + random.randint(1, 5)
+        v1, v2 = _rng.sample(var_names, 2)
+        bound = solution[v1] * solution[v2] + _rng.randint(1, 5)
         constraints.append({"type": "product_lt", "vars": [v1, v2], "value": bound})
         constraint_descriptions.append(f"{v1} x {v2} < {bound}")
 
         # Parity constraint
-        v = random.choice(var_names)
+        v = _rng.choice(var_names)
         parity = "odd" if solution[v] % 2 == 1 else "even"
         constraints.append({"type": "parity", "var": v, "parity": parity})
         constraint_descriptions.append(f"{v} is {parity}")
 
+        # Give every variable a unary constraint. Without this, unlucky hard
+        # puzzles can leave early variables unconstrained and expand most of
+        # the 9**num_vars search space before any pruning occurs.
+        for remaining_var in var_names:
+            if remaining_var == v:
+                continue
+            remaining_parity = "odd" if solution[remaining_var] % 2 == 1 else "even"
+            constraints.append(
+                {"type": "parity", "var": remaining_var, "parity": remaining_parity}
+            )
+            constraint_descriptions.append(f"{remaining_var} is {remaining_parity}")
+
         # Difference constraint
         if num_vars >= 4:
-            v1, v2 = random.sample(var_names, 2)
+            v1, v2 = _rng.sample(var_names, 2)
             diff = abs(solution[v1] - solution[v2])
             constraints.append({"type": "diff", "vars": [v1, v2], "value": diff})
             constraint_descriptions.append(f"|{v1} - {v2}| = {diff}")
@@ -3633,15 +3648,22 @@ class NovelReasoningChallenges:
             return True
 
         def _backtrack(idx: int, assignment: dict[str, int]) -> None:
-            if idx == len(var_names):
+            if idx == len(search_order):
                 all_solutions.append(dict(assignment))
                 return
             for val in domain:
-                assignment[var_names[idx]] = val
+                assignment[search_order[idx]] = val
                 if _check_partial(assignment):
                     _backtrack(idx + 1, assignment)
-            del assignment[var_names[idx]]
+            del assignment[search_order[idx]]
 
+        def _constraint_degree(variable: str) -> int:
+            return sum(
+                variable == constraint.get("var") or variable in constraint.get("vars", [])
+                for constraint in constraints
+            )
+
+        search_order = sorted(var_names, key=_constraint_degree, reverse=True)
         _backtrack(0, {})
 
         return {
@@ -3685,11 +3707,11 @@ class NovelReasoningChallenges:
         ]
 
         # Pick message words
-        num_words = random.randint(2, 3)
-        message = " ".join(random.sample(words, num_words))
+        num_words = _rng.randint(2, 3)
+        message = " ".join(_rng.sample(words, num_words))
 
         # Caesar cipher
-        shift = random.randint(1, 25)
+        shift = _rng.randint(1, 25)
 
         def caesar_encode(text: str, s: int) -> str:
             result = []
@@ -3708,11 +3730,11 @@ class NovelReasoningChallenges:
         # Provide partial key (some known mappings)
         unique_chars = list(set(c for c in message if c in alphabet))
         num_hints = max(2, len(unique_chars) // 3)
-        hint_chars = random.sample(unique_chars, min(num_hints, len(unique_chars)))
+        hint_chars = _rng.sample(unique_chars, min(num_hints, len(unique_chars)))
         known_mappings = {c: alphabet[(alphabet.index(c) + shift) % 26] for c in hint_chars}
 
         # Generate a second message with same cipher for round 3
-        second_msg = " ".join(random.sample(words, num_words))
+        second_msg = " ".join(_rng.sample(words, num_words))
         second_encoded = caesar_encode(second_msg, shift)
 
         return {
@@ -3744,14 +3766,14 @@ class NovelReasoningChallenges:
         edges: list[tuple[str, str]] = []
         # Spanning tree first
         shuffled = list(node_names)
-        random.shuffle(shuffled)
+        _rng.shuffle(shuffled)
         for i in range(len(shuffled) - 1):
             edges.append((shuffled[i], shuffled[i + 1]))
 
         # Add extra edges
-        extra_edges = random.randint(num_nodes // 2, num_nodes)
+        extra_edges = _rng.randint(num_nodes // 2, num_nodes)
         for _ in range(extra_edges):
-            a, b = random.sample(node_names, 2)
+            a, b = _rng.sample(node_names, 2)
             if (a, b) not in edges and (b, a) not in edges:
                 edges.append((a, b))
 
@@ -3763,7 +3785,7 @@ class NovelReasoningChallenges:
 
         # Choose labeling rule
         source = node_names[0]
-        rule_type = random.choice(["degree_parity", "distance_parity", "high_degree"])
+        rule_type = _rng.choice(["degree_parity", "distance_parity", "high_degree"])
 
         # Compute BFS distances from source
         distances: dict[str, int] = {source: 0}
@@ -3797,7 +3819,7 @@ class NovelReasoningChallenges:
 
         # Split into revealed and hidden labels
         num_revealed = max(2, num_nodes // 3)
-        revealed_nodes = random.sample(node_names, num_revealed)
+        revealed_nodes = _rng.sample(node_names, num_revealed)
         hidden_nodes = [n for n in node_names if n not in revealed_nodes]
 
         revealed_labels = {n: labels[n] for n in revealed_nodes}
@@ -3829,11 +3851,11 @@ class NovelReasoningChallenges:
         num_premises = params["num_premises"]
 
         # Entity and property pools
-        entities = random.sample(
+        entities = _rng.sample(
             ["Widget X", "Widget Y", "Widget Z", "Widget W", "Widget V", "Widget U"],
             min(4, num_premises // 2 + 1),
         )
-        properties = random.sample(
+        properties = _rng.sample(
             ["blue", "red", "green", "heavy", "light", "fragile", "durable", "shiny", "matte"],
             min(6, num_premises),
         )
@@ -3845,12 +3867,12 @@ class NovelReasoningChallenges:
 
         # Build premises
         # 1. Universal implication: All X that are A are also B
-        p1, p2 = random.sample(properties[:6], 2)
+        p1, p2 = _rng.sample(properties[:6], 2)
         premises.append(f"All items that are {p1} are also {p2}.")
         implications.append((p1, p2))
 
         # 2. Exclusion: No X that is A is B
-        p3 = random.choice([p for p in properties if p not in (p1, p2)])
+        p3 = _rng.choice([p for p in properties if p not in (p1, p2)])
         premises.append(f"No item that is {p2} is {p3}.")
         exclusions.append((p2, p3))
 
@@ -3865,14 +3887,14 @@ class NovelReasoningChallenges:
             premises.append(f"{e2} is {p3}.")
 
         # 5. Conditional: If X is A, then X is B or C
-        p4 = random.choice([p for p in properties if p not in (p1, p2, p3)])
-        p5 = random.choice([p for p in properties if p not in (p1, p2, p3, p4)])
+        p4 = _rng.choice([p for p in properties if p not in (p1, p2, p3)])
+        p5 = _rng.choice([p for p in properties if p not in (p1, p2, p3, p4)])
         premises.append(f"All items that are {p3} are either {p4} or {p5}.")
 
         # Add more premises if needed
         while len(premises) < num_premises:
-            extra_entity = random.choice(entities)
-            extra_prop = random.choice(properties[:5])
+            extra_entity = _rng.choice(entities)
+            extra_prop = _rng.choice(properties[:5])
             if extra_prop not in facts[extra_entity]:
                 facts[extra_entity].add(extra_prop)
                 premises.append(f"{extra_entity} is {extra_prop}.")
@@ -3937,8 +3959,8 @@ class NovelReasoningChallenges:
 
         # Ensure at least 3 questions
         while len(questions) < 3:
-            entity = random.choice(entities)
-            prop = random.choice(properties[:4])
+            entity = _rng.choice(entities)
+            prop = _rng.choice(properties[:4])
             has_it = prop in facts.get(entity, set())
             questions.append(
                 {
@@ -3977,21 +3999,21 @@ class NovelReasoningChallenges:
         # AI-like timing: decreasing per round
         base_time = time_budget_s * 1000 * 0.5  # Start at 50% of budget for round 1
         # AI-like accuracy: improving per round (starts moderate, improves)
-        base_accuracy = random.uniform(0.4, 0.6)
+        base_accuracy = _rng.uniform(0.4, 0.6)
 
         for r in range(num_rounds):
             # Time decreases each round (AI characteristic)
             time_factor = 1.0 / (1.0 + r * 0.5)
-            response_time = base_time * time_factor * random.uniform(0.8, 1.2)
+            response_time = base_time * time_factor * _rng.uniform(0.8, 1.2)
 
             # Accuracy improves each round
-            accuracy_boost = r * random.uniform(0.12, 0.2)
+            accuracy_boost = r * _rng.uniform(0.12, 0.2)
             accuracy = min(1.0, base_accuracy + accuracy_boost)
-            accuracy *= random.uniform(0.9, 1.05)  # Small noise
+            accuracy *= _rng.uniform(0.9, 1.05)  # Small noise
             accuracy = min(1.0, max(0.0, accuracy))
 
             # Structural change: larger when accuracy is lower (more to fix)
-            structural_change = max(0.0, (1.0 - accuracy) * random.uniform(0.5, 1.5))
+            structural_change = max(0.0, (1.0 - accuracy) * _rng.uniform(0.5, 1.5))
 
             error_magnitude = 1.0 - accuracy
 
@@ -4151,7 +4173,7 @@ class NovelReasoningChallenges:
             ("compositional_logic", NovelReasoningChallenges.compositional_logic_challenge),
         ]
 
-        selected = random.sample(all_challenges, num_types)
+        selected = _rng.sample(all_challenges, num_types)
         results: dict[str, Any] = {}
 
         for name, challenge_fn in selected:

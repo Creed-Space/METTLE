@@ -2,6 +2,7 @@
 
 import json
 from datetime import datetime
+from typing import Any, cast
 
 import pytest
 from mettle.vcp import (
@@ -114,11 +115,11 @@ class TestParseCSM1Token:
 
     def test_none_raises(self):
         with pytest.raises(ValueError, match="non-empty string"):
-            parse_csm1_token(None)
+            parse_csm1_token(cast(Any, None))
 
     def test_non_string_raises(self):
         with pytest.raises(ValueError, match="non-empty string"):
-            parse_csm1_token(123)
+            parse_csm1_token(cast(Any, 123))
 
     def test_whitespace_only_raises(self):
         with pytest.raises(ValueError, match="empty"):
@@ -286,7 +287,7 @@ class TestBuildMettleAttestation:
         datetime.fromisoformat(att["reviewed_at"])
 
     def test_attestation_content_hash_deterministic(self):
-        kwargs = dict(
+        kwargs: dict[str, Any] = dict(
             session_id="ses-det",
             difficulty="basic",
             suites_passed=["adversarial"],

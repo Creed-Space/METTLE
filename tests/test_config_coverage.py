@@ -2,10 +2,13 @@
 
 import warnings
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from config import Settings
+
+SettingsFactory = cast(Any, Settings)
 
 PRODUCTION_CONFIG = {
     "environment": "production",
@@ -21,12 +24,12 @@ PRODUCTION_CONFIG = {
 class TestAllowedOriginsList:
     def test_wildcard_returns_single_star(self):
         """allowed_origins='*' returns ['*']."""
-        s = Settings(allowed_origins="*", _env_file="nonexistent.env")
+        s = SettingsFactory(allowed_origins="*", _env_file="nonexistent.env")
         assert s.allowed_origins_list == ["*"]
 
     def test_comma_separated_origins(self):
         """Comma-separated origins are split and stripped (line 78)."""
-        s = Settings(
+        s = SettingsFactory(
             allowed_origins="http://localhost:3000, https://example.com , https://other.io",
             _env_file="nonexistent.env",
         )
@@ -38,7 +41,7 @@ class TestAllowedOriginsList:
 
     def test_single_origin(self):
         """Single non-wildcard origin returns list of one."""
-        s = Settings(allowed_origins="https://example.com", _env_file="nonexistent.env")
+        s = SettingsFactory(allowed_origins="https://example.com", _env_file="nonexistent.env")
         assert s.allowed_origins_list == ["https://example.com"]
 
 
@@ -46,7 +49,7 @@ class TestProductionValidation:
     def test_production_wildcard_cors_rejected(self):
         """Production + wildcard CORS is rejected."""
         with pytest.raises(ValueError, match="trusted origins"):
-            Settings(
+            SettingsFactory(
                 **{**PRODUCTION_CONFIG, "allowed_origins": "*"},
                 _env_file="nonexistent.env",
             )
@@ -55,7 +58,7 @@ class TestProductionValidation:
         """Production with specific origins does not warn."""
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            Settings(
+            SettingsFactory(
                 **PRODUCTION_CONFIG,
                 _env_file="nonexistent.env",
             )
@@ -76,13 +79,13 @@ class TestProductionValidation:
     def test_insecure_production_settings_rejected(self, override, message):
         config = {**PRODUCTION_CONFIG, **override}
         with pytest.raises(ValueError, match=message):
-            Settings(**config, _env_file="nonexistent.env")
+            SettingsFactory(**config, _env_file="nonexistent.env")
 
     def test_development_wildcard_no_warning(self):
         """Development mode with wildcard does not warn."""
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            Settings(
+            SettingsFactory(
                 environment="development",
                 allowed_origins="*",
                 _env_file="nonexistent.env",

@@ -11,6 +11,7 @@ import asyncio
 import json
 import sys
 import time
+from collections.abc import Generator
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -726,7 +727,7 @@ def _make_test_app(fake_redis: FakeRedis) -> FastAPI:
 
 
 @pytest.fixture()
-def test_app(fake_redis: FakeRedis) -> FastAPI:
+def test_app(fake_redis: FakeRedis) -> Generator[FastAPI, None, None]:
     app = _make_test_app(fake_redis)
     yield app
     app.dependency_overrides.clear()

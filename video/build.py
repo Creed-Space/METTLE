@@ -21,7 +21,8 @@ Outputs: static/mettle-explainer.mp4, static/mettle-explainer.vtt,
 import argparse
 import hashlib
 import re
-import subprocess
+# The pipeline invokes fixed local media tools without a shell.
+import subprocess  # nosec B404
 import sys
 import wave
 from pathlib import Path
@@ -413,7 +414,7 @@ SLIDE_TEMPLATE = """<!DOCTYPE html>
 
 
 def run(cmd, **kw):
-    r = subprocess.run(cmd, capture_output=True, text=True, **kw)
+    r = subprocess.run(cmd, capture_output=True, text=True, **kw)  # nosec B603
     if r.returncode != 0:
         sys.exit(f"FAILED: {' '.join(map(str, cmd))}\n{r.stderr[-3000:]}")
     return r
@@ -426,7 +427,8 @@ def wav_duration(path: Path) -> float:
 
 def tts(scene, cache_dir: Path, allow_generate: bool) -> Path:
     key = hashlib.sha1(
-        f"{TTS_MODEL}|{TTS_VOICE}|{TTS_STYLE}|{scene['narration']}".encode()
+        f"{TTS_MODEL}|{TTS_VOICE}|{TTS_STYLE}|{scene['narration']}".encode(),
+        usedforsecurity=False,
     ).hexdigest()[:16]
     out = cache_dir / f"{scene['id']}-{key}.wav"
     if out.exists():
@@ -492,7 +494,7 @@ def render_slide(scene, slides_dir: Path) -> Path:
     ]
     last = None
     for _ in range(3):  # Chrome exit codes are unreliable; the PNG is the truth
-        last = subprocess.run(cmd, capture_output=True, text=True)
+        last = subprocess.run(cmd, capture_output=True, text=True)  # nosec B603
         if png_path.exists() and png_path.stat().st_size > 0:
             return png_path
     sys.exit(

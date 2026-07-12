@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 class ChallengeType(str, Enum):
     SPEED_MATH = "speed_math"
     CHAINED_REASONING = "chained_reasoning"
-    TOKEN_PREDICTION = "token_prediction"
+    # B105 is a false positive here; this is a public challenge type identifier.
+    TOKEN_PREDICTION = "token_prediction"  # nosec B105
     INSTRUCTION_FOLLOWING = "instruction_following"
     CONSISTENCY = "consistency"
 

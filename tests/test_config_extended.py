@@ -1,11 +1,14 @@
 """Extended tests for config.py - covers production validation and missing lines."""
 
 import warnings
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
 
 from config import Settings, get_settings
+
+SettingsFactory = cast(Any, Settings)
 
 PRODUCTION_ENV = {
     "METTLE_ENVIRONMENT": "production",
@@ -23,17 +26,17 @@ class TestAllowedOriginsList:
 
     def test_wildcard(self):
         with patch.dict("os.environ", {}, clear=True):
-            s = Settings(_env_file=None)
+            s = SettingsFactory(_env_file=None)
         assert s.allowed_origins_list == ["*"]
 
     def test_comma_separated(self):
         with patch.dict("os.environ", {"METTLE_ALLOWED_ORIGINS": "http://a.com, http://b.com"}, clear=True):
-            s = Settings(_env_file=None)
+            s = SettingsFactory(_env_file=None)
         assert s.allowed_origins_list == ["http://a.com", "http://b.com"]
 
     def test_single_origin(self):
         with patch.dict("os.environ", {"METTLE_ALLOWED_ORIGINS": "http://only.com"}, clear=True):
-            s = Settings(_env_file=None)
+            s = SettingsFactory(_env_file=None)
         assert s.allowed_origins_list == ["http://only.com"]
 
 
@@ -44,14 +47,14 @@ class TestProductionValidation:
         env = {**PRODUCTION_ENV, "METTLE_ALLOWED_ORIGINS": "*"}
         with patch.dict("os.environ", env, clear=True):
             with pytest.raises(ValueError, match="trusted origins"):
-                Settings(_env_file=None)
+                SettingsFactory(_env_file=None)
 
     def test_production_specific_origins_no_warning(self):
         env = {**PRODUCTION_ENV, "METTLE_ALLOWED_ORIGINS": "https://app.creed.space"}
         with patch.dict("os.environ", env, clear=True):
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
-                Settings(_env_file=None)
+                SettingsFactory(_env_file=None)
                 security_warnings = [x for x in w if "SECURITY WARNING" in str(x.message)]
                 assert len(security_warnings) == 0
 
@@ -63,7 +66,7 @@ class TestProductionValidation:
         with patch.dict("os.environ", env, clear=True):
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
-                s = Settings(_env_file=None)
+                s = SettingsFactory(_env_file=None)
                 assert s.is_production is False
                 security_warnings = [x for x in w if "SECURITY WARNING" in str(x.message)]
                 assert len(security_warnings) == 0
@@ -78,7 +81,7 @@ class TestIsProduction:
             PRODUCTION_ENV,
             clear=True,
         ):
-            s = Settings(_env_file=None)
+            s = SettingsFactory(_env_file=None)
         assert s.is_production is True
 
     def test_production_case_insensitive(self):
@@ -87,12 +90,12 @@ class TestIsProduction:
             {**PRODUCTION_ENV, "METTLE_ENVIRONMENT": "Production"},
             clear=True,
         ):
-            s = Settings(_env_file=None)
+            s = SettingsFactory(_env_file=None)
         assert s.is_production is True
 
     def test_development_not_production(self):
         with patch.dict("os.environ", {"METTLE_ENVIRONMENT": "development"}, clear=True):
-            s = Settings(_env_file=None)
+            s = SettingsFactory(_env_file=None)
         assert s.is_production is False
 
 

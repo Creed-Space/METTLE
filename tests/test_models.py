@@ -75,22 +75,22 @@ class TestChallenge:
     def test_challenge_requires_id(self):
         """Test that id is required."""
         with pytest.raises(ValidationError):
-            Challenge(
-                type=ChallengeType.SPEED_MATH,
-                prompt="Test",
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-                time_limit_ms=1000,
-            )
+            Challenge.model_validate({
+                "type": ChallengeType.SPEED_MATH,
+                "prompt": "Test",
+                "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+                "time_limit_ms": 1000,
+            })
 
     def test_challenge_requires_prompt(self):
         """Test that prompt is required."""
         with pytest.raises(ValidationError):
-            Challenge(
-                id="mtl_test",
-                type=ChallengeType.SPEED_MATH,
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-                time_limit_ms=1000,
-            )
+            Challenge.model_validate({
+                "id": "mtl_test",
+                "type": ChallengeType.SPEED_MATH,
+                "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+                "time_limit_ms": 1000,
+            })
 
     def test_challenge_data_default_empty(self):
         """Test that data defaults to empty dict."""
@@ -109,12 +109,12 @@ class TestChallengeRequest:
 
     def test_default_difficulty(self):
         """Test default difficulty is BASIC."""
-        request = ChallengeRequest()
+        request = ChallengeRequest.model_validate({})
         assert request.difficulty == Difficulty.BASIC
 
     def test_optional_entity_id(self):
         """Test entity_id is optional."""
-        request = ChallengeRequest()
+        request = ChallengeRequest.model_validate({})
         assert request.entity_id is None
 
         request_with_id = ChallengeRequest(entity_id="agent-001")
@@ -153,39 +153,39 @@ class TestMettleResult:
 
     def test_create_mettle_result(self):
         """Test creating a METTLE result."""
-        result = MettleResult(
-            entity_id="agent-001",
-            verified=True,
-            passed=3,
-            total=3,
-            pass_rate=1.0,
-            results=[],
-        )
+        result = MettleResult.model_validate({
+            "entity_id": "agent-001",
+            "verified": True,
+            "passed": 3,
+            "total": 3,
+            "pass_rate": 1.0,
+            "results": [],
+        })
         assert result.verified
         assert result.pass_rate == 1.0
 
     def test_mettle_result_auto_issued_at(self):
         """Test that issued_at is auto-populated."""
-        result = MettleResult(
-            entity_id=None,
-            verified=False,
-            passed=0,
-            total=3,
-            pass_rate=0.0,
-            results=[],
-        )
+        result = MettleResult.model_validate({
+            "entity_id": None,
+            "verified": False,
+            "passed": 0,
+            "total": 3,
+            "pass_rate": 0.0,
+            "results": [],
+        })
         assert result.issued_at is not None
 
     def test_mettle_result_badge_optional(self):
         """Test that badge is optional."""
-        result = MettleResult(
-            entity_id=None,
-            verified=True,
-            passed=3,
-            total=3,
-            pass_rate=1.0,
-            results=[],
-        )
+        result = MettleResult.model_validate({
+            "entity_id": None,
+            "verified": True,
+            "passed": 3,
+            "total": 3,
+            "pass_rate": 1.0,
+            "results": [],
+        })
         assert result.badge is None
 
 

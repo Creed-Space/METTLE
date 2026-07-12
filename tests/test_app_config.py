@@ -1,6 +1,10 @@
 """Tests for mettle/app_config.py — Pydantic Settings."""
 
+from typing import Any, cast
+
 from mettle.app_config import MettleSettings
+
+MettleSettingsFactory = cast(Any, MettleSettings)
 
 
 class TestMettleSettings:
@@ -18,7 +22,7 @@ class TestMettleSettings:
         ]:
             monkeypatch.delenv(key, raising=False)
         # Point env_file to a nonexistent path so pydantic-settings won't read .env
-        s = MettleSettings(_env_file=str(tmp_path / "nonexistent.env"))
+        s = MettleSettingsFactory(_env_file=str(tmp_path / "nonexistent.env"))
         assert s.dev_mode is False
         assert s.redis_url == "redis://localhost:6379"
         assert s.vcp_signing_key == ""

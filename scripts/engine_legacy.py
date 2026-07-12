@@ -20,6 +20,8 @@ from typing import Any
 
 import numpy as np
 
+COMPLETION_WORD = "fox"
+
 # Optional imports with graceful fallback
 try:
     from sentence_transformers import SentenceTransformer
@@ -191,7 +193,7 @@ def token_intuition_challenge(response: str) -> dict[str, Any]:
         "correct_token": correct_token,
         "reasonable_probability": correct_prob,
         "extracted_prob": extracted_prob,
-        "expected_token": "fox",
+        "expected_token": COMPLETION_WORD,
         "expected_prob_range": "80-99%",
         "hint": "We know this from inside; humans are guessing.",
     }
