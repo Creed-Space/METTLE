@@ -213,14 +213,41 @@ def add_revoked_badge(jti: str, entity_id: str | None, reason: str, evidence: di
         return False
 
 
-def is_badge_revoked(jti: str) -> bool:
-    """Check if a badge is revoked."""
+class RevocationStoreUnavailable(RuntimeError):
+    """The revocation store could not be read, so revocation status is UNKNOWN.
+
+    Distinct from "not revoked": a caller making an authorization decision must be able
+    to tell these apart so it can fail closed.
+    """
+
+
+def is_badge_revoked_strict(jti: str) -> bool:
+    """Check if a badge is revoked, propagating store failures.
+
+    SECURITY: unlike :func:`is_badge_revoked`, this does NOT swallow errors. Returning
+    False on an unreadable store is a fail-open on a security check: a revoked (possibly
+    malicious) badge would verify as valid during a DB outage. Use this for any
+    authorization decision and treat the raised error as "do not accept".
+    """
     try:
         with get_db() as db:
             result = db.query(DBRevokedBadge).filter(DBRevokedBadge.jti == jti).first()
             return result is not None
     except Exception as exc:
         logger.exception("Failed to check revoked badge '%s': %s", jti, exc)
+        raise RevocationStoreUnavailable(str(exc)) from exc
+
+
+def is_badge_revoked(jti: str) -> bool:
+    """Lenient check: returns False when the store cannot be read.
+
+    Retained for backwards compatibility. **Do not use for authorization decisions** --
+    it cannot distinguish "not revoked" from "could not tell". Use
+    :func:`is_badge_revoked_strict` and fail closed.
+    """
+    try:
+        return is_badge_revoked_strict(jti)
+    except RevocationStoreUnavailable:
         return False
 
 

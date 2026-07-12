@@ -124,7 +124,7 @@ class TestRevocationIsDurable:
 
     def test_revocation_is_persisted_to_the_database(self, client) -> None:
         fake_db = MagicMock()
-        fake_db.is_badge_revoked.return_value = False
+        fake_db.is_badge_revoked_strict.return_value = False
         fake_db.add_revoked_badge.return_value = True
 
         with patch("main.db", fake_db):
@@ -142,7 +142,7 @@ class TestRevocationIsDurable:
         """Fresh process (empty memory), but the DB remembers: still revoked."""
         token = _badge("persisted")
         fake_db = MagicMock()
-        fake_db.is_badge_revoked.return_value = True
+        fake_db.is_badge_revoked_strict.return_value = True
 
         revoked_badges.clear()  # simulate a restart / a different instance
 
@@ -151,4 +151,58 @@ class TestRevocationIsDurable:
 
         assert body["revoked"] is True
         assert body["valid"] is False
-        fake_db.is_badge_revoked.assert_called_with("persisted")
+        fake_db.is_badge_revoked_strict.assert_called_with("persisted")
+
+
+class TestRevocationFailsClosed:
+    """An unreadable revocation store must never let a badge through."""
+
+    def test_verify_fails_closed_when_the_store_is_unavailable(self, client) -> None:
+        """A DB outage must NOT verify a badge we cannot prove is unrevoked."""
+        token = _badge("unknown-status")
+        fake_db = MagicMock()
+        fake_db.is_badge_revoked_strict.side_effect = RuntimeError("revocation DB down")
+
+        revoked_badges.clear()  # not in the local cache: we must consult the store
+
+        with patch("main.db", fake_db):
+            body = client.get(f"/api/badge/verify/{token}").json()
+
+        assert body["valid"] is False
+        assert "unavailable" in body["error"].lower()
+
+    def test_revoke_returns_503_when_the_store_is_unavailable(self, client) -> None:
+        fake_db = MagicMock()
+        fake_db.is_badge_revoked_strict.side_effect = RuntimeError("revocation DB down")
+
+        with patch("main.db", fake_db):
+            resp = client.post(
+                "/api/badge/revoke",
+                json={"token": _badge("cannot-check"), "reason": REASON},
+                headers=ADMIN_HEADERS,
+            )
+
+        assert resp.status_code == 503
+        assert "cannot-check" not in revoked_badges
+
+    def test_failed_persistence_revokes_nothing_and_is_retryable(self, client) -> None:
+        """If the durable write fails the request must fail and cache NOTHING.
+
+        Otherwise the admin is told the badge is revoked while a restart (or another
+        instance) still accepts it, and the retry short-circuits on "already revoked"
+        without ever re-driving the write.
+        """
+        fake_db = MagicMock()
+        fake_db.is_badge_revoked_strict.return_value = False
+        fake_db.add_revoked_badge.return_value = False  # durable write fails
+
+        with patch("main.db", fake_db):
+            resp = client.post(
+                "/api/badge/revoke",
+                json={"token": _badge("not-persisted"), "reason": REASON},
+                headers=ADMIN_HEADERS,
+            )
+
+        assert resp.status_code == 503
+        # The memory cache must not have run ahead of the durable store.
+        assert "not-persisted" not in revoked_badges

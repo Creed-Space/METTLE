@@ -140,23 +140,33 @@ def _prune_expired_revocations(now: float | None = None) -> None:
         del revoked_badges[jti]
 
 
+class RevocationStoreUnavailable(Exception):
+    """The revocation store could not be read; revocation status is UNKNOWN."""
+
+
 def _is_badge_revoked(jti: str) -> bool:
     """Check a JTI against the revocation stores: in-memory fast path, then the DB.
 
     The in-memory dict is process-local and lost on restart, so on its own a revoked
     badge would verify as VALID again after a deploy (and would be invisible to other
-    instances). ``database.add_revoked_badge`` / ``is_badge_revoked`` already existed
-    and were tested, but were never wired to these endpoints -- this wires them.
+    instances). ``database.add_revoked_badge`` / ``is_badge_revoked_strict`` already
+    existed and were tested, but were never wired to these endpoints -- this wires them.
 
-    NOTE (open decision): ``database.is_badge_revoked`` swallows its own exceptions and
-    returns False, so a DB outage currently fails **open** (an unreadable revocation
-    store means a revoked badge verifies as valid). Flipping that to fail-closed is a
-    live-service availability trade-off; see the composed-credential contprompt.
+    SECURITY: fails **closed**. If the durable store cannot be read we raise
+    :class:`RevocationStoreUnavailable` rather than returning False, because a silent
+    False on a revocation check means a revoked -- possibly malicious -- badge verifies
+    as valid for the duration of a DB outage. Callers MUST treat the unknown case as
+    "do not accept". (Availability note: during an outage no badge that is not already in
+    this process's cache will verify. That is the intended trade for a credential system.)
     """
     if jti in revoked_badges:
         return True
     if db is not None:
-        return bool(db.is_badge_revoked(jti))
+        try:
+            return bool(db.is_badge_revoked_strict(jti))
+        except Exception as exc:
+            logger.error("revocation_store_unavailable", jti=jti, error=str(exc))
+            raise RevocationStoreUnavailable(jti) from exc
     return False
 
 # Collusion detection - track verification patterns
@@ -1265,12 +1275,23 @@ async def verify_badge(request: Request, token: str):
 
         # Check revocation against the durable store, not just this process's memory.
         jti = payload.get("jti")
-        if jti and _is_badge_revoked(jti):
-            return BadgeVerifyResponse(
-                valid=False,
-                error="Badge has been revoked",
-                revoked=True,
-            )
+        if jti:
+            try:
+                revoked = _is_badge_revoked(jti)
+            except RevocationStoreUnavailable:
+                # SECURITY: fail CLOSED. We cannot prove this badge is NOT revoked, so we
+                # must not accept it. Returning valid=True here would let a revoked badge
+                # through for the duration of a revocation-store outage.
+                return BadgeVerifyResponse(
+                    valid=False,
+                    error="Revocation status unavailable; badge not accepted",
+                )
+            if revoked:
+                return BadgeVerifyResponse(
+                    valid=False,
+                    error="Badge has been revoked",
+                    revoked=True,
+                )
 
         # Extract expiry info
         exp = payload.get("exp")
@@ -1368,7 +1389,16 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
     if not jti:
         raise HTTPException(status_code=400, detail="Badge has no revocable ID (jti)")
 
-    if _is_badge_revoked(jti):
+    try:
+        already_revoked = _is_badge_revoked(jti)
+    except RevocationStoreUnavailable as exc:
+        # Cannot tell whether it is already revoked, and cannot persist reliably either.
+        raise HTTPException(
+            status_code=503,
+            detail="Revocation store unavailable; badge is NOT revoked. Retry.",
+        ) from exc
+
+    if already_revoked:
         return RevokeBadgeResponse(
             revoked=False,
             jti=jti,
@@ -1379,6 +1409,19 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
     # expired (verify_badge rejects those anyway), then record this one keyed by the
     # badge's own expiry. The previous LRU eviction could silently un-revoke the oldest
     # revoked badge once the cap was hit, making it verify as VALID again.
+    # Persist FIRST: the durable store is the source of truth. If we cached in memory
+    # before persisting, a failed write would leave this process reporting the badge as
+    # revoked (and telling the admin so) while a restart -- or any other instance --
+    # still accepted it. Worse, the retry would short-circuit on "already revoked" and
+    # never re-drive the write. So: durable write, then cache; on failure, cache nothing
+    # and fail the request so the caller can retry.
+    if db is not None and not db.add_revoked_badge(jti, payload.get("entity_id"), body.reason, body.evidence):
+        logger.error("revocation_not_persisted", jti=jti)
+        raise HTTPException(
+            status_code=503,
+            detail="Revocation could not be persisted; badge is NOT revoked. Retry.",
+        )
+
     _prune_expired_revocations()
     badge_exp = payload.get("exp")
     revoked_badges[jti] = float(badge_exp) if badge_exp else float("inf")
@@ -1390,11 +1433,6 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
             size=len(revoked_badges),
             limit=MAX_REVOKED_BADGES,
         )
-
-    # Persist durably so the revocation survives a restart and is visible to every
-    # instance. Without this the revocation lived only in this process's memory.
-    if db is not None and not db.add_revoked_badge(jti, payload.get("entity_id"), body.reason, body.evidence):
-        logger.error("revocation_not_persisted", jti=jti)
 
     # Create audit record with memory limit
     audit_record = {
