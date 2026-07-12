@@ -14,6 +14,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
+from database import (
+    OperatorChallengeStoreUnavailable,
+    consume_operator_challenge_strict,
+    create_operator_challenge,
+)
 from mettle.api_models import (
     MULTI_ROUND_SUITE,
     SUITE_NAMES,
@@ -21,6 +26,8 @@ from mettle.api_models import (
     CreateSessionResponse,
     GovernanceAttestation,
     OperatorAttestation,
+    OperatorChallengeRequest,
+    OperatorChallengeResponse,
     RoundAnswerRequest,
     RoundFeedbackResponse,
     SessionResultResponse,
@@ -33,6 +40,7 @@ from mettle.auth import AuthenticatedUser, require_authenticated_user
 from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.llm_challenges import is_available as llm_challenges_available
 from mettle.session_manager import SessionManager
+from mettle.signing import operator_commitment_message
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +114,62 @@ async def get_suite_info(_user: AuthUser, suite_name: str = Path(description="Su
     )
 
 
+# ---- Operator accountability (proof of liveness) ----
+
+
+@router.post("/operator/challenge", response_model=OperatorChallengeResponse)
+async def issue_operator_challenge(request: OperatorChallengeRequest, _user: AuthUser) -> OperatorChallengeResponse:
+    """Issue a single-use, entity-bound challenge nonce for an operator commitment.
+
+    An operator signs the returned ``message_to_sign`` with their Ed25519 key and submits the
+    signature (plus the nonce) as the ``operator_commitment`` on session creation.
+
+    SECURITY: this endpoint exists because the commitment used to sign a *static* string, which
+    made it a bearer artifact -- capture one, replay it forever. The nonce makes the signature
+    prove the operator is live *now*, and it is consumed exactly once.
+    """
+    try:
+        challenge = create_operator_challenge(request.entity_id)
+    except OperatorChallengeStoreUnavailable as e:
+        # Fail closed: never hand out a nonce we could not record. One we cannot later consume
+        # is worse than none -- it would make every commitment signed against it unverifiable.
+        logger.error("Operator challenge store unavailable", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cannot issue an operator challenge right now. Retry.",
+        ) from e
+
+    expires_at = challenge["expires_at"].isoformat()
+    return OperatorChallengeResponse(
+        nonce=challenge["nonce"],
+        entity_id=request.entity_id,
+        expires_at=expires_at,
+        message_to_sign=operator_commitment_message(
+            challenge["nonce"], request.entity_id, expires_at
+        ).decode(),
+    )
+
+
+def _verify_and_consume_operator_commitment(commitment: dict[str, Any], entity_id: str) -> dict[str, Any]:
+    """Consume the challenge nonce (single-use) and bind its expiry into the commitment.
+
+    Called exactly once, at session creation. Raises ValueError on any bad/expired/replayed
+    nonce so the caller can reject the session outright -- a commitment we cannot freshly verify
+    must not be silently downgraded to "no commitment", because the result would still be issued
+    and would simply lack the accountability chain the caller believed they had provided.
+    """
+    nonce = commitment.get("challenge_nonce")
+    if not nonce:
+        raise ValueError("operator_commitment requires a challenge_nonce from POST /operator/challenge")
+
+    # Raises ValueError (reject) or OperatorChallengeStoreUnavailable (fail closed, 503).
+    expires_at = consume_operator_challenge_strict(nonce, entity_id)
+
+    bound = dict(commitment)
+    bound["challenge_expires_at"] = expires_at.isoformat()
+    return bound
+
+
 # ---- Session Management ----
 
 
@@ -116,6 +180,22 @@ async def create_session(request: CreateSessionRequest, user: AuthUser, mgr: Met
     Generates challenges for the requested suites. Challenge data is returned
     WITHOUT correct answers -- the server stores answers for secure evaluation.
     """
+    operator_commitment: dict[str, Any] | None = None
+    if request.operator_commitment:
+        try:
+            operator_commitment = _verify_and_consume_operator_commitment(
+                request.operator_commitment.model_dump(),
+                request.entity_id or "unknown",
+            )
+        except OperatorChallengeStoreUnavailable as e:
+            logger.error("Operator challenge store unavailable during session creation", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Cannot verify the operator commitment right now. Retry.",
+            ) from e
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
     try:
         session_id, challenges, meta = await mgr.create_session(
             user_id=user.user_id,
@@ -123,7 +203,7 @@ async def create_session(request: CreateSessionRequest, user: AuthUser, mgr: Met
             difficulty=request.difficulty,
             entity_id=request.entity_id,
             vcp_token=request.vcp_token,
-            operator_commitment=request.operator_commitment.model_dump() if request.operator_commitment else None,
+            operator_commitment=operator_commitment,
         )
 
         logger.info(
@@ -529,10 +609,20 @@ def _build_operator_attestation(
             logger.warning("Operator public key is not Ed25519")
             return None
 
-        # The commitment message is: "I accept accountability for agent {entity_id}"
-        expected_message = f"I accept accountability for agent {entity_id}"
+        # SECURITY: verify over the NONCE-BOUND message, never the old static string. The nonce
+        # itself was already consumed (single-use) when this commitment was accepted at session
+        # creation -- see _verify_and_consume_operator_commitment. Re-verifying the signature here
+        # is idempotent and deliberately does NOT touch the store: this runs on the result path,
+        # which callers may hit repeatedly, and consuming here would burn the nonce on a read.
+        nonce = commitment.get("challenge_nonce")
+        expires_at = commitment.get("challenge_expires_at")
+        if not nonce or not expires_at:
+            logger.warning("Operator commitment is missing its challenge binding; refusing to attest")
+            return None
+
+        expected_message = operator_commitment_message(nonce, entity_id, expires_at)
         signature_bytes = base64.b64decode(commitment["signed_commitment"])
-        public_key.verify(signature_bytes, expected_message.encode())
+        public_key.verify(signature_bytes, expected_message)
 
     except ImportError:
         logger.warning("cryptography package not available for operator signature verification")

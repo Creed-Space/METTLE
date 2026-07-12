@@ -8,8 +8,10 @@ Falls back to in-memory storage if database unavailable.
 import json
 import logging
 import os
+import secrets
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import cast
 
 from sqlalchemy import (
     Boolean,
@@ -70,6 +72,31 @@ class DBRevokedBadge(Base):
     reason = Column(Text, nullable=False)
     evidence_json = Column(Text, nullable=True)
     revoked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class DBOperatorChallenge(Base):
+    """A server-issued, single-use challenge nonce for an operator commitment.
+
+    SECURITY: this exists so an operator commitment proves *liveness*, not merely that the
+    operator's key signed some string once, ever. Without it the commitment is a pure bearer
+    artifact: the signed message used to be the static string
+    ``"I accept accountability for agent {entity_id}"``, so anyone who captured one commitment
+    could replay it verbatim on a new session for the same entity_id, forever.
+
+    The nonce is durable (not a process dict) on purpose: the deployment is multi-instance, and
+    a per-process nonce set would let the same challenge be replayed against a sibling instance
+    that never saw it consumed. That is the same bug class already fixed for revocation.
+    """
+
+    __tablename__ = "operator_challenges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nonce = Column(String(64), unique=True, index=True, nullable=False)
+    entity_id = Column(String(128), index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    consumed = Column(Boolean, default=False, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class DBAPIKey(Base):
@@ -285,6 +312,119 @@ def get_all_revoked_badges_strict(limit: int = 100_000) -> list[dict]:
             {"jti": r.jti, "revoked_at": r.revoked_at.isoformat() if r.revoked_at else None}
             for r in results
         ]
+
+
+# === Operator Challenge Operations (proof of liveness) ===
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Stamp a naive datetime as UTC.
+
+    SQLite round-trips ``DateTime`` columns as NAIVE datetimes. Comparing one against an
+    aware ``datetime.now(timezone.utc)`` raises; comparing it against a naive local ``now()``
+    silently misjudges expiry on any non-UTC host. We write UTC, so we read UTC. (Same class of
+    bug already fixed once for revocation pruning.)
+    """
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+class OperatorChallengeStoreUnavailable(RuntimeError):
+    """The operator-challenge store could not be read/written, so freshness is UNKNOWN.
+
+    Mirrors :class:`RevocationStoreUnavailable`. A caller deciding whether to accept an
+    operator commitment must be able to tell "this nonce is bad" apart from "I could not
+    check", so it can fail closed rather than accept a possibly-replayed commitment.
+    """
+
+
+def create_operator_challenge(entity_id: str, ttl_seconds: int = 300) -> dict:
+    """Issue a fresh, single-use challenge nonce bound to ``entity_id``.
+
+    Raises:
+        OperatorChallengeStoreUnavailable: if the nonce could not be persisted. We must NOT
+            hand out a nonce we failed to record -- it could never be consumed, and a caller
+            that ignored the failure would be accepting unverifiable commitments.
+    """
+    nonce = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+    try:
+        with get_db() as db:
+            db.add(DBOperatorChallenge(nonce=nonce, entity_id=entity_id, expires_at=expires_at))
+            db.commit()
+    except Exception as exc:
+        logger.exception("Failed to persist operator challenge for '%s': %s", entity_id, exc)
+        raise OperatorChallengeStoreUnavailable(str(exc)) from exc
+    return {"nonce": nonce, "entity_id": entity_id, "expires_at": expires_at}
+
+
+def consume_operator_challenge_strict(nonce: str, entity_id: str) -> datetime:
+    """Atomically consume a challenge nonce, or refuse.
+
+    SECURITY: this is the single-use gate. It must be called exactly once, when the commitment
+    is first accepted (at session creation) -- never on a read path like fetching a result,
+    which can be called repeatedly.
+
+    Returns:
+        The nonce's ``expires_at``, so the caller can rebuild the exact signed message.
+
+    Raises:
+        ValueError: the nonce is unknown, already consumed, expired, or bound to a different
+            entity_id. All four are "reject the commitment".
+        OperatorChallengeStoreUnavailable: the store could not be read/written -- freshness is
+            unknown, so the caller must fail closed.
+    """
+    try:
+        with get_db() as db:
+            # Atomic single-use claim: flip consumed False -> True in one guarded UPDATE, so two
+            # concurrent requests racing the same nonce cannot both win (whichever UPDATE matches
+            # zero rows loses). A read-then-write would be a TOCTOU hole.
+            claimed = (
+                db.query(DBOperatorChallenge)
+                .filter(
+                    DBOperatorChallenge.nonce == nonce,
+                    DBOperatorChallenge.consumed.is_(False),
+                )
+                .update(
+                    {"consumed": True, "consumed_at": datetime.now(timezone.utc)},
+                    synchronize_session=False,
+                )
+            )
+            db.commit()
+
+            record = db.query(DBOperatorChallenge).filter(DBOperatorChallenge.nonce == nonce).first()
+    except Exception as exc:
+        logger.exception("Failed to consume operator challenge: %s", exc)
+        raise OperatorChallengeStoreUnavailable(str(exc)) from exc
+
+    if record is None:
+        raise ValueError("Unknown operator challenge nonce")
+    if not claimed:
+        raise ValueError("Operator challenge nonce has already been used")
+
+    # Stored naive by SQLite; stamp UTC so an expiry comparison on a non-UTC host is correct.
+    expires_at = _as_utc(cast(datetime, record.expires_at))
+    if expires_at < datetime.now(timezone.utc):
+        raise ValueError("Operator challenge nonce has expired")
+    if cast(str, record.entity_id) != entity_id:
+        raise ValueError("Operator challenge nonce is bound to a different entity_id")
+
+    return expires_at
+
+
+def purge_expired_operator_challenges() -> int:
+    """Delete challenges past expiry. Best-effort housekeeping; never raises."""
+    try:
+        with get_db() as db:
+            deleted = (
+                db.query(DBOperatorChallenge)
+                .filter(DBOperatorChallenge.expires_at < datetime.now(timezone.utc))
+                .delete(synchronize_session=False)
+            )
+            db.commit()
+            return int(deleted)
+    except Exception as exc:
+        logger.warning("Failed to purge expired operator challenges: %s", exc)
+        return 0
 
 
 # === API Key Operations ===

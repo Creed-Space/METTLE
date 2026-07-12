@@ -214,7 +214,8 @@ def build_mettle_attestation(
         "pass_rate": round(pass_rate, 4),
     }
 
-    # Hash the metadata for content integrity
+    # Content-addressable digest of the metadata. Kept for integrity/dedup, but note this is
+    # NOT what the signature covers -- see attestation_signing_bytes.
     content_bytes = _canonical_bytes(metadata)
     content_hash = f"sha256:{hashlib.sha256(content_bytes).hexdigest()}"
 
@@ -222,22 +223,28 @@ def build_mettle_attestation(
         "auditor": "mettle.creed.space",
         "auditor_key_id": key_id,
         "attestation_type": "mettle-verification",
+        "signature_scheme": SIGNATURE_SCHEME,
         "reviewed_at": reviewed_at,
         "content_hash": content_hash,
         "metadata": metadata,
     }
 
-    # Sign if signing function provided
-    if sign_fn is not None:
-        try:
-            signature = sign_fn(content_bytes)
-            attestation["signature"] = f"ed25519:{signature}"
-        except Exception:
-            logger.warning("Failed to sign VCP attestation", exc_info=True)
-            attestation["signature"] = None
-    else:
+    if sign_fn is None:
         attestation["signature"] = None
+        return attestation
 
+    try:
+        signature = sign_fn(attestation_signing_bytes(attestation))
+    except Exception as e:
+        # SECURITY: fail CLOSED. This used to swallow the error and return the attestation with
+        # signature=None -- an unsigned credential handed out as though it were valid. Refusing to
+        # issue is the only safe outcome; an unsigned attestation is forgeable.
+        logger.exception("Failed to sign VCP attestation")
+        raise RuntimeError(
+            "Cannot issue a VCP attestation: signing failed. An unsigned attestation is forgeable."
+        ) from e
+
+    attestation["signature"] = f"ed25519:{signature}"
     return attestation
 
 
@@ -271,3 +278,47 @@ def _canonical_bytes(data: dict[str, Any]) -> bytes:
     import json
 
     return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+# Marks which bytes the signature covers. Carried INSIDE the signed envelope, so it cannot be
+# downgraded by an attacker to trick a verifier into checking the old, weaker metadata-only bytes.
+SIGNATURE_SCHEME = "mettle-envelope-v1"
+
+
+def attestation_signing_bytes(attestation: dict[str, Any]) -> bytes:
+    """The exact bytes an attestation signature covers: the whole envelope minus ``signature``.
+
+    SECURITY -- the previous scheme signed only ``metadata``. That left ``reviewed_at``,
+    ``auditor``, ``auditor_key_id`` and ``attestation_type`` OUTSIDE the signature, so a genuine
+    old attestation could be re-dated and would still verify: freshness tampering on a credential
+    whose entire purpose is to be checked for freshness.
+
+    Both the issuer and any verifier MUST derive the signed bytes through this function. Do not
+    reconstruct them by hand -- that is how the two sides drift apart and a check silently
+    degrades into checking nothing.
+    """
+    return _canonical_bytes({k: v for k, v in attestation.items() if k != "signature"})
+
+
+def verify_attestation(attestation: dict[str, Any], public_key_pem: str) -> bool:
+    """Verify an attestation's envelope signature against a published Ed25519 public key.
+
+    Fails closed on anything unexpected: a missing/None signature, an unknown signature scheme,
+    or a malformed signature all return False. An unsigned attestation is NOT valid.
+    """
+    from mettle.signing import verify_signature
+
+    signature = attestation.get("signature")
+    if not signature or not isinstance(signature, str):
+        return False
+    if attestation.get("signature_scheme") != SIGNATURE_SCHEME:
+        # Refuse unknown/legacy schemes rather than guessing which bytes were signed.
+        return False
+    if not signature.startswith("ed25519:"):
+        return False
+
+    return verify_signature(
+        public_key_pem,
+        attestation_signing_bytes(attestation),
+        signature.removeprefix("ed25519:"),
+    )

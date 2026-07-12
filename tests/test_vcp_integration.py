@@ -244,19 +244,24 @@ class TestBuildAttestation:
         assert "native" in att["metadata"]["suites_failed"]
         assert att["metadata"]["pass_rate"] == 0.5
 
-    def test_sign_fn_exception_handled(self):
+    def test_sign_fn_exception_fails_closed(self):
+        """A broken signer must RAISE, not silently return an unsigned attestation.
+
+        Previously this asserted the exception was swallowed and ``signature`` came back None --
+        pinning a fail-open that handed out a forgeable credential on any signing error.
+        """
         def bad_sign(data: bytes) -> str:
             raise RuntimeError("key error")
 
-        att = build_mettle_attestation(
-            session_id="s1",
-            difficulty="standard",
-            suites_passed=[],
-            suites_failed=[],
-            pass_rate=0.0,
-            sign_fn=bad_sign,
-        )
-        assert att["signature"] is None
+        with pytest.raises(RuntimeError, match="forgeable"):
+            build_mettle_attestation(
+                session_id="s1",
+                difficulty="standard",
+                suites_passed=[],
+                suites_failed=[],
+                pass_rate=0.0,
+                sign_fn=bad_sign,
+            )
 
 
 # ---- CSM-1 Line Format ----
