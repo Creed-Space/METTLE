@@ -9,6 +9,7 @@ httpx>=0.26.0
 redis[hiredis]>=5.0.0  # v2 session storage
 cryptography>=49.0.0  # Ed25519 VCP attestation signing
 anthropic>=0.40.0  # Optional: Suite 12 LLM-dynamic challenges (requires ANTHROPIC_API_KEY)
+numpy>=1.26.0  # Challenge engine runtime dependency used by every v2 session
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0  # PostgreSQL support for production
 
