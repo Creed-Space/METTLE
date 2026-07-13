@@ -601,7 +601,12 @@ def _restore_persistent_runtime_state() -> None:
         current_index = len(session.results)
         if not session.completed and current_index < len(session.challenges):
             current = session.challenges[current_index]
-            issued_at = current.issued_at.timestamp()
+            # A recovered client already possesses this challenge, but downtime
+            # is outside its control. Restart the response stopwatch when the
+            # server makes the session answerable again. Reusing the original
+            # generation timestamp makes every answer after a normal deploy look
+            # late, even when PostgreSQL recovery itself succeeded.
+            issued_at = time.time()
             add_with_limit(
                 challenges,
                 current.id,
