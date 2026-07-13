@@ -241,14 +241,16 @@ class TestPersistentRuntimeRecovery:
             }
         ]
 
-        recovered_after = time.time()
         with patch.object(main_module, "db", mock_db):
             main_module._restore_persistent_runtime_state()
 
         assert sessions["recovered-incomplete"].started_at.tzinfo is not None
         assert sessions["recovered-complete"].badge_info == badge
         assert challenges[challenge.id][0] == challenge
-        assert challenges[challenge.id][1] >= recovered_after
+        assert challenges[challenge.id][1] is None
+        with patch.object(main_module.time, "time", return_value=1234.5):
+            main_module._arm_recovered_challenge(sessions["recovered-incomplete"])
+        assert challenges[challenge.id][1] == 1234.5
         assert webhooks["recovered-webhook-owner"]["url"].endswith("mettle-hook")
         mock_db.get_recent_sessions.assert_called_once_with(
             max_age_seconds=main_module.LEGACY_SESSION_RECOVERY_SECONDS,

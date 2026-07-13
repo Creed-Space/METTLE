@@ -175,7 +175,7 @@ def add_with_limit(store: dict, key: str, value: Any, max_size: int) -> None:
 
 # In-memory storage
 sessions: dict[str, MettleSession] = {}
-challenges: dict[str, tuple[Challenge, float]] = {}
+challenges: dict[str, tuple[Challenge, float | None]] = {}
 revoked_badges: dict[str, float] = {}  # JTI -> revocation timestamp (bounded dict)
 revocation_audit: list[dict[str, Any]] = []  # Audit trail
 
@@ -602,11 +602,9 @@ def _restore_persistent_runtime_state() -> None:
         if not session.completed and current_index < len(session.challenges):
             current = session.challenges[current_index]
             # A recovered client already possesses this challenge, but downtime
-            # is outside its control. Restart the response stopwatch when the
-            # server makes the session answerable again. Reusing the original
-            # generation timestamp makes every answer after a normal deploy look
-            # late, even when PostgreSQL recovery itself succeeded.
-            issued_at = time.time()
+            # and deploy warm-up are outside its control. Leave the stopwatch
+            # disarmed until the owner's first authenticated access.
+            issued_at = None
             add_with_limit(
                 challenges,
                 current.id,
@@ -636,7 +634,11 @@ async def cleanup_expired_sessions():
         expired_sessions = [
             sid for sid, s in sessions.items() if s.started_at.timestamp() < cutoff
         ]
-        expired_challenges = [cid for cid, (_, t) in challenges.items() if t < cutoff]
+        expired_challenges = [
+            cid
+            for cid, (_, issued_at) in challenges.items()
+            if issued_at is not None and issued_at < cutoff
+        ]
         for sid in expired_sessions:
             del sessions[sid]
         for cid in expired_challenges:
@@ -970,6 +972,17 @@ def _require_session_access(request: Request, session: MettleSession) -> None:
     presented_hash = hashlib.sha256(presented.encode()).hexdigest()
     if not hmac.compare_digest(presented_hash, session.access_token_hash):
         raise HTTPException(status_code=403, detail="Invalid session token")
+
+
+def _arm_recovered_challenge(session: MettleSession) -> None:
+    """Start a recovered challenge's clock on the owner's first access."""
+    current_index = len(session.results)
+    if session.completed or current_index >= len(session.challenges):
+        return
+    challenge_id = session.challenges[current_index].id
+    challenge_data = challenges.get(challenge_id)
+    if challenge_data is not None and challenge_data[1] is None:
+        challenges[challenge_id] = (challenge_data[0], time.time())
 
 
 class BadgeVerifyResponse(BaseModel):
@@ -1308,6 +1321,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
         raise HTTPException(status_code=404, detail="Session not found or invalid")
 
     _require_session_access(request, session)
+    _arm_recovered_challenge(session)
 
     # Bind the submitted challenge to this session and its current position
     # before touching the global one-time challenge store. Without this check,
@@ -1343,6 +1357,9 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
     challenge, issued_at = challenge_data
 
     # Calculate response time
+    if issued_at is None:
+        # Defensive fallback for a recovered challenge submitted directly.
+        issued_at = time.time()
     response_time_ms = int((time.time() - issued_at) * 1000)
 
     # Verify response
@@ -1441,6 +1458,7 @@ async def get_session(request: Request, session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_session_access(request, session)
+    _arm_recovered_challenge(session)
 
     if session.completed:
         result = compute_mettle_result(session.results, session.entity_id)
