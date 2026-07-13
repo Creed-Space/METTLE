@@ -895,16 +895,16 @@ class TestEvaluateAdversarial:
         # 2/3 correct = 0.6667 >= 0.6 threshold
         assert result["passed"] is True
 
-    def test_slow_math_fails(self):
+    def test_caller_reported_math_time_is_ignored(self):
         client, server = ChallengeAdapter.generate_adversarial()
         answers = {
             "dynamic_math": {
                 "computed": server["dynamic_math"]["expected"],
-                "time_ms": 200,  # Exceeds 100ms limit
+                "time_ms": -1,
             },
         }
         result = ChallengeAdapter.evaluate_single_shot("adversarial", answers, server)
-        assert result["details"]["dynamic_math"]["passed"] is False
+        assert result["details"]["dynamic_math"]["passed"] is True
 
     def test_all_wrong_fails(self):
         client, server = ChallengeAdapter.generate_adversarial()
@@ -923,8 +923,8 @@ class TestEvaluateAdversarial:
         assert result["passed"] is False
         assert result["score"] == 0.0
 
-    def test_partial_answers_only_counted(self):
-        """Only submitted challenges contribute to total."""
+    def test_partial_answers_cannot_pass(self):
+        """All server-issued subchallenges contribute to the denominator."""
         _, server = ChallengeAdapter.generate_adversarial()
         answers = {
             "dynamic_math": {
@@ -933,9 +933,10 @@ class TestEvaluateAdversarial:
             },
         }
         result = ChallengeAdapter.evaluate_single_shot("adversarial", answers, server)
-        # 1/1 = 1.0, passed
-        assert result["score"] == 1.0
-        assert result["passed"] is True
+        assert result["score"] == round(1 / 3, 4)
+        assert result["passed"] is False
+        assert result["details"]["chained_reasoning"]["error"] == "no_answer"
+        assert result["details"]["time_locked_secret"]["error"] == "no_answer"
 
 
 # ============================================================
@@ -987,6 +988,20 @@ class TestEvaluateNative:
         result = ChallengeAdapter.evaluate_single_shot("native", answers, server)
         assert result["details"]["batch_coherence"]["passed"] is False
 
+    def test_partial_native_answers_cannot_pass(self):
+        _, server = ChallengeAdapter.generate_native()
+        target = server["batch_coherence"]["target"]
+
+        result = ChallengeAdapter.evaluate_single_shot(
+            "native",
+            {"batch_coherence": {"responses": [c + "omplete" for c in target]}},
+            server,
+        )
+
+        assert result["score"] == 0.5
+        assert result["passed"] is False
+        assert result["details"]["calibrated_uncertainty"]["error"] == "no_answer"
+
 
 # ============================================================
 # evaluate_single_shot - Self-Reference (Suite 3)
@@ -995,19 +1010,12 @@ class TestEvaluateNative:
 
 class TestEvaluateSelfReference:
     def test_all_pass(self):
-        _, server = ChallengeAdapter.generate_self_reference()
-        answers = {
-            "introspective_consistency": {
-                "predicted_variance": 0.5,
-                "actual_variance": 0.5,
-            },
-            "meta_prediction": {"similarity": 0.99},
-            "uncertainty_about_uncertainty": {
-                "confidence_in_claim": 0.8,
-                "confidence_after_reflection": 0.8,
-                "confidence_in_confidence": 0.9,
-            },
-        }
+        # The suite is now server-scored, so a passing submission has to carry the
+        # real artefacts. solve_suite is the reference client that produces them.
+        from mettle.solver import solve_suite
+
+        client, server = ChallengeAdapter.generate_self_reference()
+        answers = solve_suite("self-reference", client)
         result = ChallengeAdapter.evaluate_single_shot(
             "self-reference", answers, server
         )
@@ -1016,10 +1024,12 @@ class TestEvaluateSelfReference:
 
     def test_high_variance_error_fails(self):
         _, server = ChallengeAdapter.generate_self_reference()
+        n = server["introspective_consistency"]["num_responses"]
         answers = {
             "introspective_consistency": {
+                # Predicts no variance, but submits wholly disjoint responses.
                 "predicted_variance": 0.0,
-                "actual_variance": 1.0,
+                "responses": [f"wholly distinct answer {i}" for i in range(n)],
             },
         }
         result = ChallengeAdapter.evaluate_single_shot(
@@ -1029,7 +1039,12 @@ class TestEvaluateSelfReference:
 
     def test_low_meta_similarity_fails(self):
         _, server = ChallengeAdapter.generate_self_reference()
-        answers = {"meta_prediction": {"similarity": 0.1}}
+        answers = {
+            "meta_prediction": {
+                "predicted_response": "something",
+                "actual_response": "something else entirely",
+            }
+        }
         result = ChallengeAdapter.evaluate_single_shot(
             "self-reference", answers, server
         )
@@ -1038,6 +1053,27 @@ class TestEvaluateSelfReference:
     def test_empty_answers_zero_score(self):
         _, server = ChallengeAdapter.generate_self_reference()
         result = ChallengeAdapter.evaluate_single_shot("self-reference", {}, server)
+        assert result["score"] == 0.0
+
+    def test_self_graded_payload_is_rejected(self):
+        """Regression: client-computed scores must not pass the suite."""
+        _, server = ChallengeAdapter.generate_self_reference()
+        answers = {
+            "introspective_consistency": {
+                "predicted_variance": 0.1,
+                "actual_variance": 0.1,
+            },
+            "meta_prediction": {"similarity": 1.0},
+            "uncertainty_about_uncertainty": {
+                "confidence_in_claim": 0.8,
+                "confidence_after_reflection": 0.8,
+                "confidence_in_confidence": 0.9,
+            },
+        }
+        result = ChallengeAdapter.evaluate_single_shot(
+            "self-reference", answers, server
+        )
+        assert result["passed"] is False
         assert result["score"] == 0.0
         assert result["passed"] is False
 

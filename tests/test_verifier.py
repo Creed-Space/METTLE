@@ -330,11 +330,13 @@ class TestComputeMettleResult:
     def test_all_passed(self, sample_verification_results):
         """Test result when all challenges passed."""
         result = compute_mettle_result(sample_verification_results, "agent-001")
+        assert result.screening_passed
         assert result.verified
+        assert result.credential_eligible
         assert result.passed == 3
         assert result.total == 3
         assert result.pass_rate == 1.0
-        assert result.badge is not None
+        assert result.badge is None
 
     def test_not_enough_passed(self):
         """Test result when not enough challenges passed."""
@@ -391,7 +393,9 @@ class TestComputeMettleResult:
         ]
 
         result = compute_mettle_result(results)
+        assert result.screening_passed
         assert result.verified
+        assert result.credential_eligible
         assert result.pass_rate == 0.8
 
     def test_empty_results(self):
@@ -400,10 +404,12 @@ class TestComputeMettleResult:
         assert not result.verified
         assert result.pass_rate == 0.0
 
-    def test_badge_format(self, sample_verification_results):
-        """Test badge format when verified."""
+    def test_result_is_eligible_but_issuance_is_a_separate_boundary(
+        self, sample_verification_results
+    ):
         result = compute_mettle_result(sample_verification_results)
-        assert result.badge is not None
-        assert result.badge.startswith("METTLE-verified-")
-        # Should contain date
-        assert datetime.now(timezone.utc).strftime("%Y%m%d") in result.badge
+        assert result.screening_passed
+        assert result.verified is True
+        assert result.credential_eligible is True
+        assert result.badge is None
+        assert result.badge_info is None

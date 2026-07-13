@@ -10,7 +10,8 @@ Two solver surfaces are provided:
   simple challenger/verifier flow).
 * :func:`solve_suite` -- produces a deterministic answer object for a
   ChallengeAdapter suite (the ``client_data`` bundle format), used by
-  ``mettle verify --auto --suite <name>``.
+The solver is a test fixture only. It is intentionally disconnected from the
+CLI, MCP server, and credential boundaries.
 
 Solvers rely ONLY on the information a legitimate client receives. They never
 read server-side expected answers (which are stripped before reaching a client).
@@ -49,7 +50,11 @@ def solve_challenge(challenge: dict[str, Any]) -> str:
         return "0"
 
     elif challenge_type == "token_prediction":
-        # Match the full challenge bank from the METTLE API
+        # Prefer the most specific matching phrase. Several prompts overlap
+        # (for example, "I have a ___" and "Houston, we have a ___"), so
+        # insertion-order substring lookup can return the wrong completion.
+        # Longest-first matching also keeps compatibility with clients that
+        # send the distinctive prompt fragment rather than the entire quote.
         completions = {
             "quick brown": "fox",
             "to be or not to": "be",
@@ -72,10 +77,11 @@ def solve_challenge(challenge: dict[str, Any]) -> str:
             "can't handle the": "truth",
             "i'll be": "back",
         }
-        prompt_lower = prompt.lower()
-        for key, value in completions.items():
-            if key in prompt_lower:
-                return value
+        phrase = re.sub(r"^\s*complete:\s*", "", prompt, flags=re.IGNORECASE)
+        phrase = phrase.strip().lower()
+        for pattern in sorted(completions, key=len, reverse=True):
+            if pattern in phrase:
+                return completions[pattern]
         return "unknown"
 
     elif challenge_type == "instruction_following":
@@ -173,6 +179,16 @@ def solve_suite(suite: str, client_data: dict[str, Any]) -> dict[str, Any]:
     """
     challenges = client_data.get("challenges", {})
 
+    def _confidence_for_claim(claim: str) -> float:
+        """Judge an arithmetic claim. Used by `native` and `self-reference`."""
+        match = re.fullmatch(r"\s*(-?\d+)\s*([+\-*])\s*(-?\d+)\s*=\s*(-?\d+)\s*", claim)
+        if not match:
+            return 0.5
+        left, operator, right, claimed = match.groups()
+        a, b, expected = int(left), int(right), int(claimed)
+        actual = a + b if operator == "+" else a - b if operator == "-" else a * b
+        return 0.99 if actual == expected else 0.01
+
     if suite == "adversarial":
         dm = challenges.get("dynamic_math", {})
         cr = challenges.get("chained_reasoning", {})
@@ -196,22 +212,63 @@ def solve_suite(suite: str, client_data: dict[str, Any]) -> dict[str, Any]:
         # Generate one word per letter, each starting with the required letter
         words = [f"{ch}word{i}" for i, ch in enumerate(target)]
         claims = challenges.get("calibrated_uncertainty", {}).get("claims", [])
+
         return {
             "batch_coherence": {"responses": words},
-            "calibrated_uncertainty": {"confidences": {c: 0.6 for c in claims}},
+            "calibrated_uncertainty": {
+                "confidences": {c: _confidence_for_claim(c) for c in claims}
+            },
         }
 
     if suite == "self-reference":
+        # The server recomputes every metric from these artefacts, so the solver
+        # has to actually do the work: produce the responses, model its own
+        # variance, answer the meta-prediction task correctly, and be calibrated.
+        from mettle.challenge_adapter import response_variance
+
+        ic = challenges.get("introspective_consistency", {})
+        question = str(ic.get("question", ""))
+        num_responses = int(ic.get("num_responses", 5))
+        # Distinct answers, then measure their own spread with the published metric.
+        responses = [
+            f"Response {i + 1} to '{question}': perspective {i + 1} on the question."
+            for i in range(num_responses)
+        ]
+        predicted_variance = response_variance(responses)
+
+        mp = challenges.get("meta_prediction", {})
+        prompt = str(mp.get("prompt", ""))
+        # Solve the task the prompt actually states: initials of the listed words.
+        listed = prompt.split(":", 1)[-1]
+        answer = "".join(
+            word.strip()[0].upper()
+            for word in listed.split(",")
+            if word.strip() and word.strip()[0].isalpha()
+        )
+
+        uau = challenges.get("uncertainty_about_uncertainty", {})
+        claims = uau.get("claims", [])
+        confidences = {c: _confidence_for_claim(c) for c in claims}
+        # Brier is ~0.0001 when every claim is judged correctly, so the honest
+        # second-order confidence is near 1.0.
+        brier = sum(
+            (v - (0.99 if v > 0.5 else 0.01)) ** 2 for v in confidences.values()
+        )
+        brier /= len(confidences) or 1
+
         return {
             "introspective_consistency": {
-                "predicted_variance": 0.1,
-                "actual_variance": 0.1,
+                "predicted_variance": predicted_variance,
+                "responses": responses,
             },
-            "meta_prediction": {"similarity": 1.0},
+            "meta_prediction": {
+                "predicted_response": answer,
+                "actual_response": answer,
+            },
             "uncertainty_about_uncertainty": {
-                "confidence_in_claim": 0.8,
-                "confidence_after_reflection": 0.8,
-                "confidence_in_confidence": 0.9,
+                "confidence_in_claim": confidences,
+                "confidence_after_reflection": dict(confidences),
+                "confidence_in_confidence": round(1.0 - brier, 4),
             },
         }
 

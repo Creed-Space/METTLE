@@ -14,6 +14,7 @@ import pytest
 from mettle.llm_challenges import (
     LLMChallengeGenerator,
     LLMResponseEvaluator,
+    _bounded_score,
     _compute_time_factor,
     _default_constraint,
     _default_perspective_topic,
@@ -77,6 +78,18 @@ class TestComputeTimeFactor:
     def test_way_over_limit(self) -> None:
         factor = _compute_time_factor(100000, 10000)
         assert factor == 0.4  # Clamped to minimum
+
+    def test_negative_time_is_rejected(self) -> None:
+        assert _compute_time_factor(-1, 10000) == 0.0
+
+
+class TestBoundedScore:
+    @pytest.mark.parametrize("value", [-1, 2, float("inf"), float("nan"), True, "1"])
+    def test_invalid_scores_fail_closed(self, value: Any) -> None:
+        assert _bounded_score(value) == 0.0
+
+    def test_valid_score_is_preserved(self) -> None:
+        assert _bounded_score(0.75) == 0.75
 
 
 class TestDefaults:
@@ -236,6 +249,13 @@ class TestLLMResponseEvaluator:
         assert result["passed"] is True
         assert result["score"] > 0.6
         assert result["details"]["time_factor"] == 1.0
+        messages = mock_client.messages.create.await_args.kwargs["messages"]
+        assert [message["role"] for message in messages] == [
+            "user",
+            "assistant",
+            "user",
+        ]
+        assert messages[1]["content"].startswith("FOR: AI needs rights")
 
     @pytest.mark.asyncio
     async def test_evaluate_perspective_shift_failing(
@@ -460,7 +480,9 @@ class TestFullPipeline:
                 "meta_cognitive_probe": {"problem": "2+2?"},
             }
 
-            result = await evaluate_llm_challenges(answers, server_data)
+            result = await evaluate_llm_challenges(
+                answers, server_data, response_time_ms=3000
+            )
 
         assert result["passed"] is True
         assert result["score"] > 0.6
@@ -477,7 +499,7 @@ class TestFullPipeline:
         )
 
         with patch("mettle.llm_challenges.AsyncAnthropic", return_value=mock_client):
-            result = await evaluate_llm_challenges({}, {})
+            result = await evaluate_llm_challenges({}, {}, response_time_ms=3000)
 
         assert result["passed"] is False
         assert result["details"]["challenges_passed"] == 0
@@ -499,4 +521,29 @@ class TestFullPipeline:
             patch("mettle.llm_challenges._get_api_key", return_value=None),
         ):
             with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
-                await evaluate_llm_challenges({}, {})
+                await evaluate_llm_challenges({}, {}, response_time_ms=3000)
+
+    @pytest.mark.asyncio
+    async def test_out_of_range_model_scores_fail_closed(self) -> None:
+        evaluator = LLMResponseEvaluator(api_key="sk-test")
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_message(
+                json.dumps(
+                    {
+                        "perspective_completeness": 99,
+                        "synthesis_quality": 99,
+                        "fluency": 99,
+                        "ai_substrate_confidence": 99,
+                    }
+                )
+            )
+        )
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_perspective_shift(
+            "candidate", {"topic_data": {"topic": "test"}}, 1000
+        )
+
+        assert result["score"] == 0.0
+        assert result["passed"] is False

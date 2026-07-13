@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from mettle.vcp import (
+    SUITE_ORDER,
     build_mettle_attestation,
     compute_tier,
     format_csm1_line,
@@ -113,222 +114,84 @@ class TestParseCSM1Token:
         assert claim.extra_lines.get("S") == "scope-val"
 
 
-# ---- Tier Computation ----
+# ---- Verification Credential Contract ----
 
 
 class TestComputeTier:
-    def test_platinum_all_suites(self):
-        all_suites = [
-            "adversarial",
-            "native",
-            "self-reference",
-            "social",
-            "inverse-turing",
-            "anti-thrall",
-            "agency",
-            "counter-coaching",
-            "intent-provenance",
-            "novel-reasoning",
-            "governance",
-        ]
-        assert compute_tier(all_suites) == "platinum"
-
-    def test_suites_1_to_10_is_gold_not_platinum(self):
-        """Suites 1-10 without governance gives gold, not platinum."""
-        suites = [
-            "adversarial",
-            "native",
-            "self-reference",
-            "social",
-            "inverse-turing",
-            "anti-thrall",
-            "agency",
-            "counter-coaching",
-            "intent-provenance",
-            "novel-reasoning",
-        ]
-        assert compute_tier(suites) == "gold"
-
-    def test_gold_suites_1_to_9(self):
-        suites = [
-            "adversarial",
-            "native",
-            "self-reference",
-            "social",
-            "inverse-turing",
-            "anti-thrall",
-            "agency",
-            "counter-coaching",
-            "intent-provenance",
-        ]
-        assert compute_tier(suites) == "gold"
-
-    def test_silver_suites_1_to_7(self):
-        suites = [
-            "adversarial",
-            "native",
-            "self-reference",
-            "social",
-            "inverse-turing",
-            "anti-thrall",
-            "agency",
-        ]
-        assert compute_tier(suites) == "silver"
-
-    def test_bronze_suites_1_to_5(self):
-        suites = [
-            "adversarial",
-            "native",
-            "self-reference",
-            "social",
-            "inverse-turing",
-        ]
-        assert compute_tier(suites) == "bronze"
-
-    def test_none_insufficient_suites(self):
-        assert compute_tier(["adversarial", "native"]) == "none"
-
-    def test_none_empty(self):
-        assert compute_tier([]) == "none"
-
-    def test_gap_drops_tier(self):
-        """Pass suites 1-9 but fail suite 6 -> should be Bronze, not Silver."""
-        suites = [
-            "adversarial",
-            "native",
-            "self-reference",
-            "social",
-            "inverse-turing",
-            # missing: "anti-thrall" (suite 6)
-            "agency",
-            "counter-coaching",
-            "intent-provenance",
-        ]
-        assert compute_tier(suites) == "bronze"
-
-    def test_gap_in_bronze_range(self):
-        """Fail suite 3 -> none (can't get Bronze without 1-5)."""
-        suites = ["adversarial", "native", "social", "inverse-turing"]
-        assert compute_tier(suites) == "none"
-
-    def test_unknown_suite_ignored(self):
-        """Unknown suite names are silently ignored."""
-        assert compute_tier(["adversarial", "unknown-suite"]) == "none"
-
-
-# ---- Attestation Building ----
+    @pytest.mark.parametrize(
+        ("count", "tier"),
+        [
+            (0, "none"),
+            (4, "none"),
+            (5, "bronze"),
+            (7, "silver"),
+            (9, "gold"),
+            (11, "platinum"),
+        ],
+    )
+    def test_contiguous_suite_ranges_mint_tiers(self, count, tier):
+        assert compute_tier(list(SUITE_ORDER)[:count]) == tier
 
 
 class TestBuildAttestation:
-    def test_basic_structure(self):
+    def test_qualifying_structure_records_issuer_unavailability(self, monkeypatch):
+        monkeypatch.setattr("mettle.signing.is_available", lambda: False)
         att = build_mettle_attestation(
             session_id="sess_test123",
+            subject_id="test-user",
+            entity_id="agent-1",
             difficulty="standard",
-            suites_passed=[
-                "adversarial",
-                "native",
-                "self-reference",
-                "social",
-                "inverse-turing",
-            ],
+            suites_passed=list(SUITE_ORDER),
             suites_failed=[],
             pass_rate=1.0,
         )
         assert att["auditor"] == "mettle.creed.space"
-        assert att["auditor_key_id"] == "mettle-vcp-v1"
-        assert att["attestation_type"] == "mettle-verification"
+        assert att["attestation_type"] == "mettle-verification-evidence"
         assert att["content_hash"].startswith("sha256:")
-        assert att["metadata"]["tier"] == "bronze"
-        assert att["metadata"]["session_id"] == "sess_test123"
-        assert att["metadata"]["difficulty"] == "standard"
-        assert att["metadata"]["pass_rate"] == 1.0
-        assert att["signature"] is None  # No sign_fn provided
-
-    def test_with_sign_fn(self):
-        def mock_sign(data: bytes) -> str:
-            return "mock_signature_base64"
-
-        att = build_mettle_attestation(
-            session_id="sess_signed",
-            difficulty="hard",
-            suites_passed=list(
-                compute_tier.__module__
-                and [
-                    "adversarial",
-                    "native",
-                    "self-reference",
-                    "social",
-                    "inverse-turing",
-                    "anti-thrall",
-                    "agency",
-                    "counter-coaching",
-                    "intent-provenance",
-                ]
-            ),
-            suites_failed=["novel-reasoning"],
-            pass_rate=0.9,
-            sign_fn=mock_sign,
-        )
-        assert att["signature"] == "ed25519:mock_signature_base64"
-        assert att["metadata"]["tier"] == "gold"
+        assert att["metadata"]["tier"] == "platinum"
+        assert att["metadata"]["credential_eligible"] is True
+        assert att["metadata"]["assurance"] == "mettle_behavioral_verification"
+        assert att["signature"] is None
+        assert att["credential_issued"] is False
 
     def test_content_hash_deterministic(self):
         kwargs: dict[str, Any] = dict(
             session_id="sess_det",
+            subject_id="test-user",
             difficulty="standard",
             suites_passed=["adversarial"],
             suites_failed=[],
             pass_rate=1.0,
         )
-        att1 = build_mettle_attestation(**kwargs)
-        att2 = build_mettle_attestation(**kwargs)
-        assert att1["content_hash"] == att2["content_hash"]
+        assert (
+            build_mettle_attestation(**kwargs)["content_hash"]
+            == build_mettle_attestation(**kwargs)["content_hash"]
+        )
 
-    def test_failed_suites_in_metadata(self):
+    def test_failed_suites_remain_evidence(self):
         att = build_mettle_attestation(
             session_id="s1",
+            subject_id="test-user",
             difficulty="easy",
             suites_passed=["adversarial"],
             suites_failed=["native"],
             pass_rate=0.5,
         )
-        assert "native" in att["metadata"]["suites_failed"]
+        assert att["metadata"]["suites_failed"] == ["native"]
         assert att["metadata"]["pass_rate"] == 0.5
-
-    def test_sign_fn_exception_handled(self):
-        def bad_sign(data: bytes) -> str:
-            raise RuntimeError("key error")
-
-        att = build_mettle_attestation(
-            session_id="s1",
-            difficulty="standard",
-            suites_passed=[],
-            suites_failed=[],
-            pass_rate=0.0,
-            sign_fn=bad_sign,
-        )
-        assert att["signature"] is None
-
-
-# ---- CSM-1 Line Format ----
 
 
 class TestFormatCSM1Line:
-    def test_basic_format(self):
-        line = format_csm1_line("gold", "sess_xyz123456789", "2026-02-15T14:30:00Z")
-        assert line == "MT:gold:sess_xyz1234:2026-02-15T14:30:00Z"
-
-    def test_short_session_id(self):
-        line = format_csm1_line("bronze", "short", "2026-01-01T00:00:00Z")
-        assert line == "MT:bronze:short:2026-01-01T00:00:00Z"
+    def test_none_format(self):
+        line = format_csm1_line("none", "sess_xyz123456789", "2026-02-15T14:30:00Z")
+        assert line == "MT:none:sess_xyz1234:2026-02-15T14:30:00Z"
 
     def test_default_timestamp(self):
-        line = format_csm1_line("silver", "sess_abc")
-        assert line.startswith("MT:silver:sess_abc:")
-        # Should have an ISO timestamp
-        ts_part = line.split(":", 3)[3]
-        # Verify it parses as ISO datetime
-        datetime.fromisoformat(ts_part)
+        line = format_csm1_line("none", "sess_abc")
+        datetime.fromisoformat(line.split(":", 3)[3])
+
+    def test_tier_claim_formatted(self):
+        assert format_csm1_line("gold", "sess_abc").startswith("MT:gold:sess_abc:")
 
 
 # ---- Suite 9 Enhancement ----

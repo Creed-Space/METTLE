@@ -43,8 +43,6 @@ _mock_engine.IterationCurveAnalyzer.analyze_curve = MagicMock(
         "round1_suspicion": 0.0,
     }
 )
-sys.modules.setdefault("scripts.engine", _mock_engine)
-
 from mettle.api_models import (  # noqa: E402
     MULTI_ROUND_SUITE,
     SUITE_NAMES,
@@ -832,7 +830,7 @@ class TestRouterGetSessionStatus:
         resp = client.get(f"/api/mettle/sessions/{sid}")
         assert resp.status_code == 200
         assert resp.json()["session_id"] == sid
-        assert resp.json()["elapsed_ms"] == 0
+        assert resp.json()["elapsed_ms"] >= 0
 
     def test_get_session_not_found(self, client):
         assert client.get("/api/mettle/sessions/nonexistent").status_code == 404

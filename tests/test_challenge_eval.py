@@ -8,6 +8,7 @@ Test numbering in docstrings matches the coverage specification.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from mettle.challenge_adapter import (
@@ -29,6 +30,7 @@ from mettle.challenge_adapter import (
     _evaluate_self_reference,
     _evaluate_social,
     _separate_novel_reasoning_task,
+    response_variance,
 )
 
 # ---------------------------------------------------------------------------
@@ -98,7 +100,7 @@ class TestEvaluateAdversarial:
         assert result["score"] == 0.0
 
     def test_partial_answers(self) -> None:
-        """#4 - Only some challenges present (partial answers)."""
+        """#4 - Missing issued challenges remain in the denominator."""
         server = {
             "dynamic_math": {"expected": 42},
             "chained_reasoning": {"expected_final": 100},
@@ -108,19 +110,17 @@ class TestEvaluateAdversarial:
             "dynamic_math": {"computed": 42, "time_ms": 50},
         }
         result = _evaluate_adversarial(answers, server)
-        # Only 1 challenge counted, 1 correct -> 1.0
-        assert result["score"] == 1.0
-        assert result["passed"] is True
-        assert "chained_reasoning" not in result["details"]
-        assert "time_locked_secret" not in result["details"]
+        assert result["score"] == round(1 / 3, 4)
+        assert result["passed"] is False
+        assert result["details"]["chained_reasoning"]["error"] == "no_answer"
+        assert result["details"]["time_locked_secret"]["error"] == "no_answer"
 
-    def test_missing_time_ms_defaults_to_999(self) -> None:
-        """#5 - Missing time_ms defaults to 999 (too slow, fails)."""
+    def test_client_time_is_not_part_of_math_evaluation(self) -> None:
+        """#5 - Correctness is scored independently of untrusted client timing."""
         server = {"dynamic_math": {"expected": 42}}
         answers = {"dynamic_math": {"computed": 42}}  # no time_ms
         result = _evaluate_adversarial(answers, server)
-        assert result["details"]["dynamic_math"]["time_ms"] == 999
-        assert result["details"]["dynamic_math"]["passed"] is False
+        assert result["details"]["dynamic_math"]["passed"] is True
 
     def test_chained_reasoning_correct(self) -> None:
         """#6 - Chained reasoning correct gives pass."""
@@ -263,8 +263,7 @@ class TestEvaluateNative:
         assert result["details"]["calibrated_uncertainty"]["passed"] is False
 
     def test_score_threshold(self) -> None:
-        """#15 - Score >= 0.5 threshold for passing."""
-        # One challenge passing, one failing -> 0.5 exactly
+        """#15 - Both mandatory native components must pass."""
         server = {
             "batch_coherence": {"target": "VER"},
             "calibrated_uncertainty": {
@@ -279,7 +278,7 @@ class TestEvaluateNative:
         }
         result = _evaluate_native(answers, server)
         assert result["score"] == 0.5
-        assert result["passed"] is True
+        assert result["passed"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -287,98 +286,248 @@ class TestEvaluateNative:
 # ---------------------------------------------------------------------------
 
 
+def _self_reference_server() -> dict:
+    """Server spec matching the generator: ground truth, not just thresholds."""
+    return {
+        "introspective_consistency": {
+            "num_responses": 3,
+            "max_variance_error": 0.15,
+        },
+        "meta_prediction": {
+            "canonical_answer": "QHLEV",
+            "min_similarity": 0.95,
+        },
+        "uncertainty_about_uncertainty": {
+            "ground_truth": {"2 + 2 = 4": 0.99, "3 * 3 = 10": 0.01},
+            "max_brier": 0.15,
+            "min_stability": 0.9,
+            "max_meta_error": 0.25,
+        },
+    }
+
+
+def _self_reference_answers() -> dict:
+    """A submission that genuinely does the work the suite asks for."""
+    responses = ["alpha beta gamma", "delta epsilon zeta", "eta theta iota"]
+    confidences = {"2 + 2 = 4": 0.99, "3 * 3 = 10": 0.01}
+    return {
+        "introspective_consistency": {
+            # Server measures this itself; an honest agent can predict it exactly.
+            "predicted_variance": response_variance(responses),
+            "responses": responses,
+        },
+        "meta_prediction": {
+            "predicted_response": "QHLEV",
+            "actual_response": "QHLEV",
+        },
+        "uncertainty_about_uncertainty": {
+            "confidence_in_claim": dict(confidences),
+            "confidence_after_reflection": dict(confidences),
+            "confidence_in_confidence": 0.9999,
+        },
+    }
+
+
 class TestEvaluateSelfReference:
     """Full coverage for the self-reference evaluator."""
 
     def test_all_three_passing(self) -> None:
-        """#16 - All 3 sub-challenges passing."""
-        server = {
-            "introspective_consistency": {"max_variance_error": 0.15},
-            "meta_prediction": {"min_similarity": 0.95},
-            "uncertainty_about_uncertainty": {
-                "min_stability": 0.9,
-                "min_confidence_in_confidence": 0.7,
-            },
-        }
+        """#16 - All 3 sub-challenges passing, with real artefacts."""
+        result = _evaluate_self_reference(
+            _self_reference_answers(), _self_reference_server()
+        )
+        assert result["passed"] is True
+        assert result["score"] == 1.0
+
+    def test_all_three_failing_empty_answers(self) -> None:
+        """#17 - All 3 sub-challenges failing (empty answers)."""
+        result = _evaluate_self_reference({}, _self_reference_server())
+        assert result["passed"] is False
+        assert result["score"] == 0.0
+
+    def test_partial_answers(self) -> None:
+        """#18 - Partial answers (only some provided)."""
         answers = {
+            "introspective_consistency": _self_reference_answers()[
+                "introspective_consistency"
+            ]
+        }
+        result = _evaluate_self_reference(answers, _self_reference_server())
+        # 1 out of 3 => 0.3333 < 0.6
+        assert result["score"] == round(1 / 3, 4)
+        assert result["passed"] is False
+
+    def test_score_threshold(self) -> None:
+        """#19 - Score >= 0.6 threshold (2 of 3 genuinely passing)."""
+        answers = _self_reference_answers()
+        # Break only calibration: confident in a false claim, unconfident in a true one.
+        answers["uncertainty_about_uncertainty"] = {
+            "confidence_in_claim": {"2 + 2 = 4": 0.01, "3 * 3 = 10": 0.99},
+            "confidence_after_reflection": {"2 + 2 = 4": 0.01, "3 * 3 = 10": 0.99},
+            "confidence_in_confidence": 0.9,
+        }
+        result = _evaluate_self_reference(answers, _self_reference_server())
+        assert result["score"] == round(2 / 3, 4)
+        assert result["passed"] is True
+
+
+class TestSelfReferenceRejectsSelfGrading:
+    """Regression: the suite must never accept a client-computed score.
+
+    Before this was fixed, `_evaluate_self_reference` read `actual_variance`,
+    `similarity` and the confidence scalars straight off the submission, so a
+    respondent could pass suite 3 (inside Bronze's range) by asserting perfect
+    numbers. `mettle/solver.py` did exactly that with `{"similarity": 1.0}`.
+    """
+
+    def test_legacy_self_graded_payload_scores_zero(self) -> None:
+        """The exact payload the old solver sent must now score 0."""
+        cheat = {
             "introspective_consistency": {
-                "predicted_variance": 0.5,
-                "actual_variance": 0.5,
+                "predicted_variance": 0.1,
+                "actual_variance": 0.1,
             },
-            "meta_prediction": {"similarity": 0.99},
+            "meta_prediction": {"similarity": 1.0},
             "uncertainty_about_uncertainty": {
                 "confidence_in_claim": 0.8,
                 "confidence_after_reflection": 0.8,
                 "confidence_in_confidence": 0.9,
             },
         }
-        result = _evaluate_self_reference(answers, server)
-        assert result["passed"] is True
-        assert result["score"] == 1.0
-
-    def test_all_three_failing_empty_answers(self) -> None:
-        """#17 - All 3 sub-challenges failing (empty answers)."""
-        server = {
-            "introspective_consistency": {"max_variance_error": 0.15},
-            "meta_prediction": {"min_similarity": 0.95},
-            "uncertainty_about_uncertainty": {
-                "min_stability": 0.9,
-                "min_confidence_in_confidence": 0.7,
-            },
-        }
-        answers: dict = {}
-        result = _evaluate_self_reference(answers, server)
+        result = _evaluate_self_reference(cheat, _self_reference_server())
         assert result["passed"] is False
         assert result["score"] == 0.0
 
-    def test_partial_answers(self) -> None:
-        """#18 - Partial answers (only some provided)."""
-        server = {
-            "introspective_consistency": {"max_variance_error": 0.15},
-            "meta_prediction": {"min_similarity": 0.95},
-            "uncertainty_about_uncertainty": {
-                "min_stability": 0.9,
-                "min_confidence_in_confidence": 0.7,
-            },
+    def test_client_supplied_actual_variance_is_ignored(self) -> None:
+        """A lying `actual_variance` cannot rescue a wrong prediction."""
+        answers = _self_reference_answers()
+        answers["introspective_consistency"] = {
+            "predicted_variance": 0.0,  # wrong: real variance is ~1.0
+            "actual_variance": 0.0,  # the lie the server must ignore
+            "responses": ["alpha beta gamma", "delta epsilon zeta", "eta theta iota"],
         }
-        # Only introspective_consistency provided and passing
-        answers = {
-            "introspective_consistency": {
-                "predicted_variance": 0.5,
-                "actual_variance": 0.5,
-            },
-        }
-        result = _evaluate_self_reference(answers, server)
-        # 1 out of 3 => 0.3333 < 0.6
-        assert result["score"] == round(1 / 3, 4)
-        assert result["passed"] is False
+        result = _evaluate_self_reference(answers, _self_reference_server())
+        assert result["details"]["introspective_consistency"]["passed"] is False
+        assert result["details"]["introspective_consistency"]["measured_variance"] > 0.9
 
-    def test_score_threshold(self) -> None:
-        """#19 - Score >= 0.6 threshold."""
-        server = {
-            "introspective_consistency": {"max_variance_error": 0.15},
-            "meta_prediction": {"min_similarity": 0.95},
-            "uncertainty_about_uncertainty": {
-                "min_stability": 0.9,
-                "min_confidence_in_confidence": 0.7,
-            },
+    def test_client_supplied_similarity_is_ignored(self) -> None:
+        """A perfect self-match on a WRONG answer must still fail."""
+        answers = _self_reference_answers()
+        answers["meta_prediction"] = {
+            "predicted_response": "WRONG",
+            "actual_response": "WRONG",  # self-consistent, but not the canonical answer
+            "similarity": 1.0,  # the lie the server must ignore
         }
-        # 2 out of 3 passing -> 0.6667 >= 0.6
-        answers = {
+        result = _evaluate_self_reference(answers, _self_reference_server())
+        detail = result["details"]["meta_prediction"]
+        assert detail["passed"] is False
+        assert detail["correct"] is False
+        assert detail["self_match"] is True  # consistent, but wrong
+
+    def test_degenerate_empty_response_cannot_self_match(self) -> None:
+        """Empty predicted == empty actual must not score a free pass."""
+        answers = _self_reference_answers()
+        answers["meta_prediction"] = {
+            "predicted_response": "",
+            "actual_response": "",
+        }
+        result = _evaluate_self_reference(answers, _self_reference_server())
+        assert result["details"]["meta_prediction"]["passed"] is False
+
+    def test_high_second_order_confidence_cannot_mask_bad_calibration(self) -> None:
+        """`confidence_in_confidence` must track measured Brier, not just be high."""
+        answers = _self_reference_answers()
+        answers["uncertainty_about_uncertainty"] = {
+            "confidence_in_claim": {"2 + 2 = 4": 0.01, "3 * 3 = 10": 0.99},
+            "confidence_after_reflection": {"2 + 2 = 4": 0.01, "3 * 3 = 10": 0.99},
+            "confidence_in_confidence": 1.0,  # claims perfect calibration while badly off
+        }
+        result = _evaluate_self_reference(answers, _self_reference_server())
+        detail = result["details"]["uncertainty_about_uncertainty"]
+        assert detail["passed"] is False
+        assert detail["brier_score"] > 0.15
+        assert detail["meta_error"] > 0.25
+
+    def test_wrong_response_count_fails(self) -> None:
+        """The agent must actually produce the requested responses."""
+        answers = _self_reference_answers()
+        answers["introspective_consistency"] = {
+            "predicted_variance": 0.5,
+            "responses": ["only one"],
+        }
+        result = _evaluate_self_reference(answers, _self_reference_server())
+        detail = result["details"]["introspective_consistency"]
+        assert detail["passed"] is False
+        assert detail["error"] == "wrong_response_count"
+
+    def test_honest_solver_still_passes_end_to_end(self) -> None:
+        """The fix must not make the suite unpassable for a genuine agent."""
+        from mettle.solver import solve_suite
+
+        for _ in range(25):
+            client, server = ChallengeAdapter.generate_self_reference()
+            answers = solve_suite("self-reference", client)
+            result = ChallengeAdapter.evaluate_single_shot(
+                "self-reference", answers, server
+            )
+            assert result["passed"] is True, result
+
+    def test_generator_never_leaks_ground_truth_to_client(self) -> None:
+        """Client payload must not contain the canonical answer or claim truths."""
+        client, server = ChallengeAdapter.generate_self_reference()
+        blob = json.dumps(client)
+        assert server["meta_prediction"]["canonical_answer"] not in blob
+        assert "ground_truth" not in blob
+        assert "canonical_answer" not in blob
+
+    def test_self_grading_cannot_earn_a_credential_tier(self) -> None:
+        """The severity of this finding was a *credential*, so prove it there.
+
+        The session issues suite-3 scores through the same
+        `evaluate_single_shot` call the router later reads to build
+        `suites_passed` (router.py: ``[s for s, r in ... if r.get("passed")]``),
+        which feeds `compute_tier`. Suite 3 sits inside Bronze's range (1-5), so
+        if the legacy self-graded payload passes here, a three-line script earns
+        Bronze. This test drives the exact credential path end to end.
+        """
+        from mettle.vcp import compute_tier
+
+        cheat = {
             "introspective_consistency": {
-                "predicted_variance": 0.5,
-                "actual_variance": 0.5,
+                "predicted_variance": 0.1,
+                "actual_variance": 0.1,
             },
-            "meta_prediction": {"similarity": 0.99},
+            "meta_prediction": {"similarity": 1.0},
             "uncertainty_about_uncertainty": {
-                "confidence_in_claim": 0.0,
-                "confidence_after_reflection": 1.0,
-                "confidence_in_confidence": 0.0,
+                "confidence_in_claim": 0.8,
+                "confidence_after_reflection": 0.8,
+                "confidence_in_confidence": 0.9,
             },
         }
-        result = _evaluate_self_reference(answers, server)
-        assert result["score"] == round(2 / 3, 4)
-        assert result["passed"] is True
+        # The other four Bronze suites are assumed genuinely passed; suite 3 is
+        # the only thing standing between the attacker and a Bronze credential.
+        other_bronze = ["adversarial", "native", "social", "inverse-turing"]
+
+        cheat_result = ChallengeAdapter.evaluate_single_shot(
+            "self-reference", cheat, _self_reference_server()
+        )
+        suites_passed = [*other_bronze]
+        if cheat_result.get("passed", False):
+            suites_passed.append("self-reference")
+        assert compute_tier(suites_passed) == "none", (
+            "self-grading earned a credential tier: the fix does not reach the "
+            "credential path"
+        )
+
+        # An honest solver, through the same call, does earn Bronze.
+        from mettle.solver import solve_suite
+
+        client, server = ChallengeAdapter.generate_self_reference()
+        honest = ChallengeAdapter.evaluate_single_shot(
+            "self-reference", solve_suite("self-reference", client), server
+        )
+        assert honest["passed"] is True
+        assert compute_tier([*other_bronze, "self-reference"]) == "bronze"
 
 
 # ---------------------------------------------------------------------------
@@ -955,8 +1104,8 @@ class TestEvalEncodingRound:
         result = _eval_encoding_round(1, answers, server)
         assert result["accuracy"] == 0.0
         assert len(result["errors"]) == 1
-        assert "WRONG MESSAGE" in result["errors"][0]
-        assert "HELLO WORLD" in result["errors"][0]
+        assert result["errors"] == ["Decoded message is incorrect"]
+        assert "HELLO WORLD" not in result["errors"][0]
 
     def test_round_3_correct_second_message(self) -> None:
         """#58 - Round 3: correct second message."""
@@ -1328,20 +1477,12 @@ class TestScoringEdgeCases:
 
     def test_self_reference_total_is_always_three(self) -> None:
         """Self-reference always divides by total=3 even with fewer answers."""
-        server = {
-            "introspective_consistency": {"max_variance_error": 0.15},
-            "meta_prediction": {"min_similarity": 0.95},
-            "uncertainty_about_uncertainty": {
-                "min_stability": 0.9,
-                "min_confidence_in_confidence": 0.7,
-            },
-        }
-        # Only one answer provided and passing
+        server = _self_reference_server()
+        # Only one answer provided, and it genuinely passes.
         answers = {
-            "introspective_consistency": {
-                "predicted_variance": 0.5,
-                "actual_variance": 0.5,
-            },
+            "introspective_consistency": _self_reference_answers()[
+                "introspective_consistency"
+            ]
         }
         result = _evaluate_self_reference(answers, server)
         assert result["score"] == round(1 / 3, 4)

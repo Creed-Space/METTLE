@@ -77,7 +77,7 @@ class VerificationResult(BaseModel):
 
 
 class BadgeInfo(BaseModel):
-    """METTLE verification badge with expiry."""
+    """Server-issued METTLE badge metadata."""
 
     token: str = Field(..., description="The badge token (JWT or simple)")
     expires_at: datetime = Field(..., description="When the badge expires")
@@ -91,20 +91,30 @@ class BadgeInfo(BaseModel):
 
 
 class MettleResult(BaseModel):
-    """Overall METTLE verification result."""
+    """Overall METTLE reverse-CAPTCHA verification result."""
 
     entity_id: str | None
-    verified: bool
+    verified: bool = Field(
+        default=False,
+        description="Whether the configured METTLE challenge threshold was met",
+    )
+    screening_passed: bool = Field(
+        default=False,
+        description="Compatibility alias for the challenge-threshold outcome",
+    )
+    assurance: str = Field(default="mettle_behavioral_verification")
+    credential_eligible: bool = Field(default=False)
+    tier: str = Field(default="none", description="METTLE tier earned by this session")
     passed: int
     total: int
     pass_rate: float
     results: list[VerificationResult]
     issued_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     badge: str | None = Field(
-        None, description="Simple verification badge string (deprecated)"
+        None, description="Signed, time-limited METTLE badge when one was issued"
     )
     badge_info: BadgeInfo | None = Field(
-        None, description="Full badge info with expiry"
+        None, description="Metadata for the server-issued badge"
     )
 
 
@@ -118,3 +128,10 @@ class MettleSession(BaseModel):
     results: list[VerificationResult] = Field(default_factory=list)
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed: bool = False
+    access_token_hash: str = Field(
+        description="SHA-256 digest of the bearer token for legacy session access"
+    )
+    badge_info: BadgeInfo | None = Field(
+        default=None,
+        description="Stable server-issued badge metadata for a completed session",
+    )

@@ -1,13 +1,15 @@
 # Development and testing dependencies
 -r requirements.txt
 
-pytest>=8.0.0
+pytest>=9.0.3
 pytest-asyncio>=0.23.0
 pytest-cov>=4.1.0
 pytest-rerunfailures>=13.0
+httpx2>=2.5.0  # Starlette 1.x TestClient backend
 numpy>=1.26.0
 hypothesis>=6.100.0
-cryptography>=42.0.0
+cryptography>=49.0.0
+pygments>=2.20.0
 ruff>=0.4.0
 mypy>=1.10.0
 bandit==1.9.4

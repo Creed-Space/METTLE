@@ -47,8 +47,10 @@ class TestFullVerificationFlow:
         assert result_response.status_code == 200
         result = result_response.json()
 
-        # Should be verified (at least 80% passed)
-        assert result["verified"]
+        assert result["screening_passed"]
+        assert result["verified"] is True
+        assert result["credential_eligible"] is True
+        assert result["badge"]
         assert result["entity_id"] == "integration-test-agent"
         assert result["total"] == challenges_count
 
@@ -82,7 +84,9 @@ class TestFullVerificationFlow:
             challenge = result_data["next_challenge"]
 
         result = client.get(f"/api/session/{session_id}/result").json()
-        assert result["verified"]
+        assert result["screening_passed"]
+        assert result["verified"] is True
+        assert result["badge_info"]["signed"] is True
         assert result["total"] == 5
 
     def test_verification_failure_all_wrong(self, client):
@@ -166,16 +170,8 @@ class TestFullVerificationFlow:
             f"Expected at least 3 passed, got {result['passed']}. Results: {results}"
         )
 
-        # If we got 4/5 (80%), verify should be True. If timing caused 3/5, verify is False.
-        # Either is acceptable for this test - we're verifying threshold logic works.
-        if result["passed"] >= 4:
-            assert result["verified"], (
-                f"With {result['passed']}/5 (>=80%), should verify"
-            )
-        else:
-            assert not result["verified"], (
-                f"With {result['passed']}/5 (<80%), should not verify"
-            )
+        assert result["screening_passed"] is (result["passed"] >= 4)
+        assert result["verified"] is result["screening_passed"]
 
     def test_multiple_concurrent_sessions(self, client):
         """Test multiple sessions can run concurrently."""
@@ -280,8 +276,7 @@ class TestFullVerificationFlow:
         assert "chained_reasoning" in types_seen
         assert "consistency" in types_seen
 
-    def test_badge_issued_on_verification(self, client):
-        """Test that verified sessions receive a badge."""
+    def test_passing_session_issues_signed_badge(self, client):
         response = client.post(
             "/api/session/start",
             json={"difficulty": "basic", "entity_id": "badge-test"},
@@ -289,122 +284,34 @@ class TestFullVerificationFlow:
         data = response.json()
         session_id = data["session_id"]
         challenge = data["current_challenge"]
-
         while challenge:
             answer = self._solve_challenge_correctly(challenge)
-            response = client.post(
+            answer_response = client.post(
                 "/api/session/answer",
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge["id"],
                     "answer": answer,
                 },
-            )
-            result_data = response.json()
-            if result_data["session_complete"]:
+            ).json()
+            if answer_response["session_complete"]:
                 break
-            challenge = result_data["next_challenge"]
+            challenge = answer_response["next_challenge"]
 
         result = client.get(f"/api/session/{session_id}/result").json()
-        if result["verified"]:
-            assert result["badge"] is not None
-            # Badge is now a signed JWT (starts with eyJ for the header)
-            assert result["badge"].startswith("eyJ"), "Badge should be a JWT"
-        else:
-            assert result["badge"] is None
+        assert result["screening_passed"]
+        assert result["verified"] is True
+        assert result["badge"]
+        assert result["badge_info"]["signed"] is True
 
     def _solve_challenge_correctly(self, challenge: dict) -> str:
         """Solve a challenge correctly based on its type and prompt.
 
         Note: This simulates AI solving - parsing prompt, not reading expected_answer.
         """
-        challenge_type = challenge["type"]
-        prompt = challenge.get("prompt", "")
-        data = challenge.get("data", {})
+        from mettle.solver import solve_challenge
 
-        if challenge_type == "speed_math":
-            # Parse "Calculate: X + Y" or "Calculate: X × Y" etc.
-            import re
-
-            match = re.search(r"(\d+)\s*([+\-×*])\s*(\d+)", prompt)
-            if match:
-                a, op, b = int(match.group(1)), match.group(2), int(match.group(3))
-                if op in ["+"]:
-                    return str(a + b)
-                elif op in ["-"]:
-                    return str(a - b)
-                elif op in ["×", "*"]:
-                    return str(a * b)
-            return "0"
-
-        elif challenge_type == "token_prediction":
-            # Known completions from our phrase bank (all lowercase for matching)
-            completions = {
-                "quick brown ___": "fox",
-                "to be or not to ___": "be",
-                "e = mc___": "2",
-                "hello ___": "world",
-                "once upon a ___": "time",
-                "therefore i ___": "am",
-                "seven ___ ago": "years",
-                "beginning was the ___": "word",
-                "can do for ___": "you",
-                "giant ___ for mankind": "leap",
-                "fear is ___ itself": "fear",
-                "have a ___": "dream",
-                "the ___ be with you": "force",
-                "we have a ___": "problem",
-                "my dear ___": "watson",
-                "infinity and ___": "beyond",
-                "box of ___": "chocolates",
-                "at you, ___": "kid",
-                "handle the ___": "truth",
-                "i'll be ___": "back",
-            }
-            prompt_lower = prompt.lower()
-            for pattern, answer in completions.items():
-                if pattern in prompt_lower:
-                    return answer
-            return "unknown"
-
-        elif challenge_type == "instruction_following":
-            instruction = data.get("instruction", "")
-            if "Indeed" in instruction:
-                return "Indeed, the capital of France is Paris."
-            elif "..." in instruction:
-                return "The capital of France is Paris..."
-            elif "therefore" in instruction:
-                return "Therefore, Paris is the capital of France."
-            elif "5 words" in instruction:
-                return "Paris is France's capital city."
-            elif "number" in instruction:
-                return "1. Paris is the capital of France."
-            return "Indeed, this follows the instruction."
-
-        elif challenge_type == "chained_reasoning":
-            # Parse and follow the instructions
-            import re
-
-            lines = prompt.split("\n")
-            value = 0
-            for line in lines:
-                if "Start with" in line:
-                    match = re.search(r"Start with (\d+)", line)
-                    if match:
-                        value = int(match.group(1))
-                elif "Double" in line:
-                    value *= 2
-                elif "Add 10" in line:
-                    value += 10
-                elif "Subtract 5" in line:
-                    value -= 5
-            return str(value)
-
-        elif challenge_type == "consistency":
-            # Varied but consistent answers (AI-like)
-            return "4|four|4"
-
-        return "unknown"
+        return solve_challenge(challenge)
 
 
 class TestErrorHandling:

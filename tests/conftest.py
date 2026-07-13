@@ -14,9 +14,9 @@ from config import get_settings  # noqa: E402
 get_settings.cache_clear()
 
 import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
 from main import app, challenges, limiter, sessions  # noqa: E402
 from mettle.models import Challenge, ChallengeType, VerificationResult  # noqa: E402
+from tests.session_client import SessionAwareTestClient  # noqa: E402
 
 # Make time limits very lenient in tests (CI can be slow)
 _ORIGINAL_TIME_LIMITS = {
@@ -66,7 +66,7 @@ def client():
     )
     challenger.generate_consistency_challenge = lenient_time(original_consistency)
 
-    yield TestClient(app)
+    yield SessionAwareTestClient(app)
 
     # Restore original functions
     challenger.generate_speed_math_challenge = original_speed

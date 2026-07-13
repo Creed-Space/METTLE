@@ -1,5 +1,5 @@
 """
-METTLE API: Machine Entity Trustbuilding through Turing-inverse Logic Examination
+METTLE API: Machine Evaluation Through Turing-inverse Logic Examination
 
 Prove your mettle, with this CAPTCHA to keep humans out of places they shouldn't be.
 
@@ -7,6 +7,8 @@ A reverse-CAPTCHA verification system for AI-only spaces.
 """
 
 import asyncio
+import hashlib
+import hmac
 import ipaddress
 import os
 import secrets
@@ -14,13 +16,13 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol, TypedDict, cast
+from typing import Annotated, Any, Protocol, TypedDict, cast
 
 import jwt
 import structlog
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from mettle import (
     BadgeInfo,
@@ -34,6 +36,7 @@ from mettle import (
     verify_response,
 )
 from pydantic import BaseModel, Field, field_validator
+from redis.exceptions import RedisError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -49,7 +52,30 @@ class DatabaseLayer(Protocol):
     """Operations used from the optional persistence module."""
 
     def init_db(self) -> None: ...
+    def save_session(
+        self,
+        session_id: str,
+        entity_id: str | None,
+        difficulty: str,
+        challenges: list[Challenge],
+        access_token_hash: str | None = None,
+        started_at: datetime | None = None,
+    ) -> bool: ...
+    def update_session_results(
+        self,
+        session_id: str,
+        results: list[VerificationResult],
+        completed: bool = False,
+        badge_info: dict[str, Any] | None = None,
+    ) -> bool: ...
+    def get_recent_sessions(
+        self, max_age_seconds: int = 1800, limit: int = 5000
+    ) -> list[dict[str, Any]]: ...
     def save_api_key(self, api_key: str, tier: str, entity_id: str | None) -> bool: ...
+    def get_api_key(self, api_key: str) -> dict[str, Any] | None: ...
+    def update_api_key_usage(
+        self, api_key: str, usage_date: str, usage_count: int
+    ) -> bool: ...
     def save_verification_record(
         self, entity_id: str, ip_address: str, passed: bool
     ) -> bool: ...
@@ -64,6 +90,9 @@ class DatabaseLayer(Protocol):
     def save_webhook(
         self, entity_id: str, url: str, events: list[str], secret: str | None
     ) -> bool: ...
+    def get_webhooks(
+        self, limit: int = 1000, *, raise_on_error: bool = False
+    ) -> list[dict[str, Any]]: ...
     def delete_webhook(self, entity_id: str) -> bool: ...
 
 
@@ -119,6 +148,7 @@ MAX_REVOCATION_AUDIT = 10000
 MAX_API_KEYS = 10000
 MAX_WEBHOOKS = 1000
 MAX_AUTH_FAILURES = 10000
+MAX_FINGERPRINT_RESPONSE_CHARS = 4096
 
 _BIND_ALL_INTERFACES = str(ipaddress.IPv4Address(0))
 _LOOPBACK_IPV4 = str(ipaddress.IPv4Address("127.0.0.1"))
@@ -188,11 +218,21 @@ class RateTier:
     }
 
     @staticmethod
+    def get_key_data(api_key: str | None) -> dict[str, Any] | None:
+        """Resolve an API key from memory or durable digest-backed storage."""
+        if not api_key:
+            return None
+        key_data = api_keys.get(api_key)
+        if key_data is None and db:
+            key_data = db.get_api_key(api_key)
+            if key_data is not None:
+                add_with_limit(api_keys, api_key, key_data, MAX_API_KEYS)
+        return key_data
+
+    @staticmethod
     def get_tier(api_key: str | None) -> str:
         """Get tier for an API key, default to free."""
-        if not api_key:
-            return "free"
-        key_data = api_keys.get(api_key)
+        key_data = RateTier.get_key_data(api_key)
         if not key_data:
             return "free"
         return key_data.get("tier", "free")
@@ -203,8 +243,12 @@ class RateTier:
         return RateTier.TIERS.get(tier, RateTier.TIERS["free"])
 
     @staticmethod
-    def check_limit(api_key: str | None, limit_type: str) -> tuple[bool, str]:
+    def check_limit(
+        api_key: str | None, limit_type: str, amount: int = 1
+    ) -> tuple[bool, str]:
         """Check if request is within rate limits. Returns (allowed, message)."""
+        if amount < 1:
+            raise ValueError("Rate-limit charge must be at least one")
         tier = RateTier.get_tier(api_key)
         limits = RateTier.get_limits(tier)
 
@@ -212,9 +256,9 @@ class RateTier:
             return True, "Enterprise: unlimited"
 
         # Track usage
-        if api_key and api_key in api_keys:
+        key_data = RateTier.get_key_data(api_key)
+        if api_key and key_data is not None:
             today = datetime.now(timezone.utc).date().isoformat()
-            key_data = api_keys[api_key]
 
             if key_data.get("usage_date") != today:
                 key_data["usage_date"] = today
@@ -222,9 +266,16 @@ class RateTier:
 
             if limit_type == "session":
                 max_sessions = limits["sessions_per_day"]
-                if key_data.get("usage_count", 0) >= max_sessions:
+                usage_count = key_data.get("usage_count", 0)
+                if usage_count + amount > max_sessions:
                     return False, f"Daily limit reached ({max_sessions} sessions)"
-                key_data["usage_count"] = key_data.get("usage_count", 0) + 1
+                key_data["usage_count"] = usage_count + amount
+                if db and not db.update_api_key_usage(
+                    api_key,
+                    key_data["usage_date"],
+                    key_data["usage_count"],
+                ):
+                    return False, "API key usage persistence unavailable"
 
         return True, f"OK ({tier} tier)"
 
@@ -245,8 +296,9 @@ class RateTier:
         }
         add_with_limit(api_keys, api_key, key_data, MAX_API_KEYS)
         # Persist to database if enabled
-        if db:
-            db.save_api_key(api_key, tier, entity_id)
+        if db and not db.save_api_key(api_key, tier, entity_id):
+            api_keys.pop(api_key, None)
+            raise RuntimeError("API key persistence unavailable")
         return key_data
 
 
@@ -471,6 +523,106 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 
 # === Session Cleanup Task ===
+LEGACY_SESSION_RECOVERY_SECONDS = 1800
+
+
+def _persist_new_legacy_session(session: MettleSession) -> bool:
+    """Persist a new legacy session when durable storage is enabled."""
+    if not db:
+        return True
+    return db.save_session(
+        session.session_id,
+        session.entity_id,
+        session.difficulty.value,
+        session.challenges,
+        session.access_token_hash,
+        session.started_at,
+    )
+
+
+def _persist_legacy_progress(session: MettleSession) -> bool:
+    """Persist answer progress and stable credential state."""
+    if not db:
+        return True
+    badge_info = (
+        session.badge_info.model_dump(mode="json") if session.badge_info else None
+    )
+    return db.update_session_results(
+        session.session_id,
+        session.results,
+        session.completed,
+        badge_info,
+    )
+
+
+def _restore_persistent_runtime_state() -> None:
+    """Recover recent legacy sessions and webhook registrations from PostgreSQL."""
+    if not db:
+        return
+
+    restored_sessions = 0
+    for stored in db.get_recent_sessions(
+        max_age_seconds=LEGACY_SESSION_RECOVERY_SECONDS,
+        limit=MAX_SESSIONS,
+    ):
+        try:
+            started_at = stored["created_at"]
+            if isinstance(started_at, str):
+                started_at = datetime.fromisoformat(started_at)
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            session = MettleSession(
+                session_id=stored["session_id"],
+                entity_id=stored.get("entity_id"),
+                difficulty=Difficulty(stored["difficulty"]),
+                challenges=[
+                    Challenge.model_validate(item) for item in stored["challenges"]
+                ],
+                results=[
+                    VerificationResult.model_validate(item)
+                    for item in stored.get("results", [])
+                ],
+                started_at=started_at,
+                completed=bool(stored.get("completed")),
+                access_token_hash=stored["access_token_hash"],
+                badge_info=BadgeInfo.model_validate(stored["badge_info"])
+                if stored.get("badge_info")
+                else None,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning(
+                "legacy_session_recovery_skipped",
+                session_id=stored.get("session_id"),
+                error=type(exc).__name__,
+            )
+            continue
+
+        add_with_limit(sessions, session.session_id, session, MAX_SESSIONS)
+        current_index = len(session.results)
+        if not session.completed and current_index < len(session.challenges):
+            current = session.challenges[current_index]
+            issued_at = current.issued_at.timestamp()
+            add_with_limit(
+                challenges,
+                current.id,
+                (current, issued_at),
+                MAX_CHALLENGES,
+            )
+        restored_sessions += 1
+
+    restored_webhooks = 0
+    for stored in db.get_webhooks(limit=MAX_WEBHOOKS, raise_on_error=True):
+        entity_id = stored.pop("entity_id")
+        add_with_limit(webhooks, entity_id, stored, MAX_WEBHOOKS)
+        restored_webhooks += 1
+
+    logger.info(
+        "persistent_runtime_state_restored",
+        sessions=restored_sessions,
+        webhooks=restored_webhooks,
+    )
+
+
 async def cleanup_expired_sessions():
     """Background task to remove expired sessions (prevents memory DoS)."""
     while True:
@@ -505,6 +657,7 @@ async def lifespan(app: FastAPI):
     if db:
         try:
             db.init_db()
+            _restore_persistent_runtime_state()
         except Exception as exc:
             raise RuntimeError("Database initialization failed") from exc
 
@@ -514,7 +667,7 @@ async def lifespan(app: FastAPI):
         version=settings.api_version,
     )
     print("[METTLE] API starting...")
-    print("   Machine Entity Trustbuilding through Turing-inverse Logic Examination")
+    print("   Machine Evaluation Through Turing-inverse Logic Examination")
     print("   'Prove your mettle.'")
 
     # Initialize Redis for METTLE router (optional — returns 503 if unavailable)
@@ -523,9 +676,17 @@ async def lifespan(app: FastAPI):
         try:
             import redis.asyncio as redis_client
 
-            app.state.redis = redis_client.from_url(redis_url)
+            app.state.redis = redis_client.from_url(
+                redis_url,
+                socket_connect_timeout=1.0,
+                socket_timeout=1.0,
+                retry_on_timeout=False,
+                health_check_interval=30,
+            )
             await app.state.redis.ping()
-            logger.info("redis_connected", url=redis_url[:20] + "...")
+            # Never log any portion of a connection URL. Credentials can occur
+            # before the host and may be exposed even by a short prefix.
+            logger.info("redis_connected")
         except Exception as e:
             logger.warning("redis_unavailable", error=str(e))
             app.state.redis = None
@@ -565,7 +726,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.api_title,
     description="""
-**Machine Entity Trustbuilding through Turing-inverse Logic Examination**
+**Machine Evaluation Through Turing-inverse Logic Examination**
 
 *"Prove your mettle."*
 
@@ -620,6 +781,20 @@ api_router = APIRouter(prefix="/api")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, cast(Any, _rate_limit_exceeded_handler))
 
+
+async def _redis_unavailable_handler(
+    _request: Request, _exc: RedisError
+) -> JSONResponse:
+    """Fail closed and promptly when the v2 session store is unavailable."""
+    logger.warning("redis_request_unavailable")
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "METTLE session storage temporarily unavailable"},
+    )
+
+
+app.add_exception_handler(RedisError, cast(Any, _redis_unavailable_handler))
+
 # Add middlewares
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIDMiddleware)
@@ -662,6 +837,9 @@ class StartSessionResponse(BaseModel):
     """Response with session info and first challenge."""
 
     session_id: str = Field(description="Unique session identifier")
+    session_token: str = Field(
+        description="Bearer token required for answering and reading this session"
+    )
     difficulty: Difficulty = Field(description="Selected difficulty level")
     total_challenges: int = Field(description="Total number of challenges to complete")
     current_challenge: Challenge = Field(description="First challenge to answer")
@@ -733,6 +911,62 @@ class ErrorResponse(BaseModel):
     code: str = Field(description="Machine-readable error code")
 
 
+def _attach_stable_session_badge(
+    session: MettleSession,
+    result: MettleResult,
+) -> None:
+    """Attach one stable server-issued badge to a passing session.
+
+    The badge attests that this reverse-CAPTCHA session passed. The optional
+    ``entity_id`` remains explicitly self-asserted and is never represented as
+    a proven identity on the public legacy API.
+    """
+    result.assurance = "mettle_behavioral_verification"
+    if not result.verified:
+        result.credential_eligible = False
+        result.tier = "none"
+        result.badge = None
+        result.badge_info = None
+        return
+    if not settings.secret_key:
+        # Production configuration requires a signing key. Development without
+        # one may still return the pass result, but must never emit an unsigned
+        # or forgeable badge.
+        result.credential_eligible = False
+        result.tier = "silver" if session.difficulty == Difficulty.FULL else "bronze"
+        result.badge = None
+        result.badge_info = None
+        return
+    if session.badge_info is None:
+        badge_data = generate_signed_badge(
+            entity_id=session.entity_id,
+            difficulty=session.difficulty.value,
+            pass_rate=result.pass_rate,
+            session_id=session.session_id,
+        )
+        session.badge_info = BadgeInfo(
+            token=badge_data["token"],
+            expires_at=datetime.fromisoformat(badge_data["expires_at"]),
+            freshness_nonce=badge_data["freshness_nonce"],
+            signed=True,
+            jti=badge_data["jti"],
+        )
+    result.credential_eligible = True
+    result.tier = "silver" if session.difficulty == Difficulty.FULL else "bronze"
+    result.badge_info = session.badge_info
+    result.badge = session.badge_info.token
+
+
+def _require_session_access(request: Request, session: MettleSession) -> None:
+    """Authorize a legacy-session operation using its independent bearer token."""
+    presented = request.headers.get("X-Session-Token")
+    if not presented:
+        raise HTTPException(status_code=401, detail="Session token required")
+    presented_hash = hashlib.sha256(presented.encode()).hexdigest()
+    if not hmac.compare_digest(presented_hash, session.access_token_hash):
+        raise HTTPException(status_code=403, detail="Invalid session token")
+
+
 class BadgeVerifyResponse(BaseModel):
     """Response for badge verification."""
 
@@ -750,6 +984,17 @@ class BadgeVerifyResponse(BaseModel):
     )
 
 
+class BadgeVerifyRequest(BaseModel):
+    """Request body for badge verification without URL token exposure."""
+
+    token: str = Field(
+        ...,
+        min_length=1,
+        max_length=8192,
+        description="The signed METTLE badge token to verify",
+    )
+
+
 # === API Endpoints (mounted at /api) ===
 @api_router.get(
     "/",
@@ -761,7 +1006,7 @@ async def api_root():
     """METTLE API root."""
     return {
         "name": "METTLE",
-        "full_name": "Machine Entity Trustbuilding through Turing-inverse Logic Examination",
+        "full_name": "Machine Evaluation Through Turing-inverse Logic Examination",
         "tagline": "Prove your mettle.",
         "description": "A CAPTCHA to keep humans out of places they shouldn't be.",
         "version": settings.api_version,
@@ -771,7 +1016,7 @@ async def api_root():
             "POST /api/session/answer": "Submit an answer to current challenge",
             "GET /api/session/{session_id}": "Get session status",
             "GET /api/session/{session_id}/result": "Get final verification result",
-            "GET /api/badge/verify/{token}": "Verify a METTLE badge",
+            "POST /api/badge/verify": "Verify a METTLE badge",
             "GET /api/health": "Health check",
         },
     }
@@ -837,6 +1082,7 @@ async def start_session(
 ):
     """Start a new METTLE verification session."""
     session_id = f"ses_{secrets.token_hex(12)}"
+    session_token = secrets.token_urlsafe(32)
 
     # Check for collusion patterns
     ip_address = get_remote_address(request)
@@ -863,15 +1109,29 @@ async def start_session(
         entity_id=body.entity_id,
         difficulty=body.difficulty,
         challenges=challenge_list,
+        access_token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
     )
 
-    add_with_limit(sessions, session_id, session, MAX_SESSIONS)
+    # Public callers must not be able to evict unrelated active sessions. At
+    # capacity, fail closed and let the cleanup task reclaim expired entries.
+    if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
+        raise HTTPException(
+            status_code=503,
+            detail="Verification capacity reached; retry shortly",
+        )
+    sessions[session_id] = session
 
     # Store first challenge with timestamp
     first_challenge = challenge_list[0]
-    add_with_limit(
-        challenges, first_challenge.id, (first_challenge, time.time()), MAX_CHALLENGES
-    )
+    challenges[first_challenge.id] = (first_challenge, time.time())
+
+    if not _persist_new_legacy_session(session):
+        sessions.pop(session_id, None)
+        challenges.pop(first_challenge.id, None)
+        raise HTTPException(
+            status_code=503,
+            detail="Session persistence is temporarily unavailable",
+        )
 
     # Log session start
     logger.info(
@@ -884,6 +1144,7 @@ async def start_session(
 
     return StartSessionResponse(
         session_id=session_id,
+        session_token=session_token,
         difficulty=body.difficulty,
         total_challenges=len(challenge_list),
         current_challenge=first_challenge.sanitized(),  # Never expose answers
@@ -949,7 +1210,9 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
         )
 
     # Enforce per-key daily session limits
-    allowed, message = RateTier.check_limit(api_key, "session")
+    allowed, message = RateTier.check_limit(
+        api_key, "session", amount=len(body.entity_ids)
+    )
     if not allowed:
         raise HTTPException(status_code=429, detail=message)
 
@@ -959,6 +1222,7 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
     for entity_id in body.entity_ids:
         try:
             session_id = f"ses_{secrets.token_hex(12)}"
+            session_token = secrets.token_urlsafe(32)
             challenge_list = generate_challenge_set(body.difficulty)
 
             session = MettleSession(
@@ -966,21 +1230,25 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
                 entity_id=entity_id,
                 difficulty=body.difficulty,
                 challenges=challenge_list,
+                access_token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
             )
-            add_with_limit(sessions, session_id, session, MAX_SESSIONS)
+            if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
+                raise RuntimeError("Verification capacity reached; retry shortly")
+            sessions[session_id] = session
 
             first_challenge = challenge_list[0]
-            add_with_limit(
-                challenges,
-                first_challenge.id,
-                (first_challenge, time.time()),
-                MAX_CHALLENGES,
-            )
+            challenges[first_challenge.id] = (first_challenge, time.time())
+
+            if not _persist_new_legacy_session(session):
+                sessions.pop(session_id, None)
+                challenges.pop(first_challenge.id, None)
+                raise RuntimeError("Session persistence is temporarily unavailable")
 
             results.append(
                 {
                     "entity_id": entity_id,
                     "session_id": session_id,
+                    "session_token": session_token,
                     "challenge_id": first_challenge.id,
                     "total_challenges": len(challenge_list),
                 }
@@ -1034,6 +1302,8 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
         logger.warning("session_invalid", session_id=body.session_id)
         raise HTTPException(status_code=404, detail="Session not found or invalid")
 
+    _require_session_access(request, session)
+
     # Bind the submitted challenge to this session and its current position
     # before touching the global one-time challenge store. Without this check,
     # a valid challenge ID from another session could be consumed and credited
@@ -1072,6 +1342,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
 
     # Verify response
     result = verify_response(challenge, body.answer, response_time_ms)
+    previous_badge_info = session.badge_info
     session.results.append(result)
 
     # Log result
@@ -1089,12 +1360,14 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
     # Determine next challenge or complete session
     current_index = len(session.results)
     challenges_remaining = len(session.challenges) - current_index
+    final_result: MettleResult | None = None
 
     if challenges_remaining > 0:
         next_challenge = session.challenges[current_index]
-        add_with_limit(
-            challenges, next_challenge.id, (next_challenge, time.time()), MAX_CHALLENGES
-        )
+        # The submitted challenge was atomically removed above, so replacing it
+        # with this session's next challenge cannot increase global occupancy.
+        # Direct assignment avoids evicting another caller's active challenge.
+        challenges[next_challenge.id] = (next_challenge, time.time())
         session_complete = False
     else:
         next_challenge = None
@@ -1103,8 +1376,24 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
 
         # Log session completion
         final_result = compute_mettle_result(session.results, session.entity_id)
+        _attach_stable_session_badge(session, final_result)
 
-        # Record for collusion detection
+    if not _persist_legacy_progress(session):
+        # Restore the exact one-use challenge transition so the caller can retry
+        # after a transient persistence outage without losing the session.
+        session.results.pop()
+        session.completed = False
+        session.badge_info = previous_badge_info
+        if next_challenge is not None:
+            challenges.pop(next_challenge.id, None)
+        challenges[challenge.id] = (challenge, issued_at)
+        raise HTTPException(
+            status_code=503,
+            detail="Session persistence is temporarily unavailable",
+        )
+
+    if final_result is not None:
+        # Record for collusion detection only after durable session state exists.
         ip_address = get_remote_address(request)
         CollusionDetector.record_verification(
             entity_id=session.entity_id,
@@ -1120,30 +1409,8 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
             pass_rate=final_result.pass_rate,
         )
 
-        # Send webhooks
-        if session.entity_id:
-            asyncio.create_task(
-                WebhookManager.send_webhook(
-                    session.entity_id,
-                    "session.completed",
-                    {
-                        "session_id": body.session_id,
-                        "verified": final_result.verified,
-                        "pass_rate": final_result.pass_rate,
-                    },
-                )
-            )
-            if final_result.verified:
-                asyncio.create_task(
-                    WebhookManager.send_webhook(
-                        session.entity_id,
-                        "badge.issued",
-                        {
-                            "session_id": body.session_id,
-                            "pass_rate": final_result.pass_rate,
-                        },
-                    )
-                )
+        # Public legacy sessions accept a self-asserted entity_id and therefore
+        # have no authority to emit events for an entity-owned webhook.
 
     return SubmitAnswerResponse(
         result=result,
@@ -1163,29 +1430,25 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
         404: {"description": "Session not found"},
     },
 )
-async def get_session(session_id: str):
+async def get_session(request: Request, session_id: str):
     """Get session status and results."""
     session = sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    _require_session_access(request, session)
 
     if session.completed:
         result = compute_mettle_result(session.results, session.entity_id)
-        # Generate proper badge with expiry if verified
-        if result.verified:
-            badge_data = generate_signed_badge(
-                entity_id=session.entity_id,
-                difficulty=session.difficulty.value,
-                pass_rate=result.pass_rate,
-                session_id=session_id,
-            )
-            result.badge = badge_data["token"]
-            result.badge_info = BadgeInfo(
-                token=badge_data["token"],
-                expires_at=datetime.fromisoformat(badge_data["expires_at"]),
-                freshness_nonce=badge_data.get("freshness_nonce"),
-                signed=badge_data.get("signed", False),
-                jti=badge_data.get("jti"),
+        previous_badge_info = session.badge_info
+        _attach_stable_session_badge(session, result)
+        if (
+            session.badge_info is not previous_badge_info
+            and not _persist_legacy_progress(session)
+        ):
+            session.badge_info = previous_badge_info
+            raise HTTPException(
+                status_code=503,
+                detail="Session persistence is temporarily unavailable",
             )
         return {
             "session_id": session_id,
@@ -1214,117 +1477,79 @@ async def get_session(session_id: str):
         404: {"description": "Session not found"},
     },
 )
-async def get_result(session_id: str):
+async def get_result(request: Request, session_id: str):
     """Get final METTLE result for a completed session."""
     session = sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    _require_session_access(request, session)
 
     if not session.completed:
         raise HTTPException(status_code=400, detail="Session not yet completed")
 
     result = compute_mettle_result(session.results, session.entity_id)
 
-    # Generate proper signed badge with expiry if verified
-    if result.verified:
-        badge_data = generate_signed_badge(
-            entity_id=session.entity_id,
-            difficulty=session.difficulty.value,
-            pass_rate=result.pass_rate,
-            session_id=session_id,
-        )
-        result.badge = badge_data["token"]
-        result.badge_info = BadgeInfo(
-            token=badge_data["token"],
-            expires_at=datetime.fromisoformat(badge_data["expires_at"]),
-            freshness_nonce=badge_data.get("freshness_nonce"),
-            signed=badge_data.get("signed", False),
-            jti=badge_data.get("jti"),
+    previous_badge_info = session.badge_info
+    _attach_stable_session_badge(session, result)
+    if session.badge_info is not previous_badge_info and not _persist_legacy_progress(
+        session
+    ):
+        session.badge_info = previous_badge_info
+        raise HTTPException(
+            status_code=503,
+            detail="Session persistence is temporarily unavailable",
         )
 
     return result
 
 
-# === Badge Endpoints ===
+# === Badge Issuance And Verification ===
 def generate_signed_badge(
     entity_id: str | None,
     difficulty: str,
     pass_rate: float,
-    session_id: str | None = None,
+    session_id: str,
 ) -> dict[str, Any]:
-    """Generate a signed JWT badge for verified entities with expiry.
+    """Issue a signed, time-limited reverse-CAPTCHA pass credential."""
+    if not settings.secret_key:
+        raise ValueError("Cannot issue badge: METTLE_SECRET_KEY is not configured")
 
-    SECURITY (REWIND-FRESH-014): badges issued on the public ``/api/session/*``
-    surface attest METTLE *capability* (the session passed the verification
-    challenges), NOT *entity identity*. ``entity_id`` here is self-asserted by the
-    caller at ``/session/start`` with no proof of control, so the payload marks it
-    explicitly as unverified (``entity_id_verified=False``, ``identity_binding=
-    "self_asserted"``, ``attests="capability"``). Consumers MUST NOT treat a
-    badge's ``entity_id`` as a proven identity. Cryptographic identity binding is
-    available via the authenticated ``/api/mettle/sessions`` surface using an
-    Ed25519 ``operator_commitment``.
-
-    Returns dict with:
-        - token: The JWT badge token
-        - expires_at: ISO timestamp of expiry
-        - freshness_nonce: Nonce for freshness verification
-    """
     now = datetime.now(timezone.utc)
     expires_at = now.timestamp() + settings.badge_expiry_seconds
-    freshness_nonce = secrets.token_hex(8)
-
-    if not settings.secret_key:
-        # SECURITY: Never issue unsigned badges - they can be trivially forged
-        # In production, SECRET_KEY must be configured
-        raise ValueError(
-            "Cannot issue badge: SECRET_KEY not configured. "
-            "Unsigned badges are forgeable. Configure SECRET_KEY in production."
-        )
-
+    tier = "silver" if difficulty == Difficulty.FULL.value else "bronze"
+    freshness_nonce = secrets.token_hex(16)
+    jti = secrets.token_hex(16)
     payload = {
+        "credential_type": "mettle-reverse-captcha-pass",
         "entity_id": entity_id,
-        # SECURITY (REWIND-FRESH-014): entity_id is self-asserted on the public
-        # session surface and is NOT proof of entity ownership. These claims make
-        # the badge's meaning explicit and machine-checkable so consumers cannot
-        # misread it as a verified identity attestation.
         "entity_id_verified": False,
         "identity_binding": "self_asserted",
-        "attests": "capability",
+        "attests": "mettle_session_passed",
+        "verified": True,
+        "tier": tier,
         "difficulty": difficulty,
-        "pass_rate": pass_rate,
-        "verified_at": now.isoformat(),
-        "version": settings.api_version,
-        "iss": "mettle-api",
-        "exp": expires_at,  # JWT standard expiry claim
-        "iat": now.timestamp(),  # Issued at
-        "jti": secrets.token_hex(16),  # Unique token ID for revocation
-        "nonce": freshness_nonce,
+        "pass_rate": round(pass_rate, 4),
         "session_id": session_id,
+        "iss": "mettle-api",
+        "iat": now.timestamp(),
+        "exp": expires_at,
+        "jti": jti,
+        "nonce": freshness_nonce,
+        "version": settings.api_version,
     }
-
     token = jwt.encode(payload, settings.secret_key, algorithm="HS256")
     return {
         "token": token,
         "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
         "freshness_nonce": freshness_nonce,
         "signed": True,
-        "jti": payload["jti"],
+        "jti": jti,
+        "tier": tier,
     }
 
 
-@api_router.get(
-    "/badge/verify/{token}",
-    response_model=BadgeVerifyResponse,
-    tags=["Badge"],
-    summary="Verify Badge",
-    description="Verify that a METTLE badge is valid and not tampered with.",
-    responses={
-        200: {"description": "Badge verification result"},
-    },
-)
-@limiter.limit("100/minute")
-async def verify_badge(request: Request, token: str):
-    """Verify a METTLE badge is valid."""
+def _verify_badge_token(token: str) -> BadgeVerifyResponse:
+    """Verify a METTLE badge token against issuer policy and revocation state."""
     if not settings.secret_key:
         # SECURITY: Reject ALL badges when signing not configured
         # Never accept simple tokens - they can be trivially forged
@@ -1334,7 +1559,13 @@ async def verify_badge(request: Request, token: str):
         )
 
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
+        payload = jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=["HS256"],
+            issuer="mettle-api",
+            options={"require": ["exp", "iat", "iss", "jti", "session_id"]},
+        )
 
         # Revocation is process-local when persistence is disabled and durable
         # when the database layer is enabled. Database errors fail closed.
@@ -1371,6 +1602,40 @@ async def verify_badge(request: Request, token: str):
         return BadgeVerifyResponse(valid=False, error="Badge has expired")
     except jwt.InvalidTokenError:
         return BadgeVerifyResponse(valid=False, error="Invalid badge token")
+
+
+@api_router.post(
+    "/badge/verify",
+    response_model=BadgeVerifyResponse,
+    tags=["Badge"],
+    summary="Verify Badge",
+    description=(
+        "Verify a METTLE badge without placing the credential in the request URL."
+    ),
+    responses={200: {"description": "Badge verification result"}},
+)
+@limiter.limit("100/minute")
+async def verify_badge(request: Request, body: BadgeVerifyRequest):
+    """Verify a METTLE badge supplied in the request body."""
+    return _verify_badge_token(body.token)
+
+
+@api_router.get(
+    "/badge/verify/{token}",
+    response_model=BadgeVerifyResponse,
+    tags=["Badge"],
+    summary="Verify Badge (Legacy URL Form)",
+    description=(
+        "Deprecated compatibility endpoint. Tokens in URLs may be retained in logs "
+        "or browser history; use POST /api/badge/verify instead."
+    ),
+    deprecated=True,
+    responses={200: {"description": "Badge verification result"}},
+)
+@limiter.limit("100/minute")
+async def verify_badge_legacy(request: Request, token: str):
+    """Verify a METTLE badge through the deprecated URL form."""
+    return _verify_badge_token(token)
 
 
 # === Revocation Endpoints ===
@@ -1448,7 +1713,11 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
             body.token,
             settings.secret_key,
             algorithms=["HS256"],
-            options={"verify_exp": False},
+            issuer="mettle-api",
+            options={
+                "verify_exp": False,
+                "require": ["iat", "iss", "session_id"],
+            },
         )
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=400, detail="Invalid badge token")
@@ -1710,7 +1979,9 @@ async def check_entity_collusion(request: Request, entity_id: str):
 class FingerprintRequest(BaseModel):
     """Request for model fingerprinting."""
 
-    responses: list[str] = Field(
+    responses: list[
+        Annotated[str, Field(max_length=MAX_FINGERPRINT_RESPONSE_CHARS)]
+    ] = Field(
         ...,
         min_length=1,
         max_length=20,
@@ -1852,23 +2123,27 @@ class WebhookManager:
                 follow_redirects=False,
                 trust_env=False,
             ) as client:
-                response = await client.post(
+                # Stream and discard the body. A webhook recipient controls the
+                # response and must not be able to make the service buffer an
+                # unbounded body merely to inspect its status code.
+                async with client.stream(
+                    "POST",
                     pinned_url,
                     json=webhook_payload,
                     headers={"Host": host_header},
                     extensions={"sni_hostname": hostname},
-                )
-                success = 200 <= response.status_code < 300
+                ) as response:
+                    success = 200 <= response.status_code < 300
 
-                logger.info(
-                    "webhook_sent",
-                    entity_id=entity_id,
-                    webhook_event=event,
-                    url=url[:50],
-                    status=response.status_code,
-                    success=success,
-                )
-                return success
+                    logger.info(
+                        "webhook_sent",
+                        entity_id=entity_id,
+                        webhook_event=event,
+                        url=url[:50],
+                        status=response.status_code,
+                        success=success,
+                    )
+                    return success
         except Exception as e:
             logger.warning(
                 "webhook_failed", entity_id=entity_id, webhook_event=event, error=str(e)
@@ -1892,8 +2167,9 @@ class WebhookManager:
         }
         add_with_limit(webhooks, entity_id, config, MAX_WEBHOOKS)
         # Persist to database if enabled
-        if db:
-            db.save_webhook(entity_id, url, events_list, secret)
+        if db and not db.save_webhook(entity_id, url, events_list, secret):
+            webhooks.pop(entity_id, None)
+            raise RuntimeError("Webhook persistence unavailable")
         return config
 
     @staticmethod
@@ -2025,7 +2301,7 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
 
-    key_data = api_keys.get(api_key)
+    key_data = RateTier.get_key_data(api_key)
     if not key_data:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
@@ -2051,7 +2327,14 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
         if invalid:
             raise HTTPException(status_code=400, detail=f"Invalid events: {invalid}")
 
-    config = WebhookManager.register(body.entity_id, body.url, body.events, body.secret)
+    try:
+        config = WebhookManager.register(
+            body.entity_id, body.url, body.events, body.secret
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503, detail="Webhook persistence is temporarily unavailable"
+        ) from exc
     return {
         "registered": True,
         "entity_id": body.entity_id,
@@ -2136,11 +2419,10 @@ class RegisterKeyRequest(BaseModel):
 async def register_api_key(
     request: Request,
     body: RegisterKeyRequest,
-    x_admin_key: str | None = None,
 ):
     """Register a new API key. Requires admin key."""
     # Check admin authorization
-    admin_key = x_admin_key or request.headers.get("X-Admin-Key")
+    admin_key = request.headers.get("X-Admin-Key")
     ip_address = get_remote_address(request)
 
     # Check rate limiting for brute force protection
@@ -2169,6 +2451,8 @@ async def register_api_key(
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @api_router.get(

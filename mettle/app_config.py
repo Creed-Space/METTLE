@@ -1,10 +1,15 @@
 """Pydantic Settings for METTLE standalone."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MettleSettings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
+    redis_namespace: str = Field(
+        default="mettle",
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9:_-]{0,63}$",
+    )
     api_keys: str = ""
     dev_mode: bool = False
     cors_origins: str = "*"

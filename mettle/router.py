@@ -9,7 +9,7 @@ SECURITY: All endpoints require authentication. Correct answers are NEVER sent t
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
@@ -33,6 +33,7 @@ from mettle.auth import AuthenticatedUser, require_authenticated_user
 from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.llm_challenges import is_available as llm_challenges_available
 from mettle.session_manager import SessionManager
+from redis.exceptions import RedisError
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,11 @@ async def create_session(
             time_budget_ms=meta["time_budget_ms"],
         )
 
+    except RedisError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="METTLE session storage temporarily unavailable",
+        ) from e
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
@@ -269,6 +275,11 @@ async def verify_single_shot(
             details=result["details"],
         )
 
+    except RedisError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="METTLE session storage temporarily unavailable",
+        ) from e
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
@@ -326,6 +337,11 @@ async def submit_round_answer(
             next_round_data=result.get("next_round_data"),
         )
 
+    except RedisError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="METTLE session storage temporarily unavailable",
+        ) from e
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
@@ -384,7 +400,8 @@ async def get_session_result(
     """Get final results for a completed session.
 
     Returns 404 if session not completed yet.
-    When include_vcp=true, includes a VCP-compatible attestation with tier and signature.
+    When include_vcp=true, includes a signed credential for a tier-qualifying
+    result, or an unsigned evidence receipt when no tier was earned.
     """
 
     session = await mgr.get_session(session_id)
@@ -404,29 +421,21 @@ async def get_session_result(
             detail=f"Session not completed. Status: {session['status']}",
         )
 
-    # Compute tier from suite results
     from mettle.vcp import compute_tier
 
     suite_results = result.get("results", {})
     suites_passed = [s for s, r in suite_results.items() if r.get("passed", False)]
     suites_failed = [s for s, r in suite_results.items() if not r.get("passed", False)]
     tier = compute_tier(suites_passed)
+    result["verified"] = bool(result.get("overall_passed", False))
+    result["assurance"] = "mettle_behavioral_verification"
+    result["credential_eligible"] = tier != "none"
     result["tier"] = tier
 
     # Build VCP attestation if requested
     vcp_attestation = None
     if include_vcp:
         from mettle.vcp import build_mettle_attestation
-
-        # Try to use Ed25519 signing if available
-        sign_fn = None
-        try:
-            from mettle.signing import is_available, sign_attestation
-
-            if is_available():
-                sign_fn = sign_attestation
-        except ImportError:
-            pass
 
         pass_rate = sum(
             1 for r in suite_results.values() if r.get("passed", False)
@@ -437,7 +446,8 @@ async def get_session_result(
             suites_passed=suites_passed,
             suites_failed=suites_failed,
             pass_rate=pass_rate,
-            sign_fn=sign_fn,
+            subject_id=user.user_id,
+            entity_id=session.get("entity_id"),
         )
 
     result["vcp_attestation"] = vcp_attestation
@@ -445,8 +455,13 @@ async def get_session_result(
     # Build GovernanceAttestation from VCP token if present
     governance_attestation = None
     vcp_token = session.get("vcp_token")
-    if vcp_token and tier in ("gold", "platinum"):
-        governance_attestation = _build_governance_attestation(vcp_token)
+    if vcp_token:
+        governance_attestation = _build_governance_attestation(
+            vcp_token,
+            entity_id=session.get("entity_id"),
+            session_id=session_id,
+            tier=tier,
+        )
     result["governance_attestation"] = governance_attestation
 
     # Build OperatorAttestation from operator commitment if present
@@ -454,7 +469,7 @@ async def get_session_result(
     operator_commitment = session.get("operator_commitment")
     if operator_commitment:
         operator_attestation = _build_operator_attestation(
-            operator_commitment, session.get("entity_id", "unknown")
+            operator_commitment, session.get("entity_id")
         )
     result["operator_attestation"] = operator_attestation
 
@@ -484,14 +499,18 @@ async def get_vcp_keys() -> dict:
 # ---- Attestation Builders ----
 
 
-def _build_governance_attestation(vcp_token: str) -> GovernanceAttestation | None:
+def _build_governance_attestation(
+    vcp_token: str,
+    *,
+    entity_id: str | None,
+    session_id: str,
+    tier: str,
+) -> GovernanceAttestation | None:
     """Build GovernanceAttestation from a VCP token.
 
-    Parses the CSM-1 token to extract constitution metadata, then checks
-    environment for active governance plugins (action gate, drift detection, bilateral).
+    Parses caller-supplied CSM-1 metadata without promoting it into proof.
     """
     import hashlib
-    import os
 
     try:
         from mettle.vcp import parse_csm1_token
@@ -516,52 +535,33 @@ def _build_governance_attestation(vcp_token: str) -> GovernanceAttestation | Non
             parsed.constitution_ref.encode()
         ).hexdigest()
 
-    # Check which governance plugins are active (from env vars)
-    has_action_gate = os.getenv("PUBLIC_ACTION_GATE_ENABLED", "true").lower() == "true"
-    has_drift_detection = (
-        os.getenv("CONSTITUTIONAL_DRIFT_DETECTOR_ENABLED", "true").lower() == "true"
-    )
-    has_bilateral = os.getenv("BILATERAL_ALIGNMENT_ENABLED", "true").lower() == "true"
-
+    # Raw caller metadata has no cryptographic provenance. Environment switches
+    # and digest allowlists cannot turn self-asserted text into governance proof.
     now = datetime.now(tz=timezone.utc)
+    expires_at = now + timedelta(hours=1)
 
-    # Sign the governance attestation if signing is available
-    attestation_signature = None
-    try:
-        from mettle.signing import is_available, sign_attestation
-
-        if is_available():
-            import json
-
-            payload = {
-                "framework": framework,
-                "framework_version": parsed.constitution_version,
-                "constitutional_hash": constitutional_hash,
-                "has_action_gate": has_action_gate,
-                "has_drift_detection": has_drift_detection,
-                "has_bilateral": has_bilateral,
-                "verified_at": now.isoformat(),
-            }
-            sig = sign_attestation(json.dumps(payload, sort_keys=True).encode())
-            attestation_signature = f"ed25519:{sig}"
-    except (ImportError, RuntimeError):
-        pass
-
+    source_vcp_hash = hashlib.sha256(vcp_token.encode()).hexdigest()
     return GovernanceAttestation(
+        entity_id=entity_id,
+        session_id=session_id,
+        tier=tier,
+        source_vcp_hash=source_vcp_hash,
+        source_verified=False,
         framework=framework,
         framework_version=parsed.constitution_version,
         constitutional_hash=constitutional_hash,
-        has_action_gate=has_action_gate,
-        has_drift_detection=has_drift_detection,
-        has_bilateral=has_bilateral,
-        verified_at=now,
-        attestation_signature=attestation_signature,
+        has_action_gate=False,
+        has_drift_detection=False,
+        has_bilateral=False,
+        observed_at=now,
+        expires_at=expires_at,
+        attestation_signature=None,
     )
 
 
 def _build_operator_attestation(
     commitment: dict[str, Any],
-    entity_id: str,
+    entity_id: str | None,
 ) -> OperatorAttestation | None:
     """Build OperatorAttestation from an operator commitment.
 
@@ -569,6 +569,10 @@ def _build_operator_attestation(
     Returns None if verification fails.
     """
     import base64
+
+    if not entity_id:
+        logger.warning("Operator commitment requires a non-empty entity_id")
+        return None
 
     required_fields = [
         "operator_pseudonym",
@@ -591,8 +595,22 @@ def _build_operator_attestation(
             logger.warning("Operator public key is not Ed25519")
             return None
 
-        # The commitment message is: "I accept accountability for agent {entity_id}"
-        expected_message = f"I accept accountability for agent {entity_id}"
+        # Bind every returned accountability field to the entity. This prevents
+        # replaying one signature with a different pseudonym or contact claim.
+        import json
+
+        expected_message = json.dumps(
+            {
+                "contact_hash": commitment["contact_hash"],
+                "contact_method": commitment["contact_method"],
+                "entity_id": entity_id,
+                "operator_pseudonym": commitment["operator_pseudonym"],
+                "operator_public_key": commitment["operator_public_key"],
+                "version": 1,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         signature_bytes = base64.b64decode(commitment["signed_commitment"])
         public_key.verify(signature_bytes, expected_message.encode())
 

@@ -21,10 +21,13 @@
     return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }], isError: true };
   }
 
-  async function postJSON(path, body) {
+  async function postJSON(path, body, sessionToken) {
     var response = await fetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign(
+        { 'Content-Type': 'application/json' },
+        sessionToken ? { 'X-Session-Token': sessionToken } : {}
+      ),
       body: JSON.stringify(body)
     });
     if (!response.ok) {
@@ -35,8 +38,10 @@
     return response.json();
   }
 
-  async function getJSON(path) {
-    var response = await fetch(path);
+  async function getJSON(path, sessionToken) {
+    var response = await fetch(path, {
+      headers: sessionToken ? { 'X-Session-Token': sessionToken } : {}
+    });
     if (!response.ok) {
       var errBody;
       try { errBody = await response.json(); } catch (_) { errBody = { detail: response.statusText }; }
@@ -103,6 +108,7 @@
 
           var result = {
             session_id: data.session_id,
+            session_token: data.session_token,
             total_challenges: data.total_challenges
           };
 
@@ -128,6 +134,10 @@
             type: 'string',
             description: 'The session ID from mettle_start_verification'
           },
+          session_token: {
+            type: 'string',
+            description: 'The bearer token from mettle_start_verification'
+          },
           challenge_id: {
             type: 'string',
             description: 'The challenge ID to answer'
@@ -137,7 +147,7 @@
             description: 'Your answer to the challenge'
           }
         },
-        required: ['session_id', 'challenge_id', 'answer']
+        required: ['session_id', 'session_token', 'challenge_id', 'answer']
       },
       annotations: { readOnlyHint: false },
       execute: async function(params) {
@@ -156,7 +166,7 @@
             session_id: params.session_id,
             challenge_id: params.challenge_id,
             answer: String(params.answer)
-          });
+          }, params.session_token);
 
           var result = {};
 
@@ -189,16 +199,20 @@
     // Tool 3: Get session result
     {
       name: 'mettle_get_result',
-      description: 'Get the final verification result for a completed METTLE session. Returns pass/fail status and badge if verified.',
+      description: 'Get the METTLE verification result and signed credential for a completed session.',
       inputSchema: {
         type: 'object',
         properties: {
           session_id: {
             type: 'string',
             description: 'The session ID to get results for'
+          },
+          session_token: {
+            type: 'string',
+            description: 'The bearer token from mettle_start_verification'
           }
         },
-        required: ['session_id']
+        required: ['session_id', 'session_token']
       },
       annotations: { readOnlyHint: true },
       execute: async function(params) {
@@ -207,19 +221,21 @@
         }
 
         try {
-          var data = await getJSON('/api/session/' + encodeURIComponent(params.session_id) + '/result');
+          var data = await getJSON(
+            '/api/session/' + encodeURIComponent(params.session_id) + '/result',
+            params.session_token
+          );
 
           var result = {
             verified: !!data.verified,
-            pass_rate: data.pass_rate
+            screening_passed: !!data.screening_passed,
+            assurance: data.assurance,
+            credential_eligible: !!data.credential_eligible,
+            tier: data.tier || 'none',
+            pass_rate: data.pass_rate,
+            badge: data.badge || null,
+            badge_info: data.badge_info || null
           };
-
-          if (data.badge_token) {
-            result.badge_token = data.badge_token;
-          }
-          if (data.badge) {
-            result.badge_token = data.badge;
-          }
 
           return textResult(result);
         } catch (err) {
@@ -249,7 +265,7 @@
         }
 
         try {
-          var data = await getJSON('/api/badge/verify/' + encodeURIComponent(params.token));
+          var data = await postJSON('/api/badge/verify', { token: params.token });
 
           // Badge fields live in the nested `payload` object (BadgeVerifyResponse)
           var payload = data.payload || {};

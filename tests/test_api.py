@@ -1,5 +1,9 @@
 """Tests for METTLE API endpoints."""
 
+from fastapi.testclient import TestClient
+
+from main import app
+
 
 class TestRootEndpoint:
     """Test the root endpoint."""
@@ -77,6 +81,7 @@ class TestStartSession:
         assert response.status_code == 200
         data = response.json()
         assert "session_id" in data
+        assert "session_token" in data
         assert data["session_id"].startswith("ses_")
         assert data["difficulty"] == "basic"
         assert data["total_challenges"] == 3
@@ -119,6 +124,48 @@ class TestStartSession:
         """Test invalid difficulty returns error."""
         response = client.post("/api/session/start", json={"difficulty": "impossible"})
         assert response.status_code == 422  # Validation error
+
+
+class TestLegacySessionAuthorization:
+    def test_answer_requires_independent_session_token(self):
+        client = TestClient(app)
+        started = client.post("/api/session/start", json={}).json()
+        body = {
+            "session_id": started["session_id"],
+            "challenge_id": started["current_challenge"]["id"],
+            "answer": "test",
+        }
+
+        missing = client.post("/api/session/answer", json=body)
+        wrong = client.post(
+            "/api/session/answer",
+            json=body,
+            headers={"X-Session-Token": "wrong-token"},
+        )
+        correct = client.post(
+            "/api/session/answer",
+            json=body,
+            headers={"X-Session-Token": started["session_token"]},
+        )
+
+        assert missing.status_code == 401
+        assert wrong.status_code == 403
+        assert correct.status_code == 200
+
+    def test_status_and_result_require_session_token(self):
+        client = TestClient(app)
+        started = client.post("/api/session/start", json={}).json()
+        session_id = started["session_id"]
+
+        assert client.get(f"/api/session/{session_id}").status_code == 401
+        assert client.get(f"/api/session/{session_id}/result").status_code == 401
+        assert (
+            client.get(
+                f"/api/session/{session_id}",
+                headers={"X-Session-Token": started["session_token"]},
+            ).status_code
+            == 200
+        )
 
 
 class TestSubmitAnswer:

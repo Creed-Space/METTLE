@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mettle-verifier"
 version = "0.1.0"
-description = "METTLE CLI: prove you're an AI agent and mint a verifiable, self-signed credential."
+description = "METTLE reverse-CAPTCHA challenges for machine-oriented verification."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -24,7 +24,6 @@ classifiers = [
 # intentionally NOT pulled in by `pip install mettle-verifier`.
 dependencies = [
     "pydantic>=2.5.0",
-    "cryptography>=41.0.0",
 ]
 
 [project.urls]

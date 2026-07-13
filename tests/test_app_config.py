@@ -14,6 +14,7 @@ class TestMettleSettings:
         for key in [
             "METTLE_DEV_MODE",
             "METTLE_REDIS_URL",
+            "METTLE_REDIS_NAMESPACE",
             "METTLE_API_KEYS",
             "METTLE_CORS_ORIGINS",
             "METTLE_VCP_SIGNING_KEY",
@@ -25,6 +26,7 @@ class TestMettleSettings:
         s = MettleSettingsFactory(_env_file=str(tmp_path / "nonexistent.env"))
         assert s.dev_mode is False
         assert s.redis_url == "redis://localhost:6379"
+        assert s.redis_namespace == "mettle"
         assert s.vcp_signing_key == ""
         assert s.api_keys == ""
         assert s.cors_origins == "*"
@@ -37,12 +39,14 @@ class TestMettleSettings:
         """Settings can be overridden via env vars."""
         monkeypatch.setenv("METTLE_DEV_MODE", "true")
         monkeypatch.setenv("METTLE_REDIS_URL", "redis://custom:1234")
+        monkeypatch.setenv("METTLE_REDIS_NAMESPACE", "mettle-staging")
         monkeypatch.setenv("METTLE_API_KEYS", "k1,k2")
         monkeypatch.setenv("METTLE_CORS_ORIGINS", "http://localhost:3000")
         monkeypatch.setenv("METTLE_VCP_SIGNING_KEY", "test-key")
         s = MettleSettings()
         assert s.dev_mode is True
         assert s.redis_url == "redis://custom:1234"
+        assert s.redis_namespace == "mettle-staging"
         assert s.api_keys == "k1,k2"
         assert s.cors_origins == "http://localhost:3000"
         assert s.vcp_signing_key == "test-key"

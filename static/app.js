@@ -8,6 +8,7 @@ const API_BASE = '/api';
 // State
 let state = {
     sessionId: null,
+    sessionToken: null,
     currentChallenge: null,
     challengeStartTime: null,
     totalChallenges: 0,
@@ -64,6 +65,9 @@ async function apiCall(endpoint, method = 'GET', body = null) {
             'Content-Type': 'application/json',
         },
     };
+    if (state.sessionToken) {
+        options.headers['X-Session-Token'] = state.sessionToken;
+    }
 
     if (body) {
         options.body = JSON.stringify(body);
@@ -213,13 +217,13 @@ function displayResult(result) {
 
     // Icon and title (using safe DOM methods)
     if (result.verified) {
-        setResultIcon('fa-solid fa-medal');
-        elements.resultTitle.textContent = 'Verification Successful!';
-        elements.resultMessage.textContent = 'You have proven your metal.';
+        setResultIcon('fa-solid fa-circle-check');
+        elements.resultTitle.textContent = 'METTLE Verified';
+        elements.resultMessage.textContent = `Reverse-CAPTCHA passed at ${result.tier || 'verified'} tier.`;
     } else {
         setResultIcon('fa-solid fa-circle-xmark');
-        elements.resultTitle.textContent = 'Verification Failed';
-        elements.resultMessage.textContent = 'You did not meet the 80% threshold.';
+        elements.resultTitle.textContent = 'Verification Not Passed';
+        elements.resultMessage.textContent = 'The responses did not meet the 80% verification threshold.';
     }
 
     // Stats
@@ -227,11 +231,11 @@ function displayResult(result) {
     elements.statTotal.textContent = result.total;
     elements.statRate.textContent = `${Math.round(result.pass_rate * 100)}%`;
 
-    // Badge
     if (result.badge) {
         elements.badge.textContent = result.badge;
         elements.badgeContainer.classList.remove('hidden');
     } else {
+        elements.badge.textContent = '';
         elements.badgeContainer.classList.add('hidden');
     }
 
@@ -267,6 +271,7 @@ async function handleStart() {
         });
 
         state.sessionId = data.session_id;
+        state.sessionToken = data.session_token;
         state.totalChallenges = data.total_challenges;
         state.completedChallenges = 0;
 

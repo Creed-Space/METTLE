@@ -256,6 +256,34 @@ class TestCreateSessionGenericException:
         assert resp.status_code == 500
         assert "Failed to create session" in resp.json()["detail"]
 
+    def test_redis_exception_returns_503(self, fake_redis: FakeRedis) -> None:
+        from mettle.auth import require_authenticated_user
+        from mettle.router import get_session_manager, router
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[require_authenticated_user] = _make_mock_user
+
+        async def mock_get_manager() -> SessionManager:
+            manager = SessionManager(fake_redis)
+
+            async def unavailable(*args: Any, **kwargs: Any) -> Any:
+                raise RedisConnectionError("session store unavailable")
+
+            manager.create_session = unavailable  # type: ignore[assignment]
+            return manager
+
+        app.dependency_overrides[get_session_manager] = mock_get_manager
+        response = TestClient(app).post(
+            "/api/mettle/sessions", json={"suites": ["adversarial"]}
+        )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == (
+            "METTLE session storage temporarily unavailable"
+        )
+
 
 # ---------------------------------------------------------------------------
 # verify_single_shot: generic Exception -> 500 (lines 239-241)
@@ -420,7 +448,11 @@ class TestGetSessionResultVCPAttestation:
         assert data["vcp_attestation"] is not None
         att = data["vcp_attestation"]
         assert att["auditor"] == "mettle.creed.space"
-        assert att["attestation_type"] == "mettle-verification"
+        assert att["attestation_type"] == "mettle-evidence-receipt"
+        assert att["signature"] is None
+        assert att["metadata"]["credential_eligible"] is False
+        assert data["credential_eligible"] is False
+        assert data["tier"] == "none"
         assert "metadata" in att
         assert "tier" in att["metadata"]
         assert "content_hash" in att
@@ -440,9 +472,10 @@ class TestGetSessionResultVCPAttestation:
         data = resp.json()
         assert data["vcp_attestation"] is None
 
-    def test_include_vcp_with_signing_available(self, fake_redis: FakeRedis) -> None:
-        """Lines 364-368: when mettle.signing.is_available() is True,
-        sign_fn is set and signature is produced."""
+    def test_signing_availability_cannot_promote_evidence(
+        self, fake_redis: FakeRedis
+    ) -> None:
+        """A configured signer must not sign behavioral evidence."""
         user = _make_mock_user()
         session_id = self._complete_single_suite_session(fake_redis, user)
 
@@ -463,7 +496,8 @@ class TestGetSessionResultVCPAttestation:
         data = resp.json()
         att = data["vcp_attestation"]
         assert att is not None
-        assert att["signature"] == "ed25519:fake_sig_base64"
+        assert att["signature"] is None
+        assert att["metadata"]["tier"] == "none"
 
     def test_include_vcp_signing_import_error(self, fake_redis: FakeRedis) -> None:
         """Lines 369-370: when mettle.signing raises ImportError,
