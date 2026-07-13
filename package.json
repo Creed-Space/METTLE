@@ -1,0 +1,12 @@
+{
+  "name": "mettle-static-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "check:js": "node --check static/app.js && node --check static/webmcp.js",
+    "design:check": "impeccable detect static"
+  },
+  "devDependencies": {
+    "impeccable": "3.2.1"
+  }
+}

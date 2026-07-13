@@ -11,6 +11,7 @@ mettle/           Twelve-suite registry, challenge generation, API, and verifier
 api/              FastAPI REST endpoints + MCP tools
 signing/          Ed25519 key management, notarization, CSM-1 MT credential format
 session/          Redis state machine — TTLs, rate limits, challenge/answer separation
+static/           Canonical production frontend served directly by FastAPI
 ```
 
 ---

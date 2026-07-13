@@ -1,5 +1,7 @@
 # METTLE Audit — Remaining Fixes
 
+> Historical note (2026-07-13): `frontend/` was removed after this audit. `static/` is the canonical production frontend; Svelte path references below describe the original audit state only.
+
 **Source**: `1.0 mettle audit website feb '26-compressed.pdf` (14 pages)
 **Previous session**: 2026-02-19 — Implemented 19 of 25 audit items
 **Status**: 6 items remaining (1 medium, 2 small, 3 trivial)

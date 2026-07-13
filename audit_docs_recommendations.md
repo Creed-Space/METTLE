@@ -1,5 +1,7 @@
 # METTLE Docs Page Audit — Recommendations & Code Locations
 
+> Historical note (2026-07-13): `frontend/` was removed after this audit. `static/` is the canonical production frontend; Svelte path references below describe the original audit state only.
+
 ## Overview
 
 This document maps all 12 audit findings for the METTLE Docs page to specific source files and provides concrete fix recommendations.
@@ -580,4 +582,3 @@ After implementing fixes:
 - [ ] No layout breaks on mobile (test at 768px, 480px)
 - [ ] Validate HTML with W3C validator
 - [ ] Run `make validate-all` for Svelte version
-

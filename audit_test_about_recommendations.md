@@ -1,5 +1,7 @@
 # METTLE Audit: Test Verification & About Page Recommendations
 
+> Historical note (2026-07-13): `frontend/` was removed after this audit. `static/` is the canonical production frontend; Svelte path references below describe the original audit state only.
+
 ## Overview
 
 This document maps audit findings from the Test Verification section (on Home page) and About page to specific source code locations with concrete fix recommendations.
@@ -285,4 +287,3 @@ Alternative approach: Add specific rule for this divider:
 - [ ] Footer divider has increased spacing (visual inspection)
 - [ ] All responsive breakpoints still work correctly
 - [ ] Accessibility attributes preserved (aria-hidden, etc.)
-

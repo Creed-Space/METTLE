@@ -1,5 +1,7 @@
 # METTLE Website Audit — Action Plan
 
+> Historical note (2026-07-13): `frontend/` was removed after this audit. `static/` is the canonical production frontend; Svelte path references below describe the original audit state only.
+
 **Source**: `1.0 mettle audit website feb '26-compressed.pdf` (14 pages)
 **Compiled**: 2026-02-19
 **Total findings**: 25 items across 4 pages (Home, Test, Docs, About)
