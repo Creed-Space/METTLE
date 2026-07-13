@@ -171,6 +171,7 @@ def build_mettle_attestation(
     subject_id: str,
     entity_id: str | None = None,
     key_id: str = "mettle-vcp-v1",
+    presence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a server-issued VCP-compatible METTLE result.
 
@@ -198,7 +199,7 @@ def build_mettle_attestation(
     reviewed_at = reviewed.isoformat()
     expires_at = (reviewed + timedelta(hours=1)).isoformat()
 
-    metadata = {
+    metadata: dict[str, Any] = {
         "mettle_version": "2.0",
         "session_id": session_id,
         "subject_id": subject_id,
@@ -212,6 +213,39 @@ def build_mettle_attestation(
         "difficulty": difficulty,
         "pass_rate": round(pass_rate, 4),
     }
+    if presence is not None:
+        from mettle.presence import validate_credential_presence
+
+        validate_credential_presence(presence)
+        timing_submissions = [
+            {
+                "sequence": submission["sequence"],
+                "action": submission["action"],
+                "response_time_ms": submission["response_time_ms"],
+                "transcript_hash": submission["transcript_hash"],
+            }
+            for submission in presence.get("submissions", [])
+        ]
+        completed_at_ms = (
+            presence["submissions"][-1]["accepted_at_unix_ms"]
+            if presence.get("submissions")
+            else presence["started_at_unix_ms"]
+        )
+        metadata["jti"] = presence["credential_jti"]
+        metadata["audience"] = presence["audience"]
+        metadata["proof_of_possession"] = {
+            "protocol": presence["protocol"],
+            "public_key_pem": presence["public_key_pem"],
+            "key_fingerprint": presence["key_fingerprint"],
+            "transcript_hash": presence["transcript_hash"],
+            "sequence": presence["sequence"],
+            "server_timing": {
+                "total_elapsed_ms": max(
+                    0, completed_at_ms - presence["started_at_unix_ms"]
+                ),
+                "submissions": timing_submissions,
+            },
+        }
 
     # Hash the metadata for content integrity
     content_bytes = _canonical_bytes(metadata)
@@ -221,7 +255,11 @@ def build_mettle_attestation(
         "auditor": "mettle.creed.space",
         "auditor_key_id": key_id,
         "attestation_type": (
-            "mettle-verification-credential"
+            (
+                "mettle-presence-credential"
+                if presence is not None
+                else "mettle-verification-credential"
+            )
             if credential_eligible
             else "mettle-evidence-receipt"
         ),
@@ -254,7 +292,8 @@ def build_mettle_attestation(
 def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) -> bool:
     """Verify a METTLE credential envelope and its current validity."""
     if (
-        attestation.get("attestation_type") != "mettle-verification-credential"
+        attestation.get("attestation_type")
+        not in {"mettle-verification-credential", "mettle-presence-credential"}
         or attestation.get("credential_issued") is not True
     ):
         return False
@@ -276,6 +315,68 @@ def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) 
         or not metadata.get("subject_id")
     ):
         return False
+    if attestation.get("attestation_type") == "mettle-presence-credential":
+        proof = metadata.get("proof_of_possession")
+        if not isinstance(proof, dict):
+            return False
+        try:
+            from mettle.presence import key_fingerprint
+
+            timing = proof.get("server_timing")
+            timing_submissions = (
+                timing.get("submissions") if isinstance(timing, dict) else None
+            )
+            timing_valid = (
+                isinstance(timing, dict)
+                and isinstance(timing.get("total_elapsed_ms"), int)
+                and timing["total_elapsed_ms"] >= 0
+                and isinstance(timing_submissions, list)
+                and len(timing_submissions) == proof.get("sequence")
+            )
+            if timing_valid and isinstance(timing_submissions, list):
+                for expected_sequence, submission in enumerate(
+                    timing_submissions, start=1
+                ):
+                    if not (
+                        isinstance(submission, dict)
+                        and submission.get("sequence") == expected_sequence
+                        and isinstance(submission.get("action"), str)
+                        and submission["action"].startswith(("suite:", "round:"))
+                        and isinstance(submission.get("response_time_ms"), int)
+                        and submission["response_time_ms"] >= 0
+                        and re.fullmatch(
+                            r"sha256:[0-9a-f]{64}",
+                            str(submission.get("transcript_hash", "")),
+                        )
+                        is not None
+                    ):
+                        timing_valid = False
+                        break
+                if timing_submissions and (
+                    timing_submissions[-1].get("transcript_hash")
+                    != proof.get("transcript_hash")
+                ):
+                    timing_valid = False
+            valid_presence = (
+                isinstance(metadata.get("jti"), str)
+                and re.fullmatch(r"[0-9a-f]{32}", metadata["jti"]) is not None
+                and isinstance(metadata.get("audience"), str)
+                and bool(metadata["audience"])
+                and proof.get("protocol") == "mettle-presence-v1"
+                and isinstance(proof.get("public_key_pem"), str)
+                and key_fingerprint(proof["public_key_pem"])
+                == proof.get("key_fingerprint")
+                and isinstance(proof.get("transcript_hash"), str)
+                and re.fullmatch(r"sha256:[0-9a-f]{64}", proof["transcript_hash"])
+                is not None
+                and isinstance(proof.get("sequence"), int)
+                and proof["sequence"] > 0
+                and timing_valid
+            )
+        except (TypeError, ValueError):
+            return False
+        if not valid_presence:
+            return False
     expected_hash = f"sha256:{hashlib.sha256(_canonical_bytes(metadata)).hexdigest()}"
     if attestation.get("content_hash") != expected_hash:
         return False

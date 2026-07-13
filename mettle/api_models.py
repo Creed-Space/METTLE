@@ -47,6 +47,7 @@ SINGLE_SHOT_SUITES = [s for s in SUITE_NAMES if s != MULTI_ROUND_SUITE]
 
 MAX_SUITES_PER_SESSION = len(SUITE_NAMES)
 MAX_ANSWER_BYTES = 64 * 1024
+MAX_ATTESTATION_BYTES = 128 * 1024
 
 
 def _validate_answer_object(value: dict[str, Any]) -> dict[str, Any]:
@@ -99,6 +100,53 @@ class OperatorCommitment(BaseModel):
     )
 
 
+class PresenceRegistration(BaseModel):
+    """Opt-in key binding for a METTLE Presence Protocol session."""
+
+    public_key_pem: str = Field(
+        min_length=1,
+        max_length=8192,
+        description="Ed25519 public key used for session and presentation proofs",
+    )
+    audience: str = Field(
+        min_length=1,
+        max_length=256,
+        description="Intended verifier or service audience for the credential",
+    )
+
+    @field_validator("audience")
+    @classmethod
+    def validate_audience(_cls, value: str) -> str:
+        if value != value.strip() or any(ord(char) < 0x21 for char in value):
+            raise ValueError("audience must be a trimmed printable identifier")
+        return value
+
+
+class PresenceProof(BaseModel):
+    """Holder signature over one server-issued session submission message."""
+
+    nonce: str = Field(min_length=32, max_length=256)
+    previous_transcript_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    signature: str = Field(
+        min_length=80,
+        max_length=128,
+        description="Base64 Ed25519 signature",
+    )
+
+
+class PresenceState(BaseModel):
+    """Client-safe state required to sign the next Presence submission."""
+
+    protocol: Literal["mettle-presence-v1"] = "mettle-presence-v1"
+    key_fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    audience: str
+    nonce: str | None
+    transcript_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    sequence: int = Field(ge=0)
+    action: str | None = None
+    completed: bool = False
+
+
 class CreateSessionRequest(BaseModel):
     """Request to start a METTLE verification session."""
 
@@ -122,6 +170,10 @@ class CreateSessionRequest(BaseModel):
     operator_commitment: OperatorCommitment | None = Field(
         default=None,
         description="Optional signed operator statement; does not create a trust tier",
+    )
+    presence: PresenceRegistration | None = Field(
+        default=None,
+        description="Opt into key-bound session submissions and credential presentation",
     )
 
     @field_validator("suites")
@@ -147,6 +199,7 @@ class RoundAnswerRequest(BaseModel):
     submitted_at: datetime | None = Field(
         default=None, description="Client-side timestamp"
     )
+    presence_proof: PresenceProof | None = None
 
     _bound_answers = field_validator("answers")(_validate_answer_object)
 
@@ -156,6 +209,7 @@ class VerifyRequest(BaseModel):
 
     suite: str = Field(description="Suite name to verify")
     answers: dict[str, Any] = Field(description="Suite-specific answers")
+    presence_proof: PresenceProof | None = None
 
     _bound_answers = field_validator("answers")(_validate_answer_object)
 
@@ -174,6 +228,7 @@ class CreateSessionResponse(BaseModel):
         description="Suite name -> challenge data (no answers)"
     )
     time_budget_ms: int
+    presence: PresenceState | None = None
 
 
 class RoundFeedbackResponse(BaseModel):
@@ -187,6 +242,8 @@ class RoundFeedbackResponse(BaseModel):
     next_round_data: dict[str, Any] | None = Field(
         default=None, description="Data for next round; null if final"
     )
+    presence: PresenceState | None = None
+    next_challenge: dict[str, Any] | None = None
 
 
 class VerifyResponse(BaseModel):
@@ -196,6 +253,64 @@ class VerifyResponse(BaseModel):
     passed: bool
     score: float
     details: dict[str, Any]
+    presence: PresenceState | None = None
+    next_challenge: dict[str, Any] | None = None
+
+
+class PresentationChallengeRequest(BaseModel):
+    """Request a fresh, single-use proof-of-possession challenge."""
+
+    credential_jti: str = Field(pattern=r"^[0-9a-f]{32}$")
+    audience: str = Field(min_length=1, max_length=256)
+
+    @field_validator("audience")
+    @classmethod
+    def validate_audience(_cls, value: str) -> str:
+        return PresenceRegistration.validate_audience(value)
+
+
+class PresentationChallengeResponse(BaseModel):
+    """Fresh challenge to be signed by the credential's bound holder key."""
+
+    challenge_id: str
+    nonce: str
+    audience: str
+    credential_jti: str
+    expires_at: datetime
+
+
+class PresentationVerifyRequest(BaseModel):
+    """Verify one issuer-signed credential and live holder signature."""
+
+    challenge_id: str = Field(min_length=32, max_length=256)
+    attestation: dict[str, Any]
+    holder_signature: str = Field(min_length=80, max_length=128)
+
+    @field_validator("attestation")
+    @classmethod
+    def validate_attestation(_cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(value) > 32:
+            raise ValueError("Attestation contains too many top-level fields")
+        try:
+            encoded = json.dumps(value, separators=(",", ":")).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Attestation must be JSON serializable") from exc
+        if len(encoded) > MAX_ATTESTATION_BYTES:
+            raise ValueError(f"Attestation exceeds {MAX_ATTESTATION_BYTES} bytes")
+        return value
+
+
+class PresentationVerifyResponse(BaseModel):
+    """Successful live verification of a key-bound METTLE credential."""
+
+    valid: Literal[True] = True
+    credential_jti: str
+    audience: str
+    tier: str
+    subject_id: str
+    entity_id: str | None = None
+    key_fingerprint: str
+    transcript_hash: str
 
 
 class GovernanceAttestation(BaseModel):
@@ -314,6 +429,10 @@ class SessionResultResponse(BaseModel):
         default=None,
         description="Operator accountability chain (cryptographic link agent -> operator)",
     )
+    presence: PresenceState | None = Field(
+        default=None,
+        description="Final key-bound session transcript state, when requested at creation",
+    )
     elapsed_ms: int
 
 
@@ -339,4 +458,5 @@ class SessionStatusResponse(BaseModel):
     expires_at: datetime
     current_round: int | None = None
     suites_completed: list[str] = Field(default_factory=list)
+    presence: PresenceState | None = None
     elapsed_ms: int

@@ -23,6 +23,13 @@ from mettle.api_models import (
 from mettle.challenge_adapter import ChallengeAdapter
 from mettle.app_config import settings
 from mettle.llm_challenges import is_available as llm_available
+from mettle.presence import (
+    advance_session_presence,
+    new_session_presence,
+    public_session_presence,
+    verify_holder_signature,
+    verify_submission_proof,
+)
 
 LLM_DYNAMIC_SUITE = "llm-dynamic"
 
@@ -37,6 +44,8 @@ RATE_LIMIT_WINDOW = 3600  # 1 hour
 MAX_ACTIVE_SESSIONS_PER_USER = 5
 MAX_SESSIONS_PER_HOUR = 100
 SESSION_LOCK_TTL = 30
+PRESENTATION_CHALLENGE_TTL = 60
+MAX_PRESENTATION_CHALLENGES_PER_MINUTE = 60
 
 
 class SessionRateLimitError(ValueError):
@@ -77,6 +86,12 @@ end
 return removed
 """
 
+_PRESENTATION_RATE_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1])) end
+return count
+"""
+
 
 def _key(session_id: str, suffix: str = "") -> str:
     """Build a Redis key."""
@@ -86,6 +101,15 @@ def _key(session_id: str, suffix: str = "") -> str:
 
 def _rate_key(user_id: str, kind: str) -> str:
     return f"{settings.redis_namespace}:rate:{user_id}:{kind}"
+
+
+def _presentation_key(challenge_id: str) -> str:
+    return f"{settings.redis_namespace}:presentation:{challenge_id}"
+
+
+def _presentation_rate_key(user_id: str) -> str:
+    minute = int(time.time() // 60)
+    return f"{settings.redis_namespace}:presentation-rate:{user_id}:{minute}"
 
 
 class SessionManager:
@@ -104,6 +128,7 @@ class SessionManager:
         entity_id: str | None = None,
         vcp_token: str | None = None,
         operator_commitment: dict[str, Any] | None = None,
+        presence: dict[str, Any] | None = None,
     ) -> tuple[str, dict[str, Any], dict[str, Any]]:
         """Create a new verification session.
 
@@ -134,6 +159,7 @@ class SessionManager:
                 entity_id=entity_id,
                 vcp_token=vcp_token,
                 operator_commitment=operator_commitment,
+                presence_registration=presence,
             )
         except Exception:
             await self._release_rate_reservation(user_id, session_id)
@@ -149,6 +175,7 @@ class SessionManager:
         entity_id: str | None,
         vcp_token: str | None,
         operator_commitment: dict[str, Any] | None,
+        presence_registration: dict[str, Any] | None,
     ) -> tuple[str, dict[str, Any], dict[str, Any]]:
         """Generate and persist a session after its Redis quota reservation."""
         now = datetime.now(tz=timezone.utc)
@@ -215,6 +242,23 @@ class SessionManager:
         else:
             time_budget_ms = len(resolved_suites) * 30000  # 30s per single-shot suite
 
+        presence_state = None
+        issued_client_challenges = client_challenges
+        if presence_registration is not None:
+            presence_state = new_session_presence(
+                session_id=session_id,
+                public_key_pem=presence_registration["public_key_pem"],
+                audience=presence_registration["audience"],
+            )
+            first_suite = resolved_suites[0]
+            presence_state["client_challenges"] = client_challenges
+            presence_state["current_action"] = (
+                "round:1"
+                if first_suite == MULTI_ROUND_SUITE
+                else f"suite:{first_suite}"
+            )
+            issued_client_challenges = {first_suite: client_challenges[first_suite]}
+
         # Store session metadata
         session_meta = {
             "session_id": session_id,
@@ -240,6 +284,7 @@ class SessionManager:
             "suites_completed": [],
             "suite_results": {},
             "round_data": [],
+            "presence": presence_state,
         }
 
         # Store in Redis
@@ -250,7 +295,7 @@ class SessionManager:
         )
         await pipe.execute()
 
-        return session_id, client_challenges, session_meta
+        return session_id, issued_client_challenges, session_meta
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
         """Get session metadata."""
@@ -297,19 +342,23 @@ class SessionManager:
         session_id: str,
         suite: str,
         answers: dict[str, Any],
+        presence_proof: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Verify answers for a single-shot suite.
 
         Returns evaluation results. Raises ValueError on invalid state.
         """
         async with self._session_lock(session_id):
-            return await self._verify_single_shot(session_id, suite, answers)
+            return await self._verify_single_shot(
+                session_id, suite, answers, presence_proof
+            )
 
     async def _verify_single_shot(
         self,
         session_id: str,
         suite: str,
         answers: dict[str, Any],
+        presence_proof: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         session = await self.get_session(session_id)
         if session is None:
@@ -333,6 +382,13 @@ class SessionManager:
             raise ValueError("Novel reasoning requires multi-round endpoint")
 
         session["status"] = SessionStatus.IN_PROGRESS.value
+        presence_message = verify_submission_proof(
+            presence=session.get("presence"),
+            proof=presence_proof,
+            session_id=session_id,
+            action=f"suite:{suite}",
+            answers=answers,
+        )
 
         # Get server answers and evaluate
         server_answers = await self.get_session_answers(session_id)
@@ -368,8 +424,28 @@ class SessionManager:
         else:
             ttl = self._remaining_active_ttl(session)
 
+        if presence_message is not None:
+            if presence_proof is None:
+                raise RuntimeError("Verified presence proof unexpectedly missing")
+            advance_session_presence(
+                presence=session["presence"],
+                message=presence_message,
+                signature=presence_proof["signature"],
+                action=f"suite:{suite}",
+            )
+
+        next_challenge = (
+            self._advance_presence_suite(session) if session.get("presence") else None
+        )
+
         await self.redis.setex(_key(session_id), ttl, json.dumps(session))
-        return result
+        response = dict(result)
+        response["presence"] = public_session_presence(
+            session.get("presence"),
+            completed=session["status"] == SessionStatus.COMPLETED.value,
+        )
+        response["next_challenge"] = next_challenge
+        return response
 
     # ---- Multi-Round (Suite 10) ----
 
@@ -378,19 +454,23 @@ class SessionManager:
         session_id: str,
         round_num: int,
         answers: dict[str, Any],
+        presence_proof: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Submit answers for a multi-round challenge round.
 
         Returns round evaluation with feedback. Raises ValueError on invalid state.
         """
         async with self._session_lock(session_id):
-            return await self._submit_round_answer(session_id, round_num, answers)
+            return await self._submit_round_answer(
+                session_id, round_num, answers, presence_proof
+            )
 
     async def _submit_round_answer(
         self,
         session_id: str,
         round_num: int,
         answers: dict[str, Any],
+        presence_proof: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         session = await self.get_session(session_id)
         if session is None:
@@ -412,6 +492,13 @@ class SessionManager:
             raise ValueError(f"Expected round {expected_round}, got {round_num}")
 
         session["status"] = SessionStatus.IN_PROGRESS.value
+        presence_message = verify_submission_proof(
+            presence=session.get("presence"),
+            proof=presence_proof,
+            session_id=session_id,
+            action=f"round:{round_num}",
+            answers=answers,
+        )
 
         # Server-side timing enforcement. Keep total elapsed time for the
         # authoritative budget, but record this round's duration for curve
@@ -509,6 +596,21 @@ class SessionManager:
             if session["status"] == SessionStatus.COMPLETED.value
             else self._remaining_active_ttl(session)
         )
+        if presence_message is not None:
+            if presence_proof is None:
+                raise RuntimeError("Verified presence proof unexpectedly missing")
+            advance_session_presence(
+                presence=session["presence"],
+                message=presence_message,
+                signature=presence_proof["signature"],
+                action=f"round:{round_num}",
+            )
+        next_challenge = None
+        if session.get("presence"):
+            if is_final_round:
+                next_challenge = self._advance_presence_suite(session)
+            else:
+                session["presence"]["current_action"] = f"round:{round_num + 1}"
         await self.redis.setex(_key(session_id), ttl, json.dumps(session))
 
         return {
@@ -518,6 +620,11 @@ class SessionManager:
             "feedback": feedback,
             "time_remaining_ms": time_remaining_ms,
             "next_round_data": next_round_data,
+            "presence": public_session_presence(
+                session.get("presence"),
+                completed=session["status"] == SessionStatus.COMPLETED.value,
+            ),
+            "next_challenge": next_challenge,
         }
 
     async def get_round_feedback(
@@ -569,7 +676,108 @@ class SessionManager:
             "overall_passed": all_passed,
             "iteration_curve": iteration_curve,
             "elapsed_ms": elapsed_ms,
+            "presence": public_session_presence(
+                session.get("presence"), completed=True
+            ),
         }
+
+    # ---- Credential Presentation ----
+
+    @staticmethod
+    def _advance_presence_suite(session: dict[str, Any]) -> dict[str, Any] | None:
+        """Issue only the next suite challenge in a Presence session."""
+        presence = session["presence"]
+        if session["status"] == SessionStatus.COMPLETED.value:
+            presence["current_action"] = None
+            return None
+        completed = set(session["suites_completed"])
+        for suite in session["suites"]:
+            if suite in completed:
+                continue
+            presence["current_action"] = (
+                f"round:{session.get('current_round', 0) + 1}"
+                if suite == MULTI_ROUND_SUITE
+                else f"suite:{suite}"
+            )
+            return {suite: presence["client_challenges"][suite]}
+        raise RuntimeError("Presence session has no challenge left to issue")
+
+    async def create_presentation_challenge(
+        self,
+        *,
+        verifier_user_id: str,
+        credential_jti: str,
+        audience: str,
+    ) -> dict[str, Any]:
+        """Persist a fresh verifier-owned proof-of-possession challenge."""
+        rate_key = _presentation_rate_key(verifier_user_id)
+        eval_fn = getattr(self.redis, "eval", None)
+        if callable(eval_fn):
+            count = int(await eval_fn(_PRESENTATION_RATE_SCRIPT, 1, rate_key, 60))
+        else:
+            count = int(await self.redis.incr(rate_key))
+            if count == 1:
+                await self.redis.expire(rate_key, 60)
+        if count > MAX_PRESENTATION_CHALLENGES_PER_MINUTE:
+            raise SessionRateLimitError(
+                "Presentation challenge rate limit exceeded", 60
+            )
+
+        challenge_id = secrets.token_urlsafe(32)
+        expires_at = datetime.fromtimestamp(
+            time.time() + PRESENTATION_CHALLENGE_TTL, tz=timezone.utc
+        ).isoformat()
+        challenge = {
+            "challenge_id": challenge_id,
+            "nonce": secrets.token_urlsafe(32),
+            "audience": audience,
+            "credential_jti": credential_jti,
+            "verifier_user_id": verifier_user_id,
+            "expires_at": expires_at,
+        }
+        await self.redis.setex(
+            _presentation_key(challenge_id),
+            PRESENTATION_CHALLENGE_TTL,
+            json.dumps(challenge),
+        )
+        return challenge
+
+    async def verify_presentation(
+        self,
+        *,
+        verifier_user_id: str,
+        challenge_id: str,
+        credential_jti: str,
+        audience: str,
+        public_key_pem: str,
+        holder_signature: str,
+    ) -> dict[str, Any]:
+        """Verify and atomically consume one live presentation challenge."""
+        async with self._session_lock(f"presentation:{challenge_id}"):
+            raw = await self.redis.get(_presentation_key(challenge_id))
+            if raw is None:
+                raise ValueError("Presentation challenge expired or already used")
+            challenge = json.loads(raw)
+            if challenge.get("verifier_user_id") != verifier_user_id:
+                raise ValueError("Presentation challenge belongs to another verifier")
+            if challenge.get("credential_jti") != credential_jti:
+                raise ValueError("Credential does not match presentation challenge")
+            if challenge.get("audience") != audience:
+                raise ValueError(
+                    "Credential audience does not match presentation challenge"
+                )
+            verify_holder_signature(
+                public_key_pem=public_key_pem,
+                signature=holder_signature,
+                challenge=challenge,
+            )
+            delete = getattr(self.redis, "delete", None)
+            if not callable(delete):
+                raise RuntimeError(
+                    "Redis client cannot consume presentation challenges"
+                )
+            await delete(_presentation_key(challenge_id))
+            return challenge
 
     # ---- Iteration Curve Analysis ----
 

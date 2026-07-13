@@ -21,6 +21,11 @@ from mettle.api_models import (
     CreateSessionResponse,
     GovernanceAttestation,
     OperatorAttestation,
+    PresenceState,
+    PresentationChallengeRequest,
+    PresentationChallengeResponse,
+    PresentationVerifyRequest,
+    PresentationVerifyResponse,
     RoundAnswerRequest,
     RoundFeedbackResponse,
     SessionResultResponse,
@@ -32,6 +37,7 @@ from mettle.api_models import (
 from mettle.auth import AuthenticatedUser, require_authenticated_user
 from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.llm_challenges import is_available as llm_challenges_available
+from mettle.presence import public_session_presence
 from mettle.session_manager import SessionManager, SessionRateLimitError
 from redis.exceptions import RedisError
 
@@ -140,6 +146,7 @@ async def create_session(
             operator_commitment=request.operator_commitment.model_dump()
             if request.operator_commitment
             else None,
+            presence=request.presence.model_dump() if request.presence else None,
         )
 
         logger.info(
@@ -159,6 +166,13 @@ async def create_session(
             suites=meta["suites"],
             challenges=challenges,
             time_budget_ms=meta["time_budget_ms"],
+            presence=(
+                PresenceState.model_validate(
+                    public_session_presence(meta.get("presence"))
+                )
+                if meta.get("presence")
+                else None
+            ),
         )
 
     except RedisError as e:
@@ -215,6 +229,16 @@ async def get_session_status(
         expires_at=datetime.fromisoformat(session["expires_at"]),
         current_round=session.get("current_round"),
         suites_completed=session.get("suites_completed", []),
+        presence=(
+            PresenceState.model_validate(
+                public_session_presence(
+                    session.get("presence"),
+                    completed=session["status"] == "completed",
+                )
+            )
+            if session.get("presence")
+            else None
+        ),
         elapsed_ms=elapsed_ms,
     )
 
@@ -266,7 +290,10 @@ async def verify_single_shot(
             )
 
         result = await mgr.verify_single_shot(
-            session_id, request.suite, request.answers
+            session_id,
+            request.suite,
+            request.answers,
+            request.presence_proof.model_dump() if request.presence_proof else None,
         )
 
         logger.info(
@@ -284,6 +311,8 @@ async def verify_single_shot(
             passed=result["passed"],
             score=result["score"],
             details=result["details"],
+            presence=result.get("presence"),
+            next_challenge=result.get("next_challenge"),
         )
 
     except RedisError as e:
@@ -337,7 +366,12 @@ async def submit_round_answer(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Not your session"
             )
 
-        result = await mgr.submit_round_answer(session_id, round_num, request.answers)
+        result = await mgr.submit_round_answer(
+            session_id,
+            round_num,
+            request.answers,
+            request.presence_proof.model_dump() if request.presence_proof else None,
+        )
 
         return RoundFeedbackResponse(
             round_num=result["round_num"],
@@ -346,6 +380,8 @@ async def submit_round_answer(
             feedback=result["feedback"],
             time_remaining_ms=result["time_remaining_ms"],
             next_round_data=result.get("next_round_data"),
+            presence=result.get("presence"),
+            next_challenge=result.get("next_challenge"),
         )
 
     except RedisError as e:
@@ -459,6 +495,7 @@ async def get_session_result(
             pass_rate=pass_rate,
             subject_id=user.user_id,
             entity_id=session.get("entity_id"),
+            presence=session.get("presence"),
         )
 
     result["vcp_attestation"] = vcp_attestation
@@ -485,6 +522,122 @@ async def get_session_result(
     result["operator_attestation"] = operator_attestation
 
     return SessionResultResponse(**result)
+
+
+@router.post(
+    "/presentation-challenges",
+    response_model=PresentationChallengeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_presentation_challenge(
+    request: PresentationChallengeRequest,
+    user: AuthUser,
+    mgr: MettleManager,
+) -> PresentationChallengeResponse:
+    """Create a fresh verifier-owned challenge for a bound credential."""
+    try:
+        challenge = await mgr.create_presentation_challenge(
+            verifier_user_id=user.user_id,
+            credential_jti=request.credential_jti,
+            audience=request.audience,
+        )
+        return PresentationChallengeResponse(**challenge)
+    except SessionRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+    except RedisError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="METTLE presentation storage temporarily unavailable",
+        ) from exc
+
+
+@router.post(
+    "/presentations/verify",
+    response_model=PresentationVerifyResponse,
+)
+async def verify_credential_presentation(
+    request: PresentationVerifyRequest,
+    raw_request: Request,
+    user: AuthUser,
+    mgr: MettleManager,
+) -> PresentationVerifyResponse:
+    """Verify issuer integrity, current policy, and live holder possession."""
+    from mettle.signing import get_public_key_pem
+    from mettle.vcp import verify_mettle_attestation
+
+    issuer_public_key = get_public_key_pem()
+    if issuer_public_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="METTLE credential verification is unavailable",
+        )
+    if not verify_mettle_attestation(request.attestation, issuer_public_key):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential signature, policy, or expiry is invalid",
+        )
+
+    metadata = request.attestation["metadata"]
+    proof = metadata.get("proof_of_possession")
+    if not isinstance(proof, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential is not bound to a holder key",
+        )
+    jti = metadata["jti"]
+    checker = getattr(raw_request.app.state, "credential_revocation_checker", None)
+    if not callable(checker):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Credential revocation service is unavailable",
+        )
+    try:
+        revoked = bool(checker(jti))
+    except Exception as exc:
+        logger.error("Credential revocation check failed", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Credential revocation service is unavailable",
+        ) from exc
+    if revoked:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential has been revoked",
+        )
+
+    try:
+        await mgr.verify_presentation(
+            verifier_user_id=user.user_id,
+            challenge_id=request.challenge_id,
+            credential_jti=jti,
+            audience=metadata["audience"],
+            public_key_pem=proof["public_key_pem"],
+            holder_signature=request.holder_signature,
+        )
+    except RedisError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="METTLE presentation storage temporarily unavailable",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return PresentationVerifyResponse(
+        credential_jti=jti,
+        audience=metadata["audience"],
+        tier=metadata["tier"],
+        subject_id=metadata["subject_id"],
+        entity_id=metadata.get("entity_id"),
+        key_fingerprint=proof["key_fingerprint"],
+        transcript_hash=proof["transcript_hash"],
+    )
 
 
 @router.get("/.well-known/vcp-keys")

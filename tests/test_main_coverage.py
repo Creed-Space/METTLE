@@ -478,6 +478,53 @@ class TestBadgeRevocationFull:
         mock_db.add_revoked_badge.assert_called_once()
         assert "persist-revocation-jti" in revoked_badges
 
+    def test_presence_credential_jti_can_be_revoked(self, client):
+        credential_jti = "a" * 32
+        mock_db = MagicMock()
+        mock_db.is_badge_revoked.return_value = False
+        mock_db.add_revoked_badge.return_value = True
+
+        with patch("main.db", mock_db):
+            response = client.post(
+                "/api/badge/revoke",
+                json={
+                    "jti": credential_jti,
+                    "entity_id": "agent-42",
+                    "reason": "Revoke compromised Presence credential",
+                },
+                headers=ADMIN_HEADERS,
+            )
+
+        assert response.status_code == 200
+        mock_db.add_revoked_badge.assert_called_once_with(
+            credential_jti,
+            "agent-42",
+            "Revoke compromised Presence credential",
+            None,
+        )
+        assert credential_jti in revoked_badges
+
+    def test_revocation_requires_exactly_one_credential_form(self, client):
+        token = _make_badge_token(jti="duplicate-form-jti")
+        both = client.post(
+            "/api/badge/revoke",
+            json={
+                "token": token,
+                "jti": "b" * 32,
+                "reason": "Ambiguous revocation request must fail",
+            },
+            headers=ADMIN_HEADERS,
+        )
+        neither = client.post(
+            "/api/badge/revoke",
+            json={"reason": "Missing revocation credential must fail"},
+            headers=ADMIN_HEADERS,
+        )
+
+        assert both.status_code == 400
+        assert neither.status_code == 400
+        assert "exactly one" in both.json()["detail"].lower()
+
     def test_persistence_failure_does_not_claim_revocation(self, client):
         token = _make_badge_token(jti="failed-persistence-jti")
         mock_db = MagicMock()

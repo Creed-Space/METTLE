@@ -179,6 +179,14 @@ challenges: dict[str, tuple[Challenge, float | None]] = {}
 revoked_badges: dict[str, float] = {}  # JTI -> revocation timestamp (bounded dict)
 revocation_audit: list[dict[str, Any]] = []  # Audit trail
 
+
+def _credential_is_revoked(jti: str) -> bool:
+    """Check the shared revocation namespace for any METTLE credential JTI."""
+    return jti in revoked_badges or bool(
+        db and db.is_badge_revoked(jti, raise_on_error=True)
+    )
+
+
 # Collusion detection - track verification patterns
 verification_graph: dict[
     str, list[dict[str, Any]]
@@ -667,6 +675,7 @@ async def lifespan(app: FastAPI):
             _restore_persistent_runtime_state()
         except Exception as exc:
             raise RuntimeError("Database initialization failed") from exc
+    app.state.credential_revocation_checker = _credential_is_revoked
 
     logger.info(
         "mettle_starting",
@@ -1665,9 +1674,19 @@ async def verify_badge_legacy(request: Request, token: str):
 
 
 class RevokeBadgeRequest(BaseModel):
-    """Request to revoke a badge."""
+    """Request to revoke a legacy badge or Presence credential."""
 
-    token: str = Field(..., description="The badge token to revoke")
+    token: str | None = Field(None, description="The legacy badge token to revoke")
+    jti: str | None = Field(
+        None,
+        pattern=r"^[0-9a-f]{32}$",
+        description="The Presence credential JTI to revoke",
+    )
+    entity_id: str | None = Field(
+        None,
+        max_length=256,
+        description="Optional entity claim recorded with a JTI revocation",
+    )
     reason: str = Field(
         ..., min_length=10, max_length=500, description="Reason for revocation"
     )
@@ -1727,23 +1746,34 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
             status_code=401, detail="Admin authorization required for badge revocation"
         )
 
-    if not settings.secret_key:
-        raise HTTPException(status_code=400, detail="Badge signing not configured")
-
-    try:
-        # Decode without verification to get JTI even if expired
-        payload = jwt.decode(
-            body.token,
-            settings.secret_key,
-            algorithms=["HS256"],
-            issuer="mettle-api",
-            options={
-                "verify_exp": False,
-                "require": ["iat", "iss", "session_id"],
-            },
+    if bool(body.token) == bool(body.jti):
+        raise HTTPException(
+            status_code=400,
+            detail="Supply exactly one legacy badge token or Presence credential JTI",
         )
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=400, detail="Invalid badge token")
+
+    if body.jti:
+        payload = {"jti": body.jti, "entity_id": body.entity_id}
+    else:
+        if not settings.secret_key:
+            raise HTTPException(status_code=400, detail="Badge signing not configured")
+        token = body.token
+        if token is None:
+            raise HTTPException(status_code=400, detail="Badge token is required")
+        try:
+            # Decode without verification to get JTI even if expired
+            payload = jwt.decode(
+                token,
+                settings.secret_key,
+                algorithms=["HS256"],
+                issuer="mettle-api",
+                options={
+                    "verify_exp": False,
+                    "require": ["iat", "iss", "session_id"],
+                },
+            )
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=400, detail="Invalid badge token")
 
     jti = payload.get("jti")
     if not jti:
@@ -2558,21 +2588,25 @@ async def sitemap():
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://mettle.sh/</loc>
+    <lastmod>2026-07-13</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://mettle.sh/static/docs.html</loc>
+    <lastmod>2026-07-13</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://mettle.sh/test</loc>
+    <lastmod>2026-07-13</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://mettle.sh/about</loc>
+    <lastmod>2026-07-13</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
