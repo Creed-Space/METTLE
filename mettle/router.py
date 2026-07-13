@@ -32,7 +32,7 @@ from mettle.api_models import (
 from mettle.auth import AuthenticatedUser, require_authenticated_user
 from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.llm_challenges import is_available as llm_challenges_available
-from mettle.session_manager import SessionManager
+from mettle.session_manager import SessionManager, SessionRateLimitError
 from redis.exceptions import RedisError
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,11 @@ async def get_suite_info(
     "/sessions",
     response_model=CreateSessionResponse,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_429_TOO_MANY_REQUESTS: {
+            "description": "Active-session or hourly creation quota exceeded"
+        }
+    },
 )
 async def create_session(
     request: CreateSessionRequest, user: AuthUser, mgr: MettleManager
@@ -160,6 +165,12 @@ async def create_session(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="METTLE session storage temporarily unavailable",
+        ) from e
+    except SessionRateLimitError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+            headers={"Retry-After": str(e.retry_after)},
         ) from e
     except ValueError as e:
         raise HTTPException(

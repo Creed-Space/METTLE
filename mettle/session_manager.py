@@ -38,6 +38,15 @@ MAX_ACTIVE_SESSIONS_PER_USER = 5
 MAX_SESSIONS_PER_HOUR = 100
 SESSION_LOCK_TTL = 30
 
+
+class SessionRateLimitError(ValueError):
+    """Session creation quota exceeded, with an HTTP retry hint."""
+
+    def __init__(self, message: str, retry_after: int) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 _RATE_RESERVATION_SCRIPT = """
 local active_count = redis.call('SCARD', KEYS[1])
 if active_count >= tonumber(ARGV[2]) then return -1 end
@@ -614,17 +623,19 @@ class SessionManager:
         # Check active sessions
         active_count = await self.redis.scard(_rate_key(user_id, "active"))
         if active_count is not None and active_count >= MAX_ACTIVE_SESSIONS_PER_USER:
-            raise ValueError(
+            raise SessionRateLimitError(
                 f"Maximum active sessions ({MAX_ACTIVE_SESSIONS_PER_USER}) exceeded. "
-                "Complete or cancel existing sessions."
+                "Complete or cancel existing sessions.",
+                ACTIVE_SESSION_TTL,
             )
 
         # Check hourly limit
         hourly_raw = await self.redis.get(_rate_key(user_id, "hourly"))
         hourly_count = int(hourly_raw) if hourly_raw else 0
         if hourly_count >= MAX_SESSIONS_PER_HOUR:
-            raise ValueError(
-                f"Hourly session limit ({MAX_SESSIONS_PER_HOUR}) exceeded. Try again later."
+            raise SessionRateLimitError(
+                f"Hourly session limit ({MAX_SESSIONS_PER_HOUR}) exceeded. Try again later.",
+                RATE_LIMIT_WINDOW,
             )
 
     async def _reserve_rate_limits(self, user_id: str, session_id: str) -> None:
@@ -655,13 +666,15 @@ class SessionManager:
             RATE_LIMIT_WINDOW,
         )
         if result == -1:
-            raise ValueError(
+            raise SessionRateLimitError(
                 f"Maximum active sessions ({MAX_ACTIVE_SESSIONS_PER_USER}) exceeded. "
-                "Complete or cancel existing sessions."
+                "Complete or cancel existing sessions.",
+                ACTIVE_SESSION_TTL,
             )
         if result == -2:
-            raise ValueError(
-                f"Hourly session limit ({MAX_SESSIONS_PER_HOUR}) exceeded. Try again later."
+            raise SessionRateLimitError(
+                f"Hourly session limit ({MAX_SESSIONS_PER_HOUR}) exceeded. Try again later.",
+                RATE_LIMIT_WINDOW,
             )
 
     async def _release_rate_reservation(self, user_id: str, session_id: str) -> None:
