@@ -217,15 +217,18 @@ def build_mettle_attestation(
         from mettle.presence import validate_credential_presence
 
         validate_credential_presence(presence)
-        timing_submissions = [
-            {
+        timing_submissions = []
+        for submission in presence.get("submissions", []):
+            receipt = {
                 "sequence": submission["sequence"],
                 "action": submission["action"],
                 "response_time_ms": submission["response_time_ms"],
                 "transcript_hash": submission["transcript_hash"],
             }
-            for submission in presence.get("submissions", [])
-        ]
+            if presence.get("continuity_protocol") is not None:
+                receipt["challenge_family"] = submission["challenge_family"]
+                receipt["challenge_id"] = submission["challenge_id"]
+            timing_submissions.append(receipt)
         completed_at_ms = (
             presence["submissions"][-1]["accepted_at_unix_ms"]
             if presence.get("submissions")
@@ -246,6 +249,16 @@ def build_mettle_attestation(
                 "submissions": timing_submissions,
             },
         }
+        if presence.get("continuity_protocol") is not None:
+            metadata["proof_of_possession"]["continuity"] = {
+                "protocol": presence["continuity_protocol"],
+                "challenge_count": len(timing_submissions),
+                "transcript_bound": True,
+                "max_response_time_ms": max(
+                    (item["response_time_ms"] for item in timing_submissions),
+                    default=0,
+                ),
+            }
 
     # Hash the metadata for content integrity
     content_bytes = _canonical_bytes(metadata)
@@ -323,6 +336,7 @@ def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) 
             from mettle.presence import key_fingerprint
 
             timing = proof.get("server_timing")
+            continuity = proof.get("continuity")
             timing_submissions = (
                 timing.get("submissions") if isinstance(timing, dict) else None
             )
@@ -352,11 +366,38 @@ def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) 
                     ):
                         timing_valid = False
                         break
+                    if continuity is not None and not (
+                        submission.get("challenge_family") == "mettle-continuity-v1"
+                        and re.fullmatch(
+                            r"[0-9a-f]{32}",
+                            str(submission.get("challenge_id", "")),
+                        )
+                        is not None
+                    ):
+                        timing_valid = False
+                        break
                 if timing_submissions and (
                     timing_submissions[-1].get("transcript_hash")
                     != proof.get("transcript_hash")
                 ):
                     timing_valid = False
+            continuity_valid = continuity is None or (
+                isinstance(continuity, dict)
+                and continuity.get("protocol") == "mettle-continuity-v1"
+                and continuity.get("challenge_count") == proof.get("sequence")
+                and continuity.get("transcript_bound") is True
+                and isinstance(continuity.get("max_response_time_ms"), int)
+                and continuity["max_response_time_ms"] >= 0
+                and isinstance(timing_submissions, list)
+                and len(
+                    {
+                        submission.get("challenge_id")
+                        for submission in timing_submissions
+                        if isinstance(submission, dict)
+                    }
+                )
+                == proof.get("sequence")
+            )
             valid_presence = (
                 isinstance(metadata.get("jti"), str)
                 and re.fullmatch(r"[0-9a-f]{32}", metadata["jti"]) is not None
@@ -372,6 +413,7 @@ def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) 
                 and isinstance(proof.get("sequence"), int)
                 and proof["sequence"] > 0
                 and timing_valid
+                and continuity_valid
             )
         except (TypeError, ValueError):
             return False

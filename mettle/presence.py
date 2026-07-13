@@ -21,6 +21,11 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
     load_pem_public_key,
 )
+from mettle.continuity import (
+    CONTINUITY_PROTOCOL,
+    consume_continuity_evidence,
+    new_continuity_state,
+)
 
 PRESENCE_PROTOCOL = "mettle-presence-v1"
 HASH_PREFIX = "sha256:"
@@ -83,7 +88,7 @@ def new_session_presence(
         }
     )
     now_ms = int(time.time() * 1000)
-    return {
+    state = {
         "protocol": PRESENCE_PROTOCOL,
         "public_key_pem": normalized_key,
         "key_fingerprint": fingerprint,
@@ -96,6 +101,8 @@ def new_session_presence(
         "nonce_issued_at_unix_ms": now_ms,
         "submissions": [],
     }
+    state.update(new_continuity_state())
+    return state
 
 
 def public_session_presence(
@@ -113,6 +120,7 @@ def public_session_presence(
         "sequence": presence["sequence"],
         "action": None if completed else presence.get("current_action"),
         "completed": completed,
+        "continuity_protocol": presence.get("continuity_protocol"),
     }
 
 
@@ -138,6 +146,9 @@ def validate_credential_presence(presence: dict[str, Any]) -> None:
         raise ValueError("Presence transcript hash is invalid")
     sequence = presence.get("sequence")
     submissions = presence.get("submissions")
+    continuity_protocol = presence.get("continuity_protocol")
+    if continuity_protocol not in {None, CONTINUITY_PROTOCOL}:
+        raise ValueError("Presence credential continuity protocol is invalid")
     if (
         not isinstance(sequence, int)
         or sequence <= 0
@@ -146,6 +157,7 @@ def validate_credential_presence(presence: dict[str, Any]) -> None:
         or not isinstance(presence.get("started_at_unix_ms"), int)
     ):
         raise ValueError("Presence credential sequence is invalid")
+    challenge_ids: set[str] = set()
     for expected_sequence, submission in enumerate(submissions, start=1):
         if not (
             isinstance(submission, dict)
@@ -162,6 +174,16 @@ def validate_credential_presence(presence: dict[str, Any]) -> None:
             is not None
         ):
             raise ValueError("Presence credential submission history is invalid")
+        if continuity_protocol is not None:
+            challenge_id = submission.get("challenge_id")
+            if (
+                submission.get("challenge_family") != CONTINUITY_PROTOCOL
+                or not isinstance(challenge_id, str)
+                or re.fullmatch(r"[0-9a-f]{32}", challenge_id) is None
+                or challenge_id in challenge_ids
+            ):
+                raise ValueError("Presence credential continuity history is invalid")
+            challenge_ids.add(challenge_id)
     if submissions[-1]["transcript_hash"] != presence["transcript_hash"]:
         raise ValueError("Presence credential transcript commitment is inconsistent")
 
@@ -252,15 +274,15 @@ def advance_session_presence(
     accepted_at_ms = int(time.time() * 1000)
     response_time_ms = max(0, accepted_at_ms - int(presence["nonce_issued_at_unix_ms"]))
     next_sequence = int(presence.get("sequence", 0)) + 1
-    presence.setdefault("submissions", []).append(
-        {
-            "sequence": next_sequence,
-            "action": action,
-            "response_time_ms": response_time_ms,
-            "accepted_at_unix_ms": accepted_at_ms,
-            "transcript_hash": presence["transcript_hash"],
-        }
-    )
+    receipt = {
+        "sequence": next_sequence,
+        "action": action,
+        "response_time_ms": response_time_ms,
+        "accepted_at_unix_ms": accepted_at_ms,
+        "transcript_hash": presence["transcript_hash"],
+    }
+    receipt.update(consume_continuity_evidence(presence))
+    presence.setdefault("submissions", []).append(receipt)
     presence["nonce"] = secrets.token_urlsafe(32)
     presence["sequence"] = next_sequence
     presence["nonce_issued_at_unix_ms"] = accepted_at_ms

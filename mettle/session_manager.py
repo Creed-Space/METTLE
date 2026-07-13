@@ -21,6 +21,12 @@ from mettle.api_models import (
     SessionStatus,
 )
 from mettle.challenge_adapter import ChallengeAdapter
+from mettle.continuity import (
+    CONTINUITY_ANSWER_KEY,
+    attach_continuity_challenge,
+    retire_continuity_secret,
+    verify_continuity_answer,
+)
 from mettle.app_config import settings
 from mettle.llm_challenges import is_available as llm_available
 from mettle.presence import (
@@ -257,7 +263,13 @@ class SessionManager:
                 if first_suite == MULTI_ROUND_SUITE
                 else f"suite:{first_suite}"
             )
-            issued_client_challenges = {first_suite: client_challenges[first_suite]}
+            issued_client_challenges = {
+                first_suite: attach_continuity_challenge(
+                    presence_state,
+                    presence_state["current_action"],
+                    client_challenges[first_suite],
+                )
+            }
 
         # Store session metadata
         session_meta = {
@@ -389,6 +401,9 @@ class SessionManager:
             action=f"suite:{suite}",
             answers=answers,
         )
+        verify_continuity_answer(session.get("presence"), f"suite:{suite}", answers)
+        evaluation_answers = dict(answers)
+        evaluation_answers.pop(CONTINUITY_ANSWER_KEY, None)
 
         # Get server answers and evaluate
         server_answers = await self.get_session_answers(session_id)
@@ -406,10 +421,12 @@ class SessionManager:
                 int((time.time() - float(session["start_time"])) * 1000),
             )
             result = await evaluate_llm_challenges(
-                answers, suite_server, response_time_ms=elapsed_ms
+                evaluation_answers, suite_server, response_time_ms=elapsed_ms
             )
         else:
-            result = ChallengeAdapter.evaluate_single_shot(suite, answers, suite_server)
+            result = ChallengeAdapter.evaluate_single_shot(
+                suite, evaluation_answers, suite_server
+            )
 
         # Update session
         session["suites_completed"].append(suite)
@@ -499,6 +516,9 @@ class SessionManager:
             action=f"round:{round_num}",
             answers=answers,
         )
+        verify_continuity_answer(session.get("presence"), f"round:{round_num}", answers)
+        evaluation_answers = dict(answers)
+        evaluation_answers.pop(CONTINUITY_ANSWER_KEY, None)
 
         # Server-side timing enforcement. Keep total elapsed time for the
         # authoritative budget, but record this round's duration for curve
@@ -525,7 +545,7 @@ class SessionManager:
         total_accuracy = 0.0
         num_challenges = 0
 
-        challenge_answers = answers.get("challenges", answers)
+        challenge_answers = evaluation_answers.get("challenges", evaluation_answers)
         expected_challenges = set(novel_server.get("challenges", {}))
         if set(challenge_answers) != expected_challenges:
             missing = sorted(expected_challenges - set(challenge_answers))
@@ -611,6 +631,13 @@ class SessionManager:
                 next_challenge = self._advance_presence_suite(session)
             else:
                 session["presence"]["current_action"] = f"round:{round_num + 1}"
+                if next_round_data is None:
+                    raise RuntimeError("Next novel-reasoning round data is missing")
+                next_round_data = attach_continuity_challenge(
+                    session["presence"],
+                    session["presence"]["current_action"],
+                    next_round_data,
+                )
         await self.redis.setex(_key(session_id), ttl, json.dumps(session))
 
         return {
@@ -689,6 +716,7 @@ class SessionManager:
         presence = session["presence"]
         if session["status"] == SessionStatus.COMPLETED.value:
             presence["current_action"] = None
+            retire_continuity_secret(presence)
             return None
         completed = set(session["suites_completed"])
         for suite in session["suites"]:
@@ -699,7 +727,13 @@ class SessionManager:
                 if suite == MULTI_ROUND_SUITE
                 else f"suite:{suite}"
             )
-            return {suite: presence["client_challenges"][suite]}
+            return {
+                suite: attach_continuity_challenge(
+                    presence,
+                    presence["current_action"],
+                    presence["client_challenges"][suite],
+                )
+            }
         raise RuntimeError("Presence session has no challenge left to issue")
 
     async def create_presentation_challenge(

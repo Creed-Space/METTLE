@@ -1,7 +1,7 @@
 # METTLE Presence Protocol v1
 
 The Presence Protocol binds a METTLE session and its resulting credential to an
-Ed25519 key controlled by the participant. It provides four concrete security
+Ed25519 key controlled by the participant. It provides six concrete security
 properties:
 
 1. Every accepted submission is signed over the session, action, answers,
@@ -12,10 +12,13 @@ properties:
 3. Suite challenges are disclosed sequentially. The next suite is released
    only after the current signed action is accepted, reducing harvesting and
    preventing whole-battery precomputation.
-4. A qualifying credential contains the holder public key, audience, unique
+4. Every newly issued action carries a transcript-bound `mettle-continuity-v1`
+   microchallenge. Its hidden family seed and the previous accepted signature
+   make future interlocks unavailable for harvesting or precomputation.
+5. A qualifying credential contains the holder public key, audience, unique
    credential identifier, final transcript commitment, and server-observed
    submission timing inside the issuer-signed envelope.
-5. A verifier can demand a fresh holder signature before accepting the
+6. A verifier can demand a fresh holder signature before accepting the
    credential. The presentation challenge is verifier-owned, audience-bound,
    rate-limited, expires after 60 seconds, and can be used once.
 
@@ -57,7 +60,8 @@ The response contains the first client-safe state:
     "transcript_hash": "sha256:...",
     "sequence": 0,
     "action": "suite:adversarial",
-    "completed": false
+    "completed": false,
+    "continuity_protocol": "mettle-continuity-v1"
   }
 }
 ```
@@ -68,6 +72,10 @@ the authenticated session owner.
 For a Presence session, `challenges` contains only the first issued suite. Each
 successful suite response returns `next_challenge` and updates
 `presence.action`. Submitting an unissued suite or round fails before evaluation.
+The issued suite also contains `_mettle_continuity`, with a challenge identifier,
+32-bit starting value, and eight ordered operations. The reference
+`mettle.solver.solve_continuity_challenge` helper implements the public client
+algorithm.
 
 ## 3. Sign every submission
 
@@ -95,7 +103,13 @@ Submit the base64 Ed25519 signature with the answers:
 ```json
 {
   "suite": "adversarial",
-  "answers": {"q1": 42},
+  "answers": {
+    "q1": 42,
+    "_mettle_continuity": {
+      "challenge_id": "<current continuity challenge id>",
+      "computed": 1234567890
+    }
+  },
   "presence_proof": {
     "nonce": "<current nonce>",
     "previous_transcript_hash": "sha256:<current transcript hash>",
@@ -106,7 +120,8 @@ Submit the base64 Ed25519 signature with the answers:
 
 The response contains the next nonce and transcript hash. A stale nonce, stale
 transcript, wrong action, changed answer, wrong session, malformed signature, or
-different private key causes rejection.
+different private key causes rejection. A missing, stale, or incorrect continuity
+answer also causes rejection before suite evaluation.
 
 ## 4. Obtain the credential
 
@@ -125,6 +140,8 @@ The issuer-signed `mettle-presence-credential` contains:
 * `metadata.proof_of_possession.transcript_hash` and `sequence`.
 * `metadata.proof_of_possession.server_timing`, the signed sequence of actions
   and server-observed submission latencies.
+* `metadata.proof_of_possession.continuity`, the signed family version, unique
+  challenge count, transcript-binding statement, and observed maximum latency.
 
 Server timing includes evaluation overhead and should be calibrated empirically
 before applying relay-suspicion thresholds.
@@ -200,7 +217,9 @@ Future live presentations fail closed when the revocation store reports the JTI.
 Presence v1 establishes cryptographic continuity between session submissions,
 the issued credential, and a later live presenter. It materially raises the cost
 of credential copying, replay, answer substitution, transcript harvesting, and
-simple relay. Colluding parties can still share a private key or operate a solver
-as a service. METTLE therefore records signed server timing and protocol version
-so relay and solver-adaptation controls can be calibrated and upgraded without
-silently changing the meaning of older credentials.
+simple relay. Continuity microchallenges force live, sequential computation and
+prevent future interlocks from being collected before the preceding signed
+response exists. Colluding parties can still share a private key or
+operate a solver as a service. METTLE therefore records signed server timing and
+both protocol versions so relay and solver-adaptation controls can be calibrated
+and upgraded without silently changing the meaning of older credentials.

@@ -145,6 +145,7 @@ class PresenceState(BaseModel):
     sequence: int = Field(ge=0)
     action: str | None = None
     completed: bool = False
+    continuity_protocol: Literal["mettle-continuity-v1"] | None = None
 
 
 class CreateSessionRequest(BaseModel):

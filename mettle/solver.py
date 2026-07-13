@@ -22,6 +22,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from mettle.continuity import (
+    CONTINUITY_ANSWER_KEY,
+    CONTINUITY_CHALLENGE_KEY,
+    solve_continuity_challenge,
+)
+
 
 def solve_challenge(challenge: dict[str, Any]) -> str:
     """Solve a METTLE challenge using only the prompt/instructions provided.
@@ -169,6 +175,18 @@ def _solve_chained_reasoning(seed: int, operations: list[str]) -> int:
 
 
 def solve_suite(suite: str, client_data: dict[str, Any]) -> dict[str, Any]:
+    """Solve one suite and its optional live Presence continuity interlock."""
+    answers = _solve_suite_answers(suite, client_data)
+    continuity = client_data.get(CONTINUITY_CHALLENGE_KEY)
+    if isinstance(continuity, dict):
+        answers[CONTINUITY_ANSWER_KEY] = {
+            "challenge_id": continuity.get("challenge_id"),
+            "computed": solve_continuity_challenge(continuity),
+        }
+    return answers
+
+
+def _solve_suite_answers(suite: str, client_data: dict[str, Any]) -> dict[str, Any]:
     """Produce a deterministic answer object for a single-shot suite.
 
     Uses only the client-visible challenge data. Returns an answer dict shaped
