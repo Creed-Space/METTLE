@@ -339,6 +339,15 @@ class MacOSKeychainSecretProvider:
         return secret
 
 
+def _secret_file_open_flags(candidate: Path) -> int:
+    flags = os.O_RDONLY
+    # Render presents managed secret files as links inside this root-owned mount.
+    # Keep no-follow semantics for every caller-controlled filesystem location.
+    if hasattr(os, "O_NOFOLLOW") and candidate.parent != Path("/etc/secrets"):
+        flags |= os.O_NOFOLLOW
+    return flags
+
+
 class FileSecretProvider:
     """Read a bounded secret from an owner-only regular file on every use."""
 
@@ -352,11 +361,8 @@ class FileSecretProvider:
         self._maximum_bytes = maximum_bytes
 
     def __call__(self) -> str:
-        flags = os.O_RDONLY
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
         try:
-            descriptor = os.open(self._path, flags)
+            descriptor = os.open(self._path, _secret_file_open_flags(self._path))
         except OSError:
             raise HolderPolicyError("Secret file lookup failed") from None
         try:
@@ -408,11 +414,8 @@ def _vault_tls_verifier(ca_file: str | None) -> ssl.SSLContext | bool:
     candidate = Path(_bounded_text(ca_file, "Vault CA file path", maximum=4096))
     if not candidate.is_absolute():
         raise HolderPolicyError("Vault CA file must be absolute")
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
     try:
-        descriptor = os.open(candidate, flags)
+        descriptor = os.open(candidate, _secret_file_open_flags(candidate))
     except OSError:
         raise HolderPolicyError("Vault CA file lookup failed") from None
     try:

@@ -28,6 +28,7 @@ from mettle.holder import (
     PresenceHolder,
     RenewingVaultTokenProvider,
     VaultTransitEd25519Signer,
+    _secret_file_open_flags,
 )
 
 
@@ -373,11 +374,8 @@ def _read_bounded_file(path: str, name: str, maximum: int) -> str:
     candidate = Path(path)
     if not candidate.is_absolute():
         raise HolderServiceUnavailable(f"{name} must be an absolute regular file")
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
     try:
-        descriptor = os.open(candidate, flags)
+        descriptor = os.open(candidate, _secret_file_open_flags(candidate))
     except OSError:
         raise HolderServiceUnavailable(f"{name} could not be read") from None
     try:
