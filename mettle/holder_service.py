@@ -29,6 +29,7 @@ from mettle.holder import (
     RenewingVaultTokenProvider,
     VaultTransitEd25519Signer,
     _secret_file_open_flags,
+    _secret_file_owner_is_safe,
 )
 
 
@@ -382,7 +383,7 @@ def _read_bounded_file(path: str, name: str, maximum: int) -> str:
         metadata = os.fstat(descriptor)
         if (
             not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_uid != os.geteuid()
+            or not _secret_file_owner_is_safe(candidate, metadata.st_uid)
             or metadata.st_mode & 0o022
             or metadata.st_size < 1
             or metadata.st_size > maximum

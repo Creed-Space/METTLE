@@ -348,6 +348,12 @@ def _secret_file_open_flags(candidate: Path) -> int:
     return flags
 
 
+def _secret_file_owner_is_safe(candidate: Path, owner_uid: int) -> bool:
+    return owner_uid == os.geteuid() or (
+        candidate.parent == Path("/etc/secrets") and owner_uid == 0
+    )
+
+
 class FileSecretProvider:
     """Read a bounded secret from an owner-only regular file on every use."""
 
@@ -367,10 +373,14 @@ class FileSecretProvider:
             raise HolderPolicyError("Secret file lookup failed") from None
         try:
             metadata = os.fstat(descriptor)
+            platform_secret = self._path.parent == Path("/etc/secrets")
+            unsafe_permissions = metadata.st_mode & (
+                0o022 if platform_secret else 0o077
+            )
             if (
                 not stat.S_ISREG(metadata.st_mode)
-                or metadata.st_uid != os.geteuid()
-                or metadata.st_mode & 0o077
+                or not _secret_file_owner_is_safe(self._path, metadata.st_uid)
+                or unsafe_permissions
                 or metadata.st_size < 1
                 or metadata.st_size > self._maximum_bytes
             ):
@@ -422,7 +432,7 @@ def _vault_tls_verifier(ca_file: str | None) -> ssl.SSLContext | bool:
         metadata = os.fstat(descriptor)
         if (
             not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_uid != os.geteuid()
+            or not _secret_file_owner_is_safe(candidate, metadata.st_uid)
             or metadata.st_mode & 0o022
             or metadata.st_size < 1
             or metadata.st_size > 1048576
