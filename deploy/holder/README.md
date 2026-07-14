@@ -17,6 +17,12 @@ The Vault token policy is in `../vault/mettle-holder-sign.hcl`. Rotation uses a 
 
 The runtime token must be renewable. The holder renews it before the first signing operation and halfway through each returned lease, capped at one renewal per hour. Renewal and signing both use the pinned CA, reject redirects, ignore proxy environment variables, bound response bodies, and fail closed on malformed replies.
 
+## Singleton deployment fence
+
+The service must retain the one-gigabyte `mettle-holder-singleton-fence` disk declared in `render.yaml`. Render normally starts a replacement private-service instance before stopping the live instance. That overlap conflicts with the holder's PostgreSQL advisory lock and correctly prevents the replacement from starting. Attaching a disk selects Render's supported stop-first deployment sequence, so the old process releases its lock before the replacement starts.
+
+The disk is deployment fencing only. Do not store Vault keys, tokens, holder snapshots, or other security state on it. Vault and PostgreSQL remain authoritative. A working deployment shows the old holder exiting before the replacement acquires the same holder ID, with no `Another holder instance owns the persistence lock` error.
+
 ## Key version pinning
 
 `METTLE_HOLDER_VAULT_KEY_VERSION` is mandatory. The service sends that version with every Vault signing request and rejects a response from any other version. The public key file must contain the public key for the same version.

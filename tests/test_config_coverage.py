@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+import yaml
 
 from config import Settings
 
@@ -109,3 +110,17 @@ def test_render_blueprint_declares_fail_closed_production_dependencies():
     ):
         assert f"key: {key}" in blueprint
     assert "--workers 1" in blueprint
+
+
+def test_holder_blueprint_forces_stop_first_singleton_deploys() -> None:
+    """Render must not overlap two processes for one holder identity."""
+    path = Path(__file__).parent.parent / "deploy" / "holder" / "render.yaml"
+    blueprint = yaml.safe_load(path.read_text())
+    service = blueprint["services"][0]
+    assert service["type"] == "pserv"
+    assert service["maxShutdownDelaySeconds"] == 60
+    assert service["disk"] == {
+        "name": "mettle-holder-singleton-fence",
+        "mountPath": "/var/lib/mettle-holder",
+        "sizeGB": 1,
+    }

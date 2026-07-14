@@ -7,6 +7,14 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn mettle.holder_service:app --host 0.0.0.0 --port $PORT --workers 1
     maxShutdownDelaySeconds: 60
+    # Render otherwise overlaps old and new private-service instances during
+    # deploys. The holder deliberately permits only one PostgreSQL advisory-lock
+    # owner, so an attached disk is the platform-supported stop-first fence.
+    # Keys and holder state remain in Vault and PostgreSQL, never on this disk.
+    disk:
+      name: mettle-holder-singleton-fence
+      mountPath: /var/lib/mettle-holder
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
