@@ -684,6 +684,20 @@ def test_environment_runtime_loads_strict_secret_files_and_policy(
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
     memory_store = MemoryHolderStateStore()
+    renewal_calls = 0
+
+    class _RenewingProvider:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __call__(self) -> str:
+            nonlocal renewal_calls
+            renewal_calls += 1
+            return "vault-runtime-token"
+
+    monkeypatch.setattr(
+        "mettle.holder_service.RenewingVaultTokenProvider", _RenewingProvider
+    )
     monkeypatch.setattr(
         "mettle.holder_service.PostgresHolderStateStore",
         lambda *_args, **_kwargs: memory_store,
@@ -692,6 +706,7 @@ def test_environment_runtime_loads_strict_secret_files_and_policy(
     assert runtime.status()["sessions"] == 0
     assert control_provider() == "holder-control-token"
     assert runtime.holder.key_fingerprint.startswith("sha256:")
+    assert renewal_calls == 1
     runtime.close()
 
 

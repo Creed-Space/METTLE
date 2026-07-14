@@ -504,6 +504,12 @@ def build_runtime_from_environment() -> tuple[
         token_provider=FileSecretProvider(settings.vault_token_file),
         ca_file=settings.vault_ca_file,
     )
+    try:
+        vault_token_provider()
+    except Exception:
+        raise HolderServiceUnavailable(
+            "Vault authentication initialization failed"
+        ) from None
     control_token_provider = FileSecretProvider(settings.control_token_file)
     state_secret = FileSecretProvider(settings.state_hmac_key_file)().encode("utf-8")
     public_key_pem = _read_bounded_file(
