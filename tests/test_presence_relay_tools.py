@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.serialization import (
 
 from mettle.presence import (
     key_fingerprint,
+    presence_state_signing_bytes,
     submission_signing_bytes,
     transcript_hash_after_submission,
 )
@@ -51,6 +52,26 @@ def _passing_attacks() -> dict[str, object]:
             "solver_received_holder_key": False,
             "workers_inherited_mettle_credentials": False,
         },
+    }
+
+
+def _add_issuer_receipt(
+    issuer_key: Ed25519PrivateKey,
+    *,
+    session_id: str,
+    presence: dict[str, object],
+) -> None:
+    presence["issuer_receipt"] = {
+        "key_id": "test-issuer",
+        "algorithm": "Ed25519",
+        "signature": base64.b64encode(
+            issuer_key.sign(
+                presence_state_signing_bytes(
+                    session_id=session_id,
+                    presence=presence,
+                )
+            )
+        ).decode("ascii"),
     }
 
 
@@ -106,19 +127,25 @@ def test_holder_and_solver_are_isolated_and_holder_signature_verifies() -> None:
             issuer_public_key_pem=issuer_public_key_pem,
             allowed_audiences=["service.example"],
         )
+        initial_presence: dict[str, object] = {
+            "protocol": "mettle-presence-v1",
+            "key_fingerprint": key_fingerprint(holder.public_key_pem),
+            "audience": "service.example",
+            "nonce": nonce,
+            "transcript_hash": previous_hash,
+            "sequence": 0,
+            "action": "suite:adversarial",
+            "completed": False,
+        }
+        _add_issuer_receipt(
+            issuer_key,
+            session_id="session-1",
+            presence=initial_presence,
+        )
         holder.authorize_session(
             issuer="https://mettle.example",
             session_id="session-1",
-            presence={
-                "protocol": "mettle-presence-v1",
-                "key_fingerprint": key_fingerprint(holder.public_key_pem),
-                "audience": "service.example",
-                "nonce": nonce,
-                "transcript_hash": previous_hash,
-                "sequence": 0,
-                "action": "suite:adversarial",
-                "completed": False,
-            },
+            presence=initial_presence,
         )
         message = submission_signing_bytes(
             session_id="session-1",
@@ -138,22 +165,28 @@ def test_holder_and_solver_are_isolated_and_holder_signature_verifies() -> None:
         assert isinstance(public_key, Ed25519PublicKey)
         public_key.verify(base64.b64decode(signature), message)
         assert holder_ms >= 0
+        completed_presence: dict[str, object] = {
+            "protocol": "mettle-presence-v1",
+            "key_fingerprint": key_fingerprint(holder.public_key_pem),
+            "audience": "service.example",
+            "nonce": None,
+            "transcript_hash": transcript_hash_after_submission(
+                previous_transcript_hash=previous_hash,
+                message=message,
+                signature=signature,
+            ),
+            "sequence": 1,
+            "action": None,
+            "completed": True,
+        }
+        _add_issuer_receipt(
+            issuer_key,
+            session_id="session-1",
+            presence=completed_presence,
+        )
         holder.commit_submission(
             session_id="session-1",
-            presence={
-                "protocol": "mettle-presence-v1",
-                "key_fingerprint": key_fingerprint(holder.public_key_pem),
-                "audience": "service.example",
-                "nonce": None,
-                "transcript_hash": transcript_hash_after_submission(
-                    previous_transcript_hash=previous_hash,
-                    message=message,
-                    signature=signature,
-                ),
-                "sequence": 1,
-                "action": None,
-                "completed": True,
-            },
+            presence=completed_presence,
         )
         assert holder.status()["active_sessions"] == 0
         expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()

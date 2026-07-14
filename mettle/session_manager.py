@@ -31,8 +31,8 @@ from mettle.app_config import settings
 from mettle.llm_challenges import is_available as llm_available
 from mettle.presence import (
     advance_session_presence,
+    issuer_signed_session_presence,
     new_session_presence,
-    public_session_presence,
     verify_holder_signature,
     verify_submission_proof,
 )
@@ -270,6 +270,12 @@ class SessionManager:
                     client_challenges[first_suite],
                 )
             }
+            # Fail before persistence if the issuer cannot authenticate the
+            # initial holder state.
+            issuer_signed_session_presence(
+                presence_state,
+                session_id=session_id,
+            )
 
         # Store session metadata
         session_meta = {
@@ -455,12 +461,14 @@ class SessionManager:
             self._advance_presence_suite(session) if session.get("presence") else None
         )
 
-        await self.redis.setex(_key(session_id), ttl, json.dumps(session))
-        response = dict(result)
-        response["presence"] = public_session_presence(
+        response_presence = issuer_signed_session_presence(
             session.get("presence"),
+            session_id=session_id,
             completed=session["status"] == SessionStatus.COMPLETED.value,
         )
+        await self.redis.setex(_key(session_id), ttl, json.dumps(session))
+        response = dict(result)
+        response["presence"] = response_presence
         response["next_challenge"] = next_challenge
         return response
 
@@ -638,6 +646,11 @@ class SessionManager:
                     session["presence"]["current_action"],
                     next_round_data,
                 )
+        response_presence = issuer_signed_session_presence(
+            session.get("presence"),
+            session_id=session_id,
+            completed=session["status"] == SessionStatus.COMPLETED.value,
+        )
         await self.redis.setex(_key(session_id), ttl, json.dumps(session))
 
         return {
@@ -647,10 +660,7 @@ class SessionManager:
             "feedback": feedback,
             "time_remaining_ms": time_remaining_ms,
             "next_round_data": next_round_data,
-            "presence": public_session_presence(
-                session.get("presence"),
-                completed=session["status"] == SessionStatus.COMPLETED.value,
-            ),
+            "presence": response_presence,
             "next_challenge": next_challenge,
         }
 
@@ -703,8 +713,8 @@ class SessionManager:
             "overall_passed": all_passed,
             "iteration_curve": iteration_curve,
             "elapsed_ms": elapsed_ms,
-            "presence": public_session_presence(
-                session.get("presence"), completed=True
+            "presence": issuer_signed_session_presence(
+                session.get("presence"), session_id=session_id, completed=True
             ),
         }
 

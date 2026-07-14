@@ -30,6 +30,7 @@ from mettle.continuity import (
 )
 from mettle.presence import (
     answer_hash,
+    presence_state_signing_bytes,
     presentation_signing_bytes,
     submission_signing_bytes,
 )
@@ -292,6 +293,73 @@ def _complete_presence_session(
     result = client.get(f"/api/mettle/sessions/{session_id}/result?include_vcp=true")
     assert result.status_code == 200, result.text
     return result.json()["vcp_attestation"]
+
+
+def test_public_presence_state_is_issuer_signed_and_tamper_evident(
+    client: TestClient,
+) -> None:
+    _, public_key_pem = _keypair()
+    response = client.post(
+        "/api/mettle/sessions",
+        json={
+            "suites": ["adversarial"],
+            "presence": {
+                "public_key_pem": public_key_pem,
+                "audience": "service.example",
+            },
+        },
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()
+    state = created["presence"]
+    receipt = state["issuer_receipt"]
+    issuer_public_key = issuer_signing.get_public_key_pem()
+    assert isinstance(issuer_public_key, str)
+    assert issuer_signing.verify_signature(
+        issuer_public_key,
+        presence_state_signing_bytes(
+            session_id=created["session_id"],
+            presence=state,
+        ),
+        receipt["signature"],
+    )
+    tampered = copy.deepcopy(state)
+    tampered["action"] = "suite:native"
+    assert not issuer_signing.verify_signature(
+        issuer_public_key,
+        presence_state_signing_bytes(
+            session_id=created["session_id"],
+            presence=tampered,
+        ),
+        receipt["signature"],
+    )
+
+
+def test_presence_state_signing_fails_closed_without_breaking_legacy_sessions(
+    client: TestClient,
+) -> None:
+    _, public_key_pem = _keypair()
+    with patch(
+        "mettle.signing.get_public_key_info",
+        return_value={"available": False, "key_id": "mettle-vcp-v1"},
+    ):
+        protected = client.post(
+            "/api/mettle/sessions",
+            json={
+                "suites": ["adversarial"],
+                "presence": {
+                    "public_key_pem": public_key_pem,
+                    "audience": "service.example",
+                },
+            },
+        )
+        legacy = client.post(
+            "/api/mettle/sessions",
+            json={"suites": ["adversarial"]},
+        )
+    assert protected.status_code == 500
+    assert legacy.status_code == 201
+    assert legacy.json()["presence"] is None
 
 
 def test_presence_session_rejects_unsigned_and_wrong_key_submissions(

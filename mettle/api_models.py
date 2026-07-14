@@ -134,6 +134,14 @@ class PresenceProof(BaseModel):
     )
 
 
+class PresenceStateReceipt(BaseModel):
+    """Issuer signature authenticating one exact public Presence state."""
+
+    key_id: str = Field(min_length=1, max_length=256)
+    algorithm: Literal["Ed25519"] = "Ed25519"
+    signature: str = Field(min_length=80, max_length=128)
+
+
 class PresenceState(BaseModel):
     """Client-safe state required to sign the next Presence submission."""
 
@@ -146,6 +154,7 @@ class PresenceState(BaseModel):
     action: str | None = None
     completed: bool = False
     continuity_protocol: Literal["mettle-continuity-v1"] | None = None
+    issuer_receipt: PresenceStateReceipt
 
 
 class CreateSessionRequest(BaseModel):

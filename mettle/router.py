@@ -37,7 +37,7 @@ from mettle.api_models import (
 from mettle.auth import AuthenticatedUser, require_authenticated_user
 from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.llm_challenges import is_available as llm_challenges_available
-from mettle.presence import public_session_presence
+from mettle.presence import issuer_signed_session_presence
 from mettle.session_manager import SessionManager, SessionRateLimitError
 from redis.exceptions import RedisError
 
@@ -168,7 +168,9 @@ async def create_session(
             time_budget_ms=meta["time_budget_ms"],
             presence=(
                 PresenceState.model_validate(
-                    public_session_presence(meta.get("presence"))
+                    issuer_signed_session_presence(
+                        meta.get("presence"), session_id=session_id
+                    )
                 )
                 if meta.get("presence")
                 else None
@@ -231,8 +233,9 @@ async def get_session_status(
         suites_completed=session.get("suites_completed", []),
         presence=(
             PresenceState.model_validate(
-                public_session_presence(
+                issuer_signed_session_presence(
                     session.get("presence"),
+                    session_id=session_id,
                     completed=session["status"] == "completed",
                 )
             )

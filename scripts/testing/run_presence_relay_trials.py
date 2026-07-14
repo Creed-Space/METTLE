@@ -64,6 +64,8 @@ REQUIRED_HOLDER_POLICY_ATTACKS = frozenset(
     {
         "unauthorized_session_signing",
         "unregistered_credential_presentation",
+        "state_receipt_session_substitution",
+        "state_receipt_field_tampering",
         "active_session_budget",
         "action_substitution",
         "transcript_rollback_signing",
@@ -662,11 +664,43 @@ def run_attack_trials(*, base_url: str, api_key: str, timeout: float) -> dict[st
         if driver.session_id is None or driver.presence is None:
             raise TrialFailure("Attack session did not initialize")
         expect_policy_rejection(
-            "active_session_budget",
+            "state_receipt_session_substitution",
             lambda: holder.authorize_session(
                 issuer=driver.base_url,
                 session_id="farmed-session",
                 presence=copy.deepcopy(driver.presence),
+            ),
+            ("issuer receipt is invalid",),
+        )
+        tampered_state = copy.deepcopy(driver.presence)
+        tampered_state["action"] = "round:999"
+        expect_policy_rejection(
+            "state_receipt_field_tampering",
+            lambda: holder.authorize_session(
+                issuer=driver.base_url,
+                session_id=driver.session_id,
+                presence=tampered_state,
+            ),
+            ("issuer receipt is invalid",),
+        )
+        farmed = driver.request(
+            "POST",
+            "/api/mettle/sessions",
+            expected_status=201,
+            json={
+                "suites": [driver.suites[0]],
+                "presence": {
+                    "public_key_pem": holder.public_key_pem,
+                    "audience": driver.audience,
+                },
+            },
+        ).json()
+        expect_policy_rejection(
+            "active_session_budget",
+            lambda: holder.authorize_session(
+                issuer=driver.base_url,
+                session_id=farmed["session_id"],
+                presence=farmed["presence"],
             ),
             ("budget is exhausted",),
         )

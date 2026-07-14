@@ -10,23 +10,31 @@ from __future__ import annotations
 
 import base64
 import re
+import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import RLock
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    PublicFormat,
+    load_pem_private_key,
+)
 
 from mettle.presence import (
     PRESENCE_PROTOCOL,
     key_fingerprint,
+    presence_state_signing_bytes,
     presentation_signing_bytes,
     submission_signing_bytes,
     transcript_hash_after_submission,
     validate_public_key,
 )
+from mettle.signing import verify_signature
 from mettle.vcp import verify_mettle_attestation
 
 
@@ -152,6 +160,90 @@ def _action(value: Any) -> str:
     return text
 
 
+class MacOSKeychainEd25519Signer:
+    """Load an Ed25519 key from macOS Keychain without plaintext key files.
+
+    The PEM is retrieved once through the fixed ``security`` executable, parsed
+    into a cryptography key object, and never retained as an attribute. The key
+    remains process-readable memory, so deployments requiring non-exportable
+    keys should provide an HSM or KMS implementation of ``HolderSigner``.
+    """
+
+    def __init__(
+        self,
+        *,
+        service: str,
+        account: str,
+        security_binary: str = "/usr/bin/security",
+        timeout_seconds: float = 5.0,
+    ) -> None:
+        service = _bounded_text(service, "Keychain service")
+        account = _bounded_text(account, "Keychain account")
+        if "\x00" in service or "\x00" in account:
+            raise HolderPolicyError("Keychain identifiers must not contain NUL")
+        binary = Path(security_binary)
+        if not binary.is_absolute():
+            raise HolderPolicyError("Keychain security executable must be absolute")
+        if timeout_seconds <= 0 or timeout_seconds > 60:
+            raise HolderPolicyError(
+                "Keychain timeout must be greater than 0 and at most 60 seconds"
+            )
+        command = [
+            str(binary),
+            "find-generic-password",
+            "-s",
+            service,
+            "-a",
+            account,
+            "-w",
+        ]
+        try:
+            completed = subprocess.run(  # nosec B603
+                command,
+                check=False,
+                capture_output=True,
+                timeout=timeout_seconds,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise HolderPolicyError("Keychain private key lookup failed") from exc
+        pem = completed.stdout
+        if completed.returncode != 0:
+            raise HolderPolicyError("Keychain private key lookup failed")
+        if not isinstance(pem, bytes) or not pem or len(pem) > 32768:
+            raise HolderPolicyError("Keychain private key is empty or oversized")
+        candidates = [pem]
+        encoded = pem.strip()
+        if (
+            len(encoded) % 2 == 0
+            and re.fullmatch(rb"[0-9a-fA-F]+", encoded) is not None
+        ):
+            candidates.append(bytes.fromhex(encoded.decode("ascii")))
+        private_key: Any = None
+        for candidate in candidates:
+            try:
+                private_key = load_pem_private_key(candidate, password=None)
+                break
+            except (TypeError, ValueError):
+                continue
+        if private_key is None:
+            raise HolderPolicyError("Keychain item is not a valid private key")
+        if not isinstance(private_key, Ed25519PrivateKey):
+            raise HolderPolicyError("Keychain private key must use Ed25519")
+        self._private_key = private_key
+        self._public_key_pem = (
+            private_key.public_key()
+            .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+            .decode("ascii")
+        )
+
+    @property
+    def public_key_pem(self) -> str:
+        return self._public_key_pem
+
+    def sign(self, message: bytes) -> bytes:
+        return self._private_key.sign(message)
+
+
 class PresenceHolder:
     """Stateful signing boundary for autonomous distributed Presence clients."""
 
@@ -203,16 +295,46 @@ class PresenceHolder:
     def key_fingerprint(self) -> str:
         return self._key_fingerprint
 
+    @staticmethod
+    def _verify_presence_state_receipt(
+        *, issuer_key: str, session_id: str, presence: dict[str, Any]
+    ) -> None:
+        receipt = presence.get("issuer_receipt")
+        if not isinstance(receipt, dict):
+            raise HolderPolicyError("Presence state issuer receipt is required")
+        if receipt.get("algorithm") != "Ed25519":
+            raise HolderPolicyError("Presence state receipt algorithm is unsupported")
+        _bounded_text(receipt.get("key_id"), "receipt key_id")
+        signature = _bounded_text(
+            receipt.get("signature"), "receipt signature", maximum=128
+        )
+        try:
+            message = presence_state_signing_bytes(
+                session_id=session_id, presence=presence
+            )
+        except (TypeError, ValueError) as exc:
+            raise HolderPolicyError(
+                "Presence state receipt payload is invalid"
+            ) from exc
+        if not verify_signature(issuer_key, message, signature):
+            raise HolderPolicyError("Presence state issuer receipt is invalid")
+
     def authorize_session(
         self, *, issuer: str, session_id: str, presence: dict[str, Any]
     ) -> None:
         """Authorize exactly one server-created initial Presence state."""
         normalized_issuer = _normalize_issuer(issuer)
         session_id = _bounded_text(session_id, "session_id")
-        if normalized_issuer not in self._issuer_keys:
+        issuer_key = self._issuer_keys.get(normalized_issuer)
+        if issuer_key is None:
             raise HolderPolicyError("Issuer is not trusted by this holder")
         if not isinstance(presence, dict):
             raise HolderPolicyError("Presence state must be an object")
+        self._verify_presence_state_receipt(
+            issuer_key=issuer_key,
+            session_id=session_id,
+            presence=presence,
+        )
         audience = _bounded_text(presence.get("audience"), "audience")
         if audience not in self._allowed_audiences:
             raise HolderPolicyError("Audience is not allowed by this holder")
@@ -317,6 +439,11 @@ class PresenceHolder:
             pending = session.pending
             if pending is None:
                 raise HolderPolicyError("Session has no pending submission")
+            self._verify_presence_state_receipt(
+                issuer_key=self._issuer_keys[session.issuer],
+                session_id=session_id,
+                presence=presence,
+            )
             if presence.get("protocol") != PRESENCE_PROTOCOL:
                 raise HolderPolicyError("Presence protocol is unsupported")
             if presence.get("key_fingerprint") != self._key_fingerprint:

@@ -4,22 +4,33 @@ from __future__ import annotations
 
 import base64
 import copy
+import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    load_pem_public_key,
+)
 
 import mettle.signing as issuer_signing
 from mettle.holder import (
     EphemeralEd25519Signer,
     HolderPolicy,
     HolderPolicyError,
+    MacOSKeychainEd25519Signer,
     PresenceHolder,
 )
 from mettle.presence import (
+    presence_state_signing_bytes,
     presentation_signing_bytes,
     submission_signing_bytes,
     transcript_hash_after_submission,
@@ -56,14 +67,16 @@ def issuer_key(monkeypatch: pytest.MonkeyPatch):
 def _presence(
     holder: PresenceHolder,
     *,
+    session_id: str = "session-1",
     nonce: str | None = "n" * 32,
     transcript_hash: str = "sha256:" + "a" * 64,
     sequence: int = 0,
     action: str | None = "suite:adversarial",
     completed: bool = False,
     audience: str = AUDIENCE,
+    signed: bool = True,
 ) -> dict[str, object]:
-    return {
+    state: dict[str, object] = {
         "protocol": "mettle-presence-v1",
         "key_fingerprint": holder.key_fingerprint,
         "audience": audience,
@@ -72,6 +85,22 @@ def _presence(
         "sequence": sequence,
         "action": action,
         "completed": completed,
+    }
+    if signed:
+        _sign_presence_state(state, session_id=session_id)
+    return state
+
+
+def _sign_presence_state(state: dict[str, object], *, session_id: str) -> None:
+    state["issuer_receipt"] = {
+        "key_id": "mettle-vcp-v1",
+        "algorithm": "Ed25519",
+        "signature": issuer_signing.sign_attestation(
+            presence_state_signing_bytes(
+                session_id=session_id,
+                presence=state,
+            )
+        ),
     }
 
 
@@ -133,6 +162,68 @@ def test_holder_validates_static_policy(
         PresenceHolder(EphemeralEd25519Signer(), HolderPolicy(**values))
 
 
+def test_macos_keychain_signer_loads_without_shell_or_plaintext_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+    private_pem = private_key.private_bytes(
+        Encoding.PEM,
+        PrivateFormat.PKCS8,
+        NoEncryption(),
+    )
+    observed: dict[str, Any] = {}
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+        observed["command"] = command
+        observed["kwargs"] = kwargs
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=private_pem.hex().encode("ascii") + b"\n",
+            stderr=b"",
+        )
+
+    monkeypatch.setattr("mettle.holder.subprocess.run", fake_run)
+    signer = MacOSKeychainEd25519Signer(
+        service="mettle-holder",
+        account="presence-key",
+    )
+    message = b"holder-keychain-test"
+    signature = signer.sign(message)
+    public_key = load_pem_public_key(signer.public_key_pem.encode("ascii"))
+    assert isinstance(public_key, Ed25519PublicKey)
+    public_key.verify(signature, message)
+    assert observed["command"] == [
+        "/usr/bin/security",
+        "find-generic-password",
+        "-s",
+        "mettle-holder",
+        "-a",
+        "presence-key",
+        "-w",
+    ]
+    assert observed["kwargs"] == {
+        "check": False,
+        "capture_output": True,
+        "timeout": 5.0,
+    }
+
+
+def test_macos_keychain_signer_hides_lookup_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic = b"private key lookup detail must not escape"
+    monkeypatch.setattr(
+        "mettle.holder.subprocess.run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 44, stdout=b"", stderr=diagnostic
+        ),
+    )
+    with pytest.raises(HolderPolicyError, match="lookup failed") as error:
+        MacOSKeychainEd25519Signer(service="mettle-holder", account="missing")
+    assert diagnostic.decode("ascii") not in str(error.value)
+
+
 def test_holder_rejects_malformed_session_and_presentation_inputs(
     issuer_key: str,
 ) -> None:
@@ -152,12 +243,14 @@ def test_holder_rejects_malformed_session_and_presentation_inputs(
         ({"action": "unsupported"}, "supported Presence action"),
     ]
     for changes, error in invalid_states:
-        presence = _presence(holder)
+        session_id = f"session-{error}"
+        presence = _presence(holder, session_id=session_id, signed=False)
         presence.update(changes)
+        _sign_presence_state(presence, session_id=session_id)
         with pytest.raises(HolderPolicyError, match=error):
             holder.authorize_session(
                 issuer=ISSUER,
-                session_id=f"session-{error}",
+                session_id=session_id,
                 presence=presence,
             )
     with pytest.raises(HolderPolicyError, match="not authorized"):
@@ -183,6 +276,67 @@ def test_holder_rejects_malformed_session_and_presentation_inputs(
             )
 
 
+def test_holder_rejects_unsigned_and_tampered_issuer_state(
+    issuer_key: str,
+) -> None:
+    holder, _ = _holder(issuer_key, max_active_sessions=2)
+    with pytest.raises(HolderPolicyError, match="issuer receipt is required"):
+        holder.authorize_session(
+            issuer=ISSUER,
+            session_id="fabricated-session",
+            presence=_presence(
+                holder,
+                session_id="fabricated-session",
+                signed=False,
+            ),
+        )
+    tampered_initial = _presence(holder, session_id="tampered-session")
+    tampered_initial["action"] = "suite:native"
+    with pytest.raises(HolderPolicyError, match="issuer receipt is invalid"):
+        holder.authorize_session(
+            issuer=ISSUER,
+            session_id="tampered-session",
+            presence=tampered_initial,
+        )
+
+    session_id = "transition-session"
+    holder.authorize_session(
+        issuer=ISSUER,
+        session_id=session_id,
+        presence=_presence(holder, session_id=session_id),
+    )
+    payload_hash = "sha256:" + "b" * 64
+    signature = holder.sign_submission(
+        session_id=session_id,
+        action="suite:adversarial",
+        nonce="n" * 32,
+        previous_transcript_hash="sha256:" + "a" * 64,
+        payload_hash=payload_hash,
+    )
+    message = submission_signing_bytes(
+        session_id=session_id,
+        action="suite:adversarial",
+        nonce="n" * 32,
+        previous_transcript_hash="sha256:" + "a" * 64,
+        payload_hash=payload_hash,
+    )
+    next_state = _presence(
+        holder,
+        session_id=session_id,
+        nonce="o" * 32,
+        transcript_hash=transcript_hash_after_submission(
+            previous_transcript_hash="sha256:" + "a" * 64,
+            message=message,
+            signature=signature,
+        ),
+        sequence=1,
+        action="suite:native",
+    )
+    next_state["nonce"] = "p" * 32
+    with pytest.raises(HolderPolicyError, match="issuer receipt is invalid"):
+        holder.commit_submission(session_id=session_id, presence=next_state)
+
+
 def test_holder_rejects_untrusted_issuer_audience_and_session_farming(
     issuer_key: str,
 ) -> None:
@@ -191,13 +345,17 @@ def test_holder_rejects_untrusted_issuer_audience_and_session_farming(
         holder.authorize_session(
             issuer="https://evil.example",
             session_id="session-evil",
-            presence=_presence(holder),
+            presence=_presence(holder, session_id="session-evil"),
         )
     with pytest.raises(HolderPolicyError, match="Audience"):
         holder.authorize_session(
             issuer=ISSUER,
             session_id="session-wrong-audience",
-            presence=_presence(holder, audience="other.example"),
+            presence=_presence(
+                holder,
+                session_id="session-wrong-audience",
+                audience="other.example",
+            ),
         )
     holder.authorize_session(
         issuer=ISSUER, session_id="session-1", presence=_presence(holder)
@@ -208,7 +366,9 @@ def test_holder_rejects_untrusted_issuer_audience_and_session_farming(
         )
     with pytest.raises(HolderPolicyError, match="budget"):
         holder.authorize_session(
-            issuer=ISSUER, session_id="session-2", presence=_presence(holder)
+            issuer=ISSUER,
+            session_id="session-2",
+            presence=_presence(holder, session_id="session-2"),
         )
 
 
@@ -306,7 +466,11 @@ def test_holder_registers_only_matching_signed_credential_and_bounds_presentatio
     holder.authorize_session(
         issuer=ISSUER,
         session_id=session_id,
-        presence=_presence(holder, transcript_hash=initial_hash),
+        presence=_presence(
+            holder,
+            session_id=session_id,
+            transcript_hash=initial_hash,
+        ),
     )
     payload_hash = "sha256:" + "b" * 64
     signature = holder.sign_submission(
@@ -332,6 +496,7 @@ def test_holder_registers_only_matching_signed_credential_and_bounds_presentatio
         session_id=session_id,
         presence=_presence(
             holder,
+            session_id=session_id,
             nonce=None,
             transcript_hash=final_hash,
             sequence=1,

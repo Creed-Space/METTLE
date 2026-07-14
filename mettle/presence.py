@@ -29,6 +29,7 @@ from mettle.continuity import (
 
 PRESENCE_PROTOCOL = "mettle-presence-v1"
 HASH_PREFIX = "sha256:"
+PRESENCE_STATE_RECEIPT_PURPOSE = "mettle-presence-state"
 
 
 def canonical_bytes(value: dict[str, Any]) -> bytes:
@@ -122,6 +123,49 @@ def public_session_presence(
         "completed": completed,
         "continuity_protocol": presence.get("continuity_protocol"),
     }
+
+
+def presence_state_signing_bytes(*, session_id: str, presence: dict[str, Any]) -> bytes:
+    """Build the exact issuer-signed message for one public Presence state."""
+    if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
+        raise ValueError("Presence state session ID is invalid")
+    if not isinstance(presence, dict):
+        raise ValueError("Presence state must be an object")
+    state = {key: value for key, value in presence.items() if key != "issuer_receipt"}
+    return canonical_bytes(
+        {
+            "protocol": PRESENCE_PROTOCOL,
+            "purpose": PRESENCE_STATE_RECEIPT_PURPOSE,
+            "session_id": session_id,
+            "state": state,
+        }
+    )
+
+
+def issuer_signed_session_presence(
+    presence: dict[str, Any] | None,
+    *,
+    session_id: str,
+    completed: bool = False,
+) -> dict[str, Any] | None:
+    """Project and authenticate public Presence state with the issuer key."""
+    state = public_session_presence(presence, completed=completed)
+    if state is None:
+        return None
+    from mettle.signing import get_public_key_info, sign_attestation
+
+    key_info = get_public_key_info()
+    key_id = key_info.get("key_id")
+    if key_info.get("available") is not True or not isinstance(key_id, str):
+        raise RuntimeError("Presence state signing is unavailable")
+    state["issuer_receipt"] = {
+        "key_id": key_id,
+        "algorithm": "Ed25519",
+        "signature": sign_attestation(
+            presence_state_signing_bytes(session_id=session_id, presence=state)
+        ),
+    }
+    return state
 
 
 def validate_credential_presence(presence: dict[str, Any]) -> None:
