@@ -2365,6 +2365,14 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
             detail="API key is not authorized to register webhooks for this entity",
         )
 
+    tier = RateTier.get_tier(api_key)
+    features = RateTier.get_limits(tier).get("features", [])
+    if "webhooks" not in features and "all" not in features:
+        raise HTTPException(
+            status_code=403,
+            detail="Webhook registration requires a pro or enterprise tier API key",
+        )
+
     # SECURITY: Audit all webhook registrations
     logger.info(
         "webhook_registered",

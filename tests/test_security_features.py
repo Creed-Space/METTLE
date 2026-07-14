@@ -487,6 +487,21 @@ class TestWebhookEndpoints:
         # The cross-entity webhook must not have been registered
         assert "entity-bob" not in webhooks
 
+    def test_register_webhook_free_tier_is_forbidden(self, client):
+        """SECURITY: entity ownership cannot bypass the webhook feature tier."""
+        RateTier.register_key("free-webhook-key", "free", "free-entity")
+        response = client.post(
+            "/api/webhooks/register",
+            json={
+                "entity_id": "free-entity",
+                "url": "https://example.com/webhook",
+            },
+            headers={"X-API-Key": "free-webhook-key"},
+        )
+        assert response.status_code == 403
+        assert "pro or enterprise" in response.json()["detail"]
+        assert "free-entity" not in webhooks
+
     def test_unregister_webhook_endpoint(self, client):
         """Test DELETE /api/webhooks/{entity_id} with admin key."""
         # First register with the owning key
