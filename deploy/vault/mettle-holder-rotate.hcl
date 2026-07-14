@@ -5,3 +5,7 @@ path "transit/keys/mettle-holder" {
 path "transit/keys/mettle-holder/rotate" {
   capabilities = ["update"]
 }
+
+path "auth/token/renew-self" {
+  capabilities = ["update"]
+}
