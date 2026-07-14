@@ -439,9 +439,7 @@ def delete_api_key(api_key: str, *, raise_on_error: bool = False) -> bool:
                 .first()
             )
             if record is None:
-                record = (
-                    db.query(DBAPIKey).filter(DBAPIKey.api_key == api_key).first()
-                )
+                record = db.query(DBAPIKey).filter(DBAPIKey.api_key == api_key).first()
             if record is None:
                 return False
             db.delete(record)

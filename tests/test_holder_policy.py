@@ -369,21 +369,21 @@ def test_vault_holder_policies_are_renewable_and_least_privilege() -> None:
     assert (vault_dir / "mettle-holder-sign.hcl").read_text() == (
         'path "transit/sign/mettle-holder" {\n'
         '  capabilities = ["update"]\n'
-        '}\n\n'
+        "}\n\n"
         'path "auth/token/renew-self" {\n'
         '  capabilities = ["update"]\n'
-        '}\n'
+        "}\n"
     )
     assert (vault_dir / "mettle-holder-rotate.hcl").read_text() == (
         'path "transit/keys/mettle-holder" {\n'
         '  capabilities = ["read"]\n'
-        '}\n\n'
+        "}\n\n"
         'path "transit/keys/mettle-holder/rotate" {\n'
         '  capabilities = ["update"]\n'
-        '}\n\n'
+        "}\n\n"
         'path "auth/token/renew-self" {\n'
         '  capabilities = ["update"]\n'
-        '}\n'
+        "}\n"
     )
 
 

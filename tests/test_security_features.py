@@ -327,6 +327,40 @@ class TestRateTier:
 
         assert "revoked-elsewhere" not in api_keys
 
+    def test_durable_storage_refreshes_cached_authority(self):
+        key_data = {"tier": "pro", "entity_id": "durable-entity"}
+        mock_db = MagicMock()
+        mock_db.get_api_key.return_value = key_data
+
+        with patch("main.db", mock_db):
+            assert RateTier.get_key_data("durable-key") == key_data
+
+        assert api_keys["durable-key"] == key_data
+
+    def test_register_key_persistence_failure_removes_authority(self):
+        mock_db = MagicMock()
+        mock_db.save_api_key.return_value = False
+
+        with patch("main.db", mock_db):
+            with pytest.raises(RuntimeError, match="persistence unavailable"):
+                RateTier.register_key("failed-key", "pro", "entity-1")
+
+        assert "failed-key" not in api_keys
+
+    def test_revoke_key_removes_durable_authority(self):
+        key_data = {"tier": "pro", "entity_id": "durable-entity"}
+        mock_db = MagicMock()
+        mock_db.get_api_key.return_value = key_data
+        mock_db.delete_api_key.return_value = True
+
+        with patch("main.db", mock_db):
+            assert RateTier.revoke_key("durable-key") == key_data
+
+        mock_db.get_api_key.assert_called_once_with("durable-key", raise_on_error=True)
+        mock_db.delete_api_key.assert_called_once_with(
+            "durable-key", raise_on_error=True
+        )
+
     def test_check_limit_free(self):
         """Test rate limit check for free tier."""
         allowed, message = RateTier.check_limit(None, "session")
@@ -414,6 +448,33 @@ class TestRateTierEndpoints:
 
         assert response.status_code == 503
         assert RateTier.get_tier("mtl_key-persistence-123456") == "pro"
+
+    def test_revoke_unknown_api_key_returns_not_found(self, client):
+        response = client.post(
+            "/api/keys/revoke",
+            json={
+                "api_key": "mtl_unknown-key-123456789",
+                "reason": "Synthetic unknown key revocation",
+            },
+            headers={"X-Admin-Key": TEST_ADMIN_KEY},
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "API key not found"
+
+    def test_register_api_key_persistence_failure_returns_unavailable(self, client):
+        mock_db = MagicMock()
+        mock_db.save_api_key.return_value = False
+
+        with patch("main.db", mock_db):
+            response = client.post(
+                "/api/keys/register",
+                json={"tier": "pro", "entity_id": "entity-1"},
+                headers={"X-Admin-Key": TEST_ADMIN_KEY},
+            )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "API key persistence unavailable"
 
 
 # === Webhook Tests ===
