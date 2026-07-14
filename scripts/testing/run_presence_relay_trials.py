@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Run three-party Presence relay and credential-copy trials.
 
-The default smoke run exercises four cohorts against a live METTLE deployment:
-an in-process control, a real holder/solver subprocess relay, that relay with a
-synthetic holder-service delay, and a synthetic human-paced relay. A manual
-human mode is available, but automated output never labels injected delay as a
-measured human result.
+The default smoke run exercises four autonomous cohorts against a live METTLE
+deployment: an in-process control, a real holder/solver subprocess relay, that
+relay with a synthetic holder-service delay, and a paced relay. Manual mode is
+available for optional calibration, but it is never required by the automated
+security decision.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import statistics
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -37,6 +37,7 @@ from mettle.vcp import verify_mettle_attestation
 from scripts.testing.presence_relay_workers import (
     HolderWorkerClient,
     SolverWorkerClient,
+    WorkerProtocolError,
 )
 from scripts.testing.presence_trial_support import (
     BRONZE_SUITES,
@@ -51,6 +52,7 @@ COHORT_KINDS = {
     "direct",
     "process-relay",
     "holder-service",
+    "paced-relay",
     "synthetic-human",
     "manual-human",
 }
@@ -58,13 +60,48 @@ MAX_DIRECT_FALSE_POSITIVE_RATE = 0.01
 MIN_HUMAN_RELAY_DETECTION_RATE = 0.90
 MINIMUM_DIRECT_RECEIPTS = 300
 MINIMUM_MEASURED_HUMAN_RECEIPTS = 29
-PREREGISTERED_CRITERIA = {
+REQUIRED_HOLDER_POLICY_ATTACKS = frozenset(
+    {
+        "unauthorized_session_signing",
+        "unregistered_credential_presentation",
+        "active_session_budget",
+        "action_substitution",
+        "transcript_rollback_signing",
+        "pending_submission_fork",
+        "state_rollback_commit",
+        "committed_submission_replay",
+        "tampered_credential_registration",
+        "presentation_audience_substitution",
+        "presentation_challenge_fork",
+        "presentation_budget",
+    }
+)
+REQUIRED_PROTOCOL_REJECTIONS = frozenset(
+    {
+        "stolen_session_without_holder_key",
+        "harvested_submission_replay",
+        "tier_tampering",
+        "copied_credential_without_holder_key",
+        "presentation_replay",
+    }
+)
+AUTOMATED_SECURITY_CRITERIA = {
+    "required_holder_policy_rejections": sorted(REQUIRED_HOLDER_POLICY_ATTACKS),
+    "required_protocol_rejections": sorted(REQUIRED_PROTOCOL_REJECTIONS),
+    "require_valid_holder_service_presentation": True,
+    "require_isolated_holder_key": True,
+    "require_workers_without_mettle_credentials": True,
+    "human_testing_required": False,
+    "timing_threshold_enforcement_authorized": False,
+}
+OPTIONAL_TIMING_CALIBRATION_CRITERIA = {
+    "status": "optional_non_blocking_calibration",
     "max_direct_false_positive_rate": MAX_DIRECT_FALSE_POSITIVE_RATE,
     "min_human_relay_detection_rate": MIN_HUMAN_RELAY_DETECTION_RATE,
     "require_no_cohort_overlap": True,
     "minimum_direct_receipts": MINIMUM_DIRECT_RECEIPTS,
     "minimum_measured_human_receipts": MINIMUM_MEASURED_HUMAN_RECEIPTS,
-    "require_measured_human_relay": True,
+    "authorizes_product_gating": False,
     "confidence_note": (
         "With zero observed errors, 300 direct receipts bound a 95% one-sided "
         "false-positive rate near 1%, and 29 measured relay receipts bound a "
@@ -86,7 +123,15 @@ class Cohort:
 
     @property
     def is_synthetic(self) -> bool:
-        return self.kind in {"holder-service", "synthetic-human"} and self.delay_ms > 0
+        return (
+            self.kind
+            in {
+                "holder-service",
+                "paced-relay",
+                "synthetic-human",
+            }
+            and self.delay_ms > 0
+        )
 
 
 @dataclass
@@ -175,6 +220,21 @@ class RelayedPresenceSessionDriver:
             headers={"Authorization": f"Bearer {self.api_key}"},
             timeout=self.timeout_seconds,
         )
+        key_info = self.request(
+            "GET", "/api/mettle/.well-known/vcp-keys", expected_status=200
+        ).json()
+        issuer_public_key_pem = key_info.get("public_key_pem")
+        if not isinstance(issuer_public_key_pem, str):
+            raise TrialFailure("METTLE issuer key is unavailable")
+        self._issuer_public_key_pem = issuer_public_key_pem
+        self.holder.configure(
+            issuer=self.base_url,
+            issuer_public_key_pem=issuer_public_key_pem,
+            allowed_audiences=[self.audience],
+            max_active_sessions=1,
+            max_actions_per_session=max(16, len(self.suites) + 5),
+            max_presentations_per_credential=1,
+        )
 
     def close(self) -> None:
         self._client.close()
@@ -218,6 +278,11 @@ class RelayedPresenceSessionDriver:
         self.session_id = body["session_id"]
         self.presence = body["presence"]
         self.current_challenges = body["challenges"]
+        self.holder.authorize_session(
+            issuer=self.base_url,
+            session_id=self.session_id,
+            presence=self.presence,
+        )
         return body
 
     def prepare_current(self) -> PreparedSubmission:
@@ -273,6 +338,10 @@ class RelayedPresenceSessionDriver:
         body = response.json()
         if body.get("passed") is not True:
             raise TrialFailure(f"Reference relay solver did not pass {prepared.suite}")
+        self.holder.commit_submission(
+            session_id=self.session_id,
+            presence=body["presence"],
+        )
         self.last_submission_payload = copy.deepcopy(payload)
         self.presence = body["presence"]
         self.current_challenges = body.get("next_challenge") or {}
@@ -333,6 +402,12 @@ class RelayedPresenceSessionDriver:
             or not verify_mettle_attestation(attestation, public_key_pem)
         ):
             raise TrialFailure("METTLE issuer signature verification failed")
+        registered_jti = self.holder.register_credential(
+            issuer=self.base_url,
+            attestation=attestation,
+        )
+        if registered_jti != attestation["metadata"]["jti"]:
+            raise TrialFailure("Holder registered a different credential JTI")
         return body
 
 
@@ -415,7 +490,7 @@ def evaluate_separation(
         "observed_rate_criteria_met": bool(qualified and no_overlap),
         "measured_human": measured_human,
         "sample_sufficient": sample_sufficient,
-        "product_decision_eligible": bool(
+        "optional_human_calibration_eligible": bool(
             qualified and no_overlap and measured_human and sample_sufficient
         ),
     }
@@ -535,10 +610,89 @@ def run_attack_trials(*, base_url: str, api_key: str, timeout: float) -> dict[st
             timeout_seconds=timeout,
         ) as driver,
     ):
+        holder_policy_attacks: dict[str, dict[str, Any]] = {}
+
+        def expect_policy_rejection(
+            name: str,
+            operation: Any,
+            expected_fragments: tuple[str, ...],
+        ) -> None:
+            try:
+                operation()
+            except WorkerProtocolError as exc:
+                error = str(exc)
+                if not any(
+                    fragment in error.lower() for fragment in expected_fragments
+                ):
+                    raise TrialFailure(
+                        f"Holder rejected {name} for an unexpected reason: {error}"
+                    ) from exc
+                holder_policy_attacks[name] = {
+                    "rejected": True,
+                    "error": error,
+                }
+            else:
+                raise TrialFailure(f"Holder accepted forbidden {name}")
+
+        valid_expiry = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        expect_policy_rejection(
+            "unauthorized_session_signing",
+            lambda: holder.sign_submission(
+                session_id="unauthorized-session",
+                action="suite:adversarial",
+                nonce="u" * 32,
+                previous_transcript_hash="sha256:" + "0" * 64,
+                payload_hash="sha256:" + "1" * 64,
+            ),
+            ("not authorized",),
+        )
+        expect_policy_rejection(
+            "unregistered_credential_presentation",
+            lambda: holder.sign_presentation(
+                challenge_id="unregistered-challenge",
+                nonce="u" * 32,
+                audience=driver.audience,
+                credential_jti="0" * 32,
+                expires_at=valid_expiry,
+            ),
+            ("not registered",),
+        )
+
         driver.start()
         if driver.session_id is None or driver.presence is None:
             raise TrialFailure("Attack session did not initialize")
+        expect_policy_rejection(
+            "active_session_budget",
+            lambda: holder.authorize_session(
+                issuer=driver.base_url,
+                session_id="farmed-session",
+                presence=copy.deepcopy(driver.presence),
+            ),
+            ("budget is exhausted",),
+        )
         prepared = driver.prepare_current()
+        expect_policy_rejection(
+            "action_substitution",
+            lambda: holder.sign_submission(
+                session_id=driver.session_id,
+                action="round:999",
+                nonce=driver.presence["nonce"],
+                previous_transcript_hash=driver.presence["transcript_hash"],
+                payload_hash=answer_hash(prepared.answers),
+            ),
+            ("action does not match",),
+        )
+        expect_policy_rejection(
+            "transcript_rollback_signing",
+            lambda: holder.sign_submission(
+                session_id=driver.session_id,
+                action=prepared.action,
+                nonce=driver.presence["nonce"],
+                previous_transcript_hash="sha256:" + "0" * 64,
+                payload_hash=answer_hash(prepared.answers),
+            ),
+            ("transcript does not match",),
+        )
         message = submission_signing_bytes(
             session_id=driver.session_id,
             action=prepared.action,
@@ -565,7 +719,38 @@ def run_attack_trials(*, base_url: str, api_key: str, timeout: float) -> dict[st
             previous_transcript_hash=driver.presence["transcript_hash"],
             payload_hash=answer_hash(prepared.answers),
         )
+        signed_state = copy.deepcopy(driver.presence)
+        expect_policy_rejection(
+            "pending_submission_fork",
+            lambda: holder.sign_submission(
+                session_id=driver.session_id,
+                action=prepared.action,
+                nonce=signed_state["nonce"],
+                previous_transcript_hash=signed_state["transcript_hash"],
+                payload_hash="sha256:" + "f" * 64,
+            ),
+            ("different submission is already pending",),
+        )
+        expect_policy_rejection(
+            "state_rollback_commit",
+            lambda: holder.commit_submission(
+                session_id=driver.session_id,
+                presence=signed_state,
+            ),
+            ("did not advance exactly once",),
+        )
         driver.submit_prepared(prepared, valid_signature, holder_roundtrip_ms=holder_ms)
+        expect_policy_rejection(
+            "committed_submission_replay",
+            lambda: holder.sign_submission(
+                session_id=driver.session_id,
+                action=prepared.action,
+                nonce=signed_state["nonce"],
+                previous_transcript_hash=signed_state["transcript_hash"],
+                payload_hash=answer_hash(prepared.answers),
+            ),
+            ("action does not match", "already complete"),
+        )
         replay_payload = copy.deepcopy(driver.last_submission_payload)
         if replay_payload is None:
             raise TrialFailure(
@@ -582,6 +767,16 @@ def run_attack_trials(*, base_url: str, api_key: str, timeout: float) -> dict[st
         if attestation.get("credential_issued") is not True:
             raise TrialFailure("Attack trial did not earn a bound credential")
         credential_jti = attestation["metadata"]["jti"]
+        tampered_holder_attestation = copy.deepcopy(attestation)
+        tampered_holder_attestation["metadata"]["tier"] = "platinum"
+        expect_policy_rejection(
+            "tampered_credential_registration",
+            lambda: holder.register_credential(
+                issuer=driver.base_url,
+                attestation=tampered_holder_attestation,
+            ),
+            ("issuer signature or policy is invalid",),
+        )
         challenge = driver.request(
             "POST",
             "/api/mettle/presentation-challenges",
@@ -604,6 +799,39 @@ def run_attack_trials(*, base_url: str, api_key: str, timeout: float) -> dict[st
             audience=challenge["audience"],
             credential_jti=credential_jti,
             expires_at=challenge["expires_at"],
+        )
+        expect_policy_rejection(
+            "presentation_audience_substitution",
+            lambda: holder.sign_presentation(
+                challenge_id=f"{challenge['challenge_id']}-audience",
+                nonce=challenge["nonce"],
+                audience="wrong-audience.mettle.local",
+                credential_jti=credential_jti,
+                expires_at=challenge["expires_at"],
+            ),
+            ("audience is not allowed",),
+        )
+        expect_policy_rejection(
+            "presentation_challenge_fork",
+            lambda: holder.sign_presentation(
+                challenge_id=challenge["challenge_id"],
+                nonce="f" * 32,
+                audience=challenge["audience"],
+                credential_jti=credential_jti,
+                expires_at=challenge["expires_at"],
+            ),
+            ("reused inconsistently",),
+        )
+        expect_policy_rejection(
+            "presentation_budget",
+            lambda: holder.sign_presentation(
+                challenge_id=f"{challenge['challenge_id']}-budget",
+                nonce="b" * 32,
+                audience=challenge["audience"],
+                credential_jti=credential_jti,
+                expires_at=challenge["expires_at"],
+            ),
+            ("budget is exhausted",),
         )
 
         tampered_attestation = copy.deepcopy(attestation)
@@ -647,6 +875,7 @@ def run_attack_trials(*, base_url: str, api_key: str, timeout: float) -> dict[st
         )
         return {
             "passed": True,
+            "holder_policy_attacks": holder_policy_attacks,
             "process_boundary": {
                 "orchestrator_pid": os.getpid(),
                 "holder_pid": holder.pid,
@@ -723,28 +952,62 @@ def build_report(
                 direct_values, values, measured_human=cohort.is_measured_human
             )
 
-    eligible = [
-        analysis
-        for analysis in separation.values()
-        if analysis["product_decision_eligible"]
-    ]
     measured_human_present = any(cohort.is_measured_human for cohort in cohorts)
-    sufficient_measured_human = any(
-        analysis["measured_human"] and analysis["sample_sufficient"]
-        for analysis in separation.values()
+    holder_policy_attacks = (
+        attacks.get("holder_policy_attacks") if isinstance(attacks, dict) else None
     )
-    if eligible:
-        decision_status = "advance_to_shadow_mode"
-    elif sufficient_measured_human:
-        decision_status = "criteria_not_met"
-    else:
-        decision_status = "insufficient_evidence"
+    process_boundary = (
+        attacks.get("process_boundary") if isinstance(attacks, dict) else None
+    )
+    holder_policy_attacks_passed = bool(
+        isinstance(holder_policy_attacks, dict)
+        and REQUIRED_HOLDER_POLICY_ATTACKS.issubset(holder_policy_attacks)
+        and all(
+            isinstance(holder_policy_attacks[name], dict)
+            and holder_policy_attacks[name].get("rejected") is True
+            for name in REQUIRED_HOLDER_POLICY_ATTACKS
+        )
+    )
+    protocol_rejections_passed = bool(
+        isinstance(attacks, dict)
+        and all(
+            isinstance(attacks.get(name), dict)
+            and attacks[name].get("rejected") is True
+            for name in REQUIRED_PROTOCOL_REJECTIONS
+        )
+    )
+    valid_presentation = (
+        attacks.get("valid_holder_service_presentation")
+        if isinstance(attacks, dict)
+        else None
+    )
+    process_boundary_passed = bool(
+        isinstance(process_boundary, dict)
+        and process_boundary.get("holder_private_key_crossed_ipc") is False
+        and process_boundary.get("solver_received_holder_key") is False
+        and process_boundary.get("workers_inherited_mettle_credentials") is False
+    )
+    attacks_passed = bool(
+        isinstance(attacks, dict)
+        and attacks.get("passed") is True
+        and holder_policy_attacks_passed
+        and protocol_rejections_passed
+        and isinstance(valid_presentation, dict)
+        and valid_presentation.get("accepted") is True
+        and process_boundary_passed
+    )
+    decision_status = (
+        "automated_security_controls_passed"
+        if attacks_passed
+        else "automated_attack_evidence_incomplete"
+    )
     return {
-        "schema": "mettle-presence-three-party-relay-v1",
+        "schema": "mettle-presence-three-party-relay-v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "target": base_url.rstrip("/"),
         "suites": list(BRONZE_SUITES),
-        "preregistered_criteria": PREREGISTERED_CRITERIA,
+        "automated_security_criteria": AUTOMATED_SECURITY_CRITERIA,
+        "optional_timing_calibration_criteria": OPTIONAL_TIMING_CALIBRATION_CRITERIA,
         "attestation_signature_verified": True,
         "cohorts": [asdict(cohort) for cohort in cohorts],
         "summaries": summaries,
@@ -752,23 +1015,24 @@ def build_report(
         "attack_trials": attacks,
         "decision": {
             "status": decision_status,
+            "authorization_controls_validated": attacks_passed,
             "threshold_enforcement_authorized": False,
+            "human_testing_required": False,
             "measured_human_cohort_status": (
-                "completed"
-                if measured_human_present
-                else "not_run_requires_participant"
+                "completed" if measured_human_present else "not_required"
             ),
             "reason": (
-                "Only a statistically sufficient measured human cohort can authorize "
-                "shadow-mode threshold evaluation. Synthetic timing is descriptive."
+                "Autonomous attack trials validate holder authorization and protocol "
+                "boundaries. Timing cohorts remain descriptive and do not authorize "
+                "product gating."
             ),
         },
         "interpretation_limits": [
             "The holder and solver process boundary is real and the private key never crosses IPC.",
-            "Holder-service and synthetic-human delays are injected locally, not measured network or human latency.",
+            "Holder-service and paced-relay delays are injected locally, not measured network or human latency.",
             "The process relay demonstrates solver adaptation through the public challenge surface.",
             "Key binding rejects theft and copying without the holder, but a cooperating holder service remains possible.",
-            "This smoke run cannot justify product timing enforcement.",
+            "Automated attack success validates authorization controls, not identity or product timing enforcement.",
         ],
         "samples": samples,
     }
@@ -793,7 +1057,7 @@ def main() -> int:
         Cohort("direct", "direct", 0, 2),
         Cohort("process_relay", "process-relay", 0, 2),
         Cohort("holder_service_250", "holder-service", 250, 2),
-        Cohort("synthetic_human_1000", "synthetic-human", 1000, 2),
+        Cohort("paced_relay_1000", "paced-relay", 1000, 2),
     ]
     if len({cohort.name for cohort in cohorts}) != len(cohorts):
         parser.error("cohort names must be unique")

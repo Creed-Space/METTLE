@@ -220,6 +220,22 @@ def _decode_signature(signature: str) -> bytes:
     return decoded
 
 
+def transcript_hash_after_submission(
+    *, previous_transcript_hash: str, message: bytes, signature: str
+) -> str:
+    """Compute the next transcript commitment for a signed submission."""
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", previous_transcript_hash) is None:
+        raise ValueError("Previous Presence transcript hash is invalid")
+    transcript_material = (
+        previous_transcript_hash.encode("ascii")
+        + b"\x00"
+        + message
+        + b"\x00"
+        + _decode_signature(signature)
+    )
+    return HASH_PREFIX + hashlib.sha256(transcript_material).hexdigest()
+
+
 def verify_submission_proof(
     *,
     presence: dict[str, Any] | None,
@@ -261,15 +277,10 @@ def advance_session_presence(
     *, presence: dict[str, Any], message: bytes, signature: str, action: str
 ) -> None:
     """Commit a verified submission and rotate the single-use nonce."""
-    transcript_material = (
-        presence["transcript_hash"].encode("ascii")
-        + b"\x00"
-        + message
-        + b"\x00"
-        + _decode_signature(signature)
-    )
-    presence["transcript_hash"] = (
-        HASH_PREFIX + hashlib.sha256(transcript_material).hexdigest()
+    presence["transcript_hash"] = transcript_hash_after_submission(
+        previous_transcript_hash=presence["transcript_hash"],
+        message=message,
+        signature=signature,
     )
     accepted_at_ms = int(time.time() * 1000)
     response_time_ms = max(0, accepted_at_ms - int(presence["nonce_issued_at_unix_ms"]))

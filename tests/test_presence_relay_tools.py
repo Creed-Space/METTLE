@@ -4,12 +4,24 @@ from __future__ import annotations
 
 import base64
 import os
+from datetime import datetime, timedelta, timezone
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    PublicFormat,
+    load_pem_public_key,
+)
 
-from mettle.presence import submission_signing_bytes
+from mettle.presence import (
+    key_fingerprint,
+    submission_signing_bytes,
+    transcript_hash_after_submission,
+)
 from scripts.testing.presence_relay_workers import (
     HolderWorkerClient,
     SolverWorkerClient,
@@ -18,10 +30,28 @@ from scripts.testing.presence_relay_workers import (
 )
 from scripts.testing.run_presence_relay_trials import (
     Cohort,
+    REQUIRED_HOLDER_POLICY_ATTACKS,
+    REQUIRED_PROTOCOL_REJECTIONS,
     build_report,
     evaluate_separation,
     parse_cohort,
 )
+
+
+def _passing_attacks() -> dict[str, object]:
+    return {
+        "passed": True,
+        "holder_policy_attacks": {
+            name: {"rejected": True} for name in REQUIRED_HOLDER_POLICY_ATTACKS
+        },
+        **{name: {"rejected": True} for name in REQUIRED_PROTOCOL_REJECTIONS},
+        "valid_holder_service_presentation": {"accepted": True},
+        "process_boundary": {
+            "holder_private_key_crossed_ipc": False,
+            "solver_received_holder_key": False,
+            "workers_inherited_mettle_credentials": False,
+        },
+    }
 
 
 def test_worker_environment_excludes_parent_mettle_credentials(
@@ -53,24 +83,88 @@ def test_holder_and_solver_are_isolated_and_holder_signature_verifies() -> None:
         assert solve_ms >= 0
         assert roundtrip_ms >= solve_ms
 
+        nonce = "n" * 32
+        previous_hash = "sha256:" + "a" * 64
+        payload_hash = "sha256:" + "b" * 64
+        with pytest.raises(WorkerProtocolError, match="not configured"):
+            holder.sign_submission(
+                session_id="session-1",
+                action="suite:adversarial",
+                nonce=nonce,
+                previous_transcript_hash=previous_hash,
+                payload_hash=payload_hash,
+            )
+
+        issuer_key = Ed25519PrivateKey.generate()
+        issuer_public_key_pem = (
+            issuer_key.public_key()
+            .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+            .decode("ascii")
+        )
+        holder.configure(
+            issuer="https://mettle.example",
+            issuer_public_key_pem=issuer_public_key_pem,
+            allowed_audiences=["service.example"],
+        )
+        holder.authorize_session(
+            issuer="https://mettle.example",
+            session_id="session-1",
+            presence={
+                "protocol": "mettle-presence-v1",
+                "key_fingerprint": key_fingerprint(holder.public_key_pem),
+                "audience": "service.example",
+                "nonce": nonce,
+                "transcript_hash": previous_hash,
+                "sequence": 0,
+                "action": "suite:adversarial",
+                "completed": False,
+            },
+        )
         message = submission_signing_bytes(
             session_id="session-1",
             action="suite:adversarial",
-            nonce="nonce-1",
-            previous_transcript_hash="sha256:" + "a" * 64,
-            payload_hash="sha256:" + "b" * 64,
+            nonce=nonce,
+            previous_transcript_hash=previous_hash,
+            payload_hash=payload_hash,
         )
         signature, holder_ms = holder.sign_submission(
             session_id="session-1",
             action="suite:adversarial",
-            nonce="nonce-1",
-            previous_transcript_hash="sha256:" + "a" * 64,
-            payload_hash="sha256:" + "b" * 64,
+            nonce=nonce,
+            previous_transcript_hash=previous_hash,
+            payload_hash=payload_hash,
         )
         public_key = load_pem_public_key(holder.public_key_pem.encode("ascii"))
         assert isinstance(public_key, Ed25519PublicKey)
         public_key.verify(base64.b64decode(signature), message)
         assert holder_ms >= 0
+        holder.commit_submission(
+            session_id="session-1",
+            presence={
+                "protocol": "mettle-presence-v1",
+                "key_fingerprint": key_fingerprint(holder.public_key_pem),
+                "audience": "service.example",
+                "nonce": None,
+                "transcript_hash": transcript_hash_after_submission(
+                    previous_transcript_hash=previous_hash,
+                    message=message,
+                    signature=signature,
+                ),
+                "sequence": 1,
+                "action": None,
+                "completed": True,
+            },
+        )
+        assert holder.status()["active_sessions"] == 0
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        with pytest.raises(WorkerProtocolError, match="not registered"):
+            holder.sign_presentation(
+                challenge_id="challenge-1",
+                nonce="p" * 32,
+                audience="service.example",
+                credential_jti="c" * 32,
+                expires_at=expires_at,
+            )
         with pytest.raises(WorkerProtocolError, match="unsupported holder action"):
             holder.request("export_private_key")
 
@@ -83,14 +177,14 @@ def test_separation_requires_measured_and_sufficient_human_receipts() -> None:
     )
     assert descriptive["observed_rate_criteria_met"] is True
     assert descriptive["sample_sufficient"] is True
-    assert descriptive["product_decision_eligible"] is False
+    assert descriptive["optional_human_calibration_eligible"] is False
 
     eligible = evaluate_separation(
         [20] * 300,
         [1000] * 29,
         measured_human=True,
     )
-    assert eligible["product_decision_eligible"] is True
+    assert eligible["optional_human_calibration_eligible"] is True
 
     overlap = evaluate_separation([20, 40], [30, 50], measured_human=True)
     assert overlap["observed_overlap"] is True
@@ -112,19 +206,21 @@ def test_relay_report_keeps_synthetic_and_product_boundaries_explicit() -> None:
         base_url="https://mettle.example",
         cohorts=cohorts,
         samples=samples,
-        attacks={"passed": True},
+        attacks=_passing_attacks(),
     )
     assert report["summaries"]["paced"]["synthetic_delay"] is True
     assert report["separation"]["paced"]["observed_rate_criteria_met"] is True
-    assert report["separation"]["paced"]["product_decision_eligible"] is False
+    assert report["separation"]["paced"]["optional_human_calibration_eligible"] is False
     assert report["decision"]["threshold_enforcement_authorized"] is False
-    assert report["decision"]["measured_human_cohort_status"].startswith("not_run")
+    assert report["decision"]["measured_human_cohort_status"] == "not_required"
+    assert report["decision"]["human_testing_required"] is False
+    assert report["decision"]["status"] == "automated_security_controls_passed"
     assert parse_cohort("relay:process-relay:0:2") == Cohort(
         "relay", "process-relay", 0, 2
     )
 
 
-def test_sufficient_human_cohort_that_overlaps_fails_the_gate() -> None:
+def test_timing_overlap_never_authorizes_threshold_enforcement() -> None:
     cohorts = [
         Cohort("direct", "direct", 0, 60),
         Cohort("human", "manual-human", 0, 6),
@@ -138,8 +234,24 @@ def test_sufficient_human_cohort_that_overlaps_fails_the_gate() -> None:
         base_url="https://mettle.example",
         cohorts=cohorts,
         samples=samples,
-        attacks=None,
+        attacks=_passing_attacks(),
     )
     assert report["separation"]["human"]["sample_sufficient"] is True
     assert report["separation"]["human"]["observed_overlap"] is True
-    assert report["decision"]["status"] == "criteria_not_met"
+    assert report["decision"]["status"] == "automated_security_controls_passed"
+    assert report["decision"]["threshold_enforcement_authorized"] is False
+
+
+def test_partial_attack_matrix_cannot_produce_a_passing_decision() -> None:
+    attacks = _passing_attacks()
+    holder_attacks = attacks["holder_policy_attacks"]
+    assert isinstance(holder_attacks, dict)
+    holder_attacks.pop("pending_submission_fork")
+    report = build_report(
+        base_url="https://mettle.example",
+        cohorts=[Cohort("direct", "direct", 0, 1)],
+        samples=[{"cohort": "direct", "server_response_time_ms": 20}],
+        attacks=attacks,
+    )
+    assert report["decision"]["status"] == "automated_attack_evidence_incomplete"
+    assert report["decision"]["authorization_controls_validated"] is False

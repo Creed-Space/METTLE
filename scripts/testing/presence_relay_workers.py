@@ -164,6 +164,38 @@ class HolderWorkerClient(JsonLineWorker):
             raise WorkerProtocolError("Holder returned an invalid public key")
         self.public_key_pem = public_key_pem
 
+    def configure(
+        self,
+        *,
+        issuer: str,
+        issuer_public_key_pem: str,
+        allowed_audiences: list[str],
+        max_active_sessions: int = 1,
+        max_actions_per_session: int = 16,
+        max_presentations_per_credential: int = 32,
+        max_presentation_ttl_seconds: int = 600,
+    ) -> dict[str, Any]:
+        return self.request(
+            "configure",
+            issuer=issuer,
+            issuer_public_key_pem=issuer_public_key_pem,
+            allowed_audiences=allowed_audiences,
+            max_active_sessions=max_active_sessions,
+            max_actions_per_session=max_actions_per_session,
+            max_presentations_per_credential=max_presentations_per_credential,
+            max_presentation_ttl_seconds=max_presentation_ttl_seconds,
+        )
+
+    def authorize_session(
+        self, *, issuer: str, session_id: str, presence: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.request(
+            "authorize_session",
+            issuer=issuer,
+            session_id=session_id,
+            presence=presence,
+        )
+
     def sign_submission(
         self,
         *,
@@ -188,6 +220,22 @@ class HolderWorkerClient(JsonLineWorker):
             raise WorkerProtocolError("Holder omitted its submission signature")
         return signature, round(roundtrip_ms, 3)
 
+    def commit_submission(
+        self, *, session_id: str, presence: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.request(
+            "commit_submission", session_id=session_id, presence=presence
+        )
+
+    def register_credential(self, *, issuer: str, attestation: dict[str, Any]) -> str:
+        response = self.request(
+            "register_credential", issuer=issuer, attestation=attestation
+        )
+        credential_jti = response.get("credential_jti")
+        if not isinstance(credential_jti, str):
+            raise WorkerProtocolError("Holder omitted the registered credential JTI")
+        return credential_jti
+
     def sign_presentation(
         self,
         *,
@@ -211,6 +259,9 @@ class HolderWorkerClient(JsonLineWorker):
         if not isinstance(signature, str):
             raise WorkerProtocolError("Holder omitted its presentation signature")
         return signature, round(roundtrip_ms, 3)
+
+    def status(self) -> dict[str, Any]:
+        return self.request("status")
 
 
 class SolverWorkerClient(JsonLineWorker):
