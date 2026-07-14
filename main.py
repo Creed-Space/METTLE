@@ -72,7 +72,10 @@ class DatabaseLayer(Protocol):
         self, max_age_seconds: int = 1800, limit: int = 5000
     ) -> list[dict[str, Any]]: ...
     def save_api_key(self, api_key: str, tier: str, entity_id: str | None) -> bool: ...
-    def get_api_key(self, api_key: str) -> dict[str, Any] | None: ...
+    def get_api_key(
+        self, api_key: str, *, raise_on_error: bool = False
+    ) -> dict[str, Any] | None: ...
+    def delete_api_key(self, api_key: str, *, raise_on_error: bool = False) -> bool: ...
     def update_api_key_usage(
         self, api_key: str, usage_date: str, usage_count: int
     ) -> bool: ...
@@ -230,12 +233,16 @@ class RateTier:
         """Resolve an API key from memory or durable digest-backed storage."""
         if not api_key:
             return None
-        key_data = api_keys.get(api_key)
-        if key_data is None and db:
+        if db:
+            # Durable storage is authoritative on every request. This avoids a
+            # revoked key remaining active in another API process's local cache.
             key_data = db.get_api_key(api_key)
-            if key_data is not None:
-                add_with_limit(api_keys, api_key, key_data, MAX_API_KEYS)
-        return key_data
+            if key_data is None:
+                api_keys.pop(api_key, None)
+                return None
+            add_with_limit(api_keys, api_key, key_data, MAX_API_KEYS)
+            return key_data
+        return api_keys.get(api_key)
 
     @staticmethod
     def get_tier(api_key: str | None) -> str:
@@ -307,6 +314,23 @@ class RateTier:
         if db and not db.save_api_key(api_key, tier, entity_id):
             api_keys.pop(api_key, None)
             raise RuntimeError("API key persistence unavailable")
+        return key_data
+
+    @staticmethod
+    def revoke_key(api_key: str) -> dict[str, Any] | None:
+        """Revoke an API key from durable storage and the local cache."""
+        if db:
+            key_data = db.get_api_key(api_key, raise_on_error=True)
+        else:
+            key_data = api_keys.get(api_key)
+        if key_data is None:
+            return None
+
+        # Remove durable authority first. A storage failure must leave the local
+        # cache untouched so callers cannot mistake a partial revocation for success.
+        if db:
+            db.delete_api_key(api_key, raise_on_error=True)
+        api_keys.pop(api_key, None)
         return key_data
 
 
@@ -2471,6 +2495,13 @@ class RegisterKeyRequest(BaseModel):
     entity_id: str | None = Field(None, description="Associated entity ID")
 
 
+class RevokeKeyRequest(BaseModel):
+    """Request to revoke an API key without placing it in the URL."""
+
+    api_key: str = Field(..., min_length=16, max_length=512)
+    reason: str = Field(..., min_length=10, max_length=500)
+
+
 @api_router.post(
     "/keys/register",
     tags=["Status"],
@@ -2514,6 +2545,56 @@ async def register_api_key(
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+
+@api_router.post(
+    "/keys/revoke",
+    tags=["Status"],
+    summary="Revoke API Key",
+    description="Revoke an API key immediately (admin only).",
+    responses={
+        200: {"description": "API key revoked"},
+        401: {"description": "Unauthorized"},
+        404: {"description": "API key not found"},
+        503: {"description": "Key persistence unavailable"},
+    },
+)
+@limiter.limit("10/minute")
+async def revoke_api_key(request: Request, body: RevokeKeyRequest):
+    """Revoke a digest-backed API key without exposing it in logs or URLs."""
+    admin_key = request.headers.get("X-Admin-Key")
+    ip_address = get_remote_address(request)
+
+    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    if not verify_admin_key(admin_key, ip_address):
+        raise HTTPException(status_code=401, detail="Admin key required")
+
+    try:
+        key_data = RateTier.revoke_key(body.api_key)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503, detail="API key persistence unavailable"
+        ) from exc
+    if key_data is None:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    logger.info(
+        "api_key_revoked",
+        tier=key_data.get("tier"),
+        entity_id=key_data.get("entity_id"),
+        reason=body.reason,
+    )
+    return {
+        "revoked": True,
+        "tier": key_data.get("tier"),
+        "entity_id": key_data.get("entity_id"),
+    }
 
 
 @api_router.get(

@@ -462,6 +462,46 @@ class TestGetApiKey:
             result = db.get_api_key("err-key")
             assert result is None
 
+    def test_get_api_key_can_fail_closed(self, isolated_db):
+        db = isolated_db
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            with pytest.raises(RuntimeError, match="persistence unavailable"):
+                db.get_api_key("err-key", raise_on_error=True)
+
+
+class TestDeleteApiKey:
+    def test_deletes_digest_backed_key(self, isolated_db):
+        db = isolated_db
+        db.save_api_key("delete-key", "premium", "entity-delete")
+
+        assert db.delete_api_key("delete-key") is True
+        assert db.get_api_key("delete-key") is None
+
+    def test_deletes_legacy_plaintext_key(self, isolated_db):
+        db = isolated_db
+        with db.get_db() as session:
+            session.add(
+                db.DBAPIKey(
+                    api_key="legacy-delete-key",
+                    tier="basic",
+                    entity_id="legacy-entity",
+                )
+            )
+            session.commit()
+
+        assert db.delete_api_key("legacy-delete-key") is True
+        with db.get_db() as session:
+            assert session.query(db.DBAPIKey).count() == 0
+
+    def test_delete_unknown_key_returns_false(self, isolated_db):
+        assert isolated_db.delete_api_key("missing-key") is False
+
+    def test_delete_can_fail_closed(self, isolated_db):
+        db = isolated_db
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            with pytest.raises(RuntimeError, match="persistence unavailable"):
+                db.delete_api_key("err-key", raise_on_error=True)
+
 
 class TestUpdateApiKeyUsage:
     def test_update_usage_success(self, isolated_db):

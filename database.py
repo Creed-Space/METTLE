@@ -399,7 +399,7 @@ def save_api_key(api_key: str, tier: str, entity_id: str | None) -> bool:
         return False
 
 
-def get_api_key(api_key: str) -> dict | None:
+def get_api_key(api_key: str, *, raise_on_error: bool = False) -> dict | None:
     """Get API key info."""
     try:
         with get_db() as db:
@@ -424,7 +424,34 @@ def get_api_key(api_key: str) -> dict | None:
             return None
     except Exception as exc:
         logger.exception("Failed to fetch API key metadata: %s", exc)
+        if raise_on_error:
+            raise RuntimeError("API key persistence unavailable") from exc
         return None
+
+
+def delete_api_key(api_key: str, *, raise_on_error: bool = False) -> bool:
+    """Delete a digest-backed API key, with legacy plaintext compatibility."""
+    try:
+        with get_db() as db:
+            record = (
+                db.query(DBAPIKey)
+                .filter(DBAPIKey.api_key == _api_key_digest(api_key))
+                .first()
+            )
+            if record is None:
+                record = (
+                    db.query(DBAPIKey).filter(DBAPIKey.api_key == api_key).first()
+                )
+            if record is None:
+                return False
+            db.delete(record)
+            db.commit()
+            return True
+    except Exception as exc:
+        logger.exception("Failed to delete API key: %s", exc)
+        if raise_on_error:
+            raise RuntimeError("API key persistence unavailable") from exc
+        return False
 
 
 def update_api_key_usage(api_key: str, usage_date: str, usage_count: int) -> bool:
