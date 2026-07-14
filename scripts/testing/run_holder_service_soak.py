@@ -34,6 +34,7 @@ from mettle.holder import (
     HolderPolicy,
     HolderPolicyError,
     PresenceHolder,
+    RenewingVaultTokenProvider,
     VaultTransitEd25519Signer,
 )
 from mettle.holder_service import (
@@ -115,7 +116,11 @@ def _database_url(environment_name: str) -> str:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     public_key_pem = Path(args.vault_public_key_file).read_text()
-    vault_token_provider = FileSecretProvider(args.vault_token_file)
+    vault_token_provider = RenewingVaultTokenProvider(
+        base_url=args.vault_url,
+        token_provider=FileSecretProvider(args.vault_token_file),
+        ca_file=args.vault_ca_file,
+    )
     state_key = FileSecretProvider(args.state_hmac_key_file)().encode("utf-8")
     signer = VaultTransitEd25519Signer(
         base_url=args.vault_url,
@@ -124,6 +129,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         public_key_pem=public_key_pem,
         token_provider=vault_token_provider,
         key_version=args.vault_key_version,
+        ca_file=args.vault_ca_file,
         timeout_seconds=args.timeout,
     )
     verifier = load_pem_public_key(public_key_pem.encode("ascii"))
@@ -354,6 +360,7 @@ def main() -> int:
     parser.add_argument("--vault-key-version", type=int, required=True)
     parser.add_argument("--vault-public-key-file", required=True)
     parser.add_argument("--vault-token-file", required=True)
+    parser.add_argument("--vault-ca-file", required=True)
     parser.add_argument("--state-hmac-key-file", required=True)
     parser.add_argument("--database-url-env", default="METTLE_HOLDER_DATABASE_URL")
     parser.add_argument("--holder-id")
