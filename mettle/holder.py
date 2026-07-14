@@ -11,7 +11,9 @@ from __future__ import annotations
 import base64
 import json
 import math
+import os
 import re
+import stat
 import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -45,6 +47,7 @@ HASH_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
 ACTION_PATTERN = re.compile(r"(?:suite|round):[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 JTI_PATTERN = re.compile(r"[0-9a-f]{32}")
 ISSUER_KEY_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+HOLDER_STATE_SCHEMA = "mettle-holder-state-v1"
 
 
 class HolderPolicyError(ValueError):
@@ -90,6 +93,9 @@ class HolderPolicy:
     max_actions_per_session: int = 16
     max_presentations_per_credential: int = 32
     max_presentation_ttl_seconds: int = 600
+    max_session_records: int = 4096
+    max_credentials: int = 4096
+    max_presentation_records: int = 100000
 
 
 @dataclass
@@ -161,6 +167,17 @@ def _timeout(value: Any, name: str) -> float:
     ):
         raise HolderPolicyError(f"{name} must be greater than 0 and at most 60 seconds")
     return float(value)
+
+
+def _state_bytes(value: Any, name: str, *, maximum: int = 1048576) -> bytes:
+    text = _bounded_text(value, name, maximum=((maximum + 2) // 3) * 4)
+    try:
+        decoded = base64.b64decode(text, validate=True)
+    except ValueError:
+        raise HolderPolicyError(f"{name} is invalid") from None
+    if not decoded or len(decoded) > maximum:
+        raise HolderPolicyError(f"{name} is empty or oversized")
+    return decoded
 
 
 def _hash(value: Any, name: str) -> str:
@@ -319,6 +336,50 @@ class MacOSKeychainSecretProvider:
         return secret
 
 
+class FileSecretProvider:
+    """Read a bounded secret from an owner-only regular file on every use."""
+
+    def __init__(self, path: str, *, maximum_bytes: int = 8192) -> None:
+        candidate = Path(_bounded_text(path, "secret file path", maximum=4096))
+        if not candidate.is_absolute():
+            raise HolderPolicyError("Secret file path must be absolute")
+        if maximum_bytes < 1 or maximum_bytes > 1048576:
+            raise HolderPolicyError("Secret file size limit is invalid")
+        self._path = candidate
+        self._maximum_bytes = maximum_bytes
+
+    def __call__(self) -> str:
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(self._path, flags)
+        except OSError:
+            raise HolderPolicyError("Secret file lookup failed") from None
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or metadata.st_mode & 0o077
+                or metadata.st_size < 1
+                or metadata.st_size > self._maximum_bytes
+            ):
+                raise HolderPolicyError("Secret file permissions or size are invalid")
+            raw = os.read(descriptor, self._maximum_bytes + 1)
+        finally:
+            os.close(descriptor)
+        if not raw or len(raw) > self._maximum_bytes:
+            raise HolderPolicyError("Secret file is empty or oversized")
+        try:
+            secret = raw.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            raise HolderPolicyError("Secret file is not UTF-8") from None
+        if not secret or "\r" in secret or "\n" in secret:
+            raise HolderPolicyError("Secret file value is invalid")
+        return secret
+
+
 class VaultTransitEd25519Signer:
     """Sign through a non-exportable HashiCorp Vault Transit Ed25519 key.
 
@@ -327,7 +388,7 @@ class VaultTransitEd25519Signer:
     """
 
     _SEGMENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
-    _SIGNATURE_PATTERN = re.compile(r"vault:v[1-9][0-9]*:([A-Za-z0-9+/]+={0,2})")
+    _SIGNATURE_PATTERN = re.compile(r"vault:v([1-9][0-9]*):([A-Za-z0-9+/]+={0,2})")
 
     def __init__(
         self,
@@ -337,6 +398,7 @@ class VaultTransitEd25519Signer:
         key_name: str,
         public_key_pem: str,
         token_provider: Callable[[], str],
+        key_version: int | None = None,
         timeout_seconds: float = 5.0,
     ) -> None:
         base_url = _bounded_text(base_url, "Vault base URL", maximum=2048).rstrip("/")
@@ -362,9 +424,17 @@ class VaultTransitEd25519Signer:
                 raise HolderPolicyError(f"{name} name is invalid")
         if not callable(token_provider):
             raise HolderPolicyError("Vault token provider must be callable")
+        if key_version is not None and (
+            isinstance(key_version, bool)
+            or not isinstance(key_version, int)
+            or key_version < 1
+            or key_version > 2147483647
+        ):
+            raise HolderPolicyError("Vault key version is invalid")
         timeout_seconds = _timeout(timeout_seconds, "Vault timeout")
         self._public_key_pem = validate_public_key(public_key_pem)
         self._token_provider = token_provider
+        self._key_version = key_version
         self._timeout_seconds = timeout_seconds
         self._sign_url = f"{base_url}/v1/{mount_path}/sign/{key_name}"
 
@@ -390,11 +460,16 @@ class VaultTransitEd25519Signer:
         ):
             raise HolderPolicyError("Vault authentication token is invalid")
         try:
+            request_body: dict[str, str | int] = {
+                "input": base64.b64encode(message).decode("ascii")
+            }
+            if self._key_version is not None:
+                request_body["key_version"] = self._key_version
             with httpx.stream(
                 "POST",
                 self._sign_url,
                 headers={"X-Vault-Token": token},
-                json={"input": base64.b64encode(message).decode("ascii")},
+                json=request_body,
                 timeout=self._timeout_seconds,
                 follow_redirects=False,
                 trust_env=False,
@@ -421,7 +496,12 @@ class VaultTransitEd25519Signer:
         matched = self._SIGNATURE_PATTERN.fullmatch(encoded_signature)
         if matched is None:
             raise HolderPolicyError("Vault signing response is invalid")
-        signature_b64 = matched.group(1)
+        response_version = int(matched.group(1))
+        if self._key_version is not None and response_version != self._key_version:
+            raise HolderPolicyError(
+                "Vault signing response used an unexpected key version"
+            )
+        signature_b64 = matched.group(2)
         try:
             signature = base64.b64decode(signature_b64, validate=True)
         except ValueError:
@@ -454,6 +534,19 @@ class PresenceHolder:
         ):
             raise HolderPolicyError(
                 "Presentation TTL must be between 1 and 3600 seconds"
+            )
+        if policy.max_session_records < 1 or policy.max_session_records > 100000:
+            raise HolderPolicyError(
+                "Session record budget must be between 1 and 100000"
+            )
+        if policy.max_credentials < 1 or policy.max_credentials > 100000:
+            raise HolderPolicyError("Credential budget must be between 1 and 100000")
+        if (
+            policy.max_presentation_records < 1
+            or policy.max_presentation_records > 1000000
+        ):
+            raise HolderPolicyError(
+                "Presentation record budget must be between 1 and 1000000"
             )
         if not policy.issuer_public_keys and not policy.issuer_public_keyrings:
             raise HolderPolicyError("At least one trusted issuer key is required")
@@ -563,6 +656,8 @@ class PresenceHolder:
         with self._lock:
             if session_id in self._sessions:
                 raise HolderPolicyError("Session has already been authorized")
+            if len(self._sessions) >= self._policy.max_session_records:
+                raise HolderPolicyError("Session record budget is exhausted")
             active_count = sum(
                 not session.completed for session in self._sessions.values()
             )
@@ -759,6 +854,11 @@ class PresenceHolder:
                 raise HolderPolicyError(
                     "Credential JTI is already bound to another session"
                 )
+            if (
+                existing is None
+                and len(self._credentials) >= self._policy.max_credentials
+            ):
+                raise HolderPolicyError("Credential budget is exhausted")
             self._credentials.setdefault(
                 credential_jti,
                 _Credential(
@@ -826,6 +926,8 @@ class PresenceHolder:
                 >= self._policy.max_presentations_per_credential
             ):
                 raise HolderPolicyError("Credential presentation budget is exhausted")
+            if len(self._presentation_ids) >= self._policy.max_presentation_records:
+                raise HolderPolicyError("Presentation record budget is exhausted")
             signature_bytes = self._signer.sign(message)
             if not isinstance(signature_bytes, bytes) or len(signature_bytes) != 64:
                 raise HolderPolicyError("Signer did not return an Ed25519 signature")
@@ -846,4 +948,306 @@ class PresenceHolder:
                     not session.completed for session in self._sessions.values()
                 ),
                 "credentials": len(self._credentials),
+                "presentations": len(self._presentation_ids),
             }
+
+    def export_state(self) -> dict[str, Any]:
+        """Export public protocol state for authenticated durable storage.
+
+        The snapshot contains no private key, Vault token, or service credential.
+        Callers must authenticate the serialized snapshot before storing it.
+        """
+        with self._lock:
+            sessions = []
+            for session_id in sorted(self._sessions):
+                session = self._sessions[session_id]
+                pending = None
+                if session.pending is not None:
+                    pending = {
+                        "message": base64.b64encode(session.pending.message).decode(
+                            "ascii"
+                        ),
+                        "signature": session.pending.signature,
+                        "action": session.pending.action,
+                    }
+                sessions.append(
+                    {
+                        "issuer": session.issuer,
+                        "session_id": session.session_id,
+                        "audience": session.audience,
+                        "nonce": session.nonce,
+                        "transcript_hash": session.transcript_hash,
+                        "sequence": session.sequence,
+                        "action": session.action,
+                        "completed": session.completed,
+                        "pending": pending,
+                        "committed_actions": sorted(session.committed_actions),
+                    }
+                )
+
+            credentials = []
+            for credential_jti in sorted(self._credentials):
+                credential = self._credentials[credential_jti]
+                presentations = [
+                    {
+                        "challenge_id": challenge_id,
+                        "message": base64.b64encode(message).decode("ascii"),
+                        "signature": signature,
+                    }
+                    for challenge_id, (message, signature) in sorted(
+                        credential.presentations.items()
+                    )
+                ]
+                credentials.append(
+                    {
+                        "issuer": credential.issuer,
+                        "session_id": credential.session_id,
+                        "credential_jti": credential.credential_jti,
+                        "audience": credential.audience,
+                        "transcript_hash": credential.transcript_hash,
+                        "sequence": credential.sequence,
+                        "presentations": presentations,
+                    }
+                )
+            return {
+                "schema": HOLDER_STATE_SCHEMA,
+                "key_fingerprint": self._key_fingerprint,
+                "sessions": sessions,
+                "credentials": credentials,
+            }
+
+    def restore_state(self, snapshot: dict[str, Any]) -> None:
+        """Restore one authenticated snapshot into an empty holder instance."""
+        if (
+            not isinstance(snapshot, dict)
+            or snapshot.get("schema") != HOLDER_STATE_SCHEMA
+        ):
+            raise HolderPolicyError("Holder state schema is invalid")
+        if snapshot.get("key_fingerprint") != self._key_fingerprint:
+            raise HolderPolicyError("Holder state belongs to a different signing key")
+        raw_sessions = snapshot.get("sessions")
+        raw_credentials = snapshot.get("credentials")
+        if not isinstance(raw_sessions, list) or not isinstance(raw_credentials, list):
+            raise HolderPolicyError("Holder state collections are invalid")
+        if len(raw_sessions) > self._policy.max_session_records:
+            raise HolderPolicyError("Holder state exceeds the session record budget")
+        if len(raw_credentials) > self._policy.max_credentials:
+            raise HolderPolicyError("Holder state exceeds the credential budget")
+
+        sessions: dict[str, _Session] = {}
+        credentials: dict[str, _Credential] = {}
+        presentation_ids: dict[str, tuple[bytes, str]] = {}
+        for raw in raw_sessions:
+            if not isinstance(raw, dict):
+                raise HolderPolicyError("Holder session state is invalid")
+            issuer = _normalize_issuer(
+                _bounded_text(raw.get("issuer"), "issuer", maximum=512)
+            )
+            if issuer not in self._issuer_keys:
+                raise HolderPolicyError("Holder state contains an untrusted issuer")
+            session_id = _bounded_text(raw.get("session_id"), "session_id")
+            if session_id in sessions:
+                raise HolderPolicyError("Holder state repeats a session")
+            audience = _bounded_text(raw.get("audience"), "audience")
+            if audience not in self._allowed_audiences:
+                raise HolderPolicyError("Holder state contains a disallowed audience")
+            sequence = raw.get("sequence")
+            completed = raw.get("completed")
+            if (
+                isinstance(sequence, bool)
+                or not isinstance(sequence, int)
+                or sequence < 0
+                or sequence > self._policy.max_actions_per_session
+                or not isinstance(completed, bool)
+            ):
+                raise HolderPolicyError("Holder session lifecycle is invalid")
+            if not completed and sequence >= self._policy.max_actions_per_session:
+                raise HolderPolicyError(
+                    "Active holder session exceeds its action budget"
+                )
+            nonce = raw.get("nonce")
+            action = raw.get("action")
+            if completed:
+                if (
+                    nonce is not None
+                    or action is not None
+                    or raw.get("pending") is not None
+                ):
+                    raise HolderPolicyError("Completed holder session state is invalid")
+            else:
+                nonce = _nonce(nonce)
+                action = _action(action)
+            transcript_hash = _hash(raw.get("transcript_hash"), "transcript_hash")
+            raw_actions = raw.get("committed_actions")
+            if not isinstance(raw_actions, list) or len(raw_actions) != sequence:
+                raise HolderPolicyError("Committed holder actions are invalid")
+            committed_actions = {_action(value) for value in raw_actions}
+            if len(committed_actions) != len(raw_actions):
+                raise HolderPolicyError("Committed holder actions are duplicated")
+            if action is not None and action in committed_actions:
+                raise HolderPolicyError("Current holder action was already committed")
+            pending = None
+            raw_pending = raw.get("pending")
+            if raw_pending is not None:
+                if completed or not isinstance(raw_pending, dict):
+                    raise HolderPolicyError("Pending holder submission is invalid")
+                pending_nonce = _nonce(nonce)
+                pending_action = _action(raw_pending.get("action"))
+                if pending_action != action:
+                    raise HolderPolicyError("Pending holder action is invalid")
+                pending_message = _state_bytes(
+                    raw_pending.get("message"), "pending message"
+                )
+                pending_signature = _bounded_text(
+                    raw_pending.get("signature"), "pending signature", maximum=128
+                )
+                if not verify_signature(
+                    self._public_key_pem, pending_message, pending_signature
+                ):
+                    raise HolderPolicyError("Pending holder signature is invalid")
+                try:
+                    pending_payload = json.loads(pending_message)
+                    if (
+                        not isinstance(pending_payload, dict)
+                        or pending_payload.get("protocol") != PRESENCE_PROTOCOL
+                        or pending_payload.get("purpose") != "mettle-session-submission"
+                        or pending_payload.get("session_id") != session_id
+                        or pending_payload.get("action") != action
+                        or pending_payload.get("nonce") != pending_nonce
+                        or pending_payload.get("previous_transcript_hash")
+                        != transcript_hash
+                        or submission_signing_bytes(
+                            session_id=session_id,
+                            action=action,
+                            nonce=pending_nonce,
+                            previous_transcript_hash=transcript_hash,
+                            payload_hash=_hash(
+                                pending_payload.get("payload_hash"), "payload_hash"
+                            ),
+                        )
+                        != pending_message
+                    ):
+                        raise HolderPolicyError("Pending holder message is invalid")
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    raise HolderPolicyError(
+                        "Pending holder message is invalid"
+                    ) from None
+                pending = _PendingSubmission(
+                    message=pending_message,
+                    signature=pending_signature,
+                    action=pending_action,
+                )
+            sessions[session_id] = _Session(
+                issuer=issuer,
+                session_id=session_id,
+                audience=audience,
+                nonce=nonce,
+                transcript_hash=transcript_hash,
+                sequence=sequence,
+                action=action,
+                completed=completed,
+                pending=pending,
+                committed_actions=committed_actions,
+            )
+
+        for raw in raw_credentials:
+            if not isinstance(raw, dict):
+                raise HolderPolicyError("Holder credential state is invalid")
+            credential_jti = _bounded_text(raw.get("credential_jti"), "credential_jti")
+            if JTI_PATTERN.fullmatch(credential_jti) is None:
+                raise HolderPolicyError("Holder credential JTI is invalid")
+            if credential_jti in credentials:
+                raise HolderPolicyError("Holder state repeats a credential")
+            session_id = _bounded_text(raw.get("session_id"), "session_id")
+            session = sessions.get(session_id)
+            if session is None or not session.completed:
+                raise HolderPolicyError("Holder credential session is invalid")
+            issuer = _normalize_issuer(
+                _bounded_text(raw.get("issuer"), "issuer", maximum=512)
+            )
+            audience = _bounded_text(raw.get("audience"), "audience")
+            transcript_hash = _hash(raw.get("transcript_hash"), "transcript_hash")
+            sequence = raw.get("sequence")
+            if (
+                issuer != session.issuer
+                or audience != session.audience
+                or transcript_hash != session.transcript_hash
+                or sequence != session.sequence
+            ):
+                raise HolderPolicyError("Holder credential binding is invalid")
+            raw_presentations = raw.get("presentations")
+            if (
+                not isinstance(raw_presentations, list)
+                or len(raw_presentations)
+                > self._policy.max_presentations_per_credential
+            ):
+                raise HolderPolicyError("Holder presentation state is invalid")
+            presentations: dict[str, tuple[bytes, str]] = {}
+            for raw_presentation in raw_presentations:
+                if not isinstance(raw_presentation, dict):
+                    raise HolderPolicyError("Holder presentation state is invalid")
+                challenge_id = _bounded_text(
+                    raw_presentation.get("challenge_id"), "challenge_id"
+                )
+                if challenge_id in presentation_ids:
+                    raise HolderPolicyError("Holder state repeats a presentation")
+                message = _state_bytes(
+                    raw_presentation.get("message"), "presentation message"
+                )
+                signature = _bounded_text(
+                    raw_presentation.get("signature"),
+                    "presentation signature",
+                    maximum=128,
+                )
+                if not verify_signature(self._public_key_pem, message, signature):
+                    raise HolderPolicyError("Holder presentation signature is invalid")
+                try:
+                    presentation_payload = json.loads(message)
+                    if (
+                        not isinstance(presentation_payload, dict)
+                        or presentation_payload.get("protocol") != PRESENCE_PROTOCOL
+                        or presentation_payload.get("purpose")
+                        != "mettle-credential-presentation"
+                        or presentation_payload.get("challenge_id") != challenge_id
+                        or presentation_payload.get("audience") != audience
+                        or presentation_payload.get("credential_jti") != credential_jti
+                        or presentation_signing_bytes(
+                            challenge_id=challenge_id,
+                            nonce=_nonce(presentation_payload.get("nonce")),
+                            audience=audience,
+                            credential_jti=credential_jti,
+                            expires_at=_bounded_text(
+                                presentation_payload.get("expires_at"), "expires_at"
+                            ),
+                        )
+                        != message
+                    ):
+                        raise HolderPolicyError(
+                            "Holder presentation message is invalid"
+                        )
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    raise HolderPolicyError(
+                        "Holder presentation message is invalid"
+                    ) from None
+                presentations[challenge_id] = (message, signature)
+                presentation_ids[challenge_id] = (message, signature)
+            credentials[credential_jti] = _Credential(
+                issuer=issuer,
+                session_id=session_id,
+                credential_jti=credential_jti,
+                audience=audience,
+                transcript_hash=transcript_hash,
+                sequence=sequence,
+                presentations=presentations,
+            )
+        if len(presentation_ids) > self._policy.max_presentation_records:
+            raise HolderPolicyError(
+                "Holder state exceeds the presentation record budget"
+            )
+
+        with self._lock:
+            if self._sessions or self._credentials or self._presentation_ids:
+                raise HolderPolicyError("Holder state can only be restored once")
+            self._sessions = sessions
+            self._credentials = credentials
+            self._presentation_ids = presentation_ids

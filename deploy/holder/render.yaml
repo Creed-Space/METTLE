@@ -1,0 +1,36 @@
+services:
+  - type: pserv
+    name: mettle-holder
+    runtime: python
+    plan: starter
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn mettle.holder_service:app --host 0.0.0.0 --port $PORT --workers 1
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: METTLE_HOLDER_ID
+        value: mettle-holder-production-v1
+      - key: METTLE_HOLDER_VAULT_URL
+        sync: false
+      - key: METTLE_HOLDER_VAULT_MOUNT
+        value: transit
+      - key: METTLE_HOLDER_VAULT_KEY
+        value: mettle-holder
+      - key: METTLE_HOLDER_VAULT_KEY_VERSION
+        value: "1"
+      - key: METTLE_HOLDER_VAULT_PUBLIC_KEY_FILE
+        value: /etc/secrets/mettle-holder-vault-public-key.pem
+      - key: METTLE_HOLDER_VAULT_TOKEN_FILE
+        value: /etc/secrets/mettle-holder-vault-token
+      - key: METTLE_HOLDER_POLICY_FILE
+        value: /etc/secrets/mettle-holder-policy.json
+      - key: METTLE_HOLDER_CONTROL_TOKEN_FILE
+        value: /etc/secrets/mettle-holder-control-token
+      - key: METTLE_HOLDER_STATE_HMAC_KEY_FILE
+        value: /etc/secrets/mettle-holder-state-hmac-key
+      - key: METTLE_HOLDER_DATABASE_URL
+        fromDatabase:
+          name: mettle-db
+          property: connectionString

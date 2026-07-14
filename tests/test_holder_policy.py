@@ -308,6 +308,7 @@ def test_vault_transit_signer_keeps_private_key_out_of_process_and_verifies_repl
         key_name="mettle-holder",
         public_key_pem=_public_pem(vault_private_key),
         token_provider=token_provider,
+        key_version=7,
     )
     message = b"non-exportable-holder-signature"
     signature = signer.sign(message)
@@ -319,6 +320,7 @@ def test_vault_transit_signer_keeps_private_key_out_of_process_and_verifies_repl
     assert observed["kwargs"]["follow_redirects"] is False
     assert observed["kwargs"]["trust_env"] is False
     assert base64.b64decode(observed["kwargs"]["json"]["input"]) == message
+    assert observed["kwargs"]["json"]["key_version"] == 7
     assert "_private_key" not in vars(signer)
     assert "test-vault-token" not in repr(vars(signer))
 
@@ -355,6 +357,34 @@ def test_vault_transit_signer_fails_closed_on_bad_signature_and_hides_response(
     assert diagnostic not in str(error.value)
 
 
+def test_vault_transit_signer_rejects_an_unexpected_key_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+
+    @contextmanager
+    def fake_stream(method: str, url: str, **kwargs: Any) -> Iterator[httpx.Response]:
+        message = base64.b64decode(kwargs["json"]["input"], validate=True)
+        signature = base64.b64encode(private_key.sign(message)).decode("ascii")
+        yield httpx.Response(
+            200,
+            json={"data": {"signature": f"vault:v8:{signature}"}},
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr("mettle.holder.httpx.stream", fake_stream)
+    signer = VaultTransitEd25519Signer(
+        base_url="https://vault.example",
+        mount_path="transit",
+        key_name="mettle-holder",
+        public_key_pem=_public_pem(private_key),
+        token_provider=lambda: "vault-token",
+        key_version=7,
+    )
+    with pytest.raises(HolderPolicyError, match="unexpected key version"):
+        signer.sign(b"message")
+
+
 @pytest.mark.parametrize(
     ("override", "error"),
     [
@@ -364,6 +394,8 @@ def test_vault_transit_signer_fails_closed_on_bad_signature_and_hides_response(
         ({"timeout_seconds": 0}, "timeout"),
         ({"timeout_seconds": float("nan")}, "timeout"),
         ({"timeout_seconds": True}, "timeout"),
+        ({"key_version": 0}, "key version"),
+        ({"key_version": True}, "key version"),
         ({"token_provider": cast(Any, None)}, "callable"),
     ],
 )
