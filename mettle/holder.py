@@ -9,15 +9,18 @@ issuer-verified credentials before signing presentation challenges.
 from __future__ import annotations
 
 import base64
+import json
+import math
 import re
 import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 from urllib.parse import urlparse
 
+import httpx
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
@@ -41,6 +44,7 @@ from mettle.vcp import verify_mettle_attestation
 HASH_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
 ACTION_PATTERN = re.compile(r"(?:suite|round):[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 JTI_PATTERN = re.compile(r"[0-9a-f]{32}")
+ISSUER_KEY_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 
 
 class HolderPolicyError(ValueError):
@@ -81,6 +85,7 @@ class HolderPolicy:
 
     issuer_public_keys: dict[str, str]
     allowed_audiences: frozenset[str]
+    issuer_public_keyrings: dict[str, dict[str, str]] = field(default_factory=dict)
     max_active_sessions: int = 4
     max_actions_per_session: int = 16
     max_presentations_per_credential: int = 32
@@ -139,6 +144,25 @@ def _bounded_text(value: Any, name: str, *, maximum: int = 256) -> str:
     return value
 
 
+def _issuer_key_id(value: Any, name: str) -> str:
+    text = _bounded_text(value, name, maximum=128)
+    if ISSUER_KEY_ID_PATTERN.fullmatch(text) is None:
+        raise HolderPolicyError(f"{name} is invalid")
+    return text
+
+
+def _timeout(value: Any, name: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+        or value > 60
+    ):
+        raise HolderPolicyError(f"{name} must be greater than 0 and at most 60 seconds")
+    return float(value)
+
+
 def _hash(value: Any, name: str) -> str:
     text = _bounded_text(value, name, maximum=71)
     if HASH_PATTERN.fullmatch(text) is None:
@@ -177,38 +201,13 @@ class MacOSKeychainEd25519Signer:
         security_binary: str = "/usr/bin/security",
         timeout_seconds: float = 5.0,
     ) -> None:
-        service = _bounded_text(service, "Keychain service")
-        account = _bounded_text(account, "Keychain account")
-        if "\x00" in service or "\x00" in account:
-            raise HolderPolicyError("Keychain identifiers must not contain NUL")
-        binary = Path(security_binary)
-        if not binary.is_absolute():
-            raise HolderPolicyError("Keychain security executable must be absolute")
-        if timeout_seconds <= 0 or timeout_seconds > 60:
-            raise HolderPolicyError(
-                "Keychain timeout must be greater than 0 and at most 60 seconds"
-            )
-        command = [
-            str(binary),
-            "find-generic-password",
-            "-s",
-            service,
-            "-a",
-            account,
-            "-w",
-        ]
-        try:
-            completed = subprocess.run(  # nosec B603
-                command,
-                check=False,
-                capture_output=True,
-                timeout=timeout_seconds,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise HolderPolicyError("Keychain private key lookup failed") from exc
-        pem = completed.stdout
-        if completed.returncode != 0:
-            raise HolderPolicyError("Keychain private key lookup failed")
+        pem = _read_macos_keychain_value(
+            service=service,
+            account=account,
+            security_binary=security_binary,
+            timeout_seconds=timeout_seconds,
+            value_name="private key",
+        )
         if not isinstance(pem, bytes) or not pem or len(pem) > 32768:
             raise HolderPolicyError("Keychain private key is empty or oversized")
         candidates = [pem]
@@ -244,6 +243,196 @@ class MacOSKeychainEd25519Signer:
         return self._private_key.sign(message)
 
 
+def _read_macos_keychain_value(
+    *,
+    service: str,
+    account: str,
+    security_binary: str,
+    timeout_seconds: float,
+    value_name: str,
+) -> bytes:
+    service = _bounded_text(service, "Keychain service")
+    account = _bounded_text(account, "Keychain account")
+    if "\x00" in service or "\x00" in account:
+        raise HolderPolicyError("Keychain identifiers must not contain NUL")
+    binary = Path(security_binary)
+    if not binary.is_absolute():
+        raise HolderPolicyError("Keychain security executable must be absolute")
+    timeout_seconds = _timeout(timeout_seconds, "Keychain timeout")
+    command = [
+        str(binary),
+        "find-generic-password",
+        "-s",
+        service,
+        "-a",
+        account,
+        "-w",
+    ]
+    try:
+        completed = subprocess.run(  # nosec B603
+            command,
+            check=False,
+            capture_output=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise HolderPolicyError(f"Keychain {value_name} lookup failed") from None
+    if completed.returncode != 0:
+        raise HolderPolicyError(f"Keychain {value_name} lookup failed")
+    return completed.stdout
+
+
+class MacOSKeychainSecretProvider:
+    """Fetch a short-lived service token from Keychain only when it is needed."""
+
+    def __init__(
+        self,
+        *,
+        service: str,
+        account: str,
+        security_binary: str = "/usr/bin/security",
+        timeout_seconds: float = 5.0,
+    ) -> None:
+        self._service = _bounded_text(service, "Keychain service")
+        self._account = _bounded_text(account, "Keychain account")
+        self._security_binary = str(Path(security_binary))
+        self._timeout_seconds = _timeout(timeout_seconds, "Keychain timeout")
+        if not Path(self._security_binary).is_absolute():
+            raise HolderPolicyError("Keychain security executable must be absolute")
+
+    def __call__(self) -> str:
+        raw = _read_macos_keychain_value(
+            service=self._service,
+            account=self._account,
+            security_binary=self._security_binary,
+            timeout_seconds=self._timeout_seconds,
+            value_name="secret",
+        )
+        if not raw or len(raw) > 8192:
+            raise HolderPolicyError("Keychain secret is empty or oversized")
+        try:
+            secret = raw.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            raise HolderPolicyError("Keychain secret is not UTF-8") from None
+        if not secret or len(secret) > 4096 or "\r" in secret or "\n" in secret:
+            raise HolderPolicyError("Keychain secret is invalid")
+        return secret
+
+
+class VaultTransitEd25519Signer:
+    """Sign through a non-exportable HashiCorp Vault Transit Ed25519 key.
+
+    Only the public key and the token provider are retained locally. Vault's
+    signature is verified against the pinned public key before it is returned.
+    """
+
+    _SEGMENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+    _SIGNATURE_PATTERN = re.compile(r"vault:v[1-9][0-9]*:([A-Za-z0-9+/]+={0,2})")
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        mount_path: str,
+        key_name: str,
+        public_key_pem: str,
+        token_provider: Callable[[], str],
+        timeout_seconds: float = 5.0,
+    ) -> None:
+        base_url = _bounded_text(base_url, "Vault base URL", maximum=2048).rstrip("/")
+        parsed = urlparse(base_url)
+        loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+        if (
+            parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path not in {"", "/"}
+            or not parsed.netloc
+            or (parsed.scheme != "https" and not (parsed.scheme == "http" and loopback))
+        ):
+            raise HolderPolicyError(
+                "Vault base URL must be an HTTPS origin unless it is loopback"
+            )
+        for value, name in ((mount_path, "Vault mount"), (key_name, "Vault key")):
+            if (
+                not isinstance(value, str)
+                or self._SEGMENT_PATTERN.fullmatch(value) is None
+            ):
+                raise HolderPolicyError(f"{name} name is invalid")
+        if not callable(token_provider):
+            raise HolderPolicyError("Vault token provider must be callable")
+        timeout_seconds = _timeout(timeout_seconds, "Vault timeout")
+        self._public_key_pem = validate_public_key(public_key_pem)
+        self._token_provider = token_provider
+        self._timeout_seconds = timeout_seconds
+        self._sign_url = f"{base_url}/v1/{mount_path}/sign/{key_name}"
+
+    @property
+    def public_key_pem(self) -> str:
+        return self._public_key_pem
+
+    def sign(self, message: bytes) -> bytes:
+        if not isinstance(message, bytes) or not message or len(message) > 1048576:
+            raise HolderPolicyError("Vault signing message is empty or oversized")
+        try:
+            token = self._token_provider()
+        except Exception:
+            raise HolderPolicyError(
+                "Vault authentication token lookup failed"
+            ) from None
+        if (
+            not isinstance(token, str)
+            or not token
+            or len(token) > 4096
+            or "\r" in token
+            or "\n" in token
+        ):
+            raise HolderPolicyError("Vault authentication token is invalid")
+        try:
+            with httpx.stream(
+                "POST",
+                self._sign_url,
+                headers={"X-Vault-Token": token},
+                json={"input": base64.b64encode(message).decode("ascii")},
+                timeout=self._timeout_seconds,
+                follow_redirects=False,
+                trust_env=False,
+            ) as response:
+                if response.status_code != 200:
+                    raise HolderPolicyError("Vault signing request failed")
+                chunks: list[bytes] = []
+                response_size = 0
+                for chunk in response.iter_bytes(chunk_size=8192):
+                    response_size += len(chunk)
+                    if response_size > 32768:
+                        raise HolderPolicyError("Vault signing request failed")
+                    chunks.append(chunk)
+                response_content = b"".join(chunks)
+        except httpx.HTTPError:
+            raise HolderPolicyError("Vault signing request failed") from None
+        try:
+            payload = json.loads(response_content)
+            encoded_signature = payload["data"]["signature"]
+        except (KeyError, TypeError, ValueError):
+            raise HolderPolicyError("Vault signing response is invalid") from None
+        if not isinstance(encoded_signature, str):
+            raise HolderPolicyError("Vault signing response is invalid")
+        matched = self._SIGNATURE_PATTERN.fullmatch(encoded_signature)
+        if matched is None:
+            raise HolderPolicyError("Vault signing response is invalid")
+        signature_b64 = matched.group(1)
+        try:
+            signature = base64.b64decode(signature_b64, validate=True)
+        except ValueError:
+            raise HolderPolicyError("Vault signing response is invalid") from None
+        if len(signature) != 64 or not verify_signature(
+            self._public_key_pem, message, signature_b64
+        ):
+            raise HolderPolicyError("Vault returned an invalid signature")
+        return signature
+
+
 class PresenceHolder:
     """Stateful signing boundary for autonomous distributed Presence clients."""
 
@@ -266,7 +455,7 @@ class PresenceHolder:
             raise HolderPolicyError(
                 "Presentation TTL must be between 1 and 3600 seconds"
             )
-        if not policy.issuer_public_keys:
+        if not policy.issuer_public_keys and not policy.issuer_public_keyrings:
             raise HolderPolicyError("At least one trusted issuer key is required")
         if not policy.allowed_audiences:
             raise HolderPolicyError("At least one audience must be allowed")
@@ -274,10 +463,27 @@ class PresenceHolder:
         self._signer = signer
         self._public_key_pem = validate_public_key(signer.public_key_pem)
         self._key_fingerprint = key_fingerprint(self._public_key_pem)
-        self._issuer_keys = {
-            _normalize_issuer(issuer): validate_public_key(public_key)
-            for issuer, public_key in policy.issuer_public_keys.items()
-        }
+        self._issuer_keys: dict[str, dict[str, str]] = {}
+        for issuer, public_key in policy.issuer_public_keys.items():
+            normalized_issuer = _normalize_issuer(issuer)
+            if normalized_issuer in self._issuer_keys:
+                raise HolderPolicyError("Issuer is configured more than once")
+            self._issuer_keys[normalized_issuer] = {
+                "*": validate_public_key(public_key)
+            }
+        for issuer, keyring in policy.issuer_public_keyrings.items():
+            normalized_issuer = _normalize_issuer(issuer)
+            if normalized_issuer in self._issuer_keys:
+                raise HolderPolicyError(
+                    "Issuer cannot use both a legacy key and a keyed trust ring"
+                )
+            if not isinstance(keyring, dict) or not keyring:
+                raise HolderPolicyError("Issuer trust ring must not be empty")
+            normalized_ring: dict[str, str] = {}
+            for key_id, public_key in keyring.items():
+                key_id = _issuer_key_id(key_id, "issuer key_id")
+                normalized_ring[key_id] = validate_public_key(public_key)
+            self._issuer_keys[normalized_issuer] = normalized_ring
         self._allowed_audiences = frozenset(
             _bounded_text(audience, "audience") for audience in policy.allowed_audiences
         )
@@ -297,14 +503,17 @@ class PresenceHolder:
 
     @staticmethod
     def _verify_presence_state_receipt(
-        *, issuer_key: str, session_id: str, presence: dict[str, Any]
-    ) -> None:
+        *, issuer_keys: dict[str, str], session_id: str, presence: dict[str, Any]
+    ) -> str:
         receipt = presence.get("issuer_receipt")
         if not isinstance(receipt, dict):
             raise HolderPolicyError("Presence state issuer receipt is required")
         if receipt.get("algorithm") != "Ed25519":
             raise HolderPolicyError("Presence state receipt algorithm is unsupported")
-        _bounded_text(receipt.get("key_id"), "receipt key_id")
+        key_id = _issuer_key_id(receipt.get("key_id"), "receipt key_id")
+        issuer_key = issuer_keys.get(key_id) or issuer_keys.get("*")
+        if issuer_key is None:
+            raise HolderPolicyError("Presence state issuer key is not trusted")
         signature = _bounded_text(
             receipt.get("signature"), "receipt signature", maximum=128
         )
@@ -318,6 +527,7 @@ class PresenceHolder:
             ) from exc
         if not verify_signature(issuer_key, message, signature):
             raise HolderPolicyError("Presence state issuer receipt is invalid")
+        return key_id
 
     def authorize_session(
         self, *, issuer: str, session_id: str, presence: dict[str, Any]
@@ -325,13 +535,13 @@ class PresenceHolder:
         """Authorize exactly one server-created initial Presence state."""
         normalized_issuer = _normalize_issuer(issuer)
         session_id = _bounded_text(session_id, "session_id")
-        issuer_key = self._issuer_keys.get(normalized_issuer)
-        if issuer_key is None:
+        issuer_keys = self._issuer_keys.get(normalized_issuer)
+        if issuer_keys is None:
             raise HolderPolicyError("Issuer is not trusted by this holder")
         if not isinstance(presence, dict):
             raise HolderPolicyError("Presence state must be an object")
         self._verify_presence_state_receipt(
-            issuer_key=issuer_key,
+            issuer_keys=issuer_keys,
             session_id=session_id,
             presence=presence,
         )
@@ -440,7 +650,7 @@ class PresenceHolder:
             if pending is None:
                 raise HolderPolicyError("Session has no pending submission")
             self._verify_presence_state_receipt(
-                issuer_key=self._issuer_keys[session.issuer],
+                issuer_keys=self._issuer_keys[session.issuer],
                 session_id=session_id,
                 presence=presence,
             )
@@ -499,12 +709,16 @@ class PresenceHolder:
     def register_credential(self, *, issuer: str, attestation: dict[str, Any]) -> str:
         """Register an issuer-verified credential matching a completed session."""
         normalized_issuer = _normalize_issuer(issuer)
-        issuer_key = self._issuer_keys.get(normalized_issuer)
-        if issuer_key is None:
+        issuer_keys = self._issuer_keys.get(normalized_issuer)
+        if issuer_keys is None:
             raise HolderPolicyError("Issuer is not trusted by this holder")
-        if not isinstance(attestation, dict) or not verify_mettle_attestation(
-            attestation, issuer_key
-        ):
+        if not isinstance(attestation, dict):
+            raise HolderPolicyError("Credential issuer signature or policy is invalid")
+        key_id = _issuer_key_id(attestation.get("auditor_key_id"), "auditor_key_id")
+        issuer_key = issuer_keys.get(key_id) or issuer_keys.get("*")
+        if issuer_key is None:
+            raise HolderPolicyError("Credential issuer key is not trusted")
+        if not verify_mettle_attestation(attestation, issuer_key):
             raise HolderPolicyError("Credential issuer signature or policy is invalid")
         metadata = attestation.get("metadata")
         if not isinstance(metadata, dict):

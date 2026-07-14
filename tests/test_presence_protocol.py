@@ -335,6 +335,16 @@ def test_public_presence_state_is_issuer_signed_and_tamper_evident(
     )
 
 
+def test_configured_issuer_key_id_flows_into_credential(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key, public_key_pem = _keypair()
+    monkeypatch.setattr(issuer_signing, "_key_id", "mettle-vcp-2026-02")
+    attestation = _complete_presence_session(client, private_key, public_key_pem)
+    assert attestation["auditor_key_id"] == "mettle-vcp-2026-02"
+
+
 def test_presence_state_signing_fails_closed_without_breaking_legacy_sessions(
     client: TestClient,
 ) -> None:

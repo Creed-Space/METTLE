@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ _private_key: Any = None
 _public_key: Any = None
 _key_id: str = "mettle-vcp-v1"
 _initialized: bool = False
+KEY_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 
 
 def init_signing() -> bool:
@@ -30,7 +32,11 @@ def init_signing() -> bool:
     Returns:
         True if signing is available, False otherwise.
     """
-    global _private_key, _public_key, _initialized
+    global _private_key, _public_key, _key_id, _initialized
+
+    _private_key = None
+    _public_key = None
+    _key_id = "mettle-vcp-v1"
 
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -47,18 +53,28 @@ def init_signing() -> bool:
 
     # Try settings first (.env support), fall back to raw env var
     pem_key = None
+    configured_key_id = os.environ.get("METTLE_VCP_SIGNING_KEY_ID")
     dev_mode = (os.environ.get("METTLE_DEV_MODE") or "false").lower() == "true"
     try:
         from mettle.app_config import settings
 
         pem_key = settings.vcp_signing_key or None
-        dev_mode = settings.dev_mode or dev_mode
+        configured_key_id = configured_key_id or getattr(
+            settings, "vcp_signing_key_id", None
+        )
+        dev_mode = getattr(settings, "dev_mode", False) or dev_mode
     except Exception as settings_error:
         logger.debug(
             "Mettle settings unavailable for VCP signing key lookup: %s", settings_error
         )
     if not pem_key:
         pem_key = os.environ.get("METTLE_VCP_SIGNING_KEY")
+    configured_key_id = configured_key_id or "mettle-vcp-v1"
+    if KEY_ID_PATTERN.fullmatch(configured_key_id) is None:
+        logger.error("METTLE_VCP_SIGNING_KEY_ID is invalid")
+        _initialized = True
+        return False
+    _key_id = configured_key_id
 
     if pem_key:
         try:

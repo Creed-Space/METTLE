@@ -6,9 +6,11 @@ import base64
 import copy
 import subprocess
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any, cast
+from typing import Any, Iterator, cast
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -18,6 +20,7 @@ from cryptography.hazmat.primitives.serialization import (
     Encoding,
     NoEncryption,
     PrivateFormat,
+    PublicFormat,
     load_pem_public_key,
 )
 
@@ -27,7 +30,9 @@ from mettle.holder import (
     HolderPolicy,
     HolderPolicyError,
     MacOSKeychainEd25519Signer,
+    MacOSKeychainSecretProvider,
     PresenceHolder,
+    VaultTransitEd25519Signer,
 )
 from mettle.presence import (
     presence_state_signing_bytes,
@@ -101,6 +106,35 @@ def _sign_presence_state(state: dict[str, object], *, session_id: str) -> None:
                 presence=state,
             )
         ),
+    }
+
+
+def _public_pem(private_key: Ed25519PrivateKey) -> str:
+    return (
+        private_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode("ascii")
+    )
+
+
+def _sign_presence_state_with_key(
+    state: dict[str, object],
+    *,
+    session_id: str,
+    key_id: str,
+    private_key: Ed25519PrivateKey,
+) -> None:
+    state["issuer_receipt"] = {
+        "key_id": key_id,
+        "algorithm": "Ed25519",
+        "signature": base64.b64encode(
+            private_key.sign(
+                presence_state_signing_bytes(
+                    session_id=session_id,
+                    presence=state,
+                )
+            )
+        ).decode("ascii"),
     }
 
 
@@ -222,6 +256,285 @@ def test_macos_keychain_signer_hides_lookup_diagnostics(
     with pytest.raises(HolderPolicyError, match="lookup failed") as error:
         MacOSKeychainEd25519Signer(service="mettle-holder", account="missing")
     assert diagnostic.decode("ascii") not in str(error.value)
+
+
+def test_macos_keychain_secret_provider_does_not_retain_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "mettle.holder.subprocess.run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, stdout=b"short-lived-vault-token\n", stderr=b""
+        ),
+    )
+    provider = MacOSKeychainSecretProvider(
+        service="mettle-vault",
+        account="holder-token",
+    )
+    assert provider() == "short-lived-vault-token"
+    assert "short-lived-vault-token" not in repr(vars(provider))
+
+
+def test_vault_transit_signer_keeps_private_key_out_of_process_and_verifies_reply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vault_private_key = Ed25519PrivateKey.generate()
+    observed: dict[str, Any] = {}
+
+    @contextmanager
+    def fake_stream(method: str, url: str, **kwargs: Any) -> Iterator[httpx.Response]:
+        observed["method"] = method
+        observed["url"] = url
+        observed["kwargs"] = kwargs
+        message = base64.b64decode(kwargs["json"]["input"], validate=True)
+        signature = base64.b64encode(vault_private_key.sign(message)).decode("ascii")
+        yield httpx.Response(
+            200,
+            json={"data": {"signature": f"vault:v7:{signature}"}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr("mettle.holder.httpx.stream", fake_stream)
+    token_calls = 0
+
+    def token_provider() -> str:
+        nonlocal token_calls
+        token_calls += 1
+        return "test-vault-token"
+
+    signer = VaultTransitEd25519Signer(
+        base_url="https://vault.example",
+        mount_path="transit",
+        key_name="mettle-holder",
+        public_key_pem=_public_pem(vault_private_key),
+        token_provider=token_provider,
+    )
+    message = b"non-exportable-holder-signature"
+    signature = signer.sign(message)
+    vault_private_key.public_key().verify(signature, message)
+    assert token_calls == 1
+    assert observed["method"] == "POST"
+    assert observed["url"] == ("https://vault.example/v1/transit/sign/mettle-holder")
+    assert observed["kwargs"]["headers"] == {"X-Vault-Token": "test-vault-token"}
+    assert observed["kwargs"]["follow_redirects"] is False
+    assert observed["kwargs"]["trust_env"] is False
+    assert base64.b64decode(observed["kwargs"]["json"]["input"]) == message
+    assert "_private_key" not in vars(signer)
+    assert "test-vault-token" not in repr(vars(signer))
+
+
+def test_vault_transit_signer_fails_closed_on_bad_signature_and_hides_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_key = Ed25519PrivateKey.generate()
+    wrong_key = Ed25519PrivateKey.generate()
+    diagnostic = "sensitive vault diagnostic"
+    signature = base64.b64encode(wrong_key.sign(b"message")).decode("ascii")
+
+    @contextmanager
+    def fake_stream(method: str, url: str, **kwargs: Any) -> Iterator[httpx.Response]:
+        yield httpx.Response(
+            200,
+            json={
+                "data": {"signature": f"vault:v1:{signature}"},
+                "warnings": [diagnostic],
+            },
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr("mettle.holder.httpx.stream", fake_stream)
+    signer = VaultTransitEd25519Signer(
+        base_url="https://vault.example",
+        mount_path="transit",
+        key_name="mettle-holder",
+        public_key_pem=_public_pem(expected_key),
+        token_provider=lambda: "vault-token",
+    )
+    with pytest.raises(HolderPolicyError, match="invalid signature") as error:
+        signer.sign(b"message")
+    assert diagnostic not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("override", "error"),
+    [
+        ({"base_url": "http://vault.example"}, "HTTPS origin"),
+        ({"mount_path": "bad/path"}, "mount"),
+        ({"key_name": "*"}, "key"),
+        ({"timeout_seconds": 0}, "timeout"),
+        ({"timeout_seconds": float("nan")}, "timeout"),
+        ({"timeout_seconds": True}, "timeout"),
+        ({"token_provider": cast(Any, None)}, "callable"),
+    ],
+)
+def test_vault_transit_signer_rejects_unsafe_configuration(
+    override: dict[str, Any],
+    error: str,
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+    values: dict[str, Any] = {
+        "base_url": "https://vault.example",
+        "mount_path": "transit",
+        "key_name": "mettle-holder",
+        "public_key_pem": _public_pem(private_key),
+        "token_provider": lambda: "vault-token",
+    }
+    values.update(override)
+    with pytest.raises(HolderPolicyError, match=error):
+        VaultTransitEd25519Signer(**values)
+
+
+def test_vault_transit_signer_sanitizes_transport_and_token_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+
+    def build(token_provider: Any = lambda: "vault-token") -> VaultTransitEd25519Signer:
+        return VaultTransitEd25519Signer(
+            base_url="https://vault.example",
+            mount_path="transit",
+            key_name="mettle-holder",
+            public_key_pem=_public_pem(private_key),
+            token_provider=token_provider,
+        )
+
+    with pytest.raises(HolderPolicyError, match="empty or oversized"):
+        build().sign(b"")
+    with pytest.raises(HolderPolicyError, match="token lookup failed"):
+        build(lambda: 1 / 0).sign(b"message")
+    with pytest.raises(HolderPolicyError, match="token is invalid"):
+        build(lambda: "bad\ntoken").sign(b"message")
+
+    @contextmanager
+    def failed_stream(method: str, url: str, **kwargs: Any) -> Iterator[httpx.Response]:
+        raise httpx.ConnectError("sensitive transport diagnostic")
+        yield httpx.Response(500)  # pragma: no cover
+
+    monkeypatch.setattr("mettle.holder.httpx.stream", failed_stream)
+    with pytest.raises(HolderPolicyError, match="request failed") as error:
+        build().sign(b"message")
+    assert "sensitive transport diagnostic" not in str(error.value)
+
+
+def test_vault_transit_signer_bounds_response_before_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+
+    @contextmanager
+    def oversized_stream(
+        method: str, url: str, **kwargs: Any
+    ) -> Iterator[httpx.Response]:
+        yield httpx.Response(
+            200,
+            content=b"x" * 32769,
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr("mettle.holder.httpx.stream", oversized_stream)
+    signer = VaultTransitEd25519Signer(
+        base_url="https://vault.example",
+        mount_path="transit",
+        key_name="mettle-holder",
+        public_key_pem=_public_pem(private_key),
+        token_provider=lambda: "vault-token",
+    )
+    with pytest.raises(HolderPolicyError, match="request failed"):
+        signer.sign(b"message")
+
+
+def test_holder_rejects_ambiguous_or_invalid_issuer_keyrings() -> None:
+    issuer_key = _public_pem(Ed25519PrivateKey.generate())
+    signer = EphemeralEd25519Signer()
+    with pytest.raises(HolderPolicyError, match="both a legacy key"):
+        PresenceHolder(
+            signer,
+            HolderPolicy(
+                issuer_public_keys={ISSUER: issuer_key},
+                issuer_public_keyrings={f"{ISSUER}/": {"mettle-vcp-v1": issuer_key}},
+                allowed_audiences=frozenset({AUDIENCE}),
+            ),
+        )
+    with pytest.raises(HolderPolicyError, match="key_id is invalid"):
+        PresenceHolder(
+            signer,
+            HolderPolicy(
+                issuer_public_keys={},
+                issuer_public_keyrings={ISSUER: {"bad key id": issuer_key}},
+                allowed_audiences=frozenset({AUDIENCE}),
+            ),
+        )
+
+
+def test_holder_accepts_trusted_issuer_rotation_during_active_session() -> None:
+    old_key = Ed25519PrivateKey.generate()
+    new_key = Ed25519PrivateKey.generate()
+    signer = EphemeralEd25519Signer()
+    holder = PresenceHolder(
+        signer,
+        HolderPolicy(
+            issuer_public_keys={},
+            issuer_public_keyrings={
+                ISSUER: {
+                    "mettle-vcp-2026-01": _public_pem(old_key),
+                    "mettle-vcp-2026-02": _public_pem(new_key),
+                }
+            },
+            allowed_audiences=frozenset({AUDIENCE}),
+        ),
+    )
+    session_id = "rotating-issuer-session"
+    initial = _presence(holder, session_id=session_id, signed=False)
+    _sign_presence_state_with_key(
+        initial,
+        session_id=session_id,
+        key_id="mettle-vcp-2026-01",
+        private_key=old_key,
+    )
+    holder.authorize_session(issuer=ISSUER, session_id=session_id, presence=initial)
+    payload_hash = "sha256:" + "b" * 64
+    holder_signature = holder.sign_submission(
+        session_id=session_id,
+        action="suite:adversarial",
+        nonce="n" * 32,
+        previous_transcript_hash="sha256:" + "a" * 64,
+        payload_hash=payload_hash,
+    )
+    message = submission_signing_bytes(
+        session_id=session_id,
+        action="suite:adversarial",
+        nonce="n" * 32,
+        previous_transcript_hash="sha256:" + "a" * 64,
+        payload_hash=payload_hash,
+    )
+    transitioned = _presence(
+        holder,
+        session_id=session_id,
+        nonce="o" * 32,
+        transcript_hash=transcript_hash_after_submission(
+            previous_transcript_hash="sha256:" + "a" * 64,
+            message=message,
+            signature=holder_signature,
+        ),
+        sequence=1,
+        action="suite:native",
+        signed=False,
+    )
+    _sign_presence_state_with_key(
+        transitioned,
+        session_id=session_id,
+        key_id="mettle-vcp-2026-02",
+        private_key=new_key,
+    )
+    untrusted = copy.deepcopy(transitioned)
+    untrusted["issuer_receipt"] = {
+        **cast(dict[str, object], untrusted["issuer_receipt"]),
+        "key_id": "untrusted-key",
+    }
+    with pytest.raises(HolderPolicyError, match="not trusted"):
+        holder.commit_submission(session_id=session_id, presence=untrusted)
+    holder.commit_submission(session_id=session_id, presence=transitioned)
+    assert holder.status()["active_sessions"] == 1
 
 
 def test_holder_rejects_malformed_session_and_presentation_inputs(
@@ -460,7 +773,19 @@ def test_holder_enforces_pending_payload_and_monotonic_transcript(
 def test_holder_registers_only_matching_signed_credential_and_bounds_presentation(
     issuer_key: str,
 ) -> None:
-    holder, signer = _holder(issuer_key, max_actions=1, max_presentations=1)
+    signer = EphemeralEd25519Signer()
+    holder = PresenceHolder(
+        signer,
+        HolderPolicy(
+            issuer_public_keys={},
+            issuer_public_keyrings={
+                ISSUER: {"mettle-vcp-v1": issuer_key},
+            },
+            allowed_audiences=frozenset({AUDIENCE}),
+            max_actions_per_session=1,
+            max_presentations_per_credential=1,
+        ),
+    )
     session_id = "session-credential"
     initial_hash = "sha256:" + "a" * 64
     holder.authorize_session(

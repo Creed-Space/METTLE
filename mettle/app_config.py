@@ -14,6 +14,10 @@ class MettleSettings(BaseSettings):
     dev_mode: bool = False
     cors_origins: str = "*"
     vcp_signing_key: str = ""
+    vcp_signing_key_id: str = Field(
+        default="mettle-vcp-v1",
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+    )
     model_config = SettingsConfigDict(
         env_prefix="METTLE_",
         env_file=".env",

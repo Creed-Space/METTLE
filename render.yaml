@@ -19,6 +19,8 @@ services:
         sync: false
       - key: METTLE_VCP_SIGNING_KEY
         sync: false
+      - key: METTLE_VCP_SIGNING_KEY_ID
+        value: mettle-vcp-v1
       - key: METTLE_ALLOWED_ORIGINS
         value: https://mettle.sh,https://www.mettle.sh,https://mettle.is,https://www.mettle.is
       - key: METTLE_USE_DATABASE

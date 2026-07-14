@@ -487,6 +487,15 @@ async def get_session_result(
     if include_vcp:
         from mettle.vcp import build_mettle_attestation
 
+        issuer_key_id = "mettle-vcp-v1"
+        try:
+            from mettle.signing import get_public_key_info
+
+            discovered_key_id = get_public_key_info().get("key_id")
+            if isinstance(discovered_key_id, str) and discovered_key_id:
+                issuer_key_id = discovered_key_id
+        except ImportError:
+            pass
         pass_rate = sum(
             1 for r in suite_results.values() if r.get("passed", False)
         ) / max(len(suite_results), 1)
@@ -498,6 +507,7 @@ async def get_session_result(
             pass_rate=pass_rate,
             subject_id=user.user_id,
             entity_id=session.get("entity_id"),
+            key_id=issuer_key_id,
             presence=session.get("presence"),
         )
 

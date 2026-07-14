@@ -58,6 +58,11 @@ class Settings(BaseSettings):
         repr=False,
         description="PEM-encoded Ed25519 private key. Required in production.",
     )
+    vcp_signing_key_id: str = Field(
+        default="mettle-vcp-v1",
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        description="Stable identifier for the active Ed25519 issuer key.",
+    )
 
     # Database
     database_url: str = Field(

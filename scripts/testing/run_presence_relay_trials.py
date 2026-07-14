@@ -95,6 +95,7 @@ AUTOMATED_SECURITY_CRITERIA = {
     "require_workers_without_mettle_credentials": True,
     "human_testing_required": False,
     "timing_threshold_enforcement_authorized": False,
+    "timing_used_for_authorization": False,
 }
 OPTIONAL_TIMING_CALIBRATION_CRITERIA = {
     "status": "optional_non_blocking_calibration",
@@ -1035,6 +1036,15 @@ def build_report(
         if attacks_passed
         else "automated_attack_evidence_incomplete"
     )
+    decision_reason = (
+        "Authorization is key-bound, issuer-authenticated, and transcript-bound. "
+        "Timing remains signed evidence and never grants authorization or elevates "
+        "a credential tier."
+        if attacks_passed
+        else "Automated attack evidence is incomplete, so authorization controls are "
+        "not validated. Timing remains signed evidence and never grants authorization "
+        "or elevates a credential tier."
+    )
     return {
         "schema": "mettle-presence-three-party-relay-v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1051,15 +1061,12 @@ def build_report(
             "status": decision_status,
             "authorization_controls_validated": attacks_passed,
             "threshold_enforcement_authorized": False,
+            "timing_used_for_authorization": False,
             "human_testing_required": False,
             "measured_human_cohort_status": (
                 "completed" if measured_human_present else "not_required"
             ),
-            "reason": (
-                "Autonomous attack trials validate holder authorization and protocol "
-                "boundaries. Timing cohorts remain descriptive and do not authorize "
-                "product gating."
-            ),
+            "reason": decision_reason,
         },
         "interpretation_limits": [
             "The holder and solver process boundary is real and the private key never crosses IPC.",

@@ -103,6 +103,7 @@ def test_render_blueprint_declares_fail_closed_production_dependencies():
         "METTLE_ALLOWED_ORIGINS",
         "METTLE_ADMIN_API_KEY",
         "METTLE_VCP_SIGNING_KEY",
+        "METTLE_VCP_SIGNING_KEY_ID",
         "METTLE_USE_DATABASE",
         "METTLE_DATABASE_URL",
     ):

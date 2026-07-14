@@ -18,6 +18,7 @@ class TestMettleSettings:
             "METTLE_API_KEYS",
             "METTLE_CORS_ORIGINS",
             "METTLE_VCP_SIGNING_KEY",
+            "METTLE_VCP_SIGNING_KEY_ID",
             "METTLE_SECRET_KEY",
             "METTLE_ADMIN_API_KEY",
         ]:
@@ -28,6 +29,7 @@ class TestMettleSettings:
         assert s.redis_url == "redis://localhost:6379"
         assert s.redis_namespace == "mettle"
         assert s.vcp_signing_key == ""
+        assert s.vcp_signing_key_id == "mettle-vcp-v1"
         assert s.api_keys == ""
         assert s.cors_origins == "*"
 
@@ -43,6 +45,7 @@ class TestMettleSettings:
         monkeypatch.setenv("METTLE_API_KEYS", "k1,k2")
         monkeypatch.setenv("METTLE_CORS_ORIGINS", "http://localhost:3000")
         monkeypatch.setenv("METTLE_VCP_SIGNING_KEY", "test-key")
+        monkeypatch.setenv("METTLE_VCP_SIGNING_KEY_ID", "mettle-vcp-2026-02")
         s = MettleSettings()
         assert s.dev_mode is True
         assert s.redis_url == "redis://custom:1234"
@@ -50,3 +53,4 @@ class TestMettleSettings:
         assert s.api_keys == "k1,k2"
         assert s.cors_origins == "http://localhost:3000"
         assert s.vcp_signing_key == "test-key"
+        assert s.vcp_signing_key_id == "mettle-vcp-2026-02"

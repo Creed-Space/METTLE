@@ -245,12 +245,26 @@ def test_relay_report_keeps_synthetic_and_product_boundaries_explicit() -> None:
     assert report["separation"]["paced"]["observed_rate_criteria_met"] is True
     assert report["separation"]["paced"]["optional_human_calibration_eligible"] is False
     assert report["decision"]["threshold_enforcement_authorized"] is False
+    assert report["decision"]["timing_used_for_authorization"] is False
     assert report["decision"]["measured_human_cohort_status"] == "not_required"
     assert report["decision"]["human_testing_required"] is False
     assert report["decision"]["status"] == "automated_security_controls_passed"
     assert parse_cohort("relay:process-relay:0:2") == Cohort(
         "relay", "process-relay", 0, 2
     )
+
+
+def test_relay_report_does_not_claim_validation_when_attack_evidence_fails() -> None:
+    report = build_report(
+        base_url="https://mettle.example",
+        cohorts=[Cohort("direct", "direct", 0, 1)],
+        samples=[{"cohort": "direct", "server_response_time_ms": 20}],
+        attacks={},
+    )
+    assert report["decision"]["status"] == "automated_attack_evidence_incomplete"
+    assert report["decision"]["authorization_controls_validated"] is False
+    assert "not validated" in report["decision"]["reason"]
+    assert report["decision"]["timing_used_for_authorization"] is False
 
 
 def test_timing_overlap_never_authorizes_threshold_enforcement() -> None:
