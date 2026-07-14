@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import base64
 import copy
+import ssl
 import subprocess
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Iterator, cast
 
 import httpx
 import pytest
+from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
@@ -23,6 +26,7 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
     load_pem_public_key,
 )
+from cryptography.x509.oid import NameOID
 
 import mettle.signing as issuer_signing
 from mettle.holder import (
@@ -32,6 +36,7 @@ from mettle.holder import (
     MacOSKeychainEd25519Signer,
     MacOSKeychainSecretProvider,
     PresenceHolder,
+    RenewingVaultTokenProvider,
     VaultTransitEd25519Signer,
 )
 from mettle.presence import (
@@ -52,6 +57,24 @@ BRONZE_SUITES = [
     "social",
     "inverse-turing",
 ]
+
+
+def _ca_pem() -> str:
+    key = Ed25519PrivateKey.generate()
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "METTLE test CA")])
+    now = datetime.now(timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(key, algorithm=None)
+    )
+    return certificate.public_bytes(Encoding.PEM).decode("ascii")
 
 
 @pytest.fixture()
@@ -275,10 +298,80 @@ def test_macos_keychain_secret_provider_does_not_retain_secret(
     assert "short-lived-vault-token" not in repr(vars(provider))
 
 
+def test_renewing_vault_token_provider_renews_once_per_lease_and_on_rotation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ca_file = tmp_path / "vault-ca.pem"
+    ca_file.write_text(_ca_pem())
+    ca_file.chmod(0o600)
+    tokens = ["first-vault-token"]
+    clock = [100.0]
+    observed: list[dict[str, Any]] = []
+
+    @contextmanager
+    def fake_stream(method: str, url: str, **kwargs: Any) -> Iterator[httpx.Response]:
+        observed.append({"method": method, "url": url, "kwargs": kwargs})
+        yield httpx.Response(
+            200,
+            json={"auth": {"renewable": True, "lease_duration": 120}},
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr("mettle.holder.httpx.stream", fake_stream)
+    provider = RenewingVaultTokenProvider(
+        base_url="https://vault.example",
+        token_provider=lambda: tokens[0],
+        ca_file=str(ca_file),
+        clock=lambda: clock[0],
+    )
+    assert provider() == "first-vault-token"
+    assert provider() == "first-vault-token"
+    assert len(observed) == 1
+    assert observed[0]["method"] == "POST"
+    assert observed[0]["url"] == "https://vault.example/v1/auth/token/renew-self"
+    assert isinstance(observed[0]["kwargs"]["verify"], ssl.SSLContext)
+    assert observed[0]["kwargs"]["follow_redirects"] is False
+    assert observed[0]["kwargs"]["trust_env"] is False
+
+    tokens[0] = "rotated-vault-token"
+    assert provider() == "rotated-vault-token"
+    assert len(observed) == 2
+    retained = repr(vars(provider))
+    assert "first-vault-token" not in retained
+    assert "rotated-vault-token" not in retained
+
+
+def test_renewing_vault_token_provider_fails_closed_and_hides_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    diagnostic = "sensitive Vault renewal response"
+
+    @contextmanager
+    def failed_stream(method: str, url: str, **kwargs: Any) -> Iterator[httpx.Response]:
+        yield httpx.Response(
+            403,
+            content=diagnostic,
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr("mettle.holder.httpx.stream", failed_stream)
+    provider = RenewingVaultTokenProvider(
+        base_url="https://vault.example",
+        token_provider=lambda: "vault-token",
+    )
+    with pytest.raises(HolderPolicyError, match="renewal failed") as error:
+        provider()
+    assert diagnostic not in str(error.value)
+
+
 def test_vault_transit_signer_keeps_private_key_out_of_process_and_verifies_reply(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     vault_private_key = Ed25519PrivateKey.generate()
+    ca_file = tmp_path / "vault-ca.pem"
+    ca_file.write_text(_ca_pem())
+    ca_file.chmod(0o600)
     observed: dict[str, Any] = {}
 
     @contextmanager
@@ -309,6 +402,7 @@ def test_vault_transit_signer_keeps_private_key_out_of_process_and_verifies_repl
         public_key_pem=_public_pem(vault_private_key),
         token_provider=token_provider,
         key_version=7,
+        ca_file=str(ca_file),
     )
     message = b"non-exportable-holder-signature"
     signature = signer.sign(message)
@@ -319,6 +413,7 @@ def test_vault_transit_signer_keeps_private_key_out_of_process_and_verifies_repl
     assert observed["kwargs"]["headers"] == {"X-Vault-Token": "test-vault-token"}
     assert observed["kwargs"]["follow_redirects"] is False
     assert observed["kwargs"]["trust_env"] is False
+    assert isinstance(observed["kwargs"]["verify"], ssl.SSLContext)
     assert base64.b64decode(observed["kwargs"]["json"]["input"]) == message
     assert observed["kwargs"]["json"]["key_version"] == 7
     assert "_private_key" not in vars(signer)
@@ -396,6 +491,7 @@ def test_vault_transit_signer_rejects_an_unexpected_key_version(
         ({"timeout_seconds": True}, "timeout"),
         ({"key_version": 0}, "key version"),
         ({"key_version": True}, "key version"),
+        ({"ca_file": "relative-ca.pem"}, "CA file must be absolute"),
         ({"token_provider": cast(Any, None)}, "callable"),
     ],
 )

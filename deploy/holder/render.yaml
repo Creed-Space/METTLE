@@ -20,6 +20,8 @@ services:
         value: mettle-holder
       - key: METTLE_HOLDER_VAULT_KEY_VERSION
         value: "1"
+      - key: METTLE_HOLDER_VAULT_CA_FILE
+        value: /etc/secrets/mettle-holder-vault-ca.pem
       - key: METTLE_HOLDER_VAULT_PUBLIC_KEY_FILE
         value: /etc/secrets/mettle-holder-vault-public-key.pem
       - key: METTLE_HOLDER_VAULT_TOKEN_FILE

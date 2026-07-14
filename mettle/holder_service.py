@@ -26,6 +26,7 @@ from mettle.holder import (
     HolderPolicy,
     HolderPolicyError,
     PresenceHolder,
+    RenewingVaultTokenProvider,
     VaultTransitEd25519Signer,
 )
 
@@ -407,6 +408,7 @@ class HolderServiceSettings:
     vault_mount_path: str
     vault_key_name: str
     vault_key_version: int
+    vault_ca_file: str
     vault_public_key_file: str
     vault_token_file: str
     policy_file: str
@@ -427,6 +429,7 @@ class HolderServiceSettings:
             vault_key_version=_required_key_version_environment(
                 "METTLE_HOLDER_VAULT_KEY_VERSION"
             ),
+            vault_ca_file=_required_environment("METTLE_HOLDER_VAULT_CA_FILE"),
             vault_public_key_file=_required_environment(
                 "METTLE_HOLDER_VAULT_PUBLIC_KEY_FILE"
             ),
@@ -496,7 +499,11 @@ def build_runtime_from_environment() -> tuple[
     PersistentHolderRuntime, Callable[[], str]
 ]:
     settings = HolderServiceSettings.from_environment()
-    vault_token_provider = FileSecretProvider(settings.vault_token_file)
+    vault_token_provider = RenewingVaultTokenProvider(
+        base_url=settings.vault_url,
+        token_provider=FileSecretProvider(settings.vault_token_file),
+        ca_file=settings.vault_ca_file,
+    )
     control_token_provider = FileSecretProvider(settings.control_token_file)
     state_secret = FileSecretProvider(settings.state_hmac_key_file)().encode("utf-8")
     public_key_pem = _read_bounded_file(
@@ -509,6 +516,7 @@ def build_runtime_from_environment() -> tuple[
         public_key_pem=public_key_pem,
         token_provider=vault_token_provider,
         key_version=settings.vault_key_version,
+        ca_file=settings.vault_ca_file,
     )
     holder = PresenceHolder(signer, _load_policy(settings.policy_file))
     store = PostgresHolderStateStore(settings.database_url, settings.holder_id)

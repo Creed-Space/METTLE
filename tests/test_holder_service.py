@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any, Generator
 
 import pytest
+from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
 
 import mettle.signing as issuer_signing
@@ -51,6 +54,24 @@ BRONZE_SUITES = [
 ]
 STATE_KEY = b"s" * 32
 AUTHORIZATION = {"Authorization": "Bearer holder-control-token"}
+
+
+def _ca_pem() -> str:
+    key = Ed25519PrivateKey.generate()
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "METTLE test CA")])
+    now = datetime.now(timezone.utc)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(key, algorithm=None)
+    )
+    return certificate.public_bytes(Encoding.PEM).decode("ascii")
 
 
 class _FakePostgresCursor:
@@ -502,6 +523,7 @@ def test_holder_service_settings_fail_closed_without_required_environment(
         "METTLE_HOLDER_ID",
         "METTLE_HOLDER_VAULT_URL",
         "METTLE_HOLDER_VAULT_KEY_VERSION",
+        "METTLE_HOLDER_VAULT_CA_FILE",
         "METTLE_HOLDER_VAULT_PUBLIC_KEY_FILE",
         "METTLE_HOLDER_VAULT_TOKEN_FILE",
         "METTLE_HOLDER_POLICY_FILE",
@@ -522,6 +544,7 @@ def test_holder_service_settings_require_explicit_numeric_vault_key_version(
         "METTLE_HOLDER_ID": "holder-v1",
         "METTLE_HOLDER_VAULT_URL": "https://vault.example",
         "METTLE_HOLDER_VAULT_KEY_VERSION": key_version,
+        "METTLE_HOLDER_VAULT_CA_FILE": "/etc/secrets/vault-ca",
         "METTLE_HOLDER_VAULT_PUBLIC_KEY_FILE": "/etc/secrets/public-key",
         "METTLE_HOLDER_VAULT_TOKEN_FILE": "/etc/secrets/vault-token",
         "METTLE_HOLDER_POLICY_FILE": "/etc/secrets/policy",
@@ -627,6 +650,7 @@ def test_environment_runtime_loads_strict_secret_files_and_policy(
     issuer_key: str,
 ) -> None:
     files = {
+        "ca": _ca_pem(),
         "public": issuer_key,
         "vault-token": "vault-runtime-token",
         "control-token": "holder-control-token",
@@ -649,6 +673,7 @@ def test_environment_runtime_loads_strict_secret_files_and_policy(
         "METTLE_HOLDER_ID": "environment-holder-v1",
         "METTLE_HOLDER_VAULT_URL": "https://vault.example",
         "METTLE_HOLDER_VAULT_KEY_VERSION": "7",
+        "METTLE_HOLDER_VAULT_CA_FILE": str(paths["ca"]),
         "METTLE_HOLDER_VAULT_PUBLIC_KEY_FILE": str(paths["public"]),
         "METTLE_HOLDER_VAULT_TOKEN_FILE": str(paths["vault-token"]),
         "METTLE_HOLDER_POLICY_FILE": str(paths["policy"]),

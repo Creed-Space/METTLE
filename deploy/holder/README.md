@@ -1,11 +1,12 @@
 # Vault holder deployment
 
-`render.yaml` defines a one-worker private service. It needs a persistent PostgreSQL database, a production Vault Transit endpoint, and five Render secret files. Do not point it at Vault development mode.
+`render.yaml` defines a one-worker private service. It needs a persistent PostgreSQL database, a TLS-protected Vault Transit endpoint, and six Render secret files. Do not point it at Vault development mode.
 
 ## Required secret files
 
 | File | Purpose |
 |---|---|
+| `mettle-holder-vault-ca.pem` | Private Vault CA certificate used for explicit TLS verification |
 | `mettle-holder-vault-public-key.pem` | Public key for the explicitly pinned Vault key version |
 | `mettle-holder-vault-token` | Short-lived or renewable runtime token with only `transit/sign/mettle-holder` update permission |
 | `mettle-holder-policy.json` | Issuer keyrings, audiences, and record budgets |
@@ -13,6 +14,8 @@
 | `mettle-holder-state-hmac-key` | At least 32 bytes of random material for authenticating PostgreSQL snapshots |
 
 The Vault token policy is in `../vault/mettle-holder-sign.hcl`. Rotation uses a separate administrative identity with `../vault/mettle-holder-rotate.hcl`.
+
+The runtime token must be renewable. The holder renews it before the first signing operation and halfway through each returned lease, capped at one renewal per hour. Renewal and signing both use the pinned CA, reject redirects, ignore proxy environment variables, bound response bodies, and fail closed on malformed replies.
 
 ## Key version pinning
 

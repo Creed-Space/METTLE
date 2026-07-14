@@ -9,12 +9,15 @@ issuer-verified credentials before signing presentation challenges.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import math
 import os
 import re
+import ssl
 import stat
 import subprocess  # nosec B404
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -380,6 +383,179 @@ class FileSecretProvider:
         return secret
 
 
+def _vault_origin(base_url: str) -> str:
+    origin = _bounded_text(base_url, "Vault base URL", maximum=2048).rstrip("/")
+    parsed = urlparse(origin)
+    loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    if (
+        parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+        or not parsed.netloc
+        or (parsed.scheme != "https" and not (parsed.scheme == "http" and loopback))
+    ):
+        raise HolderPolicyError(
+            "Vault base URL must be an HTTPS origin unless it is loopback"
+        )
+    return origin
+
+
+def _vault_tls_verifier(ca_file: str | None) -> ssl.SSLContext | bool:
+    if ca_file is None:
+        return True
+    candidate = Path(_bounded_text(ca_file, "Vault CA file path", maximum=4096))
+    if not candidate.is_absolute():
+        raise HolderPolicyError("Vault CA file must be absolute")
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(candidate, flags)
+    except OSError:
+        raise HolderPolicyError("Vault CA file lookup failed") from None
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_mode & 0o022
+            or metadata.st_size < 1
+            or metadata.st_size > 1048576
+        ):
+            raise HolderPolicyError("Vault CA file permissions or size are invalid")
+        raw = os.read(descriptor, 1048577)
+    finally:
+        os.close(descriptor)
+    try:
+        certificate_data = raw.decode("ascii")
+        context = ssl.create_default_context()
+        context.load_verify_locations(cadata=certificate_data)
+    except (UnicodeDecodeError, ssl.SSLError):
+        raise HolderPolicyError("Vault CA file is invalid") from None
+    return context
+
+
+def _validate_vault_token(token: Any) -> str:
+    if (
+        not isinstance(token, str)
+        or not token
+        or len(token) > 4096
+        or "\r" in token
+        or "\n" in token
+    ):
+        raise HolderPolicyError("Vault authentication token is invalid")
+    return token
+
+
+def _bounded_vault_response(response: httpx.Response, failure: str) -> bytes:
+    chunks: list[bytes] = []
+    response_size = 0
+    for chunk in response.iter_bytes(chunk_size=8192):
+        response_size += len(chunk)
+        if response_size > 32768:
+            raise HolderPolicyError(failure)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+class RenewingVaultTokenProvider:
+    """Read a Vault token on demand and renew periodic credentials before use."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        token_provider: Callable[[], str],
+        ca_file: str | None = None,
+        timeout_seconds: float = 5.0,
+        maximum_renewal_interval_seconds: float = 3600.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not callable(token_provider):
+            raise HolderPolicyError("Vault token provider must be callable")
+        if not callable(clock):
+            raise HolderPolicyError("Vault renewal clock must be callable")
+        self._renew_url = f"{_vault_origin(base_url)}/v1/auth/token/renew-self"
+        self._token_provider = token_provider
+        self._verify = _vault_tls_verifier(ca_file)
+        self._timeout_seconds = _timeout(timeout_seconds, "Vault renewal timeout")
+        if (
+            isinstance(maximum_renewal_interval_seconds, bool)
+            or not isinstance(maximum_renewal_interval_seconds, (int, float))
+            or not math.isfinite(float(maximum_renewal_interval_seconds))
+            or maximum_renewal_interval_seconds <= 0
+            or maximum_renewal_interval_seconds > 86400
+        ):
+            raise HolderPolicyError(
+                "Vault renewal interval must be greater than 0 and at most 86400 seconds"
+            )
+        self._maximum_renewal_interval_seconds = float(maximum_renewal_interval_seconds)
+        self._clock = clock
+        self._lock = RLock()
+        self._token_fingerprint: bytes | None = None
+        self._renew_at = 0.0
+
+    def __call__(self) -> str:
+        try:
+            token = _validate_vault_token(self._token_provider())
+        except HolderPolicyError:
+            raise
+        except Exception:
+            raise HolderPolicyError(
+                "Vault authentication token lookup failed"
+            ) from None
+        token_fingerprint = hashlib.sha256(token.encode("utf-8")).digest()
+        with self._lock:
+            now = self._clock()
+            if self._token_fingerprint != token_fingerprint or now >= self._renew_at:
+                lease_duration = self._renew(token)
+                self._token_fingerprint = token_fingerprint
+                self._renew_at = now + max(
+                    0.1,
+                    min(
+                        float(lease_duration) / 2.0,
+                        self._maximum_renewal_interval_seconds,
+                    ),
+                )
+        return token
+
+    def _renew(self, token: str) -> int:
+        failure = "Vault token renewal failed"
+        try:
+            with httpx.stream(
+                "POST",
+                self._renew_url,
+                headers={"X-Vault-Token": token},
+                json={},
+                timeout=self._timeout_seconds,
+                follow_redirects=False,
+                trust_env=False,
+                verify=self._verify,
+            ) as response:
+                if response.status_code != 200:
+                    raise HolderPolicyError(failure)
+                response_content = _bounded_vault_response(response, failure)
+        except httpx.HTTPError:
+            raise HolderPolicyError(failure) from None
+        try:
+            auth = json.loads(response_content)["auth"]
+            renewable = auth["renewable"]
+            lease_duration = auth["lease_duration"]
+        except (KeyError, TypeError, ValueError):
+            raise HolderPolicyError("Vault token renewal response is invalid") from None
+        if (
+            renewable is not True
+            or isinstance(lease_duration, bool)
+            or not isinstance(lease_duration, int)
+            or lease_duration < 1
+            or lease_duration > 31536000
+        ):
+            raise HolderPolicyError("Vault token renewal response is invalid")
+        return lease_duration
+
+
 class VaultTransitEd25519Signer:
     """Sign through a non-exportable HashiCorp Vault Transit Ed25519 key.
 
@@ -399,23 +575,10 @@ class VaultTransitEd25519Signer:
         public_key_pem: str,
         token_provider: Callable[[], str],
         key_version: int | None = None,
+        ca_file: str | None = None,
         timeout_seconds: float = 5.0,
     ) -> None:
-        base_url = _bounded_text(base_url, "Vault base URL", maximum=2048).rstrip("/")
-        parsed = urlparse(base_url)
-        loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
-        if (
-            parsed.username is not None
-            or parsed.password is not None
-            or parsed.query
-            or parsed.fragment
-            or parsed.path not in {"", "/"}
-            or not parsed.netloc
-            or (parsed.scheme != "https" and not (parsed.scheme == "http" and loopback))
-        ):
-            raise HolderPolicyError(
-                "Vault base URL must be an HTTPS origin unless it is loopback"
-            )
+        base_url = _vault_origin(base_url)
         for value, name in ((mount_path, "Vault mount"), (key_name, "Vault key")):
             if (
                 not isinstance(value, str)
@@ -436,6 +599,7 @@ class VaultTransitEd25519Signer:
         self._token_provider = token_provider
         self._key_version = key_version
         self._timeout_seconds = timeout_seconds
+        self._verify = _vault_tls_verifier(ca_file)
         self._sign_url = f"{base_url}/v1/{mount_path}/sign/{key_name}"
 
     @property
@@ -451,14 +615,7 @@ class VaultTransitEd25519Signer:
             raise HolderPolicyError(
                 "Vault authentication token lookup failed"
             ) from None
-        if (
-            not isinstance(token, str)
-            or not token
-            or len(token) > 4096
-            or "\r" in token
-            or "\n" in token
-        ):
-            raise HolderPolicyError("Vault authentication token is invalid")
+        token = _validate_vault_token(token)
         try:
             request_body: dict[str, str | int] = {
                 "input": base64.b64encode(message).decode("ascii")
@@ -473,17 +630,13 @@ class VaultTransitEd25519Signer:
                 timeout=self._timeout_seconds,
                 follow_redirects=False,
                 trust_env=False,
+                verify=self._verify,
             ) as response:
                 if response.status_code != 200:
                     raise HolderPolicyError("Vault signing request failed")
-                chunks: list[bytes] = []
-                response_size = 0
-                for chunk in response.iter_bytes(chunk_size=8192):
-                    response_size += len(chunk)
-                    if response_size > 32768:
-                        raise HolderPolicyError("Vault signing request failed")
-                    chunks.append(chunk)
-                response_content = b"".join(chunks)
+                response_content = _bounded_vault_response(
+                    response, "Vault signing request failed"
+                )
         except httpx.HTTPError:
             raise HolderPolicyError("Vault signing request failed") from None
         try:
