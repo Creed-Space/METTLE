@@ -482,7 +482,7 @@ class TestDeleteApiKey:
         with db.get_db() as session:
             session.add(
                 db.DBAPIKey(
-                    api_key="legacy-delete-key",
+                    api_key="legacy-delete-key",  # pragma: allowlist secret
                     tier="basic",
                     entity_id="legacy-entity",
                 )
