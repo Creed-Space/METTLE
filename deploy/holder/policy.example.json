@@ -1,0 +1,17 @@
+{
+  "issuer_public_keyrings": {
+    "https://mettle-api.onrender.com": {
+      "mettle-vcp-v1": "-----BEGIN PUBLIC KEY-----\nREPLACE_WITH_ISSUER_PUBLIC_KEY\n-----END PUBLIC KEY-----\n"
+    }
+  },
+  "allowed_audiences": [
+    "mettle-api.onrender.com"
+  ],
+  "max_active_sessions": 32,
+  "max_actions_per_session": 16,
+  "max_presentations_per_credential": 32,
+  "max_presentation_ttl_seconds": 600,
+  "max_session_records": 10000,
+  "max_credentials": 10000,
+  "max_presentation_records": 100000
+}

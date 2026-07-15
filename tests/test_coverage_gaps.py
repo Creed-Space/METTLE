@@ -1,7 +1,7 @@
 """Tests targeting remaining coverage gaps in main.py and router.py.
 
 Covers: rate tier usage tracking, collusion detector edge cases, database persistence
-branches, lifespan handler, generate_signed_badge without secret, HSTS production header,
+branches, lifespan handler, historical badge verification, HSTS production header,
 batch failure handling, session/result 404s, badge signing not configured, revocation audit
 overflow, revocation audit rate limit, fingerprint equal distribution, webhook DNS
 gaierror, webhook db branches, static fallbacks, and router signing ImportError.
@@ -22,7 +22,6 @@ from main import (
     WebhookManager,
     _admin_auth_failures,
     api_keys,
-    generate_signed_badge,
     lifespan,
     record_admin_auth_failure,
     revocation_audit,
@@ -417,23 +416,6 @@ class TestSession404s:
 
 
 # ============================================================
-# generate_signed_badge without secret (line 1125)
-# ============================================================
-
-
-class TestGenerateSignedBadgeNoSecret:
-    """Test generate_signed_badge raises when secret_key is empty."""
-
-    def test_raises_without_secret_key(self):
-        """ValueError is raised when SECRET_KEY is not configured."""
-        with patch("main.settings") as mock_settings:
-            mock_settings.secret_key = ""
-            mock_settings.badge_expiry_seconds = 86400
-            with pytest.raises(ValueError, match="SECRET_KEY not configured"):
-                generate_signed_badge("entity-1", "basic", 1.0, "ses_test")
-
-
-# ============================================================
 # Badge revoke — signing not configured (line 1266)
 # ============================================================
 
@@ -492,6 +474,7 @@ class TestRevocationAuditOverflow:
             "jti": "new-overflow-jti",
             "nonce": "nonce123",
             "iss": "mettle-api",
+            "session_id": "test-session",
         }
         token = jwt_lib.encode(payload, SECRET_KEY, algorithm="HS256")
 
@@ -823,16 +806,16 @@ class TestRouterSigningImportErrorPath:
         """Finalization works when signing module raises ImportError."""
         from mettle.vcp import build_mettle_attestation
 
-        # Call build_mettle_attestation with sign_fn=None (the ImportError path)
         attestation = build_mettle_attestation(
             session_id="ses_test123",
+            subject_id="test-user",
             difficulty="basic",
             suites_passed=["speed_math"],
             suites_failed=[],
             pass_rate=1.0,
-            sign_fn=None,
         )
         assert attestation is not None
         # VCP attestation has specific structure
-        assert "attestation_type" in attestation
+        assert attestation["attestation_type"] == "mettle-evidence-receipt"
+        assert attestation["signature"] is None
         assert attestation["metadata"]["session_id"] == "ses_test123"

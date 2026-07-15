@@ -1,15 +1,15 @@
-"""
-METTLE Database Layer
+"""METTLE database persistence for sessions and security records.
 
-SQLite-based persistence for production deployments.
-Falls back to in-memory storage if database unavailable.
+Production configuration requires PostgreSQL. SQLite remains available for
+local development and tests.
 """
 
+import hashlib
 import json
 import logging
 import os
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -19,6 +19,8 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -49,6 +51,16 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 logger = logging.getLogger(__name__)
 
 
+def _model_json_dict(value: object) -> dict:
+    """Return a JSON-ready model mapping while supporting lightweight test doubles."""
+    try:
+        return value.model_dump(mode="json")  # type: ignore[attr-defined]
+    except TypeError:
+        # Simple test doubles commonly expose model_dump() without Pydantic's
+        # keyword arguments. Their return values are already JSON-compatible.
+        return value.model_dump()  # type: ignore[attr-defined,no-any-return]
+
+
 class Base(DeclarativeBase):
     """Base class for persisted METTLE records."""
 
@@ -67,6 +79,8 @@ class DBSession(Base):
     difficulty = Column(String(16), nullable=False)
     challenges_json = Column(Text, nullable=False)  # JSON array
     results_json = Column(Text, default="[]")  # JSON array
+    access_token_hash = Column(String(64), nullable=True)
+    badge_info_json = Column(Text, nullable=True)
     completed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime, nullable=True)
@@ -132,6 +146,19 @@ class DBVerificationRecord(Base):
 def init_db():
     """Initialize database tables."""
     Base.metadata.create_all(bind=engine)
+    # Existing deployments may have the original sessions table. Add the two
+    # recovery columns without requiring a destructive table rebuild.
+    existing = {column["name"] for column in inspect(engine).get_columns("sessions")}
+    additions = [
+        (DBSession.access_token_hash.name, "VARCHAR(64)"),
+        (DBSession.badge_info_json.name, "TEXT"),
+    ]
+    with engine.begin() as connection:
+        for column, column_type in additions:
+            if column not in existing:
+                connection.execute(
+                    text(f"ALTER TABLE sessions ADD COLUMN {column} {column_type}")
+                )
 
 
 @contextmanager
@@ -151,7 +178,12 @@ def get_db():
 
 
 def save_session(
-    session_id: str, entity_id: str | None, difficulty: str, challenges: list
+    session_id: str,
+    entity_id: str | None,
+    difficulty: str,
+    challenges: list,
+    access_token_hash: str | None = None,
+    started_at: datetime | None = None,
 ) -> bool:
     """Save a new session to database."""
     try:
@@ -161,8 +193,10 @@ def save_session(
                 entity_id=entity_id,
                 difficulty=difficulty,
                 challenges_json=json.dumps(
-                    [c.model_dump() for c in challenges], default=str
+                    [_model_json_dict(challenge) for challenge in challenges]
                 ),
+                access_token_hash=access_token_hash,
+                created_at=started_at or datetime.now(timezone.utc),
             )
             db.add(db_session)
             db.commit()
@@ -188,6 +222,10 @@ def get_session(session_id: str) -> dict | None:
                     "results": json.loads(result.results_json),
                     "completed": result.completed,
                     "created_at": result.created_at,
+                    "access_token_hash": result.access_token_hash,
+                    "badge_info": json.loads(result.badge_info_json)
+                    if result.badge_info_json
+                    else None,
                 }
             return None
     except Exception as exc:
@@ -196,7 +234,10 @@ def get_session(session_id: str) -> dict | None:
 
 
 def update_session_results(
-    session_id: str, results: list, completed: bool = False
+    session_id: str,
+    results: list,
+    completed: bool = False,
+    badge_info: dict | None = None,
 ) -> bool:
     """Update session results."""
     try:
@@ -206,9 +247,12 @@ def update_session_results(
             )
             if db_session:
                 db_session.results_json = json.dumps(
-                    [r.model_dump() for r in results], default=str
+                    [_model_json_dict(result) for result in results]
                 )
                 db_session.completed = completed
+                db_session.badge_info_json = (
+                    json.dumps(badge_info, default=str) if badge_info else None
+                )
                 if completed:
                     db_session.completed_at = datetime.now(timezone.utc)
                 db.commit()
@@ -217,6 +261,40 @@ def update_session_results(
     except Exception as exc:
         logger.exception("Failed to update session '%s' results: %s", session_id, exc)
         return False
+
+
+def get_recent_sessions(max_age_seconds: int = 1800, limit: int = 5000) -> list[dict]:
+    """Load recent sessions that are eligible for process-restart recovery."""
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+    try:
+        with get_db() as db:
+            rows = (
+                db.query(DBSession)
+                .filter(DBSession.created_at >= cutoff)
+                .order_by(DBSession.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [
+                {
+                    "session_id": row.session_id,
+                    "entity_id": row.entity_id,
+                    "difficulty": row.difficulty,
+                    "challenges": json.loads(row.challenges_json),
+                    "results": json.loads(row.results_json),
+                    "completed": row.completed,
+                    "created_at": row.created_at,
+                    "access_token_hash": row.access_token_hash,
+                    "badge_info": json.loads(row.badge_info_json)
+                    if row.badge_info_json
+                    else None,
+                }
+                for row in rows
+                if row.access_token_hash
+            ]
+    except Exception as exc:
+        logger.exception("Failed to load recent sessions: %s", exc)
+        raise RuntimeError("Session recovery unavailable") from exc
 
 
 # === Revocation Operations ===
@@ -299,12 +377,17 @@ def count_revoked_badges(*, raise_on_error: bool = False) -> int:
 # === API Key Operations ===
 
 
+def _api_key_digest(api_key: str) -> str:
+    """Return the irreversible database lookup value for an API key."""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
 def save_api_key(api_key: str, tier: str, entity_id: str | None) -> bool:
-    """Save an API key."""
+    """Save only an API key digest so a database read cannot recover the key."""
     try:
         with get_db() as db:
             record = DBAPIKey(
-                api_key=api_key,
+                api_key=_api_key_digest(api_key),
                 tier=tier,
                 entity_id=entity_id,
             )
@@ -316,11 +399,18 @@ def save_api_key(api_key: str, tier: str, entity_id: str | None) -> bool:
         return False
 
 
-def get_api_key(api_key: str) -> dict | None:
+def get_api_key(api_key: str, *, raise_on_error: bool = False) -> dict | None:
     """Get API key info."""
     try:
         with get_db() as db:
-            result = db.query(DBAPIKey).filter(DBAPIKey.api_key == api_key).first()
+            digest = _api_key_digest(api_key)
+            result = db.query(DBAPIKey).filter(DBAPIKey.api_key == digest).first()
+            if result is None:
+                # Transparently migrate records written by older releases.
+                result = db.query(DBAPIKey).filter(DBAPIKey.api_key == api_key).first()
+                if result is not None:
+                    result.api_key = digest
+                    db.commit()
             if result:
                 return {
                     "tier": result.tier,
@@ -334,14 +424,43 @@ def get_api_key(api_key: str) -> dict | None:
             return None
     except Exception as exc:
         logger.exception("Failed to fetch API key metadata: %s", exc)
+        if raise_on_error:
+            raise RuntimeError("API key persistence unavailable") from exc
         return None
+
+
+def delete_api_key(api_key: str, *, raise_on_error: bool = False) -> bool:
+    """Delete a digest-backed API key, with legacy plaintext compatibility."""
+    try:
+        with get_db() as db:
+            record = (
+                db.query(DBAPIKey)
+                .filter(DBAPIKey.api_key == _api_key_digest(api_key))
+                .first()
+            )
+            if record is None:
+                record = db.query(DBAPIKey).filter(DBAPIKey.api_key == api_key).first()
+            if record is None:
+                return False
+            db.delete(record)
+            db.commit()
+            return True
+    except Exception as exc:
+        logger.exception("Failed to delete API key: %s", exc)
+        if raise_on_error:
+            raise RuntimeError("API key persistence unavailable") from exc
+        return False
 
 
 def update_api_key_usage(api_key: str, usage_date: str, usage_count: int) -> bool:
     """Update API key usage."""
     try:
         with get_db() as db:
-            record = db.query(DBAPIKey).filter(DBAPIKey.api_key == api_key).first()
+            record = (
+                db.query(DBAPIKey)
+                .filter(DBAPIKey.api_key == _api_key_digest(api_key))
+                .first()
+            )
             if record:
                 record.usage_date = usage_date
                 record.usage_count = usage_count
@@ -398,6 +517,30 @@ def get_webhook(entity_id: str) -> dict | None:
     except Exception as exc:
         logger.exception("Failed to fetch webhook for entity '%s': %s", entity_id, exc)
         return None
+
+
+def get_webhooks(limit: int = 1000, *, raise_on_error: bool = False) -> list[dict]:
+    """Load persisted webhook registrations for restart recovery."""
+    try:
+        with get_db() as db:
+            rows = db.query(DBWebhook).order_by(DBWebhook.created_at.asc()).limit(limit)
+            return [
+                {
+                    "entity_id": row.entity_id,
+                    "url": row.url,
+                    "events": json.loads(row.events_json),
+                    "secret": row.secret,
+                    "created_at": row.created_at.isoformat()
+                    if row.created_at
+                    else None,
+                }
+                for row in rows
+            ]
+    except Exception as exc:
+        logger.exception("Failed to load webhook registrations: %s", exc)
+        if raise_on_error:
+            raise RuntimeError("Webhook recovery unavailable") from exc
+        return []
 
 
 def delete_webhook(entity_id: str) -> bool:

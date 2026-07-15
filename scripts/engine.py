@@ -5456,7 +5456,7 @@ def run_basic_verification():
     print(f"\nVerified AI: {'✅ YES' if verified else '❌ NO'}")
 
     if verified:
-        print("\n✅ METTLE-verified: This entity is AI")
+        print("\nMETTLE experimental screening threshold met; no identity verified")
         print("   For more rigorous testing, use --all or --suite options")
     else:
         print("\n❌ Basic verification failed")

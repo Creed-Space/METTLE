@@ -209,6 +209,7 @@ class TestMettleSession:
             entity_id="agent-001",
             difficulty=Difficulty.BASIC,
             challenges=[],
+            access_token_hash="hash",
         )
         assert session.session_id == "ses_abc123"
         assert session.difficulty == Difficulty.BASIC
@@ -221,6 +222,7 @@ class TestMettleSession:
             entity_id=None,
             difficulty=Difficulty.BASIC,
             challenges=[],
+            access_token_hash="hash",
         )
         assert session.results == []
         assert session.started_at is not None

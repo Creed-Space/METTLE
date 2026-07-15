@@ -252,7 +252,8 @@ class TestOwnershipEnforcement:
     ) -> None:
         # Create as correct user
         resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
-        session_id = resp.json()["session_id"]
+        created = resp.json()
+        session_id = created["session_id"]
 
         # Access as wrong user -- 403
         resp = wrong_user_client.get(f"/api/mettle/sessions/{session_id}")
@@ -475,12 +476,14 @@ class TestNovelReasoningFlow:
             "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
-        session_id = resp.json()["session_id"]
+        created = resp.json()
+        session_id = created["session_id"]
+        challenge_names = created["challenges"]["novel-reasoning"]["challenges"]
 
         # Submit round 1
         resp = client.post(
             f"/api/mettle/sessions/{session_id}/rounds/1/answer",
-            json={"answers": {}},
+            json={"answers": {name: {} for name in challenge_names}},
         )
         assert resp.status_code == 200
 

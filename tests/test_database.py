@@ -4,6 +4,7 @@ Tests all CRUD operations for sessions, revoked badges, API keys,
 webhooks, and verification records using an isolated in-memory SQLite database.
 """
 
+import hashlib
 import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -136,6 +137,22 @@ class TestSaveSession:
         assert len(session_data["challenges"]) == 2
         assert session_data["completed"] is False
 
+    def test_save_session_persists_recovery_fields(self, isolated_db):
+        db = isolated_db
+        started_at = datetime.now(timezone.utc) - timedelta(seconds=10)
+        db.save_session(
+            "sess-recoverable",
+            "entity-recoverable",
+            "basic",
+            [MockChallenge()],
+            access_token_hash="a" * 64,
+            started_at=started_at,
+        )
+
+        session_data = db.get_session("sess-recoverable")
+        assert session_data["access_token_hash"] == "a" * 64
+        assert session_data["created_at"].replace(tzinfo=timezone.utc) == started_at
+
     def test_save_session_none_entity_id(self, isolated_db):
         db = isolated_db
         result = db.save_session("sess-3", None, "basic", [MockChallenge()])
@@ -212,6 +229,47 @@ class TestUpdateSessionResults:
 
         session_data = db.get_session("upd-2")
         assert session_data["completed"] is True
+
+    def test_update_results_persists_badge_for_restart(self, isolated_db):
+        db = isolated_db
+        db.save_session(
+            "upd-badge",
+            "e1",
+            "basic",
+            [MockChallenge()],
+            access_token_hash="b" * 64,
+        )
+        badge_info = {"token": "signed-token", "signed": True, "tier": "bronze"}
+
+        assert db.update_session_results(
+            "upd-badge", [MockResult()], completed=True, badge_info=badge_info
+        )
+        assert db.get_session("upd-badge")["badge_info"] == badge_info
+
+
+class TestGetRecentSessions:
+    def test_returns_only_recent_recoverable_sessions(self, isolated_db):
+        db = isolated_db
+        db.save_session(
+            "recover-new",
+            "e1",
+            "basic",
+            [MockChallenge()],
+            access_token_hash="c" * 64,
+        )
+        db.save_session("not-recoverable", "e2", "basic", [MockChallenge()])
+        db.save_session(
+            "recover-old",
+            "e3",
+            "basic",
+            [MockChallenge()],
+            access_token_hash="d" * 64,
+            started_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        )
+
+        assert [row["session_id"] for row in db.get_recent_sessions()] == [
+            "recover-new"
+        ]
 
     def test_update_nonexistent_session_returns_false(self, isolated_db):
         db = isolated_db
@@ -358,6 +416,11 @@ class TestSaveApiKey:
         result = db.save_api_key("key-123", "premium", "entity-1")
         assert result is True
 
+        with db.get_db() as session:
+            stored = session.query(db.DBAPIKey).one().api_key
+        assert stored == hashlib.sha256(b"key-123").hexdigest()
+        assert stored != "key-123"
+
     def test_save_api_key_none_entity(self, isolated_db):
         db = isolated_db
         result = db.save_api_key("key-anon", "basic", None)
@@ -398,6 +461,46 @@ class TestGetApiKey:
         with patch.object(db, "get_db", side_effect=Exception("db error")):
             result = db.get_api_key("err-key")
             assert result is None
+
+    def test_get_api_key_can_fail_closed(self, isolated_db):
+        db = isolated_db
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            with pytest.raises(RuntimeError, match="persistence unavailable"):
+                db.get_api_key("err-key", raise_on_error=True)
+
+
+class TestDeleteApiKey:
+    def test_deletes_digest_backed_key(self, isolated_db):
+        db = isolated_db
+        db.save_api_key("delete-key", "premium", "entity-delete")
+
+        assert db.delete_api_key("delete-key") is True
+        assert db.get_api_key("delete-key") is None
+
+    def test_deletes_legacy_plaintext_key(self, isolated_db):
+        db = isolated_db
+        with db.get_db() as session:
+            session.add(
+                db.DBAPIKey(
+                    api_key="legacy-delete-key",
+                    tier="basic",
+                    entity_id="legacy-entity",
+                )
+            )
+            session.commit()
+
+        assert db.delete_api_key("legacy-delete-key") is True
+        with db.get_db() as session:
+            assert session.query(db.DBAPIKey).count() == 0
+
+    def test_delete_unknown_key_returns_false(self, isolated_db):
+        assert isolated_db.delete_api_key("missing-key") is False
+
+    def test_delete_can_fail_closed(self, isolated_db):
+        db = isolated_db
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            with pytest.raises(RuntimeError, match="persistence unavailable"):
+                db.delete_api_key("err-key", raise_on_error=True)
 
 
 class TestUpdateApiKeyUsage:
@@ -441,6 +544,17 @@ class TestSaveWebhook:
         db = isolated_db
         result = db.save_webhook("entity-2", "https://example.com/hook", ["all"], None)
         assert result is True
+
+    def test_get_webhooks_lists_recoverable_registrations(self, isolated_db):
+        db = isolated_db
+        db.save_webhook("entity-1", "https://example.com/one", ["all"], "one")
+        db.save_webhook(
+            "entity-2", "https://example.com/two", ["session.completed"], None
+        )
+
+        rows = db.get_webhooks()
+        assert [row["entity_id"] for row in rows] == ["entity-1", "entity-2"]
+        assert rows[1]["events"] == ["session.completed"]
 
     def test_save_webhook_upsert_replaces_existing(self, isolated_db):
         """Saving a webhook for the same entity_id should replace the old one."""

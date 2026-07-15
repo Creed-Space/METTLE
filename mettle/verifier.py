@@ -1,7 +1,6 @@
 """METTLE: Response verification."""
 
 from datetime import datetime, timezone
-
 from .models import Challenge, ChallengeType, MettleResult, VerificationResult
 
 
@@ -268,21 +267,20 @@ def compute_mettle_result(
     total = len(results)
     pass_rate = passed / total if total > 0 else 0.0
 
-    # Need 80% to pass
+    # Like a conventional CAPTCHA, METTLE is a probabilistic gate. ``verified``
+    # means that this challenge session met the configured threshold. It does
+    # not claim that the self-asserted entity identifier is a proven identity.
     verified = pass_rate >= 0.8
-
-    # Generate badge if verified
-    badge = None
-    if verified:
-        badge = f"METTLE-verified-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
 
     return MettleResult(
         entity_id=entity_id,
         verified=verified,
+        screening_passed=verified,
+        credential_eligible=verified,
         passed=passed,
         total=total,
         pass_rate=pass_rate,
         results=results,
-        badge=badge,
+        badge=None,
         badge_info=None,
     )

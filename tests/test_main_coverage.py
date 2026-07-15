@@ -11,17 +11,17 @@ Covers:
 - CollusionDetector memory bounding
 - RateTier.check_limit daily usage tracking
 - Webhook URL validation (SSRF protection)
-- generate_signed_badge error path
 """
 
 import socket
+import hashlib
 import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt
 import pytest
-from fastapi.testclient import TestClient
+import main as main_module
 from main import (
     CollusionDetector,
     RateTier,
@@ -32,7 +32,6 @@ from main import (
     app,
     challenges,
     check_admin_auth_rate_limit,
-    generate_signed_badge,
     limiter,
     record_admin_auth_failure,
     revocation_audit,
@@ -42,6 +41,7 @@ from main import (
     verification_timestamps,
     webhooks,
 )
+from tests.session_client import SessionAwareTestClient
 
 # Test constants matching conftest.py
 SECRET_KEY = "test-secret-key-for-mettle-testing-only"
@@ -56,7 +56,7 @@ def _addrinfo(ip: str = "93.184.216.34"):
 @pytest.fixture
 def client():
     """Create test client."""
-    return TestClient(app)
+    return SessionAwareTestClient(app)
 
 
 @pytest.fixture(autouse=True)
@@ -108,8 +108,10 @@ def _make_badge_token(
         "verified_at": now.isoformat(),
         "version": "1.0.0",
         "iss": "mettle-api",
+        "iat": now.timestamp(),
         "exp": exp,
         "jti": jti,
+        "session_id": "test-session",
     }
     if extra_claims:
         payload.update(extra_claims)
@@ -117,45 +119,198 @@ def _make_badge_token(
 
 
 # =============================================================================
+# Durable runtime recovery
+# =============================================================================
+
+
+class TestPersistentRuntimeRecovery:
+    """Exercise PostgreSQL-backed legacy session and webhook recovery."""
+
+    def test_persist_legacy_session_and_progress(self):
+        from mettle import BadgeInfo, Difficulty, MettleSession
+
+        session = MettleSession(
+            session_id="persistent-session",
+            entity_id="persistent-agent",
+            difficulty=Difficulty.BASIC,
+            challenges=[],
+            access_token_hash="a" * 64,
+            badge_info=BadgeInfo(
+                token="signed-token",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                freshness_nonce=None,
+                signed=True,
+                jti="persistent-jti",
+            ),
+        )
+        mock_db = MagicMock()
+        mock_db.save_session.return_value = True
+        mock_db.update_session_results.return_value = True
+        badge_info = session.badge_info
+        assert badge_info is not None
+
+        with patch.object(main_module, "db", mock_db):
+            assert main_module._persist_new_legacy_session(session) is True
+            assert main_module._persist_legacy_progress(session) is True
+
+        mock_db.save_session.assert_called_once_with(
+            session.session_id,
+            session.entity_id,
+            session.difficulty.value,
+            session.challenges,
+            session.access_token_hash,
+            session.started_at,
+        )
+        mock_db.update_session_results.assert_called_once_with(
+            session.session_id,
+            session.results,
+            session.completed,
+            badge_info.model_dump(mode="json"),
+        )
+
+        with patch.object(main_module, "db", None):
+            assert main_module._persist_new_legacy_session(session) is True
+            assert main_module._persist_legacy_progress(session) is True
+
+    def test_restore_sessions_challenges_and_webhooks(self):
+        from mettle import (
+            BadgeInfo,
+            Challenge,
+            ChallengeType,
+            Difficulty,
+            VerificationResult,
+        )
+
+        now = datetime.now(timezone.utc)
+        challenge = Challenge(
+            id="recovered-challenge",
+            type=ChallengeType.SPEED_MATH,
+            prompt="What is 2 + 2?",
+            data={"expected_answer": 4},
+            issued_at=now,
+            expires_at=now + timedelta(minutes=5),
+            time_limit_ms=1000,
+        )
+        result = VerificationResult(
+            challenge_id=challenge.id,
+            challenge_type=challenge.type,
+            passed=True,
+            response_time_ms=10,
+            time_limit_ms=challenge.time_limit_ms,
+        )
+        badge = BadgeInfo(
+            token="recovered-token",
+            expires_at=now + timedelta(hours=1),
+            freshness_nonce=None,
+            signed=True,
+            jti="recovered-jti",
+        )
+        mock_db = MagicMock()
+        mock_db.get_recent_sessions.return_value = [
+            {
+                "session_id": "recovered-incomplete",
+                "entity_id": "agent-incomplete",
+                "difficulty": Difficulty.BASIC.value,
+                "challenges": [challenge.model_dump(mode="json")],
+                "results": [],
+                "created_at": now.replace(tzinfo=None).isoformat(),
+                "completed": False,
+                "access_token_hash": "b" * 64,
+                "badge_info": None,
+            },
+            {
+                "session_id": "recovered-complete",
+                "entity_id": "agent-complete",
+                "difficulty": Difficulty.FULL.value,
+                "challenges": [challenge.model_dump(mode="json")],
+                "results": [result.model_dump(mode="json")],
+                "created_at": now,
+                "completed": True,
+                "access_token_hash": "c" * 64,
+                "badge_info": badge.model_dump(mode="json"),
+            },
+            {"session_id": "malformed-session"},
+        ]
+        mock_db.get_webhooks.return_value = [
+            {
+                "entity_id": "recovered-webhook-owner",
+                "url": "https://example.com/mettle-hook",
+                "events": ["session.completed"],
+                "secret": "webhook-secret",
+                "created_at": now.isoformat(),
+            }
+        ]
+
+        with patch.object(main_module, "db", mock_db):
+            main_module._restore_persistent_runtime_state()
+
+        assert sessions["recovered-incomplete"].started_at.tzinfo is not None
+        assert sessions["recovered-complete"].badge_info == badge
+        assert challenges[challenge.id][0] == challenge
+        assert challenges[challenge.id][1] is None
+        with patch.object(main_module.time, "time", return_value=1234.5):
+            main_module._arm_recovered_challenge(sessions["recovered-incomplete"])
+        assert challenges[challenge.id][1] == 1234.5
+        assert webhooks["recovered-webhook-owner"]["url"].endswith("mettle-hook")
+        mock_db.get_recent_sessions.assert_called_once_with(
+            max_age_seconds=main_module.LEGACY_SESSION_RECOVERY_SECONDS,
+            limit=main_module.MAX_SESSIONS,
+        )
+        mock_db.get_webhooks.assert_called_once_with(
+            limit=main_module.MAX_WEBHOOKS,
+            raise_on_error=True,
+        )
+
+    def test_restore_is_a_noop_without_database(self):
+        with patch.object(main_module, "db", None):
+            main_module._restore_persistent_runtime_state()
+
+
+# =============================================================================
 # Badge identity semantics (REWIND-FRESH-014)
 # =============================================================================
 
 
-class TestBadgeCapabilityOnlySemantics:
-    """generate_signed_badge must mark the self-asserted entity_id as unverified.
+class TestStableBadgeIssuance:
+    def test_repeated_result_reads_return_same_signed_badge(self, client):
+        from mettle import ChallengeType, Difficulty, MettleSession, VerificationResult
 
-    The public /api/session/* surface accepts a caller-chosen entity_id with no
-    proof of control, so badges must attest METTLE *capability*, not identity.
-    """
-
-    def _decode(self, badge):
-        return jwt.decode(badge["token"], SECRET_KEY, algorithms=["HS256"])
-
-    def test_badge_marks_entity_id_unverified(self):
-        badge = generate_signed_badge(
-            entity_id="victim-agent",
-            difficulty="basic",
-            pass_rate=1.0,
-            session_id="sess-1",
+        session_id = "stable-session"
+        session_token = "stable-session-token"
+        sessions[session_id] = MettleSession(
+            session_id=session_id,
+            entity_id="agent-1",
+            difficulty=Difficulty.BASIC,
+            challenges=[],
+            results=[
+                VerificationResult(
+                    challenge_id="challenge-1",
+                    challenge_type=ChallengeType.SPEED_MATH,
+                    passed=True,
+                    response_time_ms=1,
+                    time_limit_ms=1000,
+                )
+            ],
+            completed=True,
+            access_token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
         )
-        payload = self._decode(badge)
-        # entity_id is preserved (capability metadata) ...
-        assert payload["entity_id"] == "victim-agent"
-        # ... but explicitly marked as NOT a verified identity claim.
-        assert payload["entity_id_verified"] is False
+        client.session_tokens[session_id] = session_token
+
+        first = client.get(f"/api/session/{session_id}/result").json()
+        second = client.get(f"/api/session/{session_id}/result").json()
+
+        for result in (first, second):
+            assert result["screening_passed"] is True
+            assert result["verified"] is True
+            assert result["credential_eligible"] is True
+            assert result["badge"]
+            assert result["badge_info"]["signed"] is True
+        assert first["badge"] == second["badge"]
+        payload = jwt.decode(first["badge"], SECRET_KEY, algorithms=["HS256"])
+        assert payload["credential_type"] == "mettle-reverse-captcha-pass"
+        assert payload["attests"] == "mettle_session_passed"
         assert payload["identity_binding"] == "self_asserted"
-        assert payload["attests"] == "capability"
-
-    def test_badge_unverified_claims_present_for_anonymous(self):
-        badge = generate_signed_badge(
-            entity_id=None,
-            difficulty="full",
-            pass_rate=0.9,
-        )
-        payload = self._decode(badge)
-        assert payload["entity_id"] is None
-        assert payload["entity_id_verified"] is False
-        assert payload["attests"] == "capability"
+        assert payload["tier"] == "bronze"
 
 
 # =============================================================================
@@ -164,10 +319,27 @@ class TestBadgeCapabilityOnlySemantics:
 
 
 class TestBadgeVerification:
-    """Tests for /api/badge/verify/{token} endpoint."""
+    """Tests for the badge verification endpoints."""
+
+    def test_post_valid_badge_keeps_token_out_of_url(self, client):
+        """The primary endpoint accepts credentials in the request body."""
+        token = _make_badge_token()
+
+        response = client.post("/api/badge/verify", json={"token": token})
+
+        assert response.status_code == 200
+        assert response.request.url.path == "/api/badge/verify"
+        assert response.json()["valid"] is True
+        assert response.json()["payload"]["entity_id"] == "test-entity"
+
+    def test_post_rejects_empty_badge(self, client):
+        """The request model rejects empty credentials before verification."""
+        response = client.post("/api/badge/verify", json={"token": ""})
+
+        assert response.status_code == 422
 
     def test_valid_badge_returns_valid_true(self, client):
-        """Valid JWT badge should return valid=True with payload."""
+        """The deprecated URL form remains compatible during migration."""
         token = _make_badge_token()
         response = client.get(f"/api/badge/verify/{token}")
 
@@ -306,6 +478,53 @@ class TestBadgeRevocationFull:
         mock_db.add_revoked_badge.assert_called_once()
         assert "persist-revocation-jti" in revoked_badges
 
+    def test_presence_credential_jti_can_be_revoked(self, client):
+        credential_jti = "a" * 32
+        mock_db = MagicMock()
+        mock_db.is_badge_revoked.return_value = False
+        mock_db.add_revoked_badge.return_value = True
+
+        with patch("main.db", mock_db):
+            response = client.post(
+                "/api/badge/revoke",
+                json={
+                    "jti": credential_jti,
+                    "entity_id": "agent-42",
+                    "reason": "Revoke compromised Presence credential",
+                },
+                headers=ADMIN_HEADERS,
+            )
+
+        assert response.status_code == 200
+        mock_db.add_revoked_badge.assert_called_once_with(
+            credential_jti,
+            "agent-42",
+            "Revoke compromised Presence credential",
+            None,
+        )
+        assert credential_jti in revoked_badges
+
+    def test_revocation_requires_exactly_one_credential_form(self, client):
+        token = _make_badge_token(jti="duplicate-form-jti")
+        both = client.post(
+            "/api/badge/revoke",
+            json={
+                "token": token,
+                "jti": "b" * 32,
+                "reason": "Ambiguous revocation request must fail",
+            },
+            headers=ADMIN_HEADERS,
+        )
+        neither = client.post(
+            "/api/badge/revoke",
+            json={"reason": "Missing revocation credential must fail"},
+            headers=ADMIN_HEADERS,
+        )
+
+        assert both.status_code == 400
+        assert neither.status_code == 400
+        assert "exactly one" in both.json()["detail"].lower()
+
     def test_persistence_failure_does_not_claim_revocation(self, client):
         token = _make_badge_token(jti="failed-persistence-jti")
         mock_db = MagicMock()
@@ -359,7 +578,10 @@ class TestBadgeRevocationFull:
         # Create token without jti
         payload = {
             "entity_id": "test",
+            "iss": "mettle-api",
+            "iat": datetime.now(timezone.utc).timestamp(),
             "exp": (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp(),
+            "session_id": "test-session",
         }
         token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
@@ -436,6 +658,14 @@ class TestBadgeRevocationFull:
 class TestWebhookDelivery:
     """Tests for WebhookManager.send_webhook method."""
 
+    @staticmethod
+    def _stream_context(status_code: int = 200):
+        response = MagicMock(status_code=status_code)
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=response)
+        context.__aexit__ = AsyncMock(return_value=False)
+        return context
+
     @pytest.mark.asyncio
     async def test_entity_not_registered_returns_false(self):
         """send_webhook returns False for unregistered entity."""
@@ -471,12 +701,9 @@ class TestWebhookDelivery:
         """send_webhook returns True on successful HTTP post."""
         WebhookManager.register("entity-1", "https://example.com/hook")
 
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-
         with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
+            mock_client = MagicMock()
+            mock_client.stream.return_value = self._stream_context()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -489,9 +716,9 @@ class TestWebhookDelivery:
                 )
 
         assert result is True
-        mock_client.post.assert_awaited_once()
-        call = mock_client.post.await_args
-        assert str(call.args[0]) == "https://93.184.216.34/hook"
+        mock_client.stream.assert_called_once()
+        call = mock_client.stream.call_args
+        assert call.args[:2] == ("POST", "https://93.184.216.34/hook")
         assert call.kwargs["headers"] == {"Host": "example.com"}
         assert call.kwargs["extensions"] == {"sni_hostname": "example.com"}
         mock_client_cls.assert_called_once_with(
@@ -509,17 +736,9 @@ class TestWebhookDelivery:
             secret="a" * 32,
         )
 
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-        captured_payload = {}
-
-        async def capture_post(url, json=None, **kwargs):
-            captured_payload.update(json)
-            return mock_response
-
         with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.post = capture_post
+            mock_client = MagicMock()
+            mock_client.stream.return_value = self._stream_context()
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -532,6 +751,7 @@ class TestWebhookDelivery:
                 )
 
         assert result is True
+        captured_payload = mock_client.stream.call_args.kwargs["json"]
         assert "signature" in captured_payload
 
     @pytest.mark.asyncio
@@ -539,12 +759,9 @@ class TestWebhookDelivery:
         """Webhook redirects cannot trigger a second unvalidated destination."""
         WebhookManager.register("entity-1", "https://example.com/hook")
 
-        mock_response = AsyncMock()
-        mock_response.status_code = 302
-
         with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
+            mock_client = MagicMock()
+            mock_client.stream.return_value = self._stream_context(302)
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -598,8 +815,8 @@ class TestWebhookDelivery:
         WebhookManager.register("entity-1", "https://example.com/hook")
 
         with patch("httpx.AsyncClient") as mock_client_cls, patch("main.logger"):
-            mock_client = AsyncMock()
-            mock_client.post.side_effect = Exception("Connection refused")
+            mock_client = MagicMock()
+            mock_client.stream.side_effect = Exception("Connection refused")
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -640,6 +857,15 @@ class TestAPIKeyManagement:
         """Missing admin key should return 401."""
         response = client.post(
             "/api/keys/register",
+            json={"tier": "free"},
+        )
+
+        assert response.status_code == 401
+
+    def test_register_key_rejects_admin_key_in_query(self, client):
+        """Secrets in query strings must never authorize admin operations."""
+        response = client.post(
+            f"/api/keys/register?x_admin_key={ADMIN_KEY}",
             json={"tier": "free"},
         )
 
@@ -862,6 +1088,26 @@ class TestRateTierDailyUsage:
         # Usage count should be reset to 1 (incremented for this request)
         assert api_keys[key]["usage_count"] == 1
 
+    def test_bulk_charge_counts_every_requested_session(self):
+        key = "test-pro-key"
+        RateTier.register_key(key, "pro", "entity-1")
+
+        allowed, _ = RateTier.check_limit(key, "session", amount=50)
+
+        assert allowed is True
+        assert api_keys[key]["usage_count"] == 50
+
+    def test_bulk_charge_is_rejected_atomically_at_limit(self):
+        key = "test-pro-key"
+        RateTier.register_key(key, "pro", "entity-1")
+        api_keys[key]["usage_date"] = datetime.now(timezone.utc).date().isoformat()
+        api_keys[key]["usage_count"] = 9990
+
+        allowed, _ = RateTier.check_limit(key, "session", amount=50)
+
+        assert allowed is False
+        assert api_keys[key]["usage_count"] == 9990
+
 
 # =============================================================================
 # Webhook URL Validation / SSRF Protection (lines 1603-1654)
@@ -1038,6 +1284,30 @@ class TestModelFingerprinterEdge:
         total = sum(result["scores"].values())
         assert 0.99 <= total <= 1.01
 
+    def test_endpoint_rejects_oversized_response_element(self, client):
+        response = client.post(
+            "/api/security/fingerprint",
+            json={"responses": ["x" * 4097]},
+        )
+
+        assert response.status_code == 422
+
+
+class TestPublicSessionCapacity:
+    def test_start_rejects_capacity_without_evicting_existing_session(
+        self, client, monkeypatch
+    ):
+        import main
+
+        sentinel = MagicMock()
+        sessions["existing"] = sentinel
+        monkeypatch.setattr(main, "MAX_SESSIONS", 1)
+
+        response = client.post("/api/session/start", json={})
+
+        assert response.status_code == 503
+        assert sessions == {"existing": sentinel}
+
 
 # =============================================================================
 # HSTS header in production (line 391)
@@ -1071,27 +1341,6 @@ class TestMainBlock:
 
         assert hasattr(main, "app")
         assert hasattr(main, "WebhookManager")
-
-
-# =============================================================================
-# generate_signed_badge no secret_key path (line 1097)
-# =============================================================================
-
-
-class TestGenerateSignedBadge:
-    """Tests for generate_signed_badge function."""
-
-    def test_no_secret_key_raises_value_error(self):
-        """generate_signed_badge should raise ValueError when no secret_key."""
-        from main import generate_signed_badge
-
-        with patch("main.settings") as mock_settings:
-            mock_settings.secret_key = None
-            mock_settings.badge_expiry_seconds = 3600
-            mock_settings.api_version = "1.0.0"
-
-            with pytest.raises(ValueError, match="SECRET_KEY not configured"):
-                generate_signed_badge("entity-1", "basic", 1.0, "ses_test")
 
 
 # =============================================================================

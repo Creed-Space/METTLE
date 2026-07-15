@@ -15,10 +15,12 @@ def reset_signing_state(monkeypatch):
     monkeypatch.setenv("METTLE_DEV_MODE", "true")
     signing._private_key = None
     signing._public_key = None
+    signing._key_id = "mettle-vcp-v1"
     signing._initialized = False
     yield
     signing._private_key = None
     signing._public_key = None
+    signing._key_id = "mettle-vcp-v1"
     signing._initialized = False
 
 
@@ -228,6 +230,23 @@ class TestGetPublicKeyInfo:
         info = signing.get_public_key_info()
         assert info["public_key_pem"] is None
         assert info["available"] is False
+
+    def test_configured_key_id_is_published(self, monkeypatch):
+        monkeypatch.setenv("METTLE_VCP_SIGNING_KEY_ID", "mettle-vcp-2026-02")
+        signing.init_signing()
+        info = signing.get_public_key_info()
+        assert info["key_id"] == "mettle-vcp-2026-02"
+
+    def test_invalid_configured_key_id_fails_closed(self, monkeypatch):
+        signing._private_key = object()
+        signing._public_key = object()
+        signing._key_id = "stale-key"
+        monkeypatch.setenv("METTLE_VCP_SIGNING_KEY_ID", "bad key id")
+        assert signing.init_signing() is False
+        assert signing.is_available() is False
+        assert signing._private_key is None
+        assert signing._public_key is None
+        assert signing._key_id == "mettle-vcp-v1"
 
 
 # --- is_available ---

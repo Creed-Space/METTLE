@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -73,6 +75,11 @@ class FakeRedis:
     async def incr(self, key: str) -> int:
         val = int(self._store.get(key, "0"))
         val += 1
+        self._store[key] = str(val)
+        return val
+
+    async def decr(self, key: str) -> int:
+        val = int(self._store.get(key, "0")) - 1
         self._store[key] = str(val)
         return val
 
@@ -193,6 +200,14 @@ class TestRateKeyHelper:
         assert "alice" in r1
         assert "bob" in r2
 
+    def test_configured_namespace_is_applied_to_all_keys(self, monkeypatch) -> None:
+        from mettle.app_config import settings
+
+        monkeypatch.setattr(settings, "redis_namespace", "mettle-staging")
+
+        assert _key("abc123") == "mettle-staging:session:abc123"
+        assert _rate_key("agent", "hourly") == "mettle-staging:rate:agent:hourly"
+
 
 # ---- 1. Hourly rate limit ----
 
@@ -235,6 +250,105 @@ class TestHourlyRateLimit:
 
         with pytest.raises(ValueError, match=str(MAX_SESSIONS_PER_HOUR)):
             await mgr.create_session(user_id="user1", suites=["adversarial"])
+
+
+class TestSessionSecurityBoundaries:
+    @pytest.mark.asyncio
+    async def test_duplicate_suites_are_rejected(self, manager: SessionManager) -> None:
+        with pytest.raises(ValueError, match="Duplicate suites"):
+            await manager.create_session(
+                user_id="user1", suites=["adversarial", "adversarial"]
+            )
+
+    @pytest.mark.asyncio
+    async def test_server_issued_time_budget_expires_single_shot(
+        self, manager: SessionManager, fake_redis: FakeRedis
+    ) -> None:
+        session_id, _, session = await manager.create_session(
+            user_id="user1", suites=["adversarial"]
+        )
+        session["start_time"] = time.time() - 60
+        session["time_budget_ms"] = 1000
+        await fake_redis.setex(
+            _key(session_id), ACTIVE_SESSION_TTL, json.dumps(session)
+        )
+
+        with pytest.raises(ValueError, match="time budget exceeded"):
+            await manager.verify_single_shot(session_id, "adversarial", {})
+
+        stored = await manager.get_session(session_id)
+        assert stored is not None
+        assert stored["status"] == SessionStatus.EXPIRED.value
+
+    def test_active_ttl_cannot_extend_absolute_expiry(self) -> None:
+        session = {
+            "expires_at": datetime.fromtimestamp(
+                time.time() + 10, tz=timezone.utc
+            ).isoformat()
+        }
+
+        ttl = SessionManager._remaining_active_ttl(session)
+
+        assert 1 <= ttl <= 10
+
+    def test_human_iteration_signature_cannot_pass(self, monkeypatch) -> None:
+        from scripts.engine import IterationCurveAnalyzer
+
+        monkeypatch.setattr(
+            IterationCurveAnalyzer,
+            "analyze_curve",
+            lambda _rounds: {"overall": 1.0, "signature": "HUMAN"},
+        )
+
+        result = SessionManager._analyze_iteration_curve(
+            SessionManager.__new__(SessionManager),
+            [{"round": 1, "response_time_ms": 1, "accuracy": 1.0}],
+            {"pass_threshold": 0.65},
+        )
+
+        assert result["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_atomic_rate_reservation_rejects_active_limit(self) -> None:
+        redis = AsyncMock()
+        redis.eval.return_value = -1
+        manager = SessionManager(redis)
+
+        with pytest.raises(ValueError, match="Maximum active sessions"):
+            await manager._reserve_rate_limits("user-1", "session-1")
+
+        redis.eval.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_atomic_rate_reservation_rejects_hourly_limit(self) -> None:
+        redis = AsyncMock()
+        redis.eval.return_value = -2
+        manager = SessionManager(redis)
+
+        with pytest.raises(ValueError, match="Hourly session limit"):
+            await manager._reserve_rate_limits("user-1", "session-1")
+
+    @pytest.mark.asyncio
+    async def test_session_transition_lock_rejects_concurrent_operation(self) -> None:
+        redis = AsyncMock()
+        redis.set.return_value = False
+        manager = SessionManager(redis)
+
+        with pytest.raises(ValueError, match="already in progress"):
+            async with manager._session_lock("session-1"):
+                pytest.fail("lock body must not execute")
+
+    @pytest.mark.asyncio
+    async def test_session_transition_lock_releases_only_by_token(self) -> None:
+        redis = AsyncMock()
+        redis.set.return_value = True
+        manager = SessionManager(redis)
+
+        async with manager._session_lock("session-1"):
+            pass
+
+        redis.set.assert_awaited_once()
+        redis.eval.assert_awaited_once()
 
 
 # ---- 2. Cancel already completed session ----
@@ -492,6 +606,10 @@ class TestSubmitRoundFinalRound:
         await manager.submit_round_answer(session_id, 1, round_answers)
         await manager.submit_round_answer(session_id, 2, round_answers)
 
+        feedback_r2 = await manager.get_round_feedback(session_id, 2)
+        assert feedback_r2 is not None
+        assert feedback_r2["round"] == 2
+
         session = await manager.get_session(session_id)
         assert session is not None
         novel_result = session["suite_results"][MULTI_ROUND_SUITE]
@@ -568,9 +686,41 @@ class TestGetRoundFeedbackExisting:
         await manager.submit_round_answer(session_id, 1, round_answers)
         await manager.submit_round_answer(session_id, 2, round_answers)
 
-        feedback_r2 = await manager.get_round_feedback(session_id, 2)
-        assert feedback_r2 is not None
-        assert feedback_r2["round"] == 2
+    @pytest.mark.asyncio
+    async def test_round_timing_is_per_round_not_cumulative_session_age(
+        self,
+        manager: SessionManager,
+        fake_redis: FakeRedis,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        session_id, challenges, _ = await manager.create_session(
+            user_id="user1", suites=["novel-reasoning"], difficulty="easy"
+        )
+        session = await manager.get_session(session_id)
+        assert session is not None
+        session["start_time"] = 100.0
+        session["round_started_at"] = 100.0
+        session["time_budget_ms"] = 100_000
+        await fake_redis.setex(
+            _key(session_id), ACTIVE_SESSION_TTL, json.dumps(session)
+        )
+        timestamps = iter([101.0, 101.0, 101.0, 101.4, 101.4])
+        monkeypatch.setattr(
+            "mettle.session_manager.time.time", lambda: next(timestamps)
+        )
+        names = challenges["novel-reasoning"]["challenges"]
+        answers: dict[str, Any] = {
+            "challenges": {name: {"test_outputs": []} for name in names}
+        }
+
+        await manager.submit_round_answer(session_id, 1, answers)
+        await manager.submit_round_answer(session_id, 2, answers)
+
+        first = await manager.get_round_feedback(session_id, 1)
+        second = await manager.get_round_feedback(session_id, 2)
+        assert first is not None and second is not None
+        assert first["response_time_ms"] == pytest.approx(1000.0)
+        assert second["response_time_ms"] == pytest.approx(400.0)
 
 
 # ---- 12. get_result with completed session and start_time ----
@@ -1030,26 +1180,24 @@ class TestSessionManagerEdgeCases:
         assert "adversarial" in answers
 
     @pytest.mark.asyncio
-    async def test_verify_starts_timing_on_first_call(
+    async def test_verify_uses_server_issue_time(
         self, manager: SessionManager, fake_redis: FakeRedis
     ) -> None:
         session_id, _, _ = await manager.create_session(
             user_id="user1", suites=["adversarial", "native"]
         )
-        # Before verification, start_time should be None
         session_before = await manager.get_session(session_id)
         assert session_before is not None
-        assert session_before["start_time"] is None
+        issued_at = session_before["start_time"]
+        assert isinstance(issued_at, float)
 
-        # After first verification, start_time should be set
         await manager.verify_single_shot(session_id, "adversarial", {})
         session_after = await manager.get_session(session_id)
         assert session_after is not None
-        assert session_after["start_time"] is not None
-        assert isinstance(session_after["start_time"], float)
+        assert session_after["start_time"] == issued_at
 
     @pytest.mark.asyncio
-    async def test_submit_round_starts_timing_on_first_round(
+    async def test_submit_round_uses_server_issue_time(
         self, manager: SessionManager
     ) -> None:
         session_id, challenges, _ = await manager.create_session(
@@ -1057,7 +1205,8 @@ class TestSessionManagerEdgeCases:
         )
         session_before = await manager.get_session(session_id)
         assert session_before is not None
-        assert session_before["start_time"] is None
+        issued_at = session_before["start_time"]
+        assert isinstance(issued_at, float)
 
         novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
         round_answers: dict[str, Any] = {
@@ -1067,7 +1216,7 @@ class TestSessionManagerEdgeCases:
 
         session_after = await manager.get_session(session_id)
         assert session_after is not None
-        assert session_after["start_time"] is not None
+        assert session_after["start_time"] == issued_at
 
     @pytest.mark.asyncio
     async def test_submit_round_tracks_current_round(
@@ -1189,7 +1338,7 @@ class TestSessionManagerEdgeCases:
         assert meta["user_id"] == "user1"
         assert meta["entity_id"] == "ent-1"
         assert meta["status"] == SessionStatus.CHALLENGES_GENERATED.value
-        assert meta["start_time"] is None
+        assert isinstance(meta["start_time"], float)
         assert meta["current_round"] == 0
         assert meta["suites_completed"] == []
         assert meta["suite_results"] == {}
@@ -1209,6 +1358,30 @@ class TestSessionManagerEdgeCases:
         # but we verify the resolve_suites check catches it first.
         with pytest.raises(ValueError, match="Unknown suites"):
             await manager.create_session(user_id="user1", suites=["made-up-suite"])
+
+        assert await fake_redis.scard(_rate_key("user1", "active")) == 0
+        assert await fake_redis.get(_rate_key("user1", "hourly")) is None
+
+    @pytest.mark.asyncio
+    async def test_generation_failure_releases_reserved_quota(
+        self,
+        manager: SessionManager,
+        fake_redis: FakeRedis,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def fail_generation():
+            raise RuntimeError("generation failed")
+
+        monkeypatch.setattr(
+            "mettle.session_manager.ChallengeAdapter.generate_adversarial",
+            fail_generation,
+        )
+
+        with pytest.raises(RuntimeError, match="generation failed"):
+            await manager.create_session(user_id="user1", suites=["adversarial"])
+
+        assert await fake_redis.scard(_rate_key("user1", "active")) == 0
+        assert await fake_redis.get(_rate_key("user1", "hourly")) == "0"
 
     @pytest.mark.asyncio
     async def test_submit_round_with_flat_answers_dict(

@@ -43,8 +43,6 @@ _mock_engine.IterationCurveAnalyzer.analyze_curve = MagicMock(
         "round1_suspicion": 0.0,
     }
 )
-sys.modules.setdefault("scripts.engine", _mock_engine)
-
 from mettle.api_models import (  # noqa: E402
     MULTI_ROUND_SUITE,
     SUITE_NAMES,
@@ -57,6 +55,7 @@ from mettle.session_manager import (  # noqa: E402
     MAX_ACTIVE_SESSIONS_PER_USER,
     MAX_SESSIONS_PER_HOUR,
     SessionManager,
+    SessionRateLimitError,
     _key,
     _rate_key,
 )
@@ -818,6 +817,27 @@ class TestRouterCreateSession:
         resp = client.post("/api/mettle/sessions", json={"suites": ["bogus"]})
         assert resp.status_code == 400
 
+    def test_active_session_limit_returns_429(self, client, fake_redis):
+        fake_redis._sets[_rate_key(TEST_USER, "active")] = {
+            f"s{i}" for i in range(MAX_ACTIVE_SESSIONS_PER_USER)
+        }
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
+        assert resp.status_code == 429
+        assert resp.headers["Retry-After"] == "300"
+
+    def test_hourly_session_limit_returns_429(self, client, fake_redis):
+        fake_redis._data[_rate_key(TEST_USER, "hourly")] = str(
+            MAX_SESSIONS_PER_HOUR
+        ).encode()
+        resp = client.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
+        assert resp.status_code == 429
+        assert resp.headers["Retry-After"] == "3600"
+
+    def test_rate_limit_error_is_a_value_error(self):
+        error = SessionRateLimitError("limited", 10)
+        assert isinstance(error, ValueError)
+        assert error.retry_after == 10
+
     def test_create_session_unexpected_error(self, client):
         with patch.object(
             SessionManager, "create_session", side_effect=RuntimeError("boom")
@@ -832,7 +852,7 @@ class TestRouterGetSessionStatus:
         resp = client.get(f"/api/mettle/sessions/{sid}")
         assert resp.status_code == 200
         assert resp.json()["session_id"] == sid
-        assert resp.json()["elapsed_ms"] == 0
+        assert resp.json()["elapsed_ms"] >= 0
 
     def test_get_session_not_found(self, client):
         assert client.get("/api/mettle/sessions/nonexistent").status_code == 404

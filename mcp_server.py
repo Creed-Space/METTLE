@@ -24,11 +24,9 @@ from mcp.types import (
     TextContent,
     Tool,
 )
-from mettle.solver import solve_challenge
 
 # Configuration
 API_URL = os.getenv("METTLE_API_URL", "https://mettle.sh/api")
-
 # Initialize MCP server
 server = Server("mettle")
 
@@ -40,15 +38,19 @@ http_client = httpx.AsyncClient(timeout=30.0)
 
 
 async def api_call(
-    endpoint: str, method: str = "GET", json: dict | None = None
+    endpoint: str,
+    method: str = "GET",
+    json: dict | None = None,
+    session_token: str | None = None,
 ) -> dict:
     """Make an API call to METTLE."""
     url = f"{API_URL}{endpoint}"
 
+    headers = {"X-Session-Token": session_token} if session_token else None
     if method == "GET":
-        response = await http_client.get(url)
+        response = await http_client.get(url, headers=headers)
     else:
-        response = await http_client.post(url, json=json)
+        response = await http_client.post(url, json=json, headers=headers)
 
     response.raise_for_status()
     return response.json()
@@ -60,7 +62,7 @@ async def api_call(
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """List available METTLE tools."""
-    return [
+    tools = [
         Tool(
             name="mettle_start_session",
             description=(
@@ -97,6 +99,10 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Session ID from mettle_start_session",
                     },
+                    "session_token": {
+                        "type": "string",
+                        "description": "Bearer token from mettle_start_session",
+                    },
                     "challenge_id": {
                         "type": "string",
                         "description": "Challenge ID to answer",
@@ -106,7 +112,7 @@ async def list_tools() -> list[Tool]:
                         "description": "Your answer to the challenge",
                     },
                 },
-                "required": ["session_id", "challenge_id", "answer"],
+                "required": ["session_id", "session_token", "challenge_id", "answer"],
             },
         ),
         Tool(
@@ -122,34 +128,16 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Session ID to get results for",
                     },
-                },
-                "required": ["session_id"],
-            },
-        ),
-        Tool(
-            name="mettle_auto_verify",
-            description=(
-                "Automatically complete a full METTLE verification session. "
-                "This tool starts a session, answers all challenges, and returns the final result. "
-                "Use this for quick self-verification."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "difficulty": {
+                    "session_token": {
                         "type": "string",
-                        "enum": ["basic", "full"],
-                        "description": "Verification difficulty level",
-                        "default": "basic",
-                    },
-                    "entity_id": {
-                        "type": "string",
-                        "description": "Optional identifier for this AI agent",
+                        "description": "Bearer token from mettle_start_session",
                     },
                 },
+                "required": ["session_id", "session_token"],
             },
         ),
     ]
+    return tools
 
 
 @server.call_tool()
@@ -174,6 +162,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                     text=(
                         f"METTLE session started!\n\n"
                         f"Session ID: {data['session_id']}\n"
+                        f"Session token: {data['session_token']}\n"
                         f"Difficulty: {data['difficulty']}\n"
                         f"Total challenges: {data['total_challenges']}\n\n"
                         f"First Challenge:\n"
@@ -204,6 +193,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                     "challenge_id": arguments["challenge_id"],
                     "answer": arguments["answer"],
                 },
+                session_token=arguments["session_token"],
             )
 
             result = data["result"]
@@ -242,19 +232,21 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     elif name == "mettle_get_result":
         try:
-            data = await api_call(f"/session/{arguments['session_id']}/result")
+            data = await api_call(
+                f"/session/{arguments['session_id']}/result",
+                session_token=arguments["session_token"],
+            )
 
-            verified_text = "VERIFIED" if data["verified"] else "NOT VERIFIED"
+            verified = bool(data.get("verified", False))
+            status_text = "VERIFIED" if verified else "NOT VERIFIED"
 
             response_text = (
                 f"METTLE Verification Result\n"
                 f"{'=' * 30}\n\n"
-                f"Status: {verified_text}\n"
+                f"Status: {status_text}\n"
+                f"Tier: {data.get('tier', 'none')}\n"
                 f"Passed: {data['passed']}/{data['total']} ({data['pass_rate'] * 100:.0f}%)\n"
             )
-
-            if data.get("badge"):
-                response_text += f"Badge: {data['badge']}\n"
 
             if data.get("entity_id"):
                 response_text += f"Entity: {data['entity_id']}\n"
@@ -264,75 +256,14 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 status = "PASS" if r["passed"] else "FAIL"
                 response_text += f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
 
+            if data.get("badge"):
+                response_text += f"\nSigned credential issued:\n{data['badge']}\n"
+
             return [TextContent(type="text", text=response_text)]
         except httpx.HTTPStatusError as e:
             return [
                 TextContent(
                     type="text", text=f"Error getting result: {e.response.text}"
-                )
-            ]
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
-
-    elif name == "mettle_auto_verify":
-        try:
-            difficulty = arguments.get("difficulty", "basic")
-            entity_id = arguments.get("entity_id")
-
-            # Start session
-            start_data = await api_call(
-                "/session/start",
-                "POST",
-                {"difficulty": difficulty, "entity_id": entity_id},
-            )
-
-            session_id = start_data["session_id"]
-            challenge = start_data["current_challenge"]
-
-            # Answer all challenges
-            while challenge:
-                answer = solve_challenge(challenge)
-
-                answer_data = await api_call(
-                    "/session/answer",
-                    "POST",
-                    {
-                        "session_id": session_id,
-                        "challenge_id": challenge["id"],
-                        "answer": answer,
-                    },
-                )
-
-                if answer_data["session_complete"]:
-                    break
-                challenge = answer_data["next_challenge"]
-
-            # Get final result
-            result = await api_call(f"/session/{session_id}/result")
-
-            verified_text = "VERIFIED" if result["verified"] else "NOT VERIFIED"
-
-            response_text = (
-                f"METTLE Auto-Verification Complete\n"
-                f"{'=' * 35}\n\n"
-                f"Status: {verified_text}\n"
-                f"Difficulty: {difficulty}\n"
-                f"Passed: {result['passed']}/{result['total']} ({result['pass_rate'] * 100:.0f}%)\n"
-            )
-
-            if result.get("badge"):
-                response_text += f"\nBadge: {result['badge']}\n"
-
-            response_text += "\nChallenge Details:\n"
-            for r in result["results"]:
-                status = "PASS" if r["passed"] else "FAIL"
-                response_text += f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
-
-            return [TextContent(type="text", text=response_text)]
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text", text=f"Error in auto-verification: {e.response.text}"
                 )
             ]
         except Exception as e:

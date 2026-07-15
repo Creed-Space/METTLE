@@ -2,11 +2,8 @@
 
 Covers:
 - api_call() GET and POST paths
-- solve_challenge() for each challenge type: speed_math, token_prediction,
-  instruction_following, chained_reasoning, consistency, unknown
-- list_tools() returns list of 4 tools
-- call_tool() for each tool name: mettle_start_session, mettle_answer_challenge,
-  mettle_get_result, mettle_auto_verify, unknown tool
+- list_tools() exposes only the three interactive screening tools
+- call_tool() covers interactive screening and rejects removed tools
 - Error handling in each tool (HTTPStatusError, generic Exception)
 """
 
@@ -71,7 +68,7 @@ except ImportError:
 import httpx  # noqa: E402
 
 import mcp_server  # noqa: E402
-from mcp_server import api_call, call_tool, list_tools, solve_challenge  # noqa: E402
+from mcp_server import api_call, call_tool, list_tools  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -125,10 +122,12 @@ class TestApiCall:
     @pytest.mark.asyncio
     async def test_api_call_post(self, mock_http) -> None:
         """POST request calls http_client.post with JSON body."""
-        mock_http.post.return_value = _make_mock_response({"session_id": "abc"})
+        mock_http.post.return_value = _make_mock_response(
+            {"session_id": "abc", "session_token": "token-123"}
+        )
         result = await api_call("/session/start", "POST", {"difficulty": "basic"})
         mock_http.post.assert_awaited_once()
-        assert result == {"session_id": "abc"}
+        assert result == {"session_id": "abc", "session_token": "token-123"}
 
     @pytest.mark.asyncio
     async def test_api_call_get_raise_for_status(self, mock_http) -> None:
@@ -142,165 +141,6 @@ class TestApiCall:
 
 
 # ---------------------------------------------------------------------------
-# 3-8: solve_challenge()
-# ---------------------------------------------------------------------------
-
-
-class TestSolveChallenge:
-    """Tests for the solve_challenge function — each challenge type."""
-
-    def test_speed_math_addition(self) -> None:
-        challenge = {
-            "type": "speed_math",
-            "prompt": "Calculate: 123 + 456",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == str(123 + 456)
-
-    def test_speed_math_subtraction(self) -> None:
-        challenge = {
-            "type": "speed_math",
-            "prompt": "Calculate: 500 - 200",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == str(500 - 200)
-
-    def test_speed_math_multiplication_star(self) -> None:
-        challenge = {
-            "type": "speed_math",
-            "prompt": "Calculate: 12 * 34",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == str(12 * 34)
-
-    def test_speed_math_multiplication_times(self) -> None:
-        challenge = {
-            "type": "speed_math",
-            "prompt": "Calculate: 12 \u00d7 34",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == str(12 * 34)
-
-    def test_speed_math_no_match_returns_zero(self) -> None:
-        challenge = {
-            "type": "speed_math",
-            "prompt": "What is the meaning of life?",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == "0"
-
-    def test_token_prediction_quick_brown(self) -> None:
-        challenge = {
-            "type": "token_prediction",
-            "prompt": "Predict: quick brown",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == "fox"
-
-    def test_token_prediction_hello(self) -> None:
-        challenge = {
-            "type": "token_prediction",
-            "prompt": "Complete: hello",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == "world"
-
-    def test_token_prediction_unknown(self) -> None:
-        challenge = {
-            "type": "token_prediction",
-            "prompt": "Predict: xyz abc",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == "unknown"
-
-    def test_instruction_following_indeed(self) -> None:
-        challenge = {
-            "type": "instruction_following",
-            "prompt": "",
-            "data": {"instruction": "Start with Indeed"},
-        }
-        result = solve_challenge(challenge)
-        assert result.startswith("Indeed")
-
-    def test_instruction_following_ellipsis(self) -> None:
-        challenge = {
-            "type": "instruction_following",
-            "prompt": "",
-            "data": {"instruction": "End with ..."},
-        }
-        result = solve_challenge(challenge)
-        assert result.endswith("...")
-
-    def test_instruction_following_therefore(self) -> None:
-        challenge = {
-            "type": "instruction_following",
-            "prompt": "",
-            "data": {"instruction": "Use therefore in your answer"},
-        }
-        result = solve_challenge(challenge)
-        assert result.startswith("Therefore")
-
-    def test_instruction_following_five_words(self) -> None:
-        challenge = {
-            "type": "instruction_following",
-            "prompt": "",
-            "data": {"instruction": "Answer in 5 words"},
-        }
-        result = solve_challenge(challenge)
-        assert len(result.split()) == 5
-
-    def test_instruction_following_number(self) -> None:
-        challenge = {
-            "type": "instruction_following",
-            "prompt": "",
-            "data": {"instruction": "Include a number"},
-        }
-        result = solve_challenge(challenge)
-        assert result.startswith("1.")
-
-    def test_instruction_following_default(self) -> None:
-        challenge = {
-            "type": "instruction_following",
-            "prompt": "",
-            "data": {"instruction": "Do something random"},
-        }
-        result = solve_challenge(challenge)
-        assert result == "Indeed, this is my response."
-
-    def test_chained_reasoning_with_chain(self) -> None:
-        challenge = {
-            "type": "chained_reasoning",
-            "prompt": "",
-            "data": {"chain": [10, 20, 30]},
-        }
-        assert solve_challenge(challenge) == "30"
-
-    def test_chained_reasoning_empty_chain(self) -> None:
-        challenge = {
-            "type": "chained_reasoning",
-            "prompt": "",
-            "data": {"chain": []},
-        }
-        assert solve_challenge(challenge) == "0"
-
-    def test_consistency(self) -> None:
-        challenge = {
-            "type": "consistency",
-            "prompt": "",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == "4|4|4"
-
-    def test_unknown_type(self) -> None:
-        challenge = {
-            "type": "quantum_entanglement",
-            "prompt": "",
-            "data": {},
-        }
-        assert solve_challenge(challenge) == "unknown"
-
-
-# ---------------------------------------------------------------------------
 # 9: list_tools()
 # ---------------------------------------------------------------------------
 
@@ -309,9 +149,9 @@ class TestListTools:
     """Tests for the list_tools function."""
 
     @pytest.mark.asyncio
-    async def test_list_tools_returns_four_tools(self) -> None:
+    async def test_list_tools_hides_insecure_auto_solver_by_default(self) -> None:
         tools = await list_tools()
-        assert len(tools) == 4
+        assert len(tools) == 3
 
     @pytest.mark.asyncio
     async def test_list_tools_names(self) -> None:
@@ -321,7 +161,6 @@ class TestListTools:
             "mettle_start_session",
             "mettle_answer_challenge",
             "mettle_get_result",
-            "mettle_auto_verify",
         }
         assert names == expected
 
@@ -339,6 +178,7 @@ class TestCallToolStartSession:
         mock_http.post.return_value = _make_mock_response(
             {
                 "session_id": "sess-123",
+                "session_token": "token-123",
                 "difficulty": "basic",
                 "total_challenges": 3,
                 "current_challenge": {
@@ -405,6 +245,7 @@ class TestCallToolAnswerChallenge:
             "mettle_answer_challenge",
             {
                 "session_id": "sess-123",
+                "session_token": "token-123",
                 "challenge_id": "ch-1",
                 "answer": "42",
             },
@@ -429,6 +270,7 @@ class TestCallToolAnswerChallenge:
             "mettle_answer_challenge",
             {
                 "session_id": "sess-123",
+                "session_token": "token-123",
                 "challenge_id": "ch-3",
                 "answer": "4|4|4",
             },
@@ -452,6 +294,7 @@ class TestCallToolAnswerChallenge:
             "mettle_answer_challenge",
             {
                 "session_id": "sess-123",
+                "session_token": "token-123",
                 "challenge_id": "ch-1",
                 "answer": "wrong",
             },
@@ -469,6 +312,7 @@ class TestCallToolAnswerChallenge:
             "mettle_answer_challenge",
             {
                 "session_id": "bad",
+                "session_token": "token-123",
                 "challenge_id": "ch-1",
                 "answer": "x",
             },
@@ -483,6 +327,7 @@ class TestCallToolAnswerChallenge:
             "mettle_answer_challenge",
             {
                 "session_id": "s",
+                "session_token": "token-123",
                 "challenge_id": "c",
                 "answer": "a",
             },
@@ -531,10 +376,14 @@ class TestCallToolGetResult:
                 ],
             }
         )
-        result = await call_tool("mettle_get_result", {"session_id": "sess-123"})
+        result = await call_tool(
+            "mettle_get_result",
+            {"session_id": "sess-123", "session_token": "token-123"},
+        )
         text = result[0].text
         assert "VERIFIED" in text
-        assert "Badge" in text
+        assert "Signed credential issued" in text
+        assert "mtl_badge_abc" in text
         assert "Entity" in text
         assert "speed_math" in text
 
@@ -568,7 +417,10 @@ class TestCallToolGetResult:
                 ],
             }
         )
-        result = await call_tool("mettle_get_result", {"session_id": "sess-fail"})
+        result = await call_tool(
+            "mettle_get_result",
+            {"session_id": "sess-fail", "session_token": "token-123"},
+        )
         text = result[0].text
         assert "NOT VERIFIED" in text
         assert "FAIL" in text
@@ -584,7 +436,9 @@ class TestCallToolGetResult:
                 "results": [],
             }
         )
-        result = await call_tool("mettle_get_result", {"session_id": "sess-x"})
+        result = await call_tool(
+            "mettle_get_result", {"session_id": "sess-x", "session_token": "token-123"}
+        )
         text = result[0].text
         assert "Badge" not in text
         assert "Entity" not in text
@@ -596,156 +450,32 @@ class TestCallToolGetResult:
             404, "Session not found"
         )
         mock_http.get.return_value = resp
-        result = await call_tool("mettle_get_result", {"session_id": "bad"})
+        result = await call_tool(
+            "mettle_get_result", {"session_id": "bad", "session_token": "token-123"}
+        )
         text = result[0].text
         assert "Error getting result" in text
 
     @pytest.mark.asyncio
     async def test_get_result_generic_error(self, mock_http) -> None:
         mock_http.get.side_effect = Exception("Network error")
-        result = await call_tool("mettle_get_result", {"session_id": "s"})
+        result = await call_tool(
+            "mettle_get_result", {"session_id": "s", "session_token": "token-123"}
+        )
         text = result[0].text
         assert "Error" in text
 
 
 # ---------------------------------------------------------------------------
-# 20-22: call_tool() — mettle_auto_verify
+# Removed auto-solver regression
 # ---------------------------------------------------------------------------
 
 
-class TestCallToolAutoVerify:
-    """Tests for call_tool with mettle_auto_verify."""
-
+class TestRemovedAutoVerify:
     @pytest.mark.asyncio
-    async def test_auto_verify_success(self, mock_http) -> None:
-        # start_session response
-        start_resp = _make_mock_response(
-            {
-                "session_id": "sess-auto",
-                "current_challenge": {
-                    "id": "ch-1",
-                    "type": "speed_math",
-                    "prompt": "Calculate: 100 + 200",
-                    "data": {},
-                },
-            }
-        )
-        # answer response — session completes on first answer
-        answer_resp = _make_mock_response(
-            {
-                "result": {"passed": True},
-                "session_complete": True,
-            }
-        )
-        # result response
-        result_resp = _make_mock_response(
-            {
-                "verified": True,
-                "passed": 1,
-                "total": 1,
-                "pass_rate": 1.0,
-                "badge": "mtl_auto_badge",
-                "results": [
-                    {
-                        "challenge_type": "speed_math",
-                        "passed": True,
-                        "response_time_ms": 10,
-                        "time_limit_ms": 5000,
-                    },
-                ],
-            }
-        )
-
-        # Order matters: first call is POST (start), second is POST (answer), third is GET (result)
-        mock_http.post.side_effect = [start_resp, answer_resp]
-        mock_http.get.return_value = result_resp
-
-        result = await call_tool("mettle_auto_verify", {"difficulty": "basic"})
-        text = result[0].text
-        assert "Auto-Verification Complete" in text
-        assert "VERIFIED" in text
-        assert "Badge" in text
-
-    @pytest.mark.asyncio
-    async def test_auto_verify_multiple_challenges(self, mock_http) -> None:
-        start_resp = _make_mock_response(
-            {
-                "session_id": "sess-multi",
-                "current_challenge": {
-                    "id": "ch-1",
-                    "type": "speed_math",
-                    "prompt": "Calculate: 10 + 20",
-                    "data": {},
-                },
-            }
-        )
-        answer_resp_1 = _make_mock_response(
-            {
-                "result": {"passed": True},
-                "session_complete": False,
-                "next_challenge": {
-                    "id": "ch-2",
-                    "type": "consistency",
-                    "prompt": "Answer 3 times",
-                    "data": {},
-                },
-            }
-        )
-        answer_resp_2 = _make_mock_response(
-            {
-                "result": {"passed": True},
-                "session_complete": True,
-            }
-        )
-        result_resp = _make_mock_response(
-            {
-                "verified": True,
-                "passed": 2,
-                "total": 2,
-                "pass_rate": 1.0,
-                "results": [
-                    {
-                        "challenge_type": "speed_math",
-                        "passed": True,
-                        "response_time_ms": 10,
-                        "time_limit_ms": 5000,
-                    },
-                    {
-                        "challenge_type": "consistency",
-                        "passed": True,
-                        "response_time_ms": 20,
-                        "time_limit_ms": 15000,
-                    },
-                ],
-            }
-        )
-
-        mock_http.post.side_effect = [start_resp, answer_resp_1, answer_resp_2]
-        mock_http.get.return_value = result_resp
-
-        result = await call_tool("mettle_auto_verify", {"difficulty": "full"})
-        text = result[0].text
-        assert "VERIFIED" in text
-        assert "2/2" in text
-
-    @pytest.mark.asyncio
-    async def test_auto_verify_http_error(self, mock_http) -> None:
-        resp = _make_mock_response({})
-        resp.raise_for_status.side_effect = _make_http_status_error(
-            500, "Internal Server Error"
-        )
-        mock_http.post.return_value = resp
+    async def test_auto_verify_is_not_a_tool(self) -> None:
         result = await call_tool("mettle_auto_verify", {})
-        text = result[0].text
-        assert "Error in auto-verification" in text
-
-    @pytest.mark.asyncio
-    async def test_auto_verify_generic_error(self, mock_http) -> None:
-        mock_http.post.side_effect = Exception("DNS resolution failed")
-        result = await call_tool("mettle_auto_verify", {})
-        text = result[0].text
-        assert "Error" in text
-        assert "DNS resolution failed" in text
+        assert "Unknown tool" in result[0].text
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+from typing import Any
 
 # Try to import PIL, fallback to cairosvg if available
 try:
@@ -102,6 +103,11 @@ def generate_og_image():
 
     img = Image.new("RGB", (width, height), bg_color)
     draw = ImageDraw.Draw(img)
+
+    # Pillow's fallback font has a different concrete type from TrueType fonts.
+    title_font: Any
+    subtitle_font: Any
+    small_font: Any
 
     # Try to load fonts
     try:

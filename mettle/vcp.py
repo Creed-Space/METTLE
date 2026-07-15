@@ -12,8 +12,8 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +33,14 @@ SUITE_ORDER: dict[str, int] = {
     "llm-dynamic": 12,  # Suite 12: LLM-dynamic (supplemental, not in tier ranges)
 }
 
-# Tier definitions: tier name -> required suite numbers
-# All suites in the range must pass for the tier to apply.
-# Platinum now requires Suite 11 (governance verification) in addition to 1-10.
+# A tier is earned only when every suite in its contiguous range passed. This
+# prevents callers from cherry-picking a single easy or LLM-judged suite and
+# presenting it as a stronger credential.
 TIER_RANGES: dict[str, tuple[int, int]] = {
     "bronze": (1, 5),
     "silver": (1, 7),
     "gold": (1, 9),
-    "platinum": (1, 11),  # Updated: requires governance suite
+    "platinum": (1, 11),
 }
 
 
@@ -150,33 +150,15 @@ def parse_csm1_token(token: str) -> VCPTokenClaim:
     return claim
 
 
-def compute_tier(suites_passed: list[str]) -> str:
-    """Compute METTLE verification tier from suites passed.
-
-    Tier assignment is suite-based, not percentage-based:
-        Bronze:   suites 1-5 all pass
-        Silver:   suites 1-7 all pass
-        Gold:     suites 1-9 all pass
-        Platinum: suites 1-11 all pass (includes governance)
-
-    Any suite failure below the tier's range drops the tier.
-    E.g., pass suites 1-9 but fail suite 6 -> Bronze (not Silver).
-
-    Args:
-        suites_passed: List of suite names that passed.
-
-    Returns:
-        Tier string: "platinum", "gold", "silver", "bronze", or "none".
-    """
+def compute_tier(
+    suites_passed: list[str],
+) -> str:
+    """Compute the highest contiguous METTLE challenge tier earned."""
     passed_numbers = {SUITE_ORDER[s] for s in suites_passed if s in SUITE_ORDER}
-
-    # Check tiers from highest to lowest
     for tier in ("platinum", "gold", "silver", "bronze"):
         lo, hi = TIER_RANGES[tier]
-        required = set(range(lo, hi + 1))
-        if required <= passed_numbers:
+        if set(range(lo, hi + 1)) <= passed_numbers:
             return tier
-
     return "none"
 
 
@@ -186,10 +168,12 @@ def build_mettle_attestation(
     suites_passed: list[str],
     suites_failed: list[str],
     pass_rate: float,
-    sign_fn: Callable[[bytes], str] | None = None,
+    subject_id: str,
+    entity_id: str | None = None,
     key_id: str = "mettle-vcp-v1",
+    presence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a VCP-compatible attestation dict from METTLE results.
+    """Build a server-issued VCP-compatible METTLE result.
 
     Args:
         session_id: METTLE session ID.
@@ -197,24 +181,84 @@ def build_mettle_attestation(
         suites_passed: List of suite names that passed.
         suites_failed: List of suite names that failed.
         pass_rate: Overall pass rate (0.0-1.0).
-        sign_fn: Optional Ed25519 signing function (bytes -> base64 sig).
-        key_id: Key ID for the signing key.
+        key_id: Identifier for the server-owned Ed25519 issuer key.
 
     Returns:
         VCP-compatible attestation dict.
     """
-    tier = compute_tier(suites_passed)
-    reviewed_at = datetime.now(tz=timezone.utc).isoformat()
+    if not session_id or not subject_id:
+        raise ValueError("session_id and authenticated subject_id are required")
+    if not 0.0 <= pass_rate <= 1.0:
+        raise ValueError("pass_rate must be between 0.0 and 1.0")
+    if set(suites_passed) & set(suites_failed):
+        raise ValueError("A suite cannot be both passed and failed")
 
-    metadata = {
+    tier = compute_tier(suites_passed)
+    credential_eligible = tier != "none"
+    reviewed = datetime.now(tz=timezone.utc)
+    reviewed_at = reviewed.isoformat()
+    expires_at = (reviewed + timedelta(hours=1)).isoformat()
+
+    metadata: dict[str, Any] = {
         "mettle_version": "2.0",
         "session_id": session_id,
+        "subject_id": subject_id,
+        "entity_id": entity_id,
         "tier": tier,
+        "verified": credential_eligible,
+        "assurance": "mettle_behavioral_verification",
+        "credential_eligible": credential_eligible,
         "suites_passed": sorted(suites_passed),
         "suites_failed": sorted(suites_failed),
         "difficulty": difficulty,
         "pass_rate": round(pass_rate, 4),
     }
+    if presence is not None:
+        from mettle.presence import validate_credential_presence
+
+        validate_credential_presence(presence)
+        timing_submissions = []
+        for submission in presence.get("submissions", []):
+            receipt = {
+                "sequence": submission["sequence"],
+                "action": submission["action"],
+                "response_time_ms": submission["response_time_ms"],
+                "transcript_hash": submission["transcript_hash"],
+            }
+            if presence.get("continuity_protocol") is not None:
+                receipt["challenge_family"] = submission["challenge_family"]
+                receipt["challenge_id"] = submission["challenge_id"]
+            timing_submissions.append(receipt)
+        completed_at_ms = (
+            presence["submissions"][-1]["accepted_at_unix_ms"]
+            if presence.get("submissions")
+            else presence["started_at_unix_ms"]
+        )
+        metadata["jti"] = presence["credential_jti"]
+        metadata["audience"] = presence["audience"]
+        metadata["proof_of_possession"] = {
+            "protocol": presence["protocol"],
+            "public_key_pem": presence["public_key_pem"],
+            "key_fingerprint": presence["key_fingerprint"],
+            "transcript_hash": presence["transcript_hash"],
+            "sequence": presence["sequence"],
+            "server_timing": {
+                "total_elapsed_ms": max(
+                    0, completed_at_ms - presence["started_at_unix_ms"]
+                ),
+                "submissions": timing_submissions,
+            },
+        }
+        if presence.get("continuity_protocol") is not None:
+            metadata["proof_of_possession"]["continuity"] = {
+                "protocol": presence["continuity_protocol"],
+                "challenge_count": len(timing_submissions),
+                "transcript_bound": True,
+                "max_response_time_ms": max(
+                    (item["response_time_ms"] for item in timing_submissions),
+                    default=0,
+                ),
+            }
 
     # Hash the metadata for content integrity
     content_bytes = _canonical_bytes(metadata)
@@ -223,39 +267,198 @@ def build_mettle_attestation(
     attestation: dict[str, Any] = {
         "auditor": "mettle.creed.space",
         "auditor_key_id": key_id,
-        "attestation_type": "mettle-verification",
+        "attestation_type": (
+            (
+                "mettle-presence-credential"
+                if presence is not None
+                else "mettle-verification-credential"
+            )
+            if credential_eligible
+            else "mettle-evidence-receipt"
+        ),
         "reviewed_at": reviewed_at,
+        "expires_at": expires_at,
         "content_hash": content_hash,
         "metadata": metadata,
+        "credential_issued": credential_eligible,
     }
 
-    # Sign if signing function provided
-    if sign_fn is not None:
+    # Only a qualifying contiguous suite battery reaches the signer. The
+    # signing key is owned by the server and is never supplied by the caller.
+    signature = None
+    if credential_eligible:
         try:
-            signature = sign_fn(content_bytes)
-            attestation["signature"] = f"ed25519:{signature}"
-        except Exception:
-            logger.warning("Failed to sign VCP attestation", exc_info=True)
-            attestation["signature"] = None
-    else:
-        attestation["signature"] = None
+            from mettle.signing import is_available, sign_attestation
+
+            if is_available():
+                signature = f"ed25519:{sign_attestation(_canonical_bytes(attestation))}"
+        except (ImportError, RuntimeError):
+            logger.warning("METTLE credential signing unavailable", exc_info=True)
+    if credential_eligible and signature is None:
+        attestation["attestation_type"] = "mettle-verification-evidence"
+        attestation["credential_issued"] = False
+    attestation["signature"] = signature
 
     return attestation
 
 
+def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) -> bool:
+    """Verify a METTLE credential envelope and its current validity."""
+    if (
+        attestation.get("attestation_type")
+        not in {"mettle-verification-credential", "mettle-presence-credential"}
+        or attestation.get("credential_issued") is not True
+    ):
+        return False
+    metadata = attestation.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    tier = metadata.get("tier")
+    suites_passed = metadata.get("suites_passed")
+    suites_failed = metadata.get("suites_failed")
+    if not isinstance(suites_passed, list) or not isinstance(suites_failed, list):
+        return False
+    if set(suites_passed) & set(suites_failed):
+        return False
+    if (
+        not metadata.get("credential_eligible")
+        or tier not in TIER_RANGES
+        or compute_tier(suites_passed) != tier
+        or not metadata.get("session_id")
+        or not metadata.get("subject_id")
+    ):
+        return False
+    if attestation.get("attestation_type") == "mettle-presence-credential":
+        proof = metadata.get("proof_of_possession")
+        if not isinstance(proof, dict):
+            return False
+        try:
+            from mettle.presence import key_fingerprint
+
+            timing = proof.get("server_timing")
+            continuity = proof.get("continuity")
+            timing_submissions = (
+                timing.get("submissions") if isinstance(timing, dict) else None
+            )
+            timing_valid = (
+                isinstance(timing, dict)
+                and isinstance(timing.get("total_elapsed_ms"), int)
+                and timing["total_elapsed_ms"] >= 0
+                and isinstance(timing_submissions, list)
+                and len(timing_submissions) == proof.get("sequence")
+            )
+            if timing_valid and isinstance(timing_submissions, list):
+                for expected_sequence, submission in enumerate(
+                    timing_submissions, start=1
+                ):
+                    if not (
+                        isinstance(submission, dict)
+                        and submission.get("sequence") == expected_sequence
+                        and isinstance(submission.get("action"), str)
+                        and submission["action"].startswith(("suite:", "round:"))
+                        and isinstance(submission.get("response_time_ms"), int)
+                        and submission["response_time_ms"] >= 0
+                        and re.fullmatch(
+                            r"sha256:[0-9a-f]{64}",
+                            str(submission.get("transcript_hash", "")),
+                        )
+                        is not None
+                    ):
+                        timing_valid = False
+                        break
+                    if continuity is not None and not (
+                        submission.get("challenge_family") == "mettle-continuity-v1"
+                        and re.fullmatch(
+                            r"[0-9a-f]{32}",
+                            str(submission.get("challenge_id", "")),
+                        )
+                        is not None
+                    ):
+                        timing_valid = False
+                        break
+                if timing_submissions and (
+                    timing_submissions[-1].get("transcript_hash")
+                    != proof.get("transcript_hash")
+                ):
+                    timing_valid = False
+            continuity_valid = continuity is None or (
+                isinstance(continuity, dict)
+                and continuity.get("protocol") == "mettle-continuity-v1"
+                and continuity.get("challenge_count") == proof.get("sequence")
+                and continuity.get("transcript_bound") is True
+                and isinstance(continuity.get("max_response_time_ms"), int)
+                and continuity["max_response_time_ms"] >= 0
+                and isinstance(timing_submissions, list)
+                and len(
+                    {
+                        submission.get("challenge_id")
+                        for submission in timing_submissions
+                        if isinstance(submission, dict)
+                    }
+                )
+                == proof.get("sequence")
+            )
+            valid_presence = (
+                isinstance(metadata.get("jti"), str)
+                and re.fullmatch(r"[0-9a-f]{32}", metadata["jti"]) is not None
+                and isinstance(metadata.get("audience"), str)
+                and bool(metadata["audience"])
+                and proof.get("protocol") == "mettle-presence-v1"
+                and isinstance(proof.get("public_key_pem"), str)
+                and key_fingerprint(proof["public_key_pem"])
+                == proof.get("key_fingerprint")
+                and isinstance(proof.get("transcript_hash"), str)
+                and re.fullmatch(r"sha256:[0-9a-f]{64}", proof["transcript_hash"])
+                is not None
+                and isinstance(proof.get("sequence"), int)
+                and proof["sequence"] > 0
+                and timing_valid
+                and continuity_valid
+            )
+        except (TypeError, ValueError):
+            return False
+        if not valid_presence:
+            return False
+    expected_hash = f"sha256:{hashlib.sha256(_canonical_bytes(metadata)).hexdigest()}"
+    if attestation.get("content_hash") != expected_hash:
+        return False
+    signature = attestation.get("signature")
+    if not isinstance(signature, str) or not signature.startswith("ed25519:"):
+        return False
+    try:
+        reviewed_at = datetime.fromisoformat(str(attestation["reviewed_at"]))
+        expires_at = datetime.fromisoformat(str(attestation["expires_at"]))
+        if expires_at <= reviewed_at or expires_at <= datetime.now(timezone.utc):
+            return False
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    unsigned = dict(attestation)
+    unsigned.pop("signature", None)
+    from mettle.signing import verify_signature
+
+    return verify_signature(
+        public_key_pem,
+        _canonical_bytes(unsigned),
+        signature.removeprefix("ed25519:"),
+    )
+
+
 def format_csm1_line(tier: str, session_id: str, timestamp: str | None = None) -> str:
-    """Produce a compact CSM-1 METTLE attestation line.
+    """Produce a compact CSM-1 METTLE result reference.
 
     Format: MT:<tier>:<session_id_short>:<iso_timestamp>
 
     Args:
-        tier: METTLE tier (bronze/silver/gold/platinum).
+        tier: METTLE result tier.
         session_id: Full session ID (will be truncated for compact form).
         timestamp: ISO timestamp. Defaults to now.
 
     Returns:
         CSM-1 line string.
     """
+    if tier not in {*TIER_RANGES, "none"}:
+        raise ValueError(f"Unknown METTLE tier: {tier}")
     if timestamp is None:
         timestamp = datetime.now(tz=timezone.utc).isoformat()
 

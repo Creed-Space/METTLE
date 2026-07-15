@@ -305,6 +305,62 @@ class TestRateTier:
         with pytest.raises(ValueError, match="Invalid tier"):
             RateTier.register_key("bad-key", "invalid-tier")
 
+    def test_revoke_key_removes_in_memory_authority(self):
+        RateTier.register_key("revoke-key", "pro", "entity-1")
+
+        result = RateTier.revoke_key("revoke-key")
+
+        assert result is not None
+        assert result["tier"] == "pro"
+        assert RateTier.get_key_data("revoke-key") is None
+
+    def test_durable_storage_overrides_stale_cached_authority(self):
+        api_keys["revoked-elsewhere"] = {
+            "tier": "enterprise",
+            "entity_id": "entity-1",
+        }
+        mock_db = MagicMock()
+        mock_db.get_api_key.return_value = None
+
+        with patch("main.db", mock_db):
+            assert RateTier.get_key_data("revoked-elsewhere") is None
+
+        assert "revoked-elsewhere" not in api_keys
+
+    def test_durable_storage_refreshes_cached_authority(self):
+        key_data = {"tier": "pro", "entity_id": "durable-entity"}
+        mock_db = MagicMock()
+        mock_db.get_api_key.return_value = key_data
+
+        with patch("main.db", mock_db):
+            assert RateTier.get_key_data("durable-key") == key_data
+
+        assert api_keys["durable-key"] == key_data
+
+    def test_register_key_persistence_failure_removes_authority(self):
+        mock_db = MagicMock()
+        mock_db.save_api_key.return_value = False
+
+        with patch("main.db", mock_db):
+            with pytest.raises(RuntimeError, match="persistence unavailable"):
+                RateTier.register_key("failed-key", "pro", "entity-1")
+
+        assert "failed-key" not in api_keys
+
+    def test_revoke_key_removes_durable_authority(self):
+        key_data = {"tier": "pro", "entity_id": "durable-entity"}
+        mock_db = MagicMock()
+        mock_db.get_api_key.return_value = key_data
+        mock_db.delete_api_key.return_value = True
+
+        with patch("main.db", mock_db):
+            assert RateTier.revoke_key("durable-key") == key_data
+
+        mock_db.get_api_key.assert_called_once_with("durable-key", raise_on_error=True)
+        mock_db.delete_api_key.assert_called_once_with(
+            "durable-key", raise_on_error=True
+        )
+
     def test_check_limit_free(self):
         """Test rate limit check for free tier."""
         allowed, message = RateTier.check_limit(None, "session")
@@ -334,6 +390,91 @@ class TestRateTierEndpoints:
         assert "free" in data["tiers"]
         assert "pro" in data["tiers"]
         assert "enterprise" in data["tiers"]
+
+    def test_revoke_api_key(self, client):
+        RateTier.register_key("mtl_key-to-revoke-123456789", "pro", "entity-1")
+
+        response = client.post(
+            "/api/keys/revoke",
+            json={
+                "api_key": "mtl_key-to-revoke-123456789",
+                "reason": "Staging security rotation",
+            },
+            headers={"X-Admin-Key": TEST_ADMIN_KEY},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "revoked": True,
+            "tier": "pro",
+            "entity_id": "entity-1",
+        }
+        assert "api_key" not in response.json()
+        assert RateTier.get_key_data("mtl_key-to-revoke-123456789") is None
+
+    def test_revoke_api_key_requires_admin(self, client):
+        RateTier.register_key("mtl_key-to-protect-1234567", "pro", "entity-1")
+
+        response = client.post(
+            "/api/keys/revoke",
+            json={
+                "api_key": "mtl_key-to-protect-1234567",
+                "reason": "Attempted unauthorized revocation",
+            },
+        )
+
+        assert response.status_code == 401
+        assert RateTier.get_tier("mtl_key-to-protect-1234567") == "pro"
+
+    def test_revoke_api_key_persistence_failure_is_fail_closed(self, client):
+        mock_db = MagicMock()
+        mock_db.delete_api_key.side_effect = RuntimeError(
+            "API key persistence unavailable"
+        )
+        api_keys["mtl_key-persistence-123456"] = {
+            "tier": "pro",
+            "entity_id": "entity-1",
+        }
+
+        with patch("main.db", mock_db):
+            response = client.post(
+                "/api/keys/revoke",
+                json={
+                    "api_key": "mtl_key-persistence-123456",
+                    "reason": "Required security revocation",
+                },
+                headers={"X-Admin-Key": TEST_ADMIN_KEY},
+            )
+
+        assert response.status_code == 503
+        assert RateTier.get_tier("mtl_key-persistence-123456") == "pro"
+
+    def test_revoke_unknown_api_key_returns_not_found(self, client):
+        response = client.post(
+            "/api/keys/revoke",
+            json={
+                "api_key": "mtl_unknown-key-123456789",
+                "reason": "Synthetic unknown key revocation",
+            },
+            headers={"X-Admin-Key": TEST_ADMIN_KEY},
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "API key not found"
+
+    def test_register_api_key_persistence_failure_returns_unavailable(self, client):
+        mock_db = MagicMock()
+        mock_db.save_api_key.return_value = False
+
+        with patch("main.db", mock_db):
+            response = client.post(
+                "/api/keys/register",
+                json={"tier": "pro", "entity_id": "entity-1"},
+                headers={"X-Admin-Key": TEST_ADMIN_KEY},
+            )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "API key persistence unavailable"
 
 
 # === Webhook Tests ===
@@ -486,6 +627,21 @@ class TestWebhookEndpoints:
         assert response.status_code == 403
         # The cross-entity webhook must not have been registered
         assert "entity-bob" not in webhooks
+
+    def test_register_webhook_free_tier_is_forbidden(self, client):
+        """SECURITY: entity ownership cannot bypass the webhook feature tier."""
+        RateTier.register_key("free-webhook-key", "free", "free-entity")
+        response = client.post(
+            "/api/webhooks/register",
+            json={
+                "entity_id": "free-entity",
+                "url": "https://example.com/webhook",
+            },
+            headers={"X-API-Key": "free-webhook-key"},
+        )
+        assert response.status_code == 403
+        assert "pro or enterprise" in response.json()["detail"]
+        assert "free-entity" not in webhooks
 
     def test_unregister_webhook_endpoint(self, client):
         """Test DELETE /api/webhooks/{entity_id} with admin key."""

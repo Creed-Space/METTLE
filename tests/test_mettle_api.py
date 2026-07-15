@@ -298,11 +298,11 @@ class TestSingleShotEvaluation:
         result = ChallengeAdapter.evaluate_single_shot("adversarial", answers, server)
         assert not result["details"]["dynamic_math"]["passed"]
 
-    def test_adversarial_math_too_slow(self) -> None:
+    def test_adversarial_math_ignores_caller_time(self) -> None:
         server = {"dynamic_math": {"expected": 42}}
-        answers = {"dynamic_math": {"computed": 42, "time_ms": 200}}
+        answers = {"dynamic_math": {"computed": 42, "time_ms": -1000}}
         result = ChallengeAdapter.evaluate_single_shot("adversarial", answers, server)
-        assert not result["details"]["dynamic_math"]["passed"]
+        assert result["details"]["dynamic_math"]["passed"]
 
     def test_native_batch_coherence_correct(self) -> None:
         server = {"batch_coherence": {"target": "VER"}}
@@ -715,12 +715,14 @@ class TestVerificationEndpoints:
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
         assert create_resp.status_code == 201
-        session_id = create_resp.json()["session_id"]
+        created = create_resp.json()
+        session_id = created["session_id"]
+        challenge_names = created["challenges"]["novel-reasoning"]["challenges"]
 
         # Submit round 1
         resp = client.post(
             f"/api/mettle/sessions/{session_id}/rounds/1/answer",
-            json={"answers": {}},
+            json={"answers": {name: {} for name in challenge_names}},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -732,11 +734,13 @@ class TestVerificationEndpoints:
             "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
-        session_id = create_resp.json()["session_id"]
+        created = create_resp.json()
+        session_id = created["session_id"]
+        challenge_names = created["challenges"]["novel-reasoning"]["challenges"]
 
         resp = client.post(
             f"/api/mettle/sessions/{session_id}/rounds/2/answer",
-            json={"answers": {}},
+            json={"answers": {name: {} for name in challenge_names}},
         )
         assert resp.status_code == 400
 
@@ -790,12 +794,14 @@ class TestGetRoundFeedback:
             "/api/mettle/sessions",
             json={"suites": ["novel-reasoning"], "difficulty": "easy"},
         )
-        session_id = create_resp.json()["session_id"]
+        created = create_resp.json()
+        session_id = created["session_id"]
+        challenge_names = created["challenges"]["novel-reasoning"]["challenges"]
 
         # Submit round 1
         client.post(
             f"/api/mettle/sessions/{session_id}/rounds/1/answer",
-            json={"answers": {}},
+            json={"answers": {name: {} for name in challenge_names}},
         )
 
         # Get feedback
