@@ -392,12 +392,16 @@ class TestRateTierEndpoints:
         assert "enterprise" in data["tiers"]
 
     def test_revoke_api_key(self, client):
-        RateTier.register_key("mtl_key-to-revoke-123456789", "pro", "entity-1")
+        RateTier.register_key(
+            "mtl_key-to-revoke-123456789",  # pragma: allowlist secret
+            "pro",
+            "entity-1",
+        )
 
         response = client.post(
             "/api/keys/revoke",
             json={
-                "api_key": "mtl_key-to-revoke-123456789",
+                "api_key": "mtl_key-to-revoke-123456789",  # pragma: allowlist secret
                 "reason": "Staging security rotation",
             },
             headers={"X-Admin-Key": TEST_ADMIN_KEY},
@@ -413,12 +417,16 @@ class TestRateTierEndpoints:
         assert RateTier.get_key_data("mtl_key-to-revoke-123456789") is None
 
     def test_revoke_api_key_requires_admin(self, client):
-        RateTier.register_key("mtl_key-to-protect-1234567", "pro", "entity-1")
+        RateTier.register_key(
+            "mtl_key-to-protect-1234567",  # pragma: allowlist secret
+            "pro",
+            "entity-1",
+        )
 
         response = client.post(
             "/api/keys/revoke",
             json={
-                "api_key": "mtl_key-to-protect-1234567",
+                "api_key": "mtl_key-to-protect-1234567",  # pragma: allowlist secret
                 "reason": "Attempted unauthorized revocation",
             },
         )
@@ -431,7 +439,7 @@ class TestRateTierEndpoints:
         mock_db.delete_api_key.side_effect = RuntimeError(
             "API key persistence unavailable"
         )
-        api_keys["mtl_key-persistence-123456"] = {
+        api_keys["mtl_key-persistence-123456"] = {  # pragma: allowlist secret
             "tier": "pro",
             "entity_id": "entity-1",
         }
@@ -440,7 +448,7 @@ class TestRateTierEndpoints:
             response = client.post(
                 "/api/keys/revoke",
                 json={
-                    "api_key": "mtl_key-persistence-123456",
+                    "api_key": "mtl_key-persistence-123456",  # pragma: allowlist secret
                     "reason": "Required security revocation",
                 },
                 headers={"X-Admin-Key": TEST_ADMIN_KEY},
@@ -453,7 +461,7 @@ class TestRateTierEndpoints:
         response = client.post(
             "/api/keys/revoke",
             json={
-                "api_key": "mtl_unknown-key-123456789",
+                "api_key": "mtl_unknown-key-123456789",  # pragma: allowlist secret
                 "reason": "Synthetic unknown key revocation",
             },
             headers={"X-Admin-Key": TEST_ADMIN_KEY},
