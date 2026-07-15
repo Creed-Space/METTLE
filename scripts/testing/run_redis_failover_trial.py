@@ -22,7 +22,11 @@ import redis
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.testing.presence_trial_support import BRONZE_SUITES, PresenceSessionDriver
+from scripts.testing.presence_trial_support import (
+    BRONZE_SUITES,
+    PresenceSessionDriver,
+    ephemeral_vcp_signing_key_pem,
+)
 from scripts.testing.run_redis_resilience_trial import (
     _free_port,
     _kill_process,
@@ -182,6 +186,8 @@ def run_trial(*, output: Path) -> dict[str, Any]:
             {
                 "METTLE_ENVIRONMENT": "development",
                 "METTLE_DEV_MODE": "false",
+                "METTLE_VCP_SIGNING_KEY": ephemeral_vcp_signing_key_pem(),
+                "METTLE_VCP_SIGNING_KEY_ID": "mettle-redis-failover-v1",
                 "METTLE_API_KEYS": api_key,
                 "METTLE_REDIS_URL": f"redis://127.0.0.1:{proxy_port}/0",
                 "METTLE_REDIS_NAMESPACE": "mettle-failover",

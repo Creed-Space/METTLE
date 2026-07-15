@@ -14,7 +14,12 @@ from urllib.parse import urlparse
 
 import httpx
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+)
 
 from mettle.presence import (
     answer_hash,
@@ -52,6 +57,19 @@ def _public_key_pem(private_key: Ed25519PrivateKey) -> str:
     return (
         private_key.public_key()
         .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode("ascii")
+    )
+
+
+def ephemeral_vcp_signing_key_pem() -> str:
+    """Create a process-local issuer key for an isolated resilience API."""
+    return (
+        Ed25519PrivateKey.generate()
+        .private_bytes(
+            Encoding.PEM,
+            PrivateFormat.PKCS8,
+            NoEncryption(),
+        )
         .decode("ascii")
     )
 
