@@ -26,12 +26,20 @@ dependencies = [
     "pydantic>=2.5.0",
 ]
 
+# The MCP server is an opt-in extra: `pip install 'mettle-verifier[mcp]'`.
+[project.optional-dependencies]
+mcp = [
+    "mcp>=1.2",
+    "httpx>=0.27",
+]
+
 [project.urls]
 Homepage = "https://mettle.sh"
 Repository = "https://github.com/Creed-Space/METTLE"
 
 [project.scripts]
 mettle = "mettle.cli:main"
+mettle-mcp = "mettle.mcp_server:main"
 
 [tool.setuptools]
 # Package only the CLI-relevant module tree, not the top-level server modules.
