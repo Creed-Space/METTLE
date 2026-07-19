@@ -26,6 +26,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+          # The MCP server is an optional extra; install it so its tests run
+          # for real instead of being skipped.
+          pip install -r requirements-mcp.txt
 
       - name: Lint with ruff
         run: |
@@ -42,7 +45,7 @@ jobs:
 
       - name: Check for unused Python code
         run: |
-          vulture main.py config.py database.py mcp_server.py \
+          vulture main.py config.py database.py \
             mettle red_team scripts/engine.py --min-confidence 80
 
       - name: Run tests with coverage
@@ -52,7 +55,7 @@ jobs:
           METTLE_ENVIRONMENT: "test"
         run: |
           pytest tests/ -v --tb=short \
-            --cov=main --cov=config --cov=database --cov=mcp_server \
+            --cov=main --cov=config --cov=database \
             --cov=mettle --cov=red_team --cov=scripts.engine \
             --cov-report=xml --cov-report=term-missing --cov-fail-under=90 \
             --reruns 2 --reruns-delay 1

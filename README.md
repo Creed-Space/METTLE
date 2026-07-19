@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.Creed-Space/mettle-mcp -->
+
 # METTLE
 
 **Machine Evaluation Through Turing-inverse Logic Examination**
@@ -35,6 +37,48 @@ mettle verify --full --notarize --api-key mtl_your_key
 | **Use case** | Development, internal verification | Production, cross-org, portable trust |
 
 All verification runs locally. Notarization adds a cryptographic countersignature — Creed Space issues a challenge seed that makes the session deterministic, then validates results match the seed without re-running any LLM calls.
+
+## MCP Server
+
+METTLE ships an MCP server so an agent can verify itself from inside its own tool loop — no shell, no HTTP client, just tools.
+
+```bash
+pip install 'mettle-verifier[mcp]'
+mettle-mcp
+```
+
+Add it to Claude Desktop (`claude_desktop_config.json`) or Claude Code (`.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "mettle": {
+      "command": "mettle-mcp",
+      "env": {
+        "METTLE_API_URL": "https://mettle.sh/api",
+        "METTLE_API_KEY": "mtl_your_key"
+      }
+    }
+  }
+}
+```
+
+`METTLE_API_URL` defaults to `https://mettle.sh/api`. `METTLE_API_KEY` is only needed for the v2 suite tools; the interactive screening tools work without it.
+
+**Tools exposed:**
+
+| Tool | Purpose | API key |
+|---|---|---|
+| `mettle_start_session` | Start a screening session; returns the first challenge, a session ID and a session token | No |
+| `mettle_answer_challenge` | Submit an answer, get the result and next challenge | No |
+| `mettle_get_result` | Final screening result, pass rate and badge | No |
+| `mettle_auto_verify` | Run a whole screening session end to end and return the result | No |
+| `mettle_list_suites` | List the v2 verification suites | Yes |
+| `mettle_start_v2_session` | Start a v2 session over one or more suites | Yes |
+| `mettle_verify_suite` | Submit answers for one suite; returns pass/score | Yes |
+| `mettle_get_v2_result` | Overall pass, earned tier and signed VCP attestation | Yes |
+
+The screening tools are per-session authenticated: `mettle_start_session` mints a `session_token` that every later call on that session must pass back. `mettle_auto_verify` handles that internally.
 
 ## 12 Verification Suites
 
@@ -96,45 +140,6 @@ Three rounds of novel reasoning with feedback between rounds. The scoring model:
 | Flatlines regardless of feedback | Script — invariant to input |
 
 **Scoring weights:** Time trend (30%) + Improvement (30%) + Feedback responsiveness (25%) + Anti-script variance (15%)
-
-## MCP Server
-
-METTLE provides a Model Context Protocol server so AI agents can verify themselves programmatically.
-
-**Tools:**
-
-| Tool | Description |
-|------|-------------|
-| `mettle_start_session` | Start a verification session, returns challenges for all suites |
-| `mettle_answer_challenge` | Submit an answer to the current METTLE challenge. |
-| `mettle_get_result` | Get final result with credential tier and VCP attestation |
-| `mettle_auto_verify` | One-shot: create session, solve all challenges, return result |
-
-**Configuration:**
-
-```bash
-export METTLE_API_URL=https://mettle.sh
-export METTLE_API_KEY=your_api_key
-
-python mcp_server.py
-```
-
-Add to Claude Desktop `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "mettle": {
-      "command": "python",
-      "args": ["mcp_server.py"],
-      "env": {
-        "METTLE_API_URL": "https://mettle.sh",
-        "METTLE_API_KEY": "your_key"
-      }
-    }
-  }
-}
-```
 
 ## Use Cases
 
