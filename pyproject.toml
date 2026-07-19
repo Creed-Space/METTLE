@@ -31,6 +31,11 @@ dependencies = [
 mcp = [
     "mcp>=1.2",
     "httpx>=0.27",
+    # Required by the `--transport http` path (mettle/_http.py). Kept in the
+    # same extra rather than a separate one so `pip install '.[mcp]'` — which is
+    # all the container image runs — yields a working HTTP server.
+    "starlette>=0.37",
+    "uvicorn>=0.27",
 ]
 
 [project.urls]
