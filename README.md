@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.Creed-Space/mettle-mcp -->
+
 # METTLE
 
 **Machine Evaluation Through Turing-inverse Logic Examination**
