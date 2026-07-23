@@ -143,7 +143,7 @@ The operator attestation model:
   "nonce": "freshness-challenge",
   "session_id": "ses_abc123",
   "iss": "mettle-api",
-  "version": "0.2.0"
+  "version": "0.3.0"
 }
 ```
 

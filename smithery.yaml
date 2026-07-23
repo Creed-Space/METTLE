@@ -1,0 +1,41 @@
+# Smithery deployment config for the METTLE MCP server.
+# Docs: https://smithery.ai/docs/build/project-config
+#
+# Deployed as a custom container. The image (see Dockerfile) defaults to stdio
+# for the Docker MCP Catalog and `docker run -i` consumers; Smithery flips it to
+# Streamable HTTP via the `env` block below. Smithery injects $PORT, which the
+# Dockerfile maps onto --port.
+runtime: container
+
+startCommand:
+  type: http
+  # Empty schema, mirroring creedspace-mcp-server: the server needs no per-user
+  # credentials. The MVP screening tools (mettle_start_session,
+  # mettle_answer_challenge, mettle_get_result, mettle_auto_verify) run against
+  # the public API at https://mettle.sh/api and mint their own per-session
+  # token — zero config, which is what most callers want.
+  #
+  # Why the v2 suite tools' Bearer key (METTLE_API_KEY) is NOT offered here:
+  # per-user configSchema values reach a hosted container as query parameters
+  # on each HTTP request, not as env vars — but mettle/mcp_server.py reads
+  # METTLE_API_KEY from the environment at import time and mettle/_http.py
+  # parses no query params. An apiKey field would be dead UI: fillable,
+  # ignored. Operators who want the v2 suite/tier/attestation tools set
+  # METTLE_API_KEY in the service environment at deploy time; without it those
+  # tools return a clear error and the screening tools still work.
+  configSchema:
+    type: object
+    properties: {}
+    additionalProperties: false
+  exampleConfig: {}
+
+build:
+  dockerfile: Dockerfile
+  dockerBuildPath: "."
+
+# Run the container in Streamable HTTP mode for Smithery's gateway.
+# The bind guard opt-out (METTLE_MCP_ALLOW_INSECURE_HTTP) lives in the
+# Dockerfile's http branch, not here, so it cannot leak into a direct
+# `docker run` of the image.
+env:
+  METTLE_MCP_TRANSPORT: "http"

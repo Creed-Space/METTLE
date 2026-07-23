@@ -16,6 +16,7 @@ Configuration (environment variables):
                      the first entry is used. Never hardcode a key here.
 """
 
+import argparse
 import asyncio
 import json
 import os
@@ -29,6 +30,7 @@ from mcp.types import (
     TextContent,
     Tool,
 )
+from mettle import __version__
 from mettle.solver import solve_challenge
 
 # Configuration
@@ -42,8 +44,10 @@ API_KEY = os.getenv("METTLE_API_KEY") or next(
     (k.strip() for k in os.getenv("METTLE_API_KEYS", "").split(",") if k.strip()), None
 )
 
-# Initialize MCP server
-server = Server("mettle")
+# Initialize MCP server. Without an explicit version the SDK reports its own
+# package version (e.g. "1.28.1") as serverInfo.version in every initialize
+# handshake; pin it to the mettle-verifier release instead.
+server = Server("mettle", version=__version__)
 
 # HTTP client for API calls
 http_client = httpx.AsyncClient(timeout=30.0)
@@ -638,8 +642,47 @@ async def run_server() -> None:  # pragma: no cover
         )
 
 
-def main() -> None:  # pragma: no cover
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Build the ``mettle-mcp`` argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="mettle-mcp",
+        description="METTLE MCP server — let an AI agent verify its own substrate.",
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="Transport to serve on (default: stdio)",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help=(
+            "HTTP bind address (default: 127.0.0.1). Binding a non-loopback "
+            "address requires METTLE_MCP_ALLOW_INSECURE_HTTP=true."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="HTTP port. Defaults to $PORT if set, else 8080.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
     """Console-script entry point (``mettle-mcp``)."""
+    args = build_arg_parser().parse_args(argv)
+
+    if args.transport == "http":
+        # Imported lazily: the http extras (starlette/uvicorn) are only needed
+        # on this path, and a stdio-only environment must not pay for them.
+        from mettle._http import run_http
+
+        run_http(server, args.host, args.port)
+        return
+
     asyncio.run(run_server())
 
 
