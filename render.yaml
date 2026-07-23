@@ -36,3 +36,29 @@ services:
       - key: METTLE_RATE_LIMIT_ANSWERS
         value: "60/minute"
     autoDeploy: true
+
+  # METTLE MCP server as a public Streamable HTTP endpoint (register the URL
+  # on Smithery after deploy: https://mettle-mcp.onrender.com/mcp).
+  # The dual-mode Dockerfile serves stdio by default and flips to Streamable
+  # HTTP on METTLE_MCP_TRANSPORT=http; Render injects $PORT. The insecure-bind
+  # opt-out is intentional — the endpoint is meant to be publicly reachable.
+  # Hosted instance serves the unauthenticated screening tools; the v2 suite
+  # tools need METTLE_API_KEY, addable in the dashboard (never committed).
+  # 'starter' (always-on): the free tier's idle spin-down makes Smithery's
+  # capability scan and first user calls fail on cold starts.
+  - type: web
+    name: mettle-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: METTLE_MCP_TRANSPORT
+        value: http
+      - key: METTLE_MCP_ALLOW_INSECURE_HTTP
+        value: "true"
+      - key: METTLE_API_URL
+        value: https://mettle.sh/api
