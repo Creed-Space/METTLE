@@ -30,6 +30,7 @@ from mcp.types import (
     TextContent,
     Tool,
 )
+from mettle import __version__
 from mettle.solver import solve_challenge
 
 # Configuration
@@ -43,8 +44,10 @@ API_KEY = os.getenv("METTLE_API_KEY") or next(
     (k.strip() for k in os.getenv("METTLE_API_KEYS", "").split(",") if k.strip()), None
 )
 
-# Initialize MCP server
-server = Server("mettle")
+# Initialize MCP server. Without an explicit version the SDK reports its own
+# package version (e.g. "1.28.1") as serverInfo.version in every initialize
+# handshake; pin it to the mettle-verifier release instead.
+server = Server("mettle", version=__version__)
 
 # HTTP client for API calls
 http_client = httpx.AsyncClient(timeout=30.0)

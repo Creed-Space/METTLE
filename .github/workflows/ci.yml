@@ -93,7 +93,7 @@ jobs:
 
       - name: Security scan with bandit
         run: |
-          bandit -q -r main.py config.py database.py mcp_server.py \
+          bandit -q -r main.py config.py database.py \
             mettle red_team scripts/engine.py --skip B101
 
       - name: Scan for committed secrets

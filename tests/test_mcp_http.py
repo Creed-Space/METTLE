@@ -283,7 +283,7 @@ def test_cli_http_args():
 
 
 def test_main_http_dispatches_to_run_http(monkeypatch):
-    seen = {}
+    seen: dict[str, object] = {}
 
     def fake_run_http(server, host, port):
         seen.update(server=server, host=host, port=port)
