@@ -474,7 +474,7 @@ def _bounded_vault_response(response: httpx.Response, failure: str) -> bytes:
 
 
 class RenewingVaultTokenProvider:
-    """Read a Vault token on demand and renew periodic credentials before use."""
+    """Read a Vault token on demand and track its next safe renewal time."""
 
     def __init__(
         self,
@@ -533,6 +533,12 @@ class RenewingVaultTokenProvider:
                     ),
                 )
         return token
+
+    def seconds_until_renewal(self) -> float:
+        """Return the monotonic delay until the token should next be renewed."""
+
+        with self._lock:
+            return max(0.0, self._renew_at - self._clock())
 
     def _renew(self, token: str) -> int:
         failure = "Vault token renewal failed"
