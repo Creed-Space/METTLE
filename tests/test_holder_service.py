@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any, Callable, Generator
 
 import pytest
 from cryptography import x509
@@ -30,7 +31,9 @@ from mettle.holder_service import (
     MemoryHolderStateStore,
     PersistentHolderRuntime,
     PostgresHolderStateStore,
+    VAULT_TOKEN_RENEWAL_RETRY_SECONDS,
     _load_policy,
+    _maintain_vault_token,
     _read_bounded_file,
     build_runtime_from_environment,
     create_holder_service,
@@ -702,12 +705,75 @@ def test_environment_runtime_loads_strict_secret_files_and_policy(
         "mettle.holder_service.PostgresHolderStateStore",
         lambda *_args, **_kwargs: memory_store,
     )
-    runtime, control_provider = build_runtime_from_environment()
+    runtime, control_provider, vault_token_provider = build_runtime_from_environment()
     assert runtime.status()["sessions"] == 0
     assert control_provider() == "holder-control-token"
+    assert callable(vault_token_provider)
     assert runtime.holder.key_fingerprint.startswith("sha256:")
     assert renewal_calls == 1
     runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_vault_token_background_renewal_retries_without_signing_traffic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    delays = iter((30.0, 45.0))
+    observed_delays: list[float] = []
+    renewal_calls = 0
+
+    class _RenewingProvider:
+        def seconds_until_renewal(self) -> float:
+            return next(delays)
+
+        def __call__(self) -> str:
+            nonlocal renewal_calls
+            renewal_calls += 1
+            if renewal_calls == 1:
+                raise RuntimeError("renewal unavailable")
+            return "vault-runtime-token"
+
+    async def fake_sleep(delay: float) -> None:
+        observed_delays.append(delay)
+        if len(observed_delays) == 3:
+            raise asyncio.CancelledError
+
+    async def fake_to_thread(provider: Callable[[], str]) -> str:
+        return provider()
+
+    monkeypatch.setattr("mettle.holder_service.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("mettle.holder_service.asyncio.to_thread", fake_to_thread)
+
+    with pytest.raises(asyncio.CancelledError):
+        await _maintain_vault_token(_RenewingProvider())
+
+    assert renewal_calls == 2
+    assert observed_delays == [30.0, VAULT_TOKEN_RENEWAL_RETRY_SECONDS, 45.0]
+
+
+def test_holder_service_owns_vault_token_renewal_task(issuer_key: str) -> None:
+    runtime = PersistentHolderRuntime(
+        _holder(issuer_key), MemoryHolderStateStore(), STATE_KEY
+    )
+
+    class _RenewingProvider:
+        def seconds_until_renewal(self) -> float:
+            return 3600.0
+
+        def __call__(self) -> str:
+            return "vault-runtime-token"
+
+    service = create_holder_service(
+        runtime=runtime,
+        control_token_provider=lambda: "holder-control-token",
+        vault_token_provider=_RenewingProvider(),
+    )
+    with TestClient(service) as client:
+        assert client.get("/health").status_code == 200
+        renewal_task = service.state.vault_token_renewal_task
+        assert renewal_task.get_name() == "mettle-vault-token-renewal"
+        assert renewal_task.done() is False
+    assert renewal_task.cancelled() is True
 
 
 @pytest.mark.parametrize(
