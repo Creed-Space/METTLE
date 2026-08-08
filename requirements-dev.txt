@@ -10,7 +10,8 @@ numpy>=1.26.0
 hypothesis>=6.100.0
 cryptography>=49.0.0
 pygments>=2.20.0
-ruff>=0.4.0
+# Ruff 0.16 expands its default rule set and needs a dedicated lint migration.
+ruff>=0.4.0,<0.16
 mypy>=1.10.0
 bandit==1.9.4
 detect-secrets==1.5.0
