@@ -2,7 +2,8 @@
 # Install with: pip install -r requirements-mcp.txt
 
 httpx>=0.26.0
-mcp>=1.0.0
+# This server uses the v1 API. MCP SDK v2 is a breaking redesign.
+mcp>=1.25,<2
 # Streamable HTTP transport (`mettle-mcp --transport http`, see mettle/_http.py).
 starlette>=0.37.0
 uvicorn>=0.27.0
