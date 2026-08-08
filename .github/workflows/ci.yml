@@ -12,9 +12,6 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
       - uses: actions/checkout@v7.0.0  # v4
@@ -71,13 +68,6 @@ jobs:
 
       - name: Check deployed frontend design
         run: npm run design:check
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: true
-          use_oidc: true
 
   security:
     runs-on: ubuntu-latest
