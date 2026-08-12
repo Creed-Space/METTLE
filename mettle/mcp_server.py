@@ -612,7 +612,7 @@ def main(argv: list[str] | None = None) -> None:
         # on this path, and a stdio-only environment must not pay for them.
         from mettle._http import run_http
 
-        run_http(server, args.host, args.port)
+        run_http(server, args.host, args.port, list_tools)
         return
 
     asyncio.run(run_server())
