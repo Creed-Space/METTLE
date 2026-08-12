@@ -6,11 +6,12 @@ webhooks, and verification records using an isolated in-memory SQLite database.
 
 import hashlib
 import os
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 # Set test env vars before any METTLE imports
@@ -92,6 +93,103 @@ class TestInitDb:
         assert "api_keys" in table_names
         assert "webhooks" in table_names
         assert "verification_records" in table_names
+        assert db.get_schema_version() == db.LATEST_SCHEMA_VERSION
+        assert db.check_schema_current() is True
+
+    def test_upgrade_from_oldest_supported_schema_is_idempotent(self, isolated_db):
+        db = isolated_db
+        legacy_engine = create_engine("sqlite:///:memory:")
+        legacy_session_local = sessionmaker(bind=legacy_engine)
+        with legacy_engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE sessions (
+                        id INTEGER PRIMARY KEY,
+                        session_id VARCHAR(64) NOT NULL,
+                        entity_id VARCHAR(128),
+                        difficulty VARCHAR(16) NOT NULL,
+                        challenges_json TEXT NOT NULL,
+                        results_json TEXT DEFAULT '[]',
+                        completed BOOLEAN DEFAULT 0,
+                        created_at DATETIME,
+                        completed_at DATETIME
+                    )
+                    """
+                )
+            )
+
+        with (
+            patch.object(db, "engine", legacy_engine),
+            patch.object(db, "SessionLocal", legacy_session_local),
+        ):
+            db.init_db()
+            db.init_db()
+            columns = {
+                column["name"]
+                for column in inspect(legacy_engine).get_columns("sessions")
+            }
+            assert {"access_token_hash", "badge_info_json"} <= columns
+            assert db.get_schema_version() == db.LATEST_SCHEMA_VERSION
+            with legacy_engine.connect() as connection:
+                versions = connection.execute(
+                    text("SELECT version FROM schema_migrations ORDER BY version")
+                ).scalars()
+                assert list(versions) == [1, 2]
+        legacy_engine.dispose()
+
+    def test_sqlite_backup_restores_sessions_and_revocations(
+        self, isolated_db, tmp_path
+    ):
+        db = isolated_db
+        source_path = tmp_path / "source.db"
+        restored_path = tmp_path / "restored.db"
+        source_engine = create_engine(f"sqlite:///{source_path}")
+        source_session_local = sessionmaker(bind=source_engine)
+        with (
+            patch.object(db, "engine", source_engine),
+            patch.object(db, "SessionLocal", source_session_local),
+        ):
+            db.init_db()
+            assert db.save_session(
+                "restore-session",
+                "restore-entity",
+                "basic",
+                [MockChallenge()],
+                access_token_hash="e" * 64,
+            )
+            assert db.add_revoked_badge(
+                "restore-jti",
+                "restore-entity",
+                "restore trial",
+                None,
+            )
+        source_engine.dispose()
+
+        with (
+            sqlite3.connect(source_path) as source,
+            sqlite3.connect(restored_path) as restored,
+        ):
+            source.backup(restored)
+
+        restored_engine = create_engine(f"sqlite:///{restored_path}")
+        restored_session_local = sessionmaker(bind=restored_engine)
+        with (
+            patch.object(db, "engine", restored_engine),
+            patch.object(db, "SessionLocal", restored_session_local),
+        ):
+            db.init_db()
+            assert db.get_session("restore-session")["entity_id"] == "restore-entity"
+            assert db.is_badge_revoked("restore-jti") is True
+            assert db.check_schema_current() is True
+        restored_engine.dispose()
+
+    def test_health_check_reports_query_success_and_failure(self, isolated_db):
+        db = isolated_db
+        assert db.check_health() is True
+
+        with patch.object(db.engine, "connect", side_effect=RuntimeError("offline")):
+            assert db.check_health() is False
 
 
 # ── get_db ───────────────────────────────────────────────────────────────────
@@ -123,6 +221,35 @@ class TestSaveSession:
         challenges = [MockChallenge()]
         result = db.save_session("sess-1", "entity-1", "basic", challenges)
         assert result is True
+
+    def test_retention_purge_deletes_private_rows_but_preserves_revocations(
+        self, isolated_db
+    ):
+        db = isolated_db
+        now = datetime(2030, 1, 2, tzinfo=timezone.utc)
+        old = now - timedelta(days=2)
+        assert db.save_session(
+            "expired-private-session",
+            "entity-1",
+            "basic",
+            [MockChallenge()],
+            started_at=old,
+        )
+        assert db.save_verification_record("entity-1", "192.0.2.1", True)
+        assert db.add_revoked_badge("retained-revocation", "entity-1", "test", None)
+        with db.get_db() as session:
+            record = session.query(db.DBVerificationRecord).one()
+            record.created_at = old
+            session.commit()
+
+        deleted = db.purge_expired_private_data(now=now)
+
+        assert deleted == {
+            "sessions_deleted": 1,
+            "verification_records_deleted": 1,
+        }
+        assert db.get_session("expired-private-session") is None
+        assert db.is_badge_revoked("retained-revocation") is True
 
     def test_save_session_persists_data(self, isolated_db):
         db = isolated_db

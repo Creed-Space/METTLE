@@ -23,6 +23,10 @@ class Settings(BaseSettings):
         default="*",
         description="Comma-separated list of allowed origins, or * for all",
     )
+    trusted_hosts: str = Field(
+        default="*",
+        description="Comma-separated HTTP Host values accepted by the service",
+    )
 
     # Rate Limiting
     rate_limit_sessions: str = Field(
@@ -39,11 +43,27 @@ class Settings(BaseSettings):
         default="",
         description="Secret key for badge signing. Required in production.",
     )
+    credential_issuance_enabled: bool = Field(
+        default=True,
+        description="Emergency switch for all new credential issuance",
+    )
 
     # Badge settings
     badge_expiry_seconds: int = Field(
         default=86400,
         description="Badge expiry time in seconds (default: 24 hours)",
+    )
+    private_data_retention_seconds: int = Field(
+        default=86400,
+        ge=1800,
+        le=2592000,
+        description="Maximum retention for persisted sessions and challenge data",
+    )
+    verification_record_retention_seconds: int = Field(
+        default=86400,
+        ge=3600,
+        le=2592000,
+        description="Maximum retention for collusion-detection events",
     )
 
     # API Key for admin operations
@@ -63,6 +83,10 @@ class Settings(BaseSettings):
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
         description="Stable identifier for the active Ed25519 issuer key.",
     )
+    vcp_verifying_keys: str = Field(
+        default="",
+        description="JSON object of retired key IDs to Ed25519 public PEM values",
+    )
 
     # Database
     database_url: str = Field(
@@ -72,6 +96,11 @@ class Settings(BaseSettings):
     use_database: bool = Field(
         default=False,
         description="Enable database persistence (default: in-memory)",
+    )
+    redis_url: str = Field(
+        default="",
+        repr=False,
+        description="Redis URL for durable v2 session and rate-limit authority",
     )
 
     # Logging
@@ -95,6 +124,13 @@ class Settings(BaseSettings):
         ]
 
     @property
+    def trusted_hosts_list(self) -> list[str]:
+        """Parse accepted HTTP hostnames for TrustedHostMiddleware."""
+        if self.trusted_hosts == "*":
+            return ["*"]
+        return [host.strip() for host in self.trusted_hosts.split(",") if host.strip()]
+
+    @property
     def is_production(self) -> bool:
         """Check if running in production."""
         return self.environment.lower() == "production"
@@ -112,6 +148,10 @@ class Settings(BaseSettings):
                 for origin in self.allowed_origins_list
             ):
                 raise ValueError("METTLE_ALLOWED_ORIGINS must use HTTPS in production")
+            if self.trusted_hosts == "*" or not self.trusted_hosts_list:
+                raise ValueError(
+                    "METTLE_TRUSTED_HOSTS must list accepted hosts in production"
+                )
             if len(self.secret_key) < 32:
                 raise ValueError(
                     "METTLE_SECRET_KEY must be at least 32 characters in production"
@@ -129,6 +169,8 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "METTLE_DATABASE_URL must use PostgreSQL in production"
                 )
+            if urlparse(self.redis_url).scheme not in {"redis", "rediss"}:
+                raise ValueError("METTLE_REDIS_URL must use Redis in production")
         return self
 
 

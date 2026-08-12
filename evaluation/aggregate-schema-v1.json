@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mettle.creed.space/schemas/evaluation-aggregate-v1.json",
+  "title": "METTLE aggregate evaluation report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "aggregate_schema_version",
+    "dataset_version",
+    "records",
+    "minimum_examples_per_decision_class",
+    "results",
+    "decision_authority"
+  ],
+  "properties": {
+    "aggregate_schema_version": {"const": "1.0"},
+    "dataset_version": {"type": "string", "minLength": 1, "maxLength": 64},
+    "records": {"type": "integer", "minimum": 1},
+    "minimum_examples_per_decision_class": {"type": "integer", "minimum": 1},
+    "decision_authority": {"type": "string", "minLength": 1},
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "suite",
+          "subject_class",
+          "counts",
+          "false_reject_rate",
+          "false_accept_rate",
+          "insufficient_data"
+        ],
+        "properties": {
+          "suite": {"type": "string", "minLength": 1, "maxLength": 128},
+          "subject_class": {"enum": ["becoming-mind", "human-assisted"]},
+          "counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tp", "tn", "fp", "fn"],
+            "properties": {
+              "tp": {"type": "integer", "minimum": 0},
+              "tn": {"type": "integer", "minimum": 0},
+              "fp": {"type": "integer", "minimum": 0},
+              "fn": {"type": "integer", "minimum": 0}
+            }
+          },
+          "false_reject_rate": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "false_accept_rate": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "insufficient_data": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

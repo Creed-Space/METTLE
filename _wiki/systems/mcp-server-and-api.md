@@ -1,125 +1,38 @@
-# METTLE MCP Server and API
+# MCP Server and API
 
 <!-- wiki:type = system -->
 <!-- wiki:scope = mettle -->
-<!-- wiki:created = 2026-05-23 -->
-<!-- wiki:updated = 2026-05-23 -->
+<!-- wiki:updated = 2026-08-12 -->
 <!-- wiki:status = active -->
 
-## Summary
+## MCP Surface
 
-METTLE exposes two interfaces: a REST API (FastAPI, `main.py`) and an MCP server (`mcp_server.py`) that allows AI agents to verify themselves programmatically. The MCP interface is the primary integration point for agentic use cases. (README.md "MCP Server"; main.py; mcp_server.py)
+The packaged MCP server at `mettle/mcp_server.py` exposes seven tools:
 
-## FastAPI Server (`main.py`)
+| Tool | Purpose | Credential boundary |
+|---|---|---|
+| `mettle_start_session` | Start a quick interactive session | Returns a per-session bearer token |
+| `mettle_answer_challenge` | Submit the caller's answer | Requires the session bearer token |
+| `mettle_get_result` | Retrieve the quick-session result | Requires the session bearer token |
+| `mettle_list_suites` | List authenticated suite capabilities | Requires the configured API bearer key |
+| `mettle_start_v2_session` | Start an authenticated suite session | Requires the configured API bearer key |
+| `mettle_verify_suite` | Submit one suite's answers | Requires the configured API bearer key |
+| `mettle_get_v2_result` | Retrieve tier evidence and requested credential | Requires the configured API bearer key |
 
-All endpoints prefixed with `/api/mettle`. Bearer token authentication required.
+The server intentionally has no automatic solver. A client must answer the challenges itself before a result can reach an issuer. The absence is asserted by `tests/test_mcp_server.py`, `tests/test_documentation_consistency.py`, and the security mutation gate.
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/suites` | GET | List all 10 suites |
-| `/sessions` | POST | Create a verification session |
-| `/sessions/{id}/verify` | POST | Submit answers (Suites 1–9, single-shot) |
-| `/sessions/{id}/rounds/{n}/answer` | POST | Submit round answers (Suite 10 — multi-round) |
-| `/sessions/{id}/result` | GET | Final results + credential tier |
-| `/sessions/{id}/result?include_vcp=true` | GET | Results with VCP attestation |
-| `/.well-known/vcp-keys` | GET | Ed25519 public key for verification |
-| `/notarize/seed` | POST | Request deterministic challenge seed |
-| `/notarize` | POST | Submit for Creed Space countersignature |
+## Transports
 
-(README.md "API Reference"; main.py existence confirmed)
+The same tool set is available through stdio and the bounded Streamable HTTP adapter. The HTTP adapter defaults to loopback, requires an explicit opt-in for a non-loopback bind, accepts POST for the MCP endpoint, caps request bodies, returns stable parse errors, and provides a health endpoint (`mettle/_http.py`; `tests/test_mcp_http.py`).
 
-**Database**: `mettle.db` — SQLite (development). (`mettle.db` in repo root; `database.py` module)
+## API and Result Semantics
 
-## MCP Server (`mcp_server.py`)
+Quick sessions use a bearer token minted by `/api/session/start`. Passing sessions can receive one stable signed legacy badge when issuance is enabled and signing is configured (`main.py`).
 
-The MCP server allows Claude and other AI agents to self-verify via Model Context Protocol.
+The authenticated suite API keeps expected answers server-side, computes the highest complete tier, and may return a server-owned Ed25519 credential. Partial or nonqualifying results receive an unsigned evidence receipt when VCP output is requested (`mettle/router.py`; `mettle/session_manager.py`; `mettle/vcp.py`).
 
-### Tools
-
-| Tool | Description |
-|------|-------------|
-| `mettle_start_session` | Start a verification session, returns challenges for all suites |
-| `mettle_verify_suite` | Submit answers for a single-shot suite (1–9) |
-| `mettle_submit_round` | Submit answers for a multi-round suite (Suite 10) |
-| `mettle_get_result` | Get final result with credential tier and VCP attestation |
-| `mettle_auto_verify` | One-shot: create session, solve all challenges, return result |
-
-(README.md "MCP Server"; mcp_server.py existence confirmed)
-
-Note: The system-reminder available in Rewind Claude Code sessions lists the deployed MCP tools as `mettle_start_session`, `mettle_answer_challenge`, `mettle_auto_verify`, `mettle_get_result` — slight naming variation from README.
-
-### Configuration
-
-```bash
-export METTLE_API_URL=https://mettle.sh
-export METTLE_API_KEY=your_api_key
-python mcp_server.py
-```
-
-Add to Claude Desktop `claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "mettle": {
-      "command": "python",
-      "args": ["mcp_server.py"],
-      "env": {"METTLE_API_URL": "...", "METTLE_API_KEY": "..."}
-    }
-  }
-}
-```
-(README.md "MCP Server")
-
-## Module Inventory (`mettle/`)
-
-| Module | Role |
-|--------|------|
-| `verifier.py` | Response verification logic per challenge type (timing, correctness) |
-| `challenger.py` | Procedural challenge generation using `secrets.randbelow()` for cryptographic randomness |
-| `signing.py` | Ed25519 key management and signing |
-| `vcp.py` | VCP attestation building, CSM-1 token parsing, tier computation |
-| `auth.py` | Authentication |
-| `models.py` | Data models (`Challenge`, `ChallengeType`, `Difficulty`, `VerificationResult`) |
-| `session_manager.py` | Session lifecycle |
-| `api_models.py` | API request/response shapes |
-| `app_config.py` | Configuration/settings |
-| `router.py` | FastAPI router registration |
-| `challenge_adapter.py` | Adapter between challenger output and API format |
-
-(mettle/ directory listing)
-
-## Security Design in Verifier
-
-`verifier.py` reveals an important security constraint: expected answers are only returned in verification results if the submission **passed**. (verifier.py:23–27)
-
-```python
-# SECURITY: Only include expected answer if passed (prevents answer harvesting)
-if passed:
-    details["expected"] = challenge.data["expected_answer"]
-```
-
-This prevents a client from submitting wrong answers repeatedly to enumerate correct responses.
-
-## Local Development
-
-```bash
-pip install -r requirements.txt && pip install -r requirements-dev.txt
-uvicorn main:app --reload
-pytest tests/ -v
-```
-(README.md "Local Development")
-
-## Test Coverage
-
-`tests/` contains 30+ test files covering: API, auth, challenger, verifier, MCP, VCP integration, security features, red team scenarios, novel reasoning (Suite 10), and signing. (tests/ directory listing)
+Result language reports bounded behavioral evidence. It does not certify consciousness, identity, autonomy, safety, or governance (`README.md`; `docs/ASSURANCE_CASE.md`).
 
 ## Provenance
 
-- Sources consulted: `README.md` (full); `mcp_server.py` (existence confirmed); `mettle/` directory listing; `mettle/verifier.py:1–37` (security pattern)
-- Last verified against sources: 2026-05-23
-
-## See Also
-
-- [[mettle:systems/verification-suites]] — the 10 suites these endpoints serve
-- [[mettle:systems/signing-and-credentials]] — VCP attestation structure
-- [[mettle:domain/inverse-turing-concept]] — conceptual framing
+Sources last checked on 2026-08-12: `mettle/mcp_server.py`, `mettle/_http.py`, `main.py`, `mettle/router.py`, `mettle/session_manager.py`, and `mettle/vcp.py`.

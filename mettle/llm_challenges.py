@@ -117,8 +117,8 @@ class LLMChallengeGenerator:
     async def generate_perspective_shift(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Generate a perspective-shifting challenge.
 
-        AI can fluently switch perspectives without emotional attachment.
-        Harder for humans to fake convincingly under time pressure.
+        Perspective switching under a time budget is one noisy behavioral signal.
+        It does not establish substrate, identity, detachment, or understanding.
         """
         client = self._get_client()
 
@@ -130,7 +130,7 @@ class LLMChallengeGenerator:
                 {
                     "role": "user",
                     "content": (
-                        "Generate a debate topic for an AI substrate verification test. "
+                        "Generate a debate topic for a machine-oriented behavioral screen. "
                         "The topic should be nuanced (not obviously one-sided) and require "
                         "genuine understanding to argue both sides well. "
                         "Return ONLY a JSON object with these fields:\n"

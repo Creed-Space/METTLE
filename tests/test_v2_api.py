@@ -1055,6 +1055,24 @@ class TestRouterGetSessionResult:
         assert resp.status_code == 200
         assert "vcp_attestation" in resp.json()
 
+    def test_emergency_switch_stops_new_vcp_issuance(self, client, monkeypatch):
+        import importlib
+
+        router_module = importlib.import_module("mettle.router")
+        sid = _create_via_api(client, ["adversarial"])
+        client.post(
+            f"/api/mettle/sessions/{sid}/verify",
+            json={"suite": "adversarial", "answers": {"q1": 42}},
+        )
+        monkeypatch.setattr(
+            router_module.settings, "credential_issuance_enabled", False
+        )
+
+        response = client.get(f"/api/mettle/sessions/{sid}/result?include_vcp=true")
+
+        assert response.status_code == 503
+        assert "issuance" in response.json()["detail"].lower()
+
     def test_get_result_with_vcp_and_signing(self, client):
         sid = _create_via_api(client, ["adversarial"])
         client.post(

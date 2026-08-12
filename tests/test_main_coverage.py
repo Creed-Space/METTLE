@@ -13,8 +13,9 @@ Covers:
 - Webhook URL validation (SSRF protection)
 """
 
-import socket
 import hashlib
+import re
+import socket
 import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -311,6 +312,37 @@ class TestStableBadgeIssuance:
         assert payload["attests"] == "mettle_session_passed"
         assert payload["identity_binding"] == "self_asserted"
         assert payload["tier"] == "bronze"
+
+    def test_emergency_switch_stops_new_quick_badges(self, client):
+        from mettle import ChallengeType, Difficulty, MettleSession, VerificationResult
+
+        session_id = "issuance-disabled-session"
+        session_token = "issuance-disabled-token"
+        sessions[session_id] = MettleSession(
+            session_id=session_id,
+            entity_id="agent-disabled",
+            difficulty=Difficulty.BASIC,
+            challenges=[],
+            results=[
+                VerificationResult(
+                    challenge_id="challenge-1",
+                    challenge_type=ChallengeType.SPEED_MATH,
+                    passed=True,
+                    response_time_ms=1,
+                    time_limit_ms=1000,
+                )
+            ],
+            completed=True,
+            access_token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
+        )
+        client.session_tokens[session_id] = session_token
+
+        with patch.object(main_module.settings, "credential_issuance_enabled", False):
+            result = client.get(f"/api/session/{session_id}/result").json()
+
+        assert result["verified"] is True
+        assert result["credential_eligible"] is False
+        assert result["badge"] is None
 
 
 # =============================================================================
@@ -1324,7 +1356,149 @@ class TestSecurityHeaders:
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
         assert response.headers.get("X-Frame-Options") == "DENY"
         assert response.headers.get("X-XSS-Protection") == "1; mode=block"
+        assert response.headers.get("Permissions-Policy") == (
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        )
+        assert response.headers.get("Cross-Origin-Opener-Policy") == "same-origin"
+        assert response.headers.get("X-METTLE-Source-Revision") == "unknown"
         assert "X-Request-ID" in response.headers
+
+    def test_safe_request_id_is_propagated(self, client):
+        response = client.get(
+            "/api/health", headers={"X-Request-ID": "caller.trace-123"}
+        )
+
+        assert response.headers["X-Request-ID"] == "caller.trace-123"
+
+    @pytest.mark.parametrize(
+        "unsafe_request_id",
+        ["contains spaces", "line\nbreak", "x" * 65, "", "slash/not-allowed"],
+    )
+    def test_unsafe_request_id_is_replaced(self, client, unsafe_request_id):
+        response = client.get(
+            "/api/health", headers={"X-Request-ID": unsafe_request_id}
+        )
+
+        issued = response.headers["X-Request-ID"]
+        assert issued != unsafe_request_id
+        assert re.fullmatch(r"[0-9a-f]{32}", issued)
+
+
+class TestOperationalHealth:
+    """Exercise liveness, readiness, and privacy-preserving metrics."""
+
+    def test_liveness_and_default_readiness(self, client):
+        assert client.get("/api/health/live").json() == {
+            "status": "alive",
+            "source_revision": "unknown",
+        }
+
+        ready = client.get("/api/health/ready")
+        assert ready.status_code == 200
+        assert ready.headers["cache-control"] == "no-store"
+        assert ready.json() == {
+            "status": "ready",
+            "source_revision": "unknown",
+            "components": {
+                "source_identity": "not-required",
+                "database": "ready",
+                "database_schema": "ready",
+                "redis": "ready",
+            },
+        }
+
+    def test_source_revision_prefers_explicit_override(self, monkeypatch):
+        import main
+
+        explicit = "a" * 40
+        monkeypatch.setenv("METTLE_SOURCE_REVISION", explicit.upper())
+        monkeypatch.setenv("RENDER_GIT_COMMIT", "b" * 40)
+
+        assert main.deployed_source_revision() == explicit
+
+    def test_source_revision_uses_valid_render_fallback(self, monkeypatch):
+        import main
+
+        monkeypatch.setenv("METTLE_SOURCE_REVISION", "not-a-commit")
+        monkeypatch.setenv("RENDER_GIT_COMMIT", "c" * 64)
+
+        assert main.deployed_source_revision() == "c" * 64
+
+    def test_production_readiness_rejects_unknown_source(self, client, monkeypatch):
+        import main
+
+        monkeypatch.setattr(main.settings, "environment", "production")
+        monkeypatch.delenv("METTLE_SOURCE_REVISION", raising=False)
+        monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
+
+        response = client.get("/api/health/ready")
+
+        assert response.status_code == 503
+        assert response.json()["source_revision"] == "unknown"
+        assert response.json()["components"]["source_identity"] == "unavailable"
+
+    def test_health_and_cors_expose_deployed_source(self, client, monkeypatch):
+        revision = "d" * 40
+        monkeypatch.setenv("RENDER_GIT_COMMIT", revision)
+
+        response = client.get("/api/health", headers={"Origin": "http://testserver"})
+
+        assert response.json()["source_revision"] == revision
+        assert response.headers["X-METTLE-Source-Revision"] == revision
+        exposed = response.headers["Access-Control-Expose-Headers"].lower()
+        assert "x-mettle-source-revision" in exposed
+        assert "x-request-id" in exposed
+
+    def test_database_readiness_fails_closed(self, client, monkeypatch):
+        import main
+
+        unavailable_database = MagicMock()
+        unavailable_database.check_health.return_value = False
+        monkeypatch.setattr(main.settings, "use_database", True)
+        monkeypatch.setattr(main, "db", unavailable_database)
+
+        response = client.get("/api/health/ready")
+
+        assert response.status_code == 503
+        assert response.json()["components"]["database"] == "unavailable"
+
+    def test_database_schema_readiness_fails_closed(self, client, monkeypatch):
+        import main
+
+        stale_database = MagicMock()
+        stale_database.check_health.return_value = True
+        stale_database.check_schema_current.return_value = False
+        monkeypatch.setattr(main.settings, "use_database", True)
+        monkeypatch.setattr(main, "db", stale_database)
+
+        response = client.get("/api/health/ready")
+
+        assert response.status_code == 503
+        assert response.json()["components"]["database"] == "ready"
+        assert response.json()["components"]["database_schema"] == "unavailable"
+
+    def test_redis_readiness_fails_closed(self, client, monkeypatch):
+        import main
+
+        monkeypatch.setattr(main.settings, "redis_url", "redis://configured")
+        client.app.state.redis = None
+
+        response = client.get("/api/health/ready")
+
+        assert response.status_code == 503
+        assert response.json()["components"]["redis"] == "unavailable"
+
+    def test_metrics_are_bounded_and_content_free(self, client):
+        client.get("/api/health/live")
+
+        response = client.get("/api/metrics")
+        body = response.text
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        assert "mettle_http_requests_total" in body
+        assert "mettle_http_request_duration_seconds_bucket" in body
+        assert "session_id" not in body
+        assert "entity_id" not in body
 
 
 # =============================================================================

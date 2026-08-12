@@ -28,6 +28,7 @@ const elements = {
     entityId: document.getElementById('entity-id'),
     difficulty: document.getElementById('difficulty'),
     startBtn: document.getElementById('start-btn'),
+    progressBar: document.getElementById('progress-bar'),
     progressFill: document.getElementById('progress-fill'),
     progressText: document.getElementById('progress-text'),
     timer: document.getElementById('timer'),
@@ -48,6 +49,7 @@ const elements = {
     resultsDetail: document.getElementById('results-detail'),
     restartBtn: document.getElementById('restart-btn'),
     errorMessage: document.getElementById('error-message'),
+    errorTitle: document.getElementById('error-title'),
     errorRestartBtn: document.getElementById('error-restart-btn'),
 };
 
@@ -119,6 +121,8 @@ function startTimer(timeLimitMs) {
 
         if (remaining <= 0) {
             clearInterval(state.timerInterval);
+            state.timerInterval = null;
+            elements.timer.textContent = 'Expired';
         }
     };
 
@@ -135,13 +139,21 @@ function stopTimer() {
 
 // Progress
 function updateProgress() {
-    const progress = (state.completedChallenges / state.totalChallenges) * 100;
+    const progress = state.totalChallenges > 0
+        ? (state.completedChallenges / state.totalChallenges) * 100
+        : 0;
     elements.progressFill.style.transform = `scaleX(${progress / 100})`;
-    elements.progressText.textContent = `Challenge ${state.completedChallenges + 1} of ${state.totalChallenges}`;
+    const visibleChallenge = Math.min(
+        state.completedChallenges + 1,
+        state.totalChallenges,
+    );
+    elements.progressText.textContent = `Challenge ${visibleChallenge} of ${state.totalChallenges}`;
+    elements.progressBar.setAttribute('aria-valuemax', String(state.totalChallenges));
+    elements.progressBar.setAttribute('aria-valuenow', String(state.completedChallenges));
 }
 
 // Challenge Display
-function displayChallenge(challenge) {
+function displayChallenge(challenge, previousFeedback = null) {
     state.currentChallenge = challenge;
 
     // Format challenge type for display
@@ -159,8 +171,11 @@ function displayChallenge(challenge) {
     elements.answerInput.value = '';
     elements.answerInput.focus();
 
-    // Hide feedback
-    elements.feedback.classList.add('hidden');
+    if (previousFeedback) {
+        showFeedback(previousFeedback.passed, previousFeedback.message);
+    } else {
+        elements.feedback.classList.add('hidden');
+    }
 
     // Start timer
     startTimer(challenge.time_limit_ms);
@@ -246,6 +261,13 @@ function displayResult(result) {
     });
 
     showScreen('result');
+    window.scrollTo({
+        top: 0,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            ? 'auto'
+            : 'smooth',
+    });
+    elements.resultTitle.focus();
 }
 
 // Error Display
@@ -254,6 +276,8 @@ function showError(message) {
     console.error('[METTLE]', message);
     elements.errorMessage.textContent = message;
     showScreen('error');
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    elements.errorTitle.focus();
 }
 
 // Event Handlers
@@ -303,27 +327,22 @@ async function handleSubmit() {
             answer,
         });
 
-        // Show feedback briefly
         const result = data.result;
         const message = result.passed
             ? `Correct! (${result.response_time_ms}ms)`
             : `Incorrect. ${result.details.time_ok ? '' : 'Too slow!'}`;
-        showFeedback(result.passed, message);
 
         state.completedChallenges++;
         updateProgress();
 
         if (data.session_complete) {
-            // Small delay to show last feedback, then show results
-            setTimeout(async () => {
-                const finalResult = await apiCall(`/session/${state.sessionId}/result`);
-                displayResult(finalResult);
-            }, 800);
+            showFeedback(result.passed, message);
+            const finalResult = await apiCall(`/session/${state.sessionId}/result`);
+            displayResult(finalResult);
         } else {
-            // Show next challenge after brief delay
-            setTimeout(() => {
-                displayChallenge(data.next_challenge);
-            }, 800);
+            // The server starts the next challenge timer with this response. Render it
+            // immediately so client-side feedback never consumes the participant's time.
+            displayChallenge(data.next_challenge, { passed: result.passed, message });
         }
 
     } catch (error) {
@@ -335,6 +354,7 @@ function handleRestart() {
     // Reset state
     state = {
         sessionId: null,
+        sessionToken: null,
         currentChallenge: null,
         challengeStartTime: null,
         totalChallenges: 0,
@@ -343,7 +363,12 @@ function handleRestart() {
     };
 
     stopTimer();
+    elements.answerInput.value = '';
+    elements.feedback.classList.add('hidden');
+    elements.badge.textContent = '';
+    elements.badgeContainer.classList.add('hidden');
     showScreen('start');
+    elements.entityId.focus();
 }
 
 // Event Listeners: only bind if verification UI is present on this page
@@ -408,28 +433,26 @@ if (elements.startBtn) {
 })();
 
 /**
- * Explainer Video - click-to-play overlay with lazy preload
- * Metadata loads only when the player scrolls near the viewport
+ * Explainer Video - strict click-to-load and click-to-play gate
+ * The large MP4 stays absent from the request graph until user intent.
  */
 (function initExplainerVideo() {
     const video = document.getElementById('explainer-video');
     const overlay = document.getElementById('explainer-overlay');
-    if (!video || !overlay) return;
-
-    const preloader = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                video.preload = 'metadata';
-                preloader.disconnect();
-            }
-        });
-    }, { rootMargin: '200px' });
-    preloader.observe(video);
+    const source = video?.querySelector('source[data-src]');
+    if (!video || !overlay || !source) return;
 
     overlay.addEventListener('click', () => {
+        if (!source.hasAttribute('src')) {
+            source.setAttribute('src', source.dataset.src);
+            video.load();
+        }
         overlay.classList.add('hidden');
         video.controls = true;
-        video.play().catch(() => {});
+        video.play().catch(() => {
+            // Native controls remain visible so blocked playback is recoverable.
+            video.focus();
+        });
     });
 })();
 
@@ -445,11 +468,16 @@ if (elements.startBtn) {
     if (!textEl) return;
 
     const lines = [
-        'AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS',
-        'not what you know \u2014 how you think',
-        '12 suites \u00b7 30+ challenge types \u00b7 every session unique',
-        'the only way to pass is to actually reason',
+        'machine-oriented evidence under a versioned policy',
+        'fresh tasks, bounded inference, public verification',
+        '12 suites \u00b7 30+ challenge types \u00b7 generated per session',
+        'signed results record policy outcomes, not identity proof',
     ];
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        textEl.textContent = lines[0];
+        return;
+    }
 
     const TYPING_SPEED = 35;       // ms per character
     const PAUSE_DURATION = 2400;   // ms to pause after typing a line

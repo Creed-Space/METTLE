@@ -79,6 +79,40 @@ class TestAdversarialChallenges:
         # In current implementation, computed always equals expected (demo mode)
         assert result["computed"] == result["expected"]
 
+    @pytest.mark.parametrize(
+        ("operation", "expected_problem", "expected_answer"),
+        [
+            (0, "(123 × 456) + 12", 56100),
+            (1, "(123 + 456) × 12", 6948),
+            (2, "123² - 456", 14673),
+            (3, "Sum of digits in 673056", 27),
+        ],
+    )
+    def test_dynamic_math_challenge_covers_every_operation(
+        self,
+        monkeypatch,
+        operation,
+        expected_problem,
+        expected_answer,
+    ):
+        """Exercise every procedural math operation deterministically."""
+        import scripts.engine as engine
+
+        values = iter((123, 456, 12, operation))
+
+        class StubRandom:
+            @staticmethod
+            def randint(_lower, _upper):
+                return next(values)
+
+        monkeypatch.setattr(engine, "_rng", StubRandom())
+        result = engine.AdversarialChallenges.dynamic_math_challenge()
+
+        assert result["problem"] == expected_problem
+        assert result["expected"] == expected_answer
+        assert result["computed"] == expected_answer
+        assert result["passed"] is True
+
     def test_dynamic_math_challenge_procedural_generation(self):
         """Verify each call generates different problems."""
         from scripts.engine import AdversarialChallenges

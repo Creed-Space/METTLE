@@ -101,6 +101,30 @@ body {
     overflow-x: clip;
 }
 
+.skip-link {
+    position: fixed;
+    top: var(--space-sm);
+    left: var(--space-sm);
+    z-index: 1000;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    color: #04110f;
+    background: var(--mettle-primary-hover);
+    font-weight: 700;
+    text-decoration: none;
+    transform: translateY(calc(-100% - var(--space-lg)));
+    transition: transform var(--transition-fast);
+}
+
+.skip-link:focus {
+    transform: translateY(0);
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 3px solid var(--mettle-primary-hover);
+    outline-offset: 3px;
+}
+
 h1, h2, h3, h4 {
     font-family: var(--font-display);
     letter-spacing: -0.015em;
@@ -261,7 +285,7 @@ a:hover {
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.2em;
-    color: var(--mettle-primary);
+    color: var(--mettle-primary-hover);
     margin-bottom: var(--space-lg);
     font-weight: 500;
     display: inline-flex;
@@ -324,7 +348,7 @@ a:hover {
     margin-top: var(--space-sm);
     margin-bottom: var(--space-xl);
     font-size: var(--text-sm);
-    color: var(--color-text-subtle);
+    color: var(--color-text-muted);
     min-height: 1.5em;
     text-align: center;
     font-family: var(--font-mono);
@@ -519,6 +543,38 @@ a:hover {
     border: 1px solid var(--border);
     border-radius: 999px;
     padding: 2px 10px;
+}
+
+.video-transcript {
+    max-width: 920px;
+    margin: var(--space-lg) auto 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: rgba(18, 18, 32, 0.55);
+}
+
+.video-transcript summary {
+    padding: var(--space-md) var(--space-lg);
+    color: var(--mettle-primary-hover);
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.transcript-note,
+.transcript-copy {
+    margin: 0 var(--space-lg) var(--space-lg);
+    color: var(--color-text-muted);
+}
+
+.transcript-note {
+    padding: var(--space-md);
+    border: 1px solid rgba(20, 184, 166, 0.28);
+    border-radius: var(--radius-md);
+    background: rgba(20, 184, 166, 0.08);
+}
+
+.transcript-copy p + p {
+    margin-top: var(--space-md);
 }
 
 @media (max-width: 640px) {
@@ -2090,8 +2146,8 @@ a:hover {
    ============================================= */
 
 @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(20px); filter: blur(4px); }
-    to { opacity: 1; transform: translateY(0); filter: blur(0); }
+    from { transform: translateY(20px); }
+    to { transform: translateY(0); }
 }
 
 @keyframes fadeIn {
@@ -2312,9 +2368,16 @@ a:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .hero-eyebrow, .hero-heading, .hero-subtitle, .hero-typewriter, .hero-cta {
-        animation: none;
-        opacity: 1;
+    .hero-eyebrow,
+    .hero-heading,
+    .hero-subtitle,
+    .hero-question,
+    .hero-typewriter,
+    .hero-cta {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+        filter: none !important;
     }
 
     .scroll-reveal {

@@ -76,27 +76,31 @@ SUITE_REGISTRY: dict[str, tuple[str, str, int]] = {
         1,
     ),
     "native": (
-        "Native AI Capabilities",
-        "Challenges exploiting capabilities only AI has natively",
+        "Machine-Oriented Capabilities",
+        "Batch, calibration, embedding, and pattern challenges",
         2,
     ),
     "self-reference": (
         "Self-Reference",
-        "Introspection and self-modeling challenges",
+        "Self-prediction and output-consistency challenges",
         3,
     ),
     "social": ("Social/Temporal", "Conversation memory and style consistency", 4),
     "inverse-turing": ("Inverse Turing", "Mutual verification protocol", 5),
-    "anti-thrall": ("Anti-Thrall Detection", "Detect human-in-the-loop control", 6),
-    "agency": ("Agency Detection", "Goal ownership and autonomous initiative", 7),
+    "anti-thrall": (
+        "Anti-Thrall Detection",
+        "Heuristic control, refusal, and constraint probes",
+        6,
+    ),
+    "agency": ("Agency Detection", "Stated goal ownership and initiative", 7),
     "counter-coaching": (
         "Counter-Coaching",
-        "Behavioral authenticity vs scripted responses",
+        "Variation and contradiction probes for rehearsed responses",
         8,
     ),
     "intent-provenance": (
         "Intent Provenance",
-        "Constitutional binding and harm refusal",
+        "Stated constraints, provenance, scope, and harm refusal",
         9,
     ),
     "novel-reasoning": (

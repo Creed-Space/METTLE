@@ -39,4 +39,4 @@ This prevents a Vault rotation from silently changing the holder identity. A sto
 
 Never reuse a PostgreSQL holder ID across public-key versions. Never replace the public key file in place while retaining the same holder ID.
 
-The local proof command is `scripts/testing/run_holder_service_soak.py`; the repository integration harness supplies an external Vault and PostgreSQL instance. A passing proof records versions `[1, 1, 1, 2]`: before restart, after Vault restart, old-version continuity after rotation, and fresh-version cutover.
+The local proof command is `scripts/testing/run_holder_service_soak.py`; its caller supplies a Vault and PostgreSQL instance. A passing proof verifies concurrent Vault signatures at one pinned Transit key version, issuer-key overlap, persistence close and reopen, stable idempotent replay, conflicting replay rejection, singleton locking, and concurrent requests. It does not restart Vault or PostgreSQL and does not rotate the Transit key. Those remain separate operational drills against the release candidate.

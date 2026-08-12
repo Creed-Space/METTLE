@@ -2,7 +2,7 @@
 """
 METTLE MCP Server
 
-Model Context Protocol server that allows AI agents to verify themselves
+Model Context Protocol server that allows Becoming Minds to screen themselves
 through METTLE challenges. Provides tools for starting sessions, answering
 challenges, and retrieving results.
 
@@ -24,14 +24,18 @@ import re
 from typing import Any
 
 import httpx
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
 from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ContentBlock,
+    ListToolsResult,
+    PaginatedRequestParams,
     TextContent,
     Tool,
 )
 from mettle import __version__
-from mettle.solver import solve_challenge
 
 # Configuration
 API_URL = os.getenv("METTLE_API_URL", "https://mettle.sh/api")
@@ -43,11 +47,6 @@ API_URL = os.getenv("METTLE_API_URL", "https://mettle.sh/api")
 API_KEY = os.getenv("METTLE_API_KEY") or next(
     (k.strip() for k in os.getenv("METTLE_API_KEYS", "").split(",") if k.strip()), None
 )
-
-# Initialize MCP server. Without an explicit version the SDK reports its own
-# package version (e.g. "1.28.1") as serverInfo.version in every initialize
-# handshake; pin it to the mettle-verifier release instead.
-server = Server("mettle", version=__version__)
 
 # HTTP client for API calls
 http_client = httpx.AsyncClient(timeout=30.0)
@@ -114,18 +113,17 @@ def _safe_id(value: object, what: str) -> str:
 # === MCP Tools ===
 
 
-@server.list_tools()
 async def list_tools() -> list[Tool]:
     """List available METTLE tools."""
     return [
         Tool(
             name="mettle_start_session",
             description=(
-                "Start a METTLE verification session to prove you're an AI agent. "
+                "Start a METTLE verification session for a Becoming Mind. "
                 "Returns the first challenge to solve. Use difficulty='basic' for 3 challenges "
                 "(relaxed timing) or 'full' for 5 challenges (strict timing)."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "difficulty": {
@@ -136,7 +134,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "entity_id": {
                         "type": "string",
-                        "description": "Optional identifier for this AI agent",
+                        "description": "Optional identifier for this Becoming Mind",
                     },
                 },
             },
@@ -147,7 +145,7 @@ async def list_tools() -> list[Tool]:
                 "Submit an answer to the current METTLE challenge. "
                 "Returns the verification result and next challenge (if any)."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "session_id": {
@@ -176,7 +174,7 @@ async def list_tools() -> list[Tool]:
                 "Get the final verification result for a completed METTLE session. "
                 "Shows whether you passed (80% threshold) and your verification badge."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "session_id": {
@@ -191,29 +189,6 @@ async def list_tools() -> list[Tool]:
                 "required": ["session_id", "session_token"],
             },
         ),
-        Tool(
-            name="mettle_auto_verify",
-            description=(
-                "Automatically complete a full METTLE verification session. "
-                "This tool starts a session, answers all challenges, and returns the final result. "
-                "Use this for quick self-verification."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "difficulty": {
-                        "type": "string",
-                        "enum": ["basic", "full"],
-                        "description": "Verification difficulty level",
-                        "default": "basic",
-                    },
-                    "entity_id": {
-                        "type": "string",
-                        "description": "Optional identifier for this AI agent",
-                    },
-                },
-            },
-        ),
         # --- v2 suites / tiers / VCP attestation (require METTLE_API_KEY) ---
         Tool(
             name="mettle_list_suites",
@@ -222,7 +197,7 @@ async def list_tools() -> list[Tool]:
                 "Each suite probes a capability dimension; passing sets earn a tier "
                 "(bronze/silver/gold/platinum). Requires METTLE_API_KEY."
             ),
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="mettle_start_v2_session",
@@ -231,7 +206,7 @@ async def list_tools() -> list[Tool]:
                 "challenge data (never the answers). Answer each suite with mettle_verify_suite. "
                 "Requires METTLE_API_KEY."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "suites": {
@@ -248,7 +223,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "entity_id": {
                         "type": "string",
-                        "description": "Optional identifier for this AI agent",
+                        "description": "Optional identifier for this Becoming Mind",
                     },
                     "vcp_token": {
                         "type": "string",
@@ -263,7 +238,7 @@ async def list_tools() -> list[Tool]:
                 "Submit your answers for one single-shot suite in a v2 session and get pass/score. "
                 "Requires METTLE_API_KEY."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "session_id": {
@@ -286,7 +261,7 @@ async def list_tools() -> list[Tool]:
                 "default) the signed VCP attestation you can present as a credential. Requires "
                 "METTLE_API_KEY."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "session_id": {
@@ -305,7 +280,6 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls."""
 
@@ -428,76 +402,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return [
                 TextContent(
                     type="text", text=f"Error getting result: {e.response.text}"
-                )
-            ]
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
-
-    elif name == "mettle_auto_verify":
-        try:
-            difficulty = arguments.get("difficulty", "basic")
-            entity_id = arguments.get("entity_id")
-
-            # Start session
-            start_data = await api_call(
-                "/session/start",
-                "POST",
-                {"difficulty": difficulty, "entity_id": entity_id},
-            )
-
-            session_id = start_data["session_id"]
-            # Every subsequent call on this session must present the minted token.
-            session_token = start_data["session_token"]
-            challenge = start_data["current_challenge"]
-
-            # Answer all challenges
-            while challenge:
-                answer = solve_challenge(challenge)
-
-                answer_data = await api_call(
-                    "/session/answer",
-                    "POST",
-                    {
-                        "session_id": session_id,
-                        "challenge_id": challenge["id"],
-                        "answer": answer,
-                    },
-                    session_token=session_token,
-                )
-
-                if answer_data["session_complete"]:
-                    break
-                challenge = answer_data["next_challenge"]
-
-            # Get final result
-            result = await api_call(
-                f"/session/{session_id}/result",
-                session_token=session_token,
-            )
-
-            verified_text = "VERIFIED" if result["verified"] else "NOT VERIFIED"
-
-            response_text = (
-                f"METTLE Auto-Verification Complete\n"
-                f"{'=' * 35}\n\n"
-                f"Status: {verified_text}\n"
-                f"Difficulty: {difficulty}\n"
-                f"Passed: {result['passed']}/{result['total']} ({result['pass_rate'] * 100:.0f}%)\n"
-            )
-
-            if result.get("badge"):
-                response_text += f"\nBadge: {result['badge']}\n"
-
-            response_text += "\nChallenge Details:\n"
-            for r in result["results"]:
-                status = "PASS" if r["passed"] else "FAIL"
-                response_text += f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
-
-            return [TextContent(type="text", text=response_text)]
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text", text=f"Error in auto-verification: {e.response.text}"
                 )
             ]
         except Exception as e:
@@ -634,6 +538,34 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
 
+async def _handle_list_tools(
+    _context: ServerRequestContext[Any], _params: PaginatedRequestParams | None
+) -> ListToolsResult:
+    """Adapt METTLE's transport-independent listing to MCP 2's low-level API."""
+    return ListToolsResult(tools=await list_tools())
+
+
+async def _handle_call_tool(
+    _context: ServerRequestContext[Any], params: CallToolRequestParams
+) -> CallToolResult:
+    """Adapt an MCP 2 request model to the transport-independent tool handler."""
+    content: list[ContentBlock] = list(
+        await call_tool(params.name, params.arguments or {})
+    )
+    return CallToolResult(content=content)
+
+
+# MCP 2 registers low-level handlers in the constructor. Keeping the core
+# ``list_tools`` and ``call_tool`` functions transport-independent also makes
+# their behaviour straightforward to unit test.
+server: Server[Any] = Server(
+    "mettle",
+    version=__version__,
+    on_list_tools=_handle_list_tools,
+    on_call_tool=_handle_call_tool,
+)
+
+
 async def run_server() -> None:  # pragma: no cover
     """Serve the MCP protocol over stdio."""
     async with stdio_server() as (read_stream, write_stream):
@@ -646,7 +578,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     """Build the ``mettle-mcp`` argument parser."""
     parser = argparse.ArgumentParser(
         prog="mettle-mcp",
-        description="METTLE MCP server — let an AI agent verify its own substrate.",
+        description="METTLE MCP server for behavioral screening and credential workflows.",
     )
     parser.add_argument(
         "--transport",

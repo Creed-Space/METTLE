@@ -88,6 +88,12 @@ class BadgeInfo(BaseModel):
         False, description="Whether the badge is cryptographically signed"
     )
     jti: str | None = Field(None, description="Unique badge ID for revocation")
+    credential_schema_version: str | None = Field(
+        default=None, description="Credential envelope semantics version"
+    )
+    suite_policy_version: str | None = Field(
+        default=None, description="Challenge policy used to interpret the tier"
+    )
 
 
 class MettleResult(BaseModel):

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import stat
@@ -36,6 +38,9 @@ from mettle.holder import (
 HOLDER_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 STATE_ENVELOPE_SCHEMA = "mettle-holder-envelope-v1"
 MAX_REQUEST_BYTES = 1048576
+VAULT_TOKEN_RENEWAL_RETRY_SECONDS = 5.0
+
+logger = logging.getLogger(__name__)
 
 
 class HolderServiceUnavailable(RuntimeError):
@@ -50,6 +55,12 @@ class HolderStateStore(Protocol):
     def health(self) -> bool: ...
 
     def close(self) -> None: ...
+
+
+class ScheduledVaultTokenProvider(Protocol):
+    def __call__(self) -> str: ...
+
+    def seconds_until_renewal(self) -> float: ...
 
 
 class MemoryHolderStateStore:
@@ -495,7 +506,7 @@ def _load_policy(path: str) -> HolderPolicy:
 
 
 def build_runtime_from_environment() -> tuple[
-    PersistentHolderRuntime, Callable[[], str]
+    PersistentHolderRuntime, Callable[[], str], RenewingVaultTokenProvider
 ]:
     settings = HolderServiceSettings.from_environment()
     vault_token_provider = RenewingVaultTokenProvider(
@@ -530,7 +541,27 @@ def build_runtime_from_environment() -> tuple[
     except Exception:
         store.close()
         raise
-    return runtime, control_token_provider
+    return runtime, control_token_provider, vault_token_provider
+
+
+async def _maintain_vault_token(
+    vault_token_provider: ScheduledVaultTokenProvider,
+) -> None:
+    """Renew the scoped Vault token on schedule even while signing is idle."""
+
+    delay = vault_token_provider.seconds_until_renewal()
+    while True:
+        await asyncio.sleep(max(0.1, delay))
+        try:
+            await asyncio.to_thread(vault_token_provider)
+        except Exception:
+            logger.warning(
+                "Vault token background renewal failed; retrying in %.1f seconds",
+                VAULT_TOKEN_RENEWAL_RETRY_SECONDS,
+            )
+            delay = VAULT_TOKEN_RENEWAL_RETRY_SECONDS
+        else:
+            delay = vault_token_provider.seconds_until_renewal()
 
 
 class StrictModel(BaseModel):
@@ -620,19 +651,37 @@ def create_holder_service(
     *,
     runtime: PersistentHolderRuntime | None = None,
     control_token_provider: Callable[[], str] | None = None,
+    vault_token_provider: ScheduledVaultTokenProvider | None = None,
 ) -> FastAPI:
     owned_runtime = runtime is None
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        nonlocal runtime, control_token_provider
+        nonlocal runtime, control_token_provider, vault_token_provider
         if runtime is None or control_token_provider is None:
-            runtime, control_token_provider = build_runtime_from_environment()
+            runtime, control_token_provider, vault_token_provider = (
+                build_runtime_from_environment()
+            )
         application.state.runtime = runtime
         application.state.control_token_provider = control_token_provider
+        renewal_task = (
+            asyncio.create_task(
+                _maintain_vault_token(vault_token_provider),
+                name="mettle-vault-token-renewal",
+            )
+            if vault_token_provider is not None
+            else None
+        )
+        application.state.vault_token_renewal_task = renewal_task
         try:
             yield
         finally:
+            if renewal_task is not None:
+                renewal_task.cancel()
+                try:
+                    await renewal_task
+                except asyncio.CancelledError:
+                    pass
             if owned_runtime and runtime is not None:
                 runtime.close()
 

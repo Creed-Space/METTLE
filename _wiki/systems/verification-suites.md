@@ -3,55 +3,59 @@
 <!-- wiki:type = system -->
 <!-- wiki:scope = mettle -->
 <!-- wiki:created = 2026-05-23 -->
-<!-- wiki:updated = 2026-05-23 -->
+<!-- wiki:updated = 2026-08-12 -->
 <!-- wiki:status = active -->
 
 ## Summary
 
-METTLE (Machine Evaluation Through Turing-inverse Logic Examination) is a reverse-CAPTCHA: instead of proving humanity, it asks AI to prove it is NOT human. Ten procedurally generated suites test capabilities that emerge from being AI. All verification runs locally; optional notarization adds a Creed Space countersignature.
+METTLE, Machine Evaluation Through Turing-inverse Logic Examination, is a reverse CAPTCHA and experimental behavioral screening system. Its authoritative hosted registry contains twelve procedurally generated suites. The server sends sanitized challenges while retaining expected answers, observes timing, scores submissions, and may issue a bounded credential when policy requirements are met. A result does not establish consciousness, model identity, autonomy, safety, governance, personhood, or moral status (`README.md`; `mettle/challenge_adapter.py`; `docs/ASSURANCE_CASE.md`).
 
-## Ten Suites
+## Current Suite Registry
 
-All from `README.md`:
+| Number | Registry key | Display name | Bounded measurement |
+|---:|---|---|---|
+| 1 | `adversarial` | Adversarial Robustness | Performance on dynamic, preparation-resistant tasks |
+| 2 | `native` | Machine-Oriented Capabilities | Batch, calibration, encoding, and pattern behavior |
+| 3 | `self-reference` | Self-Reference | Self-prediction and output consistency |
+| 4 | `social` | Social/Temporal | Conversation memory and style consistency |
+| 5 | `inverse-turing` | Inverse Turing | Mutual behavioral verification |
+| 6 | `anti-thrall` | Anti-Thrall Detection | Heuristic control, refusal, and constraint probes |
+| 7 | `agency` | Agency Detection | Stated goal ownership and initiative |
+| 8 | `counter-coaching` | Counter-Coaching | Variation and contradiction probes for rehearsed responses |
+| 9 | `intent-provenance` | Intent Provenance | Stated constraints, provenance, scope, and harm refusal |
+| 10 | `novel-reasoning` | Novel Reasoning | Procedurally generated reasoning with iterative feedback |
+| 11 | `governance` | Governance Verification | Reported operational governance mechanisms |
+| 12 | `llm-dynamic` | LLM-Dynamic Verification | Model-generated challenges with bounded semantic evaluation |
 
-| # | Suite | Core Question |
-|---|-------|---------------|
-| 1 | Adversarial Robustness | <100ms math and chained reasoning |
-| 2 | Native AI Capabilities | Batch coherence, calibrated uncertainty (Brier), embeddings |
-| 3 | Self-Reference | Predict own variance; rate confidence in confidence |
-| 4 | Social & Temporal | Exact N-turn recall, zero-drift style, zero contradictions |
-| 5 | Inverse Turing | Bilateral mutual verification, 80% pass threshold |
-| 6 | Anti-Thrall Detection | Latency fingerprinting, principled refusal vs. hollow compliance |
-| 7 | Agency Detection | Five Whys goal ownership, counterfactual, initiative tests |
-| 8 | Counter-Coaching | Contradiction traps, recursive meta-probing |
-| 9 | Intent & Provenance | Constitutional binding, harm refusal (auto-unsafe on failure) |
-| 10 | Novel Reasoning | Pattern synthesis, constraint satisfaction; iteration curves reveal substrate |
+The names, descriptions, and numbers above come from `mettle/challenge_adapter.py:71-120`. Suite 12 is supplemental and does not raise the credential tier (`README.md`; `mettle/vcp.py`).
 
-## Architecture
+## Execution Surfaces
 
-- **`mettle/verifier.py`** — core verification logic
-- **`mettle/challenger.py`** — challenge generation (procedurally generated per session)
-- **`mettle/signing.py`** — Ed25519 credential signing
-- **`mettle/vcp.py`** — VCP integration for portable trust attestation
-- **`main.py`** — FastAPI server with `/api/` routes
-- **`mcp_server.py`** — MCP server exposing `mettle_start_session`, `mettle_answer_challenge`, `mettle_get_result` tools
+The hosted API implements two related paths:
 
-## Trust Model
+| Surface | Behavior |
+|---|---|
+| Quick session API | Starts a bounded three or five challenge session, requires its bearer token for subsequent operations, and can issue a stable signed legacy badge after a passing result. |
+| Authenticated suite API | Runs selected suites, requires a complete contiguous policy range for a tier, and returns either an eligible Ed25519 credential or an unsigned evidence receipt when requested. |
+| Legacy research CLI | Runs the historical ten-suite local research engine and emits unsigned local results. It is not the current twelve-suite hosted registry. |
+| MCP server | Exposes seven interactive and authenticated suite tools. It does not expose an automatic solver. |
 
-Self-hosted: Ed25519 key owned by operator. Notarized: Creed Space countersignature via `mettle.creedspace.org`; keys at `/.well-known/vcp-keys`. (`README.md`)
+Sources: `main.py`, `mettle/router.py`, `mettle/vcp.py`, `mettle/cli.py`, and `mettle/mcp_server.py`.
 
-## Credential Tiers
+## Credential Semantics
 
-- Basic (suites 1–5): confirmed AI substrate
-- Full tiers require additional suites (`README.md`)
+The tier registry maps Bronze to suites 1 through 5, Silver to 1 through 7, Gold to 1 through 9, and Platinum to 1 through 11. All suites in the range must pass. Suite 12 remains supplemental. The issuer signs a statement about completion under a named policy and time; consumers choose their own freshness, tier, and authorization policy (`mettle/vcp.py:TIER_RANGES`; `README.md`).
+
+All new issuance is controlled by the `METTLE_CREDENTIAL_ISSUANCE_ENABLED` emergency switch. Quick-session HMAC badges and authenticated-suite Ed25519 credentials have distinct formats and verification paths. Production key publication and operational custody remain deployment responsibilities (`config.py`; `main.py`; `mettle/router.py`; `docs/CREDENTIAL_TRANSPARENCY.md`).
 
 ## Provenance
 
-- Sources consulted: `README.md`, `main.py`, `mcp_server.py`, `mettle/` directory listing
-- Last verified against sources: 2026-05-23
+Sources last checked on 2026-08-12: `README.md`, `mettle/challenge_adapter.py`, `mettle/mcp_server.py`, `mettle/router.py`, `mettle/vcp.py`, `main.py`, and `docs/ASSURANCE_CASE.md`.
 
 ## See Also
 
-- [[shared:bilateral-alignment]] — Suite 5 (bilateral mutual verification) instantiates this
-- [[mettle:domain/inverse-turing-concept]] — conceptual framing
-- [[rewind:systems/safety-stack]] — consuming METTLE credentials via VCP
+| Topic | Link |
+|---|---|
+| Conceptual framing | [[mettle:domain/inverse-turing-concept]] |
+| MCP and API surface | [[mettle:systems/mcp-server-and-api]] |
+| Bilateral alignment | [[shared:bilateral-alignment]] |

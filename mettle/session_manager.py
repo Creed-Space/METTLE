@@ -6,6 +6,7 @@ Sessions follow the state machine: CREATED -> CHALLENGES_GENERATED -> IN_PROGRES
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import secrets
@@ -167,8 +168,10 @@ class SessionManager:
                 operator_commitment=operator_commitment,
                 presence_registration=presence,
             )
-        except Exception:
-            await self._release_rate_reservation(user_id, session_id)
+        except BaseException:
+            # Cancellation is a control-flow BaseException. Shield the cleanup
+            # so an abandoned generator cannot retain active or hourly quota.
+            await asyncio.shield(self._release_rate_reservation(user_id, session_id))
             raise
 
     async def _create_reserved_session(
@@ -718,6 +721,36 @@ class SessionManager:
             ),
         }
 
+    async def get_cached_credential(self, session_id: str) -> dict[str, Any] | None:
+        """Return the one durable credential envelope already issued for a session."""
+        raw = await self.redis.get(_key(session_id, "credential"))
+        return None if raw is None else json.loads(raw)
+
+    async def cache_credential_once(
+        self, session_id: str, credential: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Persist one winning credential across retries and concurrent workers."""
+        key = _key(session_id, "credential")
+        encoded = json.dumps(credential, separators=(",", ":"), sort_keys=True)
+        set_if_absent = getattr(self.redis, "set", None)
+        if callable(set_if_absent):
+            created = await set_if_absent(
+                key, encoded, ex=COMPLETED_SESSION_TTL, nx=True
+            )
+            if not created:
+                winner = await self.redis.get(key)
+                if winner is None:
+                    raise RuntimeError("Credential issuance race lost without a winner")
+                return json.loads(winner)
+        else:
+            # Lightweight test fakes lack SET NX. Router-level tests are serial,
+            # while production Redis always takes the atomic branch above.
+            existing = await self.redis.get(key)
+            if existing is not None:
+                return json.loads(existing)
+            await self.redis.setex(key, COMPLETED_SESSION_TTL, encoded)
+        return credential
+
     # ---- Credential Presentation ----
 
     @staticmethod
@@ -966,7 +999,7 @@ class SessionManager:
         try:
             yield
         finally:
-            await eval_fn(_LOCK_RELEASE_SCRIPT, 1, lock_key, token)
+            await asyncio.shield(eval_fn(_LOCK_RELEASE_SCRIPT, 1, lock_key, token))
 
     # ---- Helpers ----
 

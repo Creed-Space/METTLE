@@ -1,0 +1,12 @@
+# The MCP image is deliberately independent of the hosted API, tests, evidence,
+# static media, repository history, and local working files.
+**
+!pyproject.toml
+!README.md
+!LICENSE
+!requirements-mcp-lock.txt
+!mettle/
+!mettle/**
+!deploy/
+!deploy/mcp/
+!deploy/mcp/entrypoint.sh

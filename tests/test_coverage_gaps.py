@@ -21,11 +21,15 @@ from main import (
     RateTier,
     WebhookManager,
     _admin_auth_failures,
+    _redis_unavailable_handler,
     api_keys,
+    challenges,
+    cleanup_expired_sessions,
     lifespan,
     record_admin_auth_failure,
     revocation_audit,
     revoked_badges,
+    sessions,
     verification_graph,
     verification_timestamps,
     webhooks,
@@ -45,7 +49,9 @@ def _cleanup():
     verification_graph.clear()
     verification_timestamps.clear()
     api_keys.clear()
+    challenges.clear()
     revocation_audit.clear()
+    sessions.clear()
     yield
     _admin_auth_failures.clear()
     revoked_badges.clear()
@@ -53,7 +59,9 @@ def _cleanup():
     verification_graph.clear()
     verification_timestamps.clear()
     api_keys.clear()
+    challenges.clear()
     revocation_audit.clear()
+    sessions.clear()
 
 
 # ============================================================
@@ -232,11 +240,11 @@ class TestLifespan:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = None
 
-            with patch("os.environ.get", return_value=None):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    async with lifespan(mock_app):
-                        pass  # Startup succeeded
+            with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
+                async with lifespan(mock_app):
+                    pass  # Startup succeeded
 
     @pytest.mark.asyncio
     async def test_lifespan_production_no_secret_raises(self):
@@ -249,6 +257,7 @@ class TestLifespan:
             mock_settings.secret_key = ""
             mock_settings.environment = "production"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = None
 
             with pytest.raises(RuntimeError, match="SECRET_KEY"):
                 async with lifespan(mock_app):
@@ -265,6 +274,7 @@ class TestLifespan:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "production"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = None
 
             with (
                 patch("main.db", None),
@@ -287,6 +297,7 @@ class TestLifespan:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = None
 
             with (
                 patch("main.db", mock_db),
@@ -312,13 +323,15 @@ class TestLifespan:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = "redis://bad-host:6379"
 
-            # Provide Redis URL but make it fail
-            with patch("os.environ.get", return_value="redis://bad-host:6379"):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    async with lifespan(mock_app):
-                        # Redis should be None after connection failure
-                        assert mock_app.state.redis is None
+            with (
+                patch("redis.asyncio.from_url", side_effect=ConnectionError),
+                patch("main.cleanup_expired_sessions", side_effect=fake_cleanup),
+            ):
+                async with lifespan(mock_app):
+                    # Redis should be None after connection failure
+                    assert mock_app.state.redis is None
 
     @pytest.mark.asyncio
     async def test_lifespan_redis_failure_graceful(self):
@@ -337,12 +350,100 @@ class TestLifespan:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = None
 
-            with patch("os.environ.get", return_value=None):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    async with lifespan(mock_app):
-                        # Redis should be None (no URL provided)
-                        assert mock_app.state.redis is None
+            with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
+                async with lifespan(mock_app):
+                    # Redis should be None (no URL provided)
+                    assert mock_app.state.redis is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_removes_expired_memory_and_private_database_state(
+        self, monkeypatch
+    ):
+        """One cleanup cycle enforces both in-memory and database retention."""
+
+        class StopCleanup(Exception):
+            pass
+
+        expired_session = MagicMock()
+        expired_session.started_at = datetime.now(timezone.utc) - timedelta(minutes=31)
+        current_session = MagicMock()
+        current_session.started_at = datetime.now(timezone.utc)
+        sessions.update(expired=expired_session, current=current_session)
+        challenges.update(
+            expired=(MagicMock(), time.time() - 1900),
+            current=(MagicMock(), time.time()),
+        )
+        mock_db = MagicMock()
+        mock_db.purge_expired_private_data.return_value = {
+            "sessions": 1,
+            "verification_records": 2,
+        }
+        sleep_count = 0
+
+        async def one_cycle(_seconds: int) -> None:
+            nonlocal sleep_count
+            sleep_count += 1
+            if sleep_count > 1:
+                raise StopCleanup
+
+        monkeypatch.setattr("main.asyncio.sleep", one_cycle)
+        with (
+            patch("main.db", mock_db),
+            patch("main.settings") as mock_settings,
+            pytest.raises(StopCleanup),
+        ):
+            mock_settings.private_data_retention_seconds = 86400
+            mock_settings.verification_record_retention_seconds = 604800
+            await cleanup_expired_sessions()
+
+        assert set(sessions) == {"current"}
+        assert set(challenges) == {"current"}
+        mock_db.purge_expired_private_data.assert_called_once_with(
+            session_retention_seconds=86400,
+            verification_retention_seconds=604800,
+        )
+
+    @pytest.mark.asyncio
+    async def test_cleanup_records_database_retention_failure(self, monkeypatch):
+        """A purge failure is observable but cannot stop future cleanup cycles."""
+
+        class StopCleanup(Exception):
+            pass
+
+        mock_db = MagicMock()
+        mock_db.purge_expired_private_data.side_effect = RuntimeError("database lost")
+        sleep_count = 0
+
+        async def one_cycle(_seconds: int) -> None:
+            nonlocal sleep_count
+            sleep_count += 1
+            if sleep_count > 1:
+                raise StopCleanup
+
+        monkeypatch.setattr("main.asyncio.sleep", one_cycle)
+        with (
+            patch("main.db", mock_db),
+            patch("main.operational_metrics") as metrics,
+            pytest.raises(StopCleanup),
+        ):
+            await cleanup_expired_sessions()
+
+        metrics.observe_dependency_error.assert_called_once_with("database")
+
+    @pytest.mark.asyncio
+    async def test_redis_error_handler_returns_stable_service_error(self):
+        """Redis faults are translated without exposing an exception message."""
+        from redis.exceptions import RedisError
+
+        response = await _redis_unavailable_handler(
+            MagicMock(), RedisError("credential-bearing connection detail")
+        )
+
+        assert response.status_code == 503
+        assert b"METTLE session storage temporarily unavailable" in response.body
+        assert b"credential-bearing" not in response.body
 
 
 # ============================================================
@@ -707,16 +808,16 @@ class TestLifespanRedisSuccess:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = "redis://cache.example:6379"
 
-            with patch("os.environ.get", return_value=None):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    # Set redis on state BEFORE entering context (simulates startup)
-                    async with lifespan(mock_app):
-                        # Override app.state.redis after startup sets it to None
-                        mock_app.state.redis = mock_redis
+            with (
+                patch("redis.asyncio.from_url", return_value=mock_redis),
+                patch("main.cleanup_expired_sessions", side_effect=fake_cleanup),
+            ):
+                async with lifespan(mock_app):
+                    mock_redis.ping.assert_awaited_once()
 
-                    # aclose called during shutdown (line 478)
-                    mock_redis.aclose.assert_called_once()
+                mock_redis.aclose.assert_awaited_once()
 
 
 # ============================================================
@@ -744,22 +845,22 @@ class TestLifespanSigningInit:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = None
 
-            with patch("os.environ.get", return_value=None):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    # Make the signing import raise ImportError
-                    original_import = __import__
+            with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
+                # Make the signing import raise ImportError
+                original_import = __import__
 
-                    def patched_import(name, *args, **kwargs):
-                        if name == "mettle.signing" and "init_signing" in str(
-                            kwargs.get("fromlist", [])
-                        ):
-                            raise ImportError("No signing module")
-                        return original_import(name, *args, **kwargs)
+                def patched_import(name, *args, **kwargs):
+                    if name == "mettle.signing" and "init_signing" in str(
+                        kwargs.get("fromlist", [])
+                    ):
+                        raise ImportError("No signing module")
+                    return original_import(name, *args, **kwargs)
 
-                    with patch("builtins.__import__", side_effect=patched_import):
-                        async with lifespan(mock_app):
-                            pass  # Should not raise
+                with patch("builtins.__import__", side_effect=patched_import):
+                    async with lifespan(mock_app):
+                        pass  # Should not raise
 
 
 # ============================================================

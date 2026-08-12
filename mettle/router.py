@@ -35,6 +35,7 @@ from mettle.api_models import (
     VerifyResponse,
 )
 from mettle.auth import AuthenticatedUser, require_authenticated_user
+from mettle.app_config import settings
 from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.llm_challenges import is_available as llm_challenges_available
 from mettle.presence import issuer_signed_session_presence
@@ -485,31 +486,43 @@ async def get_session_result(
     # Build VCP attestation if requested
     vcp_attestation = None
     if include_vcp:
+        if not settings.credential_issuance_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Credential issuance is temporarily disabled",
+            )
         from mettle.vcp import build_mettle_attestation
 
-        issuer_key_id = "mettle-vcp-v1"
-        try:
-            from mettle.signing import get_public_key_info
+        vcp_attestation = await mgr.get_cached_credential(session_id)
+        if vcp_attestation is None:
+            issuer_key_id = "mettle-vcp-v1"
+            try:
+                from mettle.signing import get_public_key_info
 
-            discovered_key_id = get_public_key_info().get("key_id")
-            if isinstance(discovered_key_id, str) and discovered_key_id:
-                issuer_key_id = discovered_key_id
-        except ImportError:
-            pass
-        pass_rate = sum(
-            1 for r in suite_results.values() if r.get("passed", False)
-        ) / max(len(suite_results), 1)
-        vcp_attestation = build_mettle_attestation(
-            session_id=session_id,
-            difficulty=session.get("difficulty", "standard"),
-            suites_passed=suites_passed,
-            suites_failed=suites_failed,
-            pass_rate=pass_rate,
-            subject_id=user.user_id,
-            entity_id=session.get("entity_id"),
-            key_id=issuer_key_id,
-            presence=session.get("presence"),
-        )
+                discovered_key_id = get_public_key_info().get("key_id")
+                if isinstance(discovered_key_id, str) and discovered_key_id:
+                    issuer_key_id = discovered_key_id
+            except ImportError:
+                pass
+            pass_rate = sum(
+                1 for r in suite_results.values() if r.get("passed", False)
+            ) / max(len(suite_results), 1)
+            candidate = build_mettle_attestation(
+                session_id=session_id,
+                difficulty=session.get("difficulty", "standard"),
+                suites_passed=suites_passed,
+                suites_failed=suites_failed,
+                pass_rate=pass_rate,
+                subject_id=user.user_id,
+                entity_id=session.get("entity_id"),
+                key_id=issuer_key_id,
+                presence=session.get("presence"),
+            )
+            vcp_attestation = (
+                await mgr.cache_credential_once(session_id, candidate)
+                if candidate.get("credential_issued") is True
+                else candidate
+            )
 
     result["vcp_attestation"] = vcp_attestation
 
@@ -579,16 +592,16 @@ async def verify_credential_presentation(
     mgr: MettleManager,
 ) -> PresentationVerifyResponse:
     """Verify issuer integrity, current policy, and live holder possession."""
-    from mettle.signing import get_public_key_pem
-    from mettle.vcp import verify_mettle_attestation
+    from mettle.signing import get_public_keyring
+    from mettle.vcp import verify_mettle_attestation_with_keyring
 
-    issuer_public_key = get_public_key_pem()
-    if issuer_public_key is None:
+    issuer_keyring = get_public_keyring()
+    if not issuer_keyring:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="METTLE credential verification is unavailable",
         )
-    if not verify_mettle_attestation(request.attestation, issuer_public_key):
+    if not verify_mettle_attestation_with_keyring(request.attestation, issuer_keyring):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Credential signature, policy, or expiry is invalid",

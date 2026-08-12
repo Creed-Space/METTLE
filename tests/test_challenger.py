@@ -13,6 +13,8 @@ from mettle.challenger import (
     generate_token_prediction_challenge,
 )
 from mettle.models import ChallengeType, Difficulty
+from mettle.solver import solve_challenge
+from mettle.verifier import verify_response
 
 
 class TestChallengeIdGeneration:
@@ -138,6 +140,13 @@ class TestTokenPredictionChallenge:
         challenge = generate_token_prediction_challenge(Difficulty.BASIC)
         assert "___" in challenge.prompt or "_" in challenge.prompt
 
+    def test_procedural_sequence_is_solvable_from_sanitized_prompt(self):
+        challenge = generate_token_prediction_challenge(Difficulty.BASIC)
+        public = challenge.sanitized().model_dump(mode="json")
+        assert "expected_answer" not in public["data"]
+        answer = solve_challenge(public)
+        assert verify_response(challenge, answer, 1).passed is True
+
 
 class TestInstructionFollowingChallenge:
     """Test instruction following challenge generation."""
@@ -168,6 +177,12 @@ class TestInstructionFollowingChallenge:
         assert isinstance(validator_id, str)
         assert len(validator_id) == 8
         int(validator_id, 16)
+
+    def test_procedural_instruction_is_solvable_from_public_constraints(self):
+        challenge = generate_instruction_following_challenge(Difficulty.BASIC)
+        public = challenge.sanitized().model_dump(mode="json")
+        answer = solve_challenge(public)
+        assert verify_response(challenge, answer, 1).passed is True
 
 
 class TestConsistencyChallenge:

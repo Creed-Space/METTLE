@@ -54,5 +54,5 @@ Ten suites registered in `challenge_adapter.py:17–27`: adversarial, native, se
 ## See Also
 
 - [[mettle:systems/mcp-server-and-api]] — FastAPI endpoints that call SessionManager
-- [[mettle:systems/verification-suites]] — ten procedurally generated suites
+- [[mettle:systems/verification-suites]]: twelve procedurally generated suites
 - [[mettle:systems/signing-and-credentials]] — notarization of completed sessions

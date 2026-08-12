@@ -1,0 +1,23 @@
+{
+  "budget_schema_version": "1.0",
+  "profile": "local regression characterization, no network or production edge",
+  "representative_concurrency": 8,
+  "overload_concurrency": 32,
+  "error_rate_max": 0.0,
+  "p95_ms_max": {
+    "challenge_generation": 50.0,
+    "answer_verification": 15.0,
+    "credential_signing": 15.0,
+    "redis_contention": 30.0
+  },
+  "overload_p99_ms_max": {
+    "challenge_generation": 200.0,
+    "answer_verification": 75.0,
+    "credential_signing": 75.0,
+    "redis_contention": 150.0
+  },
+  "notes": [
+    "These are generous regression limits, not production SLO evidence.",
+    "Production acceptance requires a SHA-bound run from the deployed topology."
+  ]
+}

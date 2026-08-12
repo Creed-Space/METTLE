@@ -326,6 +326,7 @@ def test_renewing_vault_token_provider_renews_once_per_lease_and_on_rotation(
     )
     assert provider() == "first-vault-token"
     assert provider() == "first-vault-token"
+    assert provider.seconds_until_renewal() == 60.0
     assert len(observed) == 1
     assert observed[0]["method"] == "POST"
     assert observed[0]["url"] == "https://vault.example/v1/auth/token/renew-self"
@@ -335,6 +336,8 @@ def test_renewing_vault_token_provider_renews_once_per_lease_and_on_rotation(
 
     tokens[0] = "rotated-vault-token"
     assert provider() == "rotated-vault-token"
+    clock[0] = 161.0
+    assert provider.seconds_until_renewal() == 0.0
     assert len(observed) == 2
     retained = repr(vars(provider))
     assert "first-vault-token" not in retained

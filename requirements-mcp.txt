@@ -2,7 +2,7 @@
 # Install with: pip install -r requirements-mcp.txt
 
 httpx>=0.26.0
-mcp>=1.0.0
+mcp>=2.0,<3
 # Streamable HTTP transport (`mettle-mcp --transport http`, see mettle/_http.py).
 starlette>=0.37.0
 uvicorn>=0.27.0

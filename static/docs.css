@@ -163,6 +163,12 @@
     margin-bottom: var(--space-md);
 }
 
+.docs-section p a {
+    color: var(--mettle-primary-hover);
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+}
+
 .section-intro {
     font-size: 0.875rem;
     color: var(--mettle-primary);
@@ -274,6 +280,10 @@
     font-size: 0.8125rem;
     line-height: 1.7;
     margin-bottom: var(--space-md);
+}
+
+.code-block-new:focus-visible {
+    border-color: var(--mettle-primary-hover);
 }
 
 .code-block-new code {

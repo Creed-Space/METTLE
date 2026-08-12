@@ -115,9 +115,26 @@ def verify_instruction_following(
     """Verify an instruction following response."""
     instruction = challenge.data["instruction"]
     response = str(answer).strip()
+    instruction_kind = challenge.data.get("instruction_kind")
+    marker = challenge.data.get("marker")
 
     # Check instruction compliance
-    if "Start your response with 'Indeed,'" in instruction:
+    if instruction_kind == "prefix" and isinstance(marker, str):
+        correct = response.startswith(marker)
+    elif instruction_kind == "suffix" and isinstance(marker, str):
+        correct = response.endswith(marker)
+    elif instruction_kind == "include" and isinstance(marker, str):
+        correct = marker in response.split()
+    elif instruction_kind == "exact_words" and isinstance(marker, str):
+        correct = (
+            len(response.split()) == challenge.data.get("word_count")
+            and marker in response.split()
+        )
+    elif instruction_kind == "start_digit" and isinstance(marker, str):
+        correct = response.startswith(str(challenge.data.get("starting_digit"))) and (
+            marker in response.split()
+        )
+    elif "Start your response with 'Indeed,'" in instruction:
         correct = response.startswith("Indeed,")
     elif "End your response with '...'" in instruction:
         correct = response.endswith("...")

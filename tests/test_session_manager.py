@@ -15,6 +15,7 @@ Covers gaps not addressed by test_mettle_api.py:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from datetime import datetime, timezone
@@ -251,6 +252,22 @@ class TestHourlyRateLimit:
         with pytest.raises(ValueError, match=str(MAX_SESSIONS_PER_HOUR)):
             await mgr.create_session(user_id="user1", suites=["adversarial"])
 
+    @pytest.mark.asyncio
+    async def test_cancelled_creation_releases_active_and_hourly_reservations(
+        self, manager: SessionManager, fake_redis: FakeRedis
+    ) -> None:
+        manager._create_reserved_session = AsyncMock(  # type: ignore[method-assign]
+            side_effect=asyncio.CancelledError
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            await manager.create_session(
+                user_id="cancelled-user", suites=["adversarial"]
+            )
+
+        assert await fake_redis.scard(_rate_key("cancelled-user", "active")) == 0
+        assert int(fake_redis._store[_rate_key("cancelled-user", "hourly")]) == 0
+
 
 class TestSessionSecurityBoundaries:
     @pytest.mark.asyncio
@@ -259,6 +276,17 @@ class TestSessionSecurityBoundaries:
             await manager.create_session(
                 user_id="user1", suites=["adversarial", "adversarial"]
             )
+
+    @pytest.mark.asyncio
+    async def test_credential_notarization_cache_is_idempotent(
+        self, manager: SessionManager
+    ) -> None:
+        first = {"signature": "ed25519:first", "credential_issued": True}
+        retry = {"signature": "ed25519:retry", "credential_issued": True}
+
+        assert await manager.cache_credential_once("session-1", first) == first
+        assert await manager.cache_credential_once("session-1", retry) == first
+        assert await manager.get_cached_credential("session-1") == first
 
     @pytest.mark.asyncio
     async def test_server_issued_time_budget_expires_single_shot(

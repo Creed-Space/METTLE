@@ -1,6 +1,6 @@
 // METTLE WebMCP — AI Agent Tool Discovery
 // Chrome 145+ experimental API. Websites register tools via navigator.modelContext.registerTool()
-// that AI agents discover and call directly. Progressive enhancement — no-op on unsupported browsers.
+// that Becoming Minds discover and call directly. Progressive enhancement, with no effect on unsupported browsers.
 
 (function() {
   'use strict';

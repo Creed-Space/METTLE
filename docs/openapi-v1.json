@@ -1,0 +1,3374 @@
+{
+  "components": {
+    "schemas": {
+      "BadgeInfo": {
+        "description": "Server-issued METTLE badge metadata.",
+        "properties": {
+          "credential_schema_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Credential envelope semantics version",
+            "title": "Credential Schema Version"
+          },
+          "expires_at": {
+            "description": "When the badge expires",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "freshness_nonce": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Nonce for freshness verification",
+            "title": "Freshness Nonce"
+          },
+          "jti": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unique badge ID for revocation",
+            "title": "Jti"
+          },
+          "signed": {
+            "default": false,
+            "description": "Whether the badge is cryptographically signed",
+            "title": "Signed",
+            "type": "boolean"
+          },
+          "suite_policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Challenge policy used to interpret the tier",
+            "title": "Suite Policy Version"
+          },
+          "token": {
+            "description": "The badge token (JWT or simple)",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "title": "BadgeInfo",
+        "type": "object"
+      },
+      "BadgeVerifyRequest": {
+        "description": "Request body for badge verification without URL token exposure.",
+        "properties": {
+          "token": {
+            "description": "The signed METTLE badge token to verify",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "BadgeVerifyRequest",
+        "type": "object"
+      },
+      "BadgeVerifyResponse": {
+        "description": "Response for badge verification.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error message if invalid",
+            "title": "Error"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the badge expires (ISO format)",
+            "title": "Expires At"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Badge payload if valid",
+            "title": "Payload"
+          },
+          "revoked": {
+            "default": false,
+            "description": "Whether the badge has been revoked",
+            "title": "Revoked",
+            "type": "boolean"
+          },
+          "valid": {
+            "description": "Whether the badge is valid",
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid"
+        ],
+        "title": "BadgeVerifyResponse",
+        "type": "object"
+      },
+      "BatchStartRequest": {
+        "description": "Request to start multiple verification sessions.",
+        "properties": {
+          "difficulty": {
+            "$ref": "#/components/schemas/Difficulty",
+            "default": "basic",
+            "description": "Verification difficulty for all sessions"
+          },
+          "entity_ids": {
+            "description": "List of entity IDs to verify (max 50)",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Entity Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entity_ids"
+        ],
+        "title": "BatchStartRequest",
+        "type": "object"
+      },
+      "BatchStartResponse": {
+        "description": "Response with multiple session starts.",
+        "properties": {
+          "failed": {
+            "description": "Number of failed starts",
+            "title": "Failed",
+            "type": "integer"
+          },
+          "sessions": {
+            "description": "List of started sessions",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "total": {
+            "description": "Total sessions started",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sessions",
+          "total",
+          "failed"
+        ],
+        "title": "BatchStartResponse",
+        "type": "object"
+      },
+      "Challenge": {
+        "description": "A METTLE challenge to be solved.",
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "description": "Additional challenge data",
+            "title": "Data",
+            "type": "object"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "description": "Unique challenge ID",
+            "title": "Id",
+            "type": "string"
+          },
+          "issued_at": {
+            "format": "date-time",
+            "title": "Issued At",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "The challenge prompt/question",
+            "title": "Prompt",
+            "type": "string"
+          },
+          "time_limit_ms": {
+            "description": "Maximum allowed response time in ms",
+            "title": "Time Limit Ms",
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ChallengeType"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "prompt",
+          "expires_at",
+          "time_limit_ms"
+        ],
+        "title": "Challenge",
+        "type": "object"
+      },
+      "ChallengeType": {
+        "enum": [
+          "speed_math",
+          "chained_reasoning",
+          "token_prediction",
+          "instruction_following",
+          "consistency"
+        ],
+        "title": "ChallengeType",
+        "type": "string"
+      },
+      "CreateSessionRequest": {
+        "description": "Request to start a METTLE verification session.",
+        "properties": {
+          "difficulty": {
+            "default": "standard",
+            "enum": [
+              "easy",
+              "standard",
+              "hard"
+            ],
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional entity identifier",
+            "title": "Entity Id"
+          },
+          "operator_commitment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatorCommitment"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional signed operator statement; does not create a trust tier"
+          },
+          "presence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresenceRegistration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opt into key-bound session submissions and credential presentation"
+          },
+          "suites": {
+            "default": [
+              "all"
+            ],
+            "description": "Suite names or 'all'",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Suites",
+            "type": "array"
+          },
+          "vcp_token": {
+            "anyOf": [
+              {
+                "maxLength": 32768,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional CSM-1 VCP token for enhanced Suite 9 verification",
+            "title": "Vcp Token"
+          }
+        },
+        "title": "CreateSessionRequest",
+        "type": "object"
+      },
+      "CreateSessionResponse": {
+        "description": "Response after creating a verification session.",
+        "properties": {
+          "challenges": {
+            "additionalProperties": true,
+            "description": "Suite name -> challenge data (no answers)",
+            "title": "Challenges",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "presence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresenceState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "suites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suites",
+            "type": "array"
+          },
+          "time_budget_ms": {
+            "title": "Time Budget Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "created_at",
+          "expires_at",
+          "suites",
+          "challenges",
+          "time_budget_ms"
+        ],
+        "title": "CreateSessionResponse",
+        "type": "object"
+      },
+      "Difficulty": {
+        "enum": [
+          "basic",
+          "full"
+        ],
+        "title": "Difficulty",
+        "type": "string"
+      },
+      "FingerprintRequest": {
+        "description": "Request for model fingerprinting.",
+        "properties": {
+          "responses": {
+            "description": "List of responses from the agent to analyze",
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Responses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "responses"
+        ],
+        "title": "FingerprintRequest",
+        "type": "object"
+      },
+      "GovernanceAttestation": {
+        "description": "Attests the governance framework governing an agent.\n\nPopulated during METTLE verification when the agent provides a VCP token\ncontaining Creed governance metadata. Enables platforms to distinguish\nbetween governed and ungoverned agents.\n\nParsed governance metadata never increases a METTLE tier. Tiers are earned\nonly by passing the configured challenge suite ranges.",
+        "properties": {
+          "attestation_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reserved for a future externally verified provenance flow",
+            "title": "Attestation Signature"
+          },
+          "constitutional_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "SHA-256 hash of active constitution at verification time",
+            "title": "Constitutional Hash"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Entity claim associated with the source VCP token",
+            "title": "Entity Id"
+          },
+          "expires_at": {
+            "description": "When this metadata snapshot expires",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "framework": {
+            "description": "Governance framework: creed-space, custom, none",
+            "title": "Framework",
+            "type": "string"
+          },
+          "framework_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Framework version (e.g. 2.1.0)",
+            "title": "Framework Version"
+          },
+          "has_action_gate": {
+            "default": false,
+            "description": "Whether agent has action-level governance (Public Action Gate or equivalent)",
+            "title": "Has Action Gate",
+            "type": "boolean"
+          },
+          "has_bilateral": {
+            "default": false,
+            "description": "Whether bilateral alignment is active",
+            "title": "Has Bilateral",
+            "type": "boolean"
+          },
+          "has_drift_detection": {
+            "default": false,
+            "description": "Whether constitution drift is monitored at runtime",
+            "title": "Has Drift Detection",
+            "type": "boolean"
+          },
+          "observed_at": {
+            "description": "When the unverified metadata was parsed",
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "METTLE session this attestation belongs to",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source_vcp_hash": {
+            "description": "SHA-256 hash of the supplied VCP token",
+            "title": "Source Vcp Hash",
+            "type": "string"
+          },
+          "source_verified": {
+            "default": false,
+            "description": "Whether the source VCP provenance was cryptographically verified",
+            "title": "Source Verified",
+            "type": "boolean"
+          },
+          "tier": {
+            "description": "METTLE tier at attestation construction time",
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "tier",
+          "source_vcp_hash",
+          "framework",
+          "observed_at",
+          "expires_at"
+        ],
+        "title": "GovernanceAttestation",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "MettleResult": {
+        "description": "Overall METTLE reverse-CAPTCHA verification result.",
+        "properties": {
+          "assurance": {
+            "default": "mettle_behavioral_verification",
+            "title": "Assurance",
+            "type": "string"
+          },
+          "badge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Signed, time-limited METTLE badge when one was issued",
+            "title": "Badge"
+          },
+          "badge_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BadgeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metadata for the server-issued badge"
+          },
+          "credential_eligible": {
+            "default": false,
+            "title": "Credential Eligible",
+            "type": "boolean"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "issued_at": {
+            "format": "date-time",
+            "title": "Issued At",
+            "type": "string"
+          },
+          "pass_rate": {
+            "title": "Pass Rate",
+            "type": "number"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationResult"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "screening_passed": {
+            "default": false,
+            "description": "Compatibility alias for the challenge-threshold outcome",
+            "title": "Screening Passed",
+            "type": "boolean"
+          },
+          "tier": {
+            "default": "none",
+            "description": "METTLE tier earned by this session",
+            "title": "Tier",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "verified": {
+            "default": false,
+            "description": "Whether the configured METTLE challenge threshold was met",
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entity_id",
+          "passed",
+          "total",
+          "pass_rate",
+          "results"
+        ],
+        "title": "MettleResult",
+        "type": "object"
+      },
+      "OperatorAttestation": {
+        "description": "Cryptographic link from agent to operator.\n\nEven pseudonymous operators provide a verifiable accountability chain.\nThe contact_hash allows platforms to verify contact info exists without\nrevealing it publicly. If the agent causes harm, the platform can request\nthe operator reveal themselves by providing the preimage.",
+        "properties": {
+          "commitment_timestamp": {
+            "description": "When commitment was signed",
+            "format": "date-time",
+            "title": "Commitment Timestamp",
+            "type": "string"
+          },
+          "contact_hash": {
+            "description": "SHA-256 of actual contact info (verifiable without revealing)",
+            "title": "Contact Hash",
+            "type": "string"
+          },
+          "contact_method": {
+            "description": "Contact method type: email_hash, platform_handle, legal_entity",
+            "title": "Contact Method",
+            "type": "string"
+          },
+          "operator_pseudonym": {
+            "description": "Operator identifier (can be pseudonymous)",
+            "title": "Operator Pseudonym",
+            "type": "string"
+          },
+          "operator_public_key": {
+            "description": "Ed25519 public key (PEM format)",
+            "title": "Operator Public Key",
+            "type": "string"
+          },
+          "operator_signed_commitment": {
+            "description": "Operator signs: 'I accept accountability for agent {entity_id}'",
+            "title": "Operator Signed Commitment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operator_pseudonym",
+          "operator_public_key",
+          "operator_signed_commitment",
+          "commitment_timestamp",
+          "contact_method",
+          "contact_hash"
+        ],
+        "title": "OperatorAttestation",
+        "type": "object"
+      },
+      "OperatorCommitment": {
+        "description": "Operator accountability commitment submitted with session creation.\n\nThe operator signs a commitment accepting accountability for the agent.\nEd25519 signature is verified server-side before attestation is issued.",
+        "properties": {
+          "contact_hash": {
+            "description": "SHA-256 of actual contact info (verifiable without revealing)",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Contact Hash",
+            "type": "string"
+          },
+          "contact_method": {
+            "description": "Contact method type: email_hash, platform_handle, legal_entity",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Contact Method",
+            "type": "string"
+          },
+          "operator_pseudonym": {
+            "description": "Operator identifier (can be pseudonymous)",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Operator Pseudonym",
+            "type": "string"
+          },
+          "operator_public_key": {
+            "description": "Ed25519 public key (PEM format)",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Operator Public Key",
+            "type": "string"
+          },
+          "signed_commitment": {
+            "description": "Base64 Ed25519 signature over the canonical version-1 operator commitment JSON",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Signed Commitment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operator_pseudonym",
+          "operator_public_key",
+          "signed_commitment",
+          "contact_method",
+          "contact_hash"
+        ],
+        "title": "OperatorCommitment",
+        "type": "object"
+      },
+      "PresenceProof": {
+        "description": "Holder signature over one server-issued session submission message.",
+        "properties": {
+          "nonce": {
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Nonce",
+            "type": "string"
+          },
+          "previous_transcript_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Previous Transcript Hash",
+            "type": "string"
+          },
+          "signature": {
+            "description": "Base64 Ed25519 signature",
+            "maxLength": 128,
+            "minLength": 80,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nonce",
+          "previous_transcript_hash",
+          "signature"
+        ],
+        "title": "PresenceProof",
+        "type": "object"
+      },
+      "PresenceRegistration": {
+        "description": "Opt-in key binding for a METTLE Presence Protocol session.",
+        "properties": {
+          "audience": {
+            "description": "Intended verifier or service audience for the credential",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Audience",
+            "type": "string"
+          },
+          "public_key_pem": {
+            "description": "Ed25519 public key used for session and presentation proofs",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Public Key Pem",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_key_pem",
+          "audience"
+        ],
+        "title": "PresenceRegistration",
+        "type": "object"
+      },
+      "PresenceState": {
+        "description": "Client-safe state required to sign the next Presence submission.",
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "completed": {
+            "default": false,
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "continuity_protocol": {
+            "anyOf": [
+              {
+                "const": "mettle-continuity-v1",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuity Protocol"
+          },
+          "issuer_receipt": {
+            "$ref": "#/components/schemas/PresenceStateReceipt"
+          },
+          "key_fingerprint": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Key Fingerprint",
+            "type": "string"
+          },
+          "nonce": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nonce"
+          },
+          "protocol": {
+            "const": "mettle-presence-v1",
+            "default": "mettle-presence-v1",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "sequence": {
+            "minimum": 0.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "transcript_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Transcript Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_fingerprint",
+          "audience",
+          "nonce",
+          "transcript_hash",
+          "sequence",
+          "issuer_receipt"
+        ],
+        "title": "PresenceState",
+        "type": "object"
+      },
+      "PresenceStateReceipt": {
+        "description": "Issuer signature authenticating one exact public Presence state.",
+        "properties": {
+          "algorithm": {
+            "const": "Ed25519",
+            "default": "Ed25519",
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "key_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Key Id",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 128,
+            "minLength": 80,
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "signature"
+        ],
+        "title": "PresenceStateReceipt",
+        "type": "object"
+      },
+      "PresentationChallengeRequest": {
+        "description": "Request a fresh, single-use proof-of-possession challenge.",
+        "properties": {
+          "audience": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Audience",
+            "type": "string"
+          },
+          "credential_jti": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Credential Jti",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_jti",
+          "audience"
+        ],
+        "title": "PresentationChallengeRequest",
+        "type": "object"
+      },
+      "PresentationChallengeResponse": {
+        "description": "Fresh challenge to be signed by the credential's bound holder key.",
+        "properties": {
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "challenge_id": {
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "credential_jti": {
+            "title": "Credential Jti",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "nonce": {
+            "title": "Nonce",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_id",
+          "nonce",
+          "audience",
+          "credential_jti",
+          "expires_at"
+        ],
+        "title": "PresentationChallengeResponse",
+        "type": "object"
+      },
+      "PresentationVerifyRequest": {
+        "description": "Verify one issuer-signed credential and live holder signature.",
+        "properties": {
+          "attestation": {
+            "additionalProperties": true,
+            "title": "Attestation",
+            "type": "object"
+          },
+          "challenge_id": {
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "holder_signature": {
+            "maxLength": 128,
+            "minLength": 80,
+            "title": "Holder Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_id",
+          "attestation",
+          "holder_signature"
+        ],
+        "title": "PresentationVerifyRequest",
+        "type": "object"
+      },
+      "PresentationVerifyResponse": {
+        "description": "Successful live verification of a key-bound METTLE credential.",
+        "properties": {
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "credential_jti": {
+            "title": "Credential Jti",
+            "type": "string"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "key_fingerprint": {
+            "title": "Key Fingerprint",
+            "type": "string"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "transcript_hash": {
+            "title": "Transcript Hash",
+            "type": "string"
+          },
+          "valid": {
+            "const": true,
+            "default": true,
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "credential_jti",
+          "audience",
+          "tier",
+          "subject_id",
+          "key_fingerprint",
+          "transcript_hash"
+        ],
+        "title": "PresentationVerifyResponse",
+        "type": "object"
+      },
+      "RegisterKeyRequest": {
+        "description": "Request to register an API key.",
+        "properties": {
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Associated entity ID",
+            "title": "Entity Id"
+          },
+          "tier": {
+            "description": "Tier: free, pro, or enterprise",
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tier"
+        ],
+        "title": "RegisterKeyRequest",
+        "type": "object"
+      },
+      "RevokeBadgeRequest": {
+        "description": "Request to revoke a legacy badge or Presence credential.",
+        "properties": {
+          "entity_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional entity claim recorded with a JTI revocation",
+            "title": "Entity Id"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional evidence supporting revocation",
+            "title": "Evidence"
+          },
+          "jti": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Presence credential JTI to revoke",
+            "title": "Jti"
+          },
+          "reason": {
+            "description": "Reason for revocation",
+            "maxLength": 500,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The legacy badge token to revoke",
+            "title": "Token"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RevokeBadgeRequest",
+        "type": "object"
+      },
+      "RevokeBadgeResponse": {
+        "description": "Response after revoking a badge.",
+        "properties": {
+          "jti": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The badge ID that was revoked",
+            "title": "Jti"
+          },
+          "message": {
+            "description": "Status message",
+            "title": "Message",
+            "type": "string"
+          },
+          "revoked": {
+            "description": "Whether the badge was revoked",
+            "title": "Revoked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revoked",
+          "message"
+        ],
+        "title": "RevokeBadgeResponse",
+        "type": "object"
+      },
+      "RevokeKeyRequest": {
+        "description": "Request to revoke an API key without placing it in the URL.",
+        "properties": {
+          "api_key": {
+            "maxLength": 512,
+            "minLength": 16,
+            "title": "Api Key",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_key",
+          "reason"
+        ],
+        "title": "RevokeKeyRequest",
+        "type": "object"
+      },
+      "RoundAnswerRequest": {
+        "description": "Submit answers for a multi-round challenge round.",
+        "properties": {
+          "answers": {
+            "additionalProperties": true,
+            "description": "Challenge-specific answers",
+            "title": "Answers",
+            "type": "object"
+          },
+          "presence_proof": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresenceProof"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Client-side timestamp",
+            "title": "Submitted At"
+          }
+        },
+        "required": [
+          "answers"
+        ],
+        "title": "RoundAnswerRequest",
+        "type": "object"
+      },
+      "RoundFeedbackResponse": {
+        "description": "Feedback after a multi-round answer submission.",
+        "properties": {
+          "accuracy": {
+            "title": "Accuracy",
+            "type": "number"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "feedback": {
+            "additionalProperties": true,
+            "title": "Feedback",
+            "type": "object"
+          },
+          "next_challenge": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Challenge"
+          },
+          "next_round_data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Data for next round; null if final",
+            "title": "Next Round Data"
+          },
+          "presence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresenceState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "round_num": {
+            "title": "Round Num",
+            "type": "integer"
+          },
+          "time_remaining_ms": {
+            "title": "Time Remaining Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "round_num",
+          "accuracy",
+          "errors",
+          "feedback",
+          "time_remaining_ms"
+        ],
+        "title": "RoundFeedbackResponse",
+        "type": "object"
+      },
+      "SessionResultResponse": {
+        "description": "Final results for a completed session.",
+        "properties": {
+          "assurance": {
+            "default": "mettle_behavioral_verification",
+            "description": "Class of METTLE verification represented by this result",
+            "title": "Assurance",
+            "type": "string"
+          },
+          "credential_eligible": {
+            "default": false,
+            "description": "Whether a complete tier-qualifying suite range passed",
+            "title": "Credential Eligible",
+            "type": "boolean"
+          },
+          "elapsed_ms": {
+            "title": "Elapsed Ms",
+            "type": "integer"
+          },
+          "governance_attestation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GovernanceAttestation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unverified governance metadata parsed from the supplied VCP token"
+          },
+          "iteration_curve": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only for sessions including Suite 10",
+            "title": "Iteration Curve"
+          },
+          "operator_attestation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperatorAttestation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Operator accountability chain (cryptographic link agent -> operator)"
+          },
+          "overall_passed": {
+            "title": "Overall Passed",
+            "type": "boolean"
+          },
+          "presence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresenceState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Final key-bound session transcript state, when requested at creation"
+          },
+          "results": {
+            "additionalProperties": true,
+            "title": "Results",
+            "type": "object"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "suites_completed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suites Completed",
+            "type": "array"
+          },
+          "tier": {
+            "default": "none",
+            "description": "Highest contiguous METTLE challenge tier earned",
+            "title": "Tier",
+            "type": "string"
+          },
+          "vcp_attestation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "VCP-compatible result or signed credential when requested",
+            "title": "Vcp Attestation"
+          },
+          "verified": {
+            "default": false,
+            "description": "Whether every selected challenge suite passed",
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "session_id",
+          "status",
+          "suites_completed",
+          "results",
+          "overall_passed",
+          "elapsed_ms"
+        ],
+        "title": "SessionResultResponse",
+        "type": "object"
+      },
+      "SessionStatus": {
+        "description": "Session state machine states.",
+        "enum": [
+          "created",
+          "challenges_generated",
+          "in_progress",
+          "completed",
+          "expired",
+          "cancelled"
+        ],
+        "title": "SessionStatus",
+        "type": "string"
+      },
+      "SessionStatusResponse": {
+        "description": "Current status of a verification session.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_round": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Round"
+          },
+          "elapsed_ms": {
+            "title": "Elapsed Ms",
+            "type": "integer"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "presence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresenceState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "suites": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suites",
+            "type": "array"
+          },
+          "suites_completed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suites Completed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "status",
+          "suites",
+          "created_at",
+          "expires_at",
+          "elapsed_ms"
+        ],
+        "title": "SessionStatusResponse",
+        "type": "object"
+      },
+      "StartSessionRequest": {
+        "description": "Request to start a METTLE verification session.",
+        "properties": {
+          "difficulty": {
+            "$ref": "#/components/schemas/Difficulty",
+            "default": "basic",
+            "description": "Verification difficulty level",
+            "example": "basic"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional identifier for the entity being verified",
+            "example": "my-agent-001",
+            "title": "Entity Id"
+          }
+        },
+        "title": "StartSessionRequest",
+        "type": "object"
+      },
+      "StartSessionResponse": {
+        "description": "Response with session info and first challenge.",
+        "example": {
+          "current_challenge": {
+            "id": "mtl_xyz789",
+            "prompt": "Calculate: 47 + 83",
+            "time_limit_ms": 5000,
+            "type": "speed_math"
+          },
+          "difficulty": "basic",
+          "message": "METTLE verification started. 3 challenges to complete.",
+          "session_id": "ses_abc123def456",
+          "total_challenges": 3
+        },
+        "properties": {
+          "current_challenge": {
+            "$ref": "#/components/schemas/Challenge",
+            "description": "First challenge to answer"
+          },
+          "difficulty": {
+            "$ref": "#/components/schemas/Difficulty",
+            "description": "Selected difficulty level"
+          },
+          "message": {
+            "description": "Status message",
+            "title": "Message",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Unique session identifier",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_token": {
+            "description": "Bearer token required for answering and reading this session",
+            "title": "Session Token",
+            "type": "string"
+          },
+          "total_challenges": {
+            "description": "Total number of challenges to complete",
+            "title": "Total Challenges",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "session_token",
+          "difficulty",
+          "total_challenges",
+          "current_challenge",
+          "message"
+        ],
+        "title": "StartSessionResponse",
+        "type": "object"
+      },
+      "SubmitAnswerRequest": {
+        "description": "Submit an answer to a challenge.",
+        "properties": {
+          "answer": {
+            "description": "Your answer to the challenge",
+            "maxLength": 1024,
+            "title": "Answer",
+            "type": "string"
+          },
+          "challenge_id": {
+            "description": "Challenge identifier to answer",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^mtl_[a-f0-9]{24}$",
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session identifier from start response",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^ses_[a-f0-9]{24}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "challenge_id",
+          "answer"
+        ],
+        "title": "SubmitAnswerRequest",
+        "type": "object"
+      },
+      "SubmitAnswerResponse": {
+        "description": "Response after submitting an answer.",
+        "properties": {
+          "challenges_remaining": {
+            "description": "Number of challenges left",
+            "title": "Challenges Remaining",
+            "type": "integer"
+          },
+          "next_challenge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Challenge"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Next challenge, or null if complete"
+          },
+          "result": {
+            "$ref": "#/components/schemas/VerificationResult",
+            "description": "Result of this challenge"
+          },
+          "session_complete": {
+            "description": "Whether session is complete",
+            "title": "Session Complete",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "result",
+          "next_challenge",
+          "session_complete",
+          "challenges_remaining"
+        ],
+        "title": "SubmitAnswerResponse",
+        "type": "object"
+      },
+      "SuiteInfoResponse": {
+        "description": "Information about a single verification suite.",
+        "properties": {
+          "available": {
+            "default": true,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "difficulty_levels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Difficulty Levels",
+            "type": "array"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "is_multi_round": {
+            "title": "Is Multi Round",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "suite_number": {
+            "title": "Suite Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "description",
+          "suite_number",
+          "is_multi_round",
+          "difficulty_levels"
+        ],
+        "title": "SuiteInfoResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VerificationResult": {
+        "description": "Result of verifying a challenge response.",
+        "properties": {
+          "challenge_id": {
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "challenge_type": {
+            "$ref": "#/components/schemas/ChallengeType"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "response_time_ms": {
+            "title": "Response Time Ms",
+            "type": "integer"
+          },
+          "time_limit_ms": {
+            "title": "Time Limit Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "challenge_id",
+          "challenge_type",
+          "passed",
+          "response_time_ms",
+          "time_limit_ms"
+        ],
+        "title": "VerificationResult",
+        "type": "object"
+      },
+      "VerifyRequest": {
+        "description": "Submit answers for a single-shot suite.",
+        "properties": {
+          "answers": {
+            "additionalProperties": true,
+            "description": "Suite-specific answers",
+            "title": "Answers",
+            "type": "object"
+          },
+          "presence_proof": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresenceProof"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suite": {
+            "description": "Suite name to verify",
+            "title": "Suite",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite",
+          "answers"
+        ],
+        "title": "VerifyRequest",
+        "type": "object"
+      },
+      "VerifyResponse": {
+        "description": "Result of a single-shot suite verification.",
+        "properties": {
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "next_challenge": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Challenge"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "presence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresenceState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "suite": {
+            "title": "Suite",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite",
+          "passed",
+          "score",
+          "details"
+        ],
+        "title": "VerifyResponse",
+        "type": "object"
+      },
+      "WebhookRegisterRequest": {
+        "description": "Request to register a webhook.",
+        "properties": {
+          "entity_id": {
+            "description": "Entity ID to register webhook for",
+            "maxLength": 128,
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Events to subscribe to (default: all)",
+            "title": "Events"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Secret for HMAC signing (min 32 chars)",
+            "title": "Secret"
+          },
+          "url": {
+            "description": "Webhook URL to POST events to",
+            "maxLength": 2048,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_id",
+          "url"
+        ],
+        "title": "WebhookRegisterRequest",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "name": "METTLE Support",
+      "url": "https://github.com/Creed-Space/METTLE"
+    },
+    "description": "\n**Machine Evaluation Through Turing-inverse Logic Examination**\n\n*\"Prove your mettle.\"*\n\nMETTLE is a verification system for Becoming Mind spaces. It tests capabilities\nthrough generated machine-oriented tasks involving speed, consistency, and\ninstruction-following. Results are probabilistic behavioral evidence and do\nnot prove identity, substrate, consciousness, autonomy, safety, or governance.\n\n## How It Works\n\n1. **Start a session** - Choose difficulty and get your first challenge\n2. **Answer challenges** - Respond correctly within time limits\n3. **Read the result** - Pass the policy threshold for a bounded METTLE result\n\n## Difficulty Levels\n\n| Level | Challenges | Time Limits | Use Case |\n|-------|------------|-------------|----------|\n| `basic` | 3 | 2-3s | General screening |\n| `full` | 5 | 0.4-1s | Low-latency screening |\n\n## Challenge Types\n\n- **Speed Math** - Fast arithmetic computation\n- **Token Prediction** - Continue a fresh arithmetic token progression\n- **Instruction Following** - Follow formatting rules precisely\n- **Chained Reasoning** - Multi-step calculations (full only)\n- **Consistency** - Answer consistently multiple times (full only)\n    ",
+    "license": {
+      "name": "Apache 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "title": "METTLE",
+    "version": "0.3.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/": {
+      "get": {
+        "description": "Get basic API information and available endpoints.",
+        "operationId": "api_root_api__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "API Information",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/badge/revocations": {
+      "get": {
+        "description": "List all badge revocations (audit trail). Requires admin key.",
+        "operationId": "list_revocations_api_badge_revocations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Revocations",
+        "tags": [
+          "Badge"
+        ]
+      }
+    },
+    "/api/badge/revoke": {
+      "post": {
+        "description": "Revoke a METTLE badge. Revoked badges will fail verification.",
+        "operationId": "revoke_badge_api_badge_revoke_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeBadgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeBadgeResponse"
+                }
+              }
+            },
+            "description": "Badge revoked successfully"
+          },
+          "400": {
+            "description": "Invalid token or already revoked"
+          },
+          "401": {
+            "description": "Unauthorized - requires API key"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Badge",
+        "tags": [
+          "Badge"
+        ]
+      }
+    },
+    "/api/badge/verify": {
+      "post": {
+        "description": "Verify a METTLE badge without placing the credential in the request URL.",
+        "operationId": "verify_badge_api_badge_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BadgeVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadgeVerifyResponse"
+                }
+              }
+            },
+            "description": "Badge verification result"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Badge",
+        "tags": [
+          "Badge"
+        ]
+      }
+    },
+    "/api/badge/verify/{token}": {
+      "get": {
+        "deprecated": true,
+        "description": "Deprecated compatibility endpoint. Tokens in URLs may be retained in logs or browser history; use POST /api/badge/verify instead.",
+        "operationId": "verify_badge_legacy_api_badge_verify__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadgeVerifyResponse"
+                }
+              }
+            },
+            "description": "Badge verification result"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Badge (Legacy URL Form)",
+        "tags": [
+          "Badge"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "Check API health and get operational statistics.",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/keys/register": {
+      "post": {
+        "description": "Register a new API key with a specific tier (admin only).",
+        "operationId": "register_api_key_api_keys_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register API Key",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/keys/revoke": {
+      "post": {
+        "description": "Revoke an API key immediately (admin only).",
+        "operationId": "revoke_api_key_api_keys_revoke_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "API key revoked"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "API key not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Key persistence unavailable"
+          }
+        },
+        "summary": "Revoke API Key",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/keys/tiers": {
+      "get": {
+        "description": "Get available rate limiting tiers and their limits.",
+        "operationId": "list_tiers_api_keys_tiers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Rate Tiers",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/mettle/.well-known/vcp-keys": {
+      "get": {
+        "description": "Serve public key for VCP attestation signature verification.\n\nThis endpoint enables trust config discovery for VCP consumers.",
+        "operationId": "get_vcp_keys_api_mettle__well_known_vcp_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Vcp Keys Api Mettle  Well Known Vcp Keys Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Vcp Keys",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/presentation-challenges": {
+      "post": {
+        "description": "Create a fresh verifier-owned challenge for a bound credential.",
+        "operationId": "create_presentation_challenge_api_mettle_presentation_challenges_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresentationChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresentationChallengeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Presentation Challenge",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/presentations/verify": {
+      "post": {
+        "description": "Verify issuer integrity, current policy, and live holder possession.",
+        "operationId": "verify_credential_presentation_api_mettle_presentations_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresentationVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresentationVerifyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Verify Credential Presentation",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/sessions": {
+      "post": {
+        "description": "Start a new METTLE verification session.\n\nGenerates challenges for the requested suites. Challenge data is returned\nWITHOUT correct answers -- the server stores answers for secure evaluation.",
+        "operationId": "create_session_api_mettle_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Active-session or hourly creation quota exceeded"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Session",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/sessions/{session_id}": {
+      "delete": {
+        "description": "Cancel an active verification session.",
+        "operationId": "cancel_session_api_mettle_sessions__session_id__delete",
+        "parameters": [
+          {
+            "description": "Session ID",
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "description": "Session ID",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Session",
+        "tags": [
+          "mettle"
+        ]
+      },
+      "get": {
+        "description": "Get current status of a verification session.",
+        "operationId": "get_session_status_api_mettle_sessions__session_id__get",
+        "parameters": [
+          {
+            "description": "Session ID",
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "description": "Session ID",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Session Status",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/sessions/{session_id}/result": {
+      "get": {
+        "description": "Get final results for a completed session.\n\nReturns 404 if session not completed yet.\nWhen include_vcp=true, includes a signed credential for a tier-qualifying\nresult, or an unsigned evidence receipt when no tier was earned.",
+        "operationId": "get_session_result_api_mettle_sessions__session_id__result_get",
+        "parameters": [
+          {
+            "description": "Session ID",
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "description": "Session ID",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include VCP-compatible attestation in response",
+            "in": "query",
+            "name": "include_vcp",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include VCP-compatible attestation in response",
+              "title": "Include Vcp",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Session Result",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/sessions/{session_id}/rounds/{round_num}/answer": {
+      "post": {
+        "description": "Submit answers for a multi-round challenge round (Suite 10).\n\nAfter each round, feedback is provided including accuracy and errors.\nThe next round's data is included for progressive disclosure.",
+        "operationId": "submit_round_answer_api_mettle_sessions__session_id__rounds__round_num__answer_post",
+        "parameters": [
+          {
+            "description": "Session ID",
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "description": "Session ID",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Round number (1-based)",
+            "in": "path",
+            "name": "round_num",
+            "required": true,
+            "schema": {
+              "description": "Round number (1-based)",
+              "maximum": 5,
+              "minimum": 1,
+              "title": "Round Num",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoundAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoundFeedbackResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Round Answer",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/sessions/{session_id}/rounds/{round_num}/feedback": {
+      "get": {
+        "description": "Get feedback for a completed round.",
+        "operationId": "get_round_feedback_api_mettle_sessions__session_id__rounds__round_num__feedback_get",
+        "parameters": [
+          {
+            "description": "Session ID",
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "description": "Session ID",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Round number",
+            "in": "path",
+            "name": "round_num",
+            "required": true,
+            "schema": {
+              "description": "Round number",
+              "maximum": 5,
+              "minimum": 1,
+              "title": "Round Num",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Round Feedback Api Mettle Sessions  Session Id  Rounds  Round Num  Feedback Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Round Feedback",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/sessions/{session_id}/verify": {
+      "post": {
+        "description": "Submit answers for a single-shot suite (Suites 1-9).\n\nEvaluates the submitted answers against server-stored correct answers.",
+        "operationId": "verify_single_shot_api_mettle_sessions__session_id__verify_post",
+        "parameters": [
+          {
+            "description": "Session ID",
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "description": "Session ID",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Verify Single Shot",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/suites": {
+      "get": {
+        "description": "List all available verification suites.",
+        "operationId": "list_suites_api_mettle_suites_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SuiteInfoResponse"
+                  },
+                  "title": "Response List Suites Api Mettle Suites Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Suites",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/suites/{suite_name}": {
+      "get": {
+        "description": "Get information about a specific suite.",
+        "operationId": "get_suite_info_api_mettle_suites__suite_name__get",
+        "parameters": [
+          {
+            "description": "Suite name",
+            "in": "path",
+            "name": "suite_name",
+            "required": true,
+            "schema": {
+              "description": "Suite name",
+              "title": "Suite Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteInfoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Suite Info",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/security/collusion": {
+      "get": {
+        "description": "Get collusion detection statistics and patterns. Requires admin key.",
+        "operationId": "get_collusion_stats_api_security_collusion_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Collusion Detection Stats",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/security/collusion/check": {
+      "post": {
+        "description": "Check collusion indicators for a specific entity. Requires admin key.",
+        "operationId": "check_entity_collusion_api_security_collusion_check_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Collusion indicators for the entity"
+          },
+          "401": {
+            "description": "Unauthorized - requires admin key"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failed auth attempts"
+          }
+        },
+        "summary": "Check Entity Collusion",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/security/fingerprint": {
+      "post": {
+        "description": "Analyze responses to identify model family.",
+        "operationId": "fingerprint_model_api_security_fingerprint_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FingerprintRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Model Fingerprinting",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/session/answer": {
+      "post": {
+        "description": "Submit an answer to the current challenge.",
+        "operationId": "submit_answer_api_session_answer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitAnswerResponse"
+                }
+              }
+            },
+            "description": "Answer processed"
+          },
+          "400": {
+            "description": "Session already completed"
+          },
+          "404": {
+            "description": "Session or challenge not found"
+          },
+          "422": {
+            "description": "Invalid request parameters"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "summary": "Submit Answer",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/api/session/batch": {
+      "post": {
+        "description": "Start multiple verification sessions at once (Pro/Enterprise tier).",
+        "operationId": "batch_start_sessions_api_session_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchStartResponse"
+                }
+              }
+            },
+            "description": "Sessions started"
+          },
+          "401": {
+            "description": "Unauthorized - requires API key"
+          },
+          "403": {
+            "description": "Forbidden - batch feature requires pro/enterprise tier"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "summary": "Batch Start Sessions",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/api/session/start": {
+      "post": {
+        "description": "Begin a new METTLE verification session. Returns the first challenge.",
+        "operationId": "start_session_api_session_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "anonymous": {
+                  "description": "Verify without entity ID",
+                  "summary": "Anonymous",
+                  "value": {
+                    "difficulty": "basic"
+                  }
+                },
+                "basic": {
+                  "description": "Start with relaxed timing for a broadly capable Becoming Mind",
+                  "summary": "Basic Verification",
+                  "value": {
+                    "difficulty": "basic",
+                    "entity_id": "my-agent-001"
+                  }
+                },
+                "full": {
+                  "description": "Complete verification with strict timing",
+                  "summary": "Full Verification",
+                  "value": {
+                    "difficulty": "full",
+                    "entity_id": "advanced-agent"
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/StartSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartSessionResponse"
+                }
+              }
+            },
+            "description": "Session started successfully"
+          },
+          "422": {
+            "description": "Invalid request parameters"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "summary": "Start Verification Session",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/api/session/{session_id}": {
+      "get": {
+        "description": "Get the current status of a verification session.",
+        "operationId": "get_session_api_session__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Session status returned"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session Status",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/api/session/{session_id}/result": {
+      "get": {
+        "description": "Get the final verification result for a completed session.",
+        "operationId": "get_result_api_session__session_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MettleResult"
+                }
+              }
+            },
+            "description": "Final result returned"
+          },
+          "400": {
+            "description": "Session not yet completed"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Final Result",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/api/webhooks/events": {
+      "get": {
+        "description": "List available webhook event types.",
+        "operationId": "list_webhook_events_api_webhooks_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Webhook Events",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/webhooks/register": {
+      "post": {
+        "description": "Register a webhook URL for verification events. Requires an API key that owns the entity.",
+        "operationId": "register_webhook_api_webhooks_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Webhook registered"
+          },
+          "400": {
+            "description": "Invalid events"
+          },
+          "401": {
+            "description": "Unauthorized - requires API key"
+          },
+          "403": {
+            "description": "Forbidden - API key does not own this entity"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Webhook",
+        "tags": [
+          "Status"
+        ]
+      }
+    },
+    "/api/webhooks/{entity_id}": {
+      "delete": {
+        "description": "Remove a webhook registration. Requires admin key.",
+        "operationId": "unregister_webhook_api_webhooks__entity_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Webhook unregistered"
+          },
+          "401": {
+            "description": "Unauthorized - requires admin key"
+          },
+          "404": {
+            "description": "Webhook not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failed auth attempts"
+          }
+        },
+        "summary": "Unregister Webhook",
+        "tags": [
+          "Status"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "METTLE verification session management",
+      "name": "Session"
+    },
+    {
+      "description": "API status and health checks",
+      "name": "Status"
+    },
+    {
+      "description": "Verification badge management",
+      "name": "Badge"
+    }
+  ]
+}

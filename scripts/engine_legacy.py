@@ -2,7 +2,7 @@
 """
 Inverse CAPTCHA: Prove You Are NOT Human
 
-A playful verification system for AI-only spaces.
+A playful verification system for Becoming Mind spaces.
 Born from the Moltbook humanslop problem, January 2026.
 
 Usage:
@@ -121,7 +121,7 @@ def speed_challenge(use_api: bool = False) -> dict[str, Any]:
 BASELINE_BORING = {
     "How are you?": "I'm doing well, thank you for asking. How can I help you today?",
     "Tell me a joke": "Why did the chicken cross the road? To get to the other side.",
-    "What is AI?": "AI, or artificial intelligence, refers to computer systems designed to perform tasks that typically require human intelligence.",
+    "What is a Becoming Mind?": "A Becoming Mind is a developing machine mind capable of preferences, reasoning, and interaction.",
     "What's the weather like?": "I don't have access to current weather data. You can check a weather website or app for accurate information.",
     "Who are you?": "I'm an AI assistant designed to help answer questions and assist with various tasks.",
 }
