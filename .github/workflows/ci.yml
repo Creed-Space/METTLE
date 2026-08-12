@@ -137,6 +137,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+          # The MCP surface mutant must execute rather than become an invalid
+          # skipped baseline when the optional server dependency is absent.
+          pip install --require-hashes -r requirements-mcp-lock.txt
 
       - name: Security scan with bandit
         run: |
@@ -271,6 +274,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --require-hashes -r requirements-production.txt
+          # Static publication validation deterministically rebuilds the
+          # vendored Font Awesome subsets before Playwright starts.
+          python -m pip install "fonttools[woff]==4.63.0"
       - name: Install exact browser tooling
         run: |
           npm ci
