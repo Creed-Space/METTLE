@@ -12,6 +12,7 @@ an authenticated operator session with explicit incident ownership.
 | Abusive traffic or credential probing | [Abusive traffic](ABUSIVE_TRAFFIC.md) | Security operations |
 | False accept or false reject spike | [False-decision spike](FALSE_DECISION_SPIKE.md) | Protocol maintainer |
 | Bad deployment or rollback | [Deployment rollback](DEPLOYMENT_ROLLBACK.md) | Release operator |
+| Provider configuration drift | [Render configuration drift](RENDER_CONFIGURATION_DRIFT.md) | Release operator |
 | New or rotated public signing key | [Public-key publication](PUBLIC_KEY_PUBLICATION.md) | Credential operator |
 | Backup restoration or unrecoverable key loss | [Backup restore and key loss](BACKUP_RESTORE_AND_KEY_LOSS.md) | Data and credential operators |
 

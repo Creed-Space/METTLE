@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools==81.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "mettle-verifier"
-version = "0.3.0"
+version = "0.3.1"
 description = "METTLE reverse-CAPTCHA challenges for machine-oriented verification."
 readme = "README.md"
 requires-python = ">=3.10"

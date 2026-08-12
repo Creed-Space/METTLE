@@ -3,6 +3,8 @@
 ## Candidate identity
 
 * [ ] Tag equals `v` plus the package version.
+* [ ] The tag is annotated, resolves to the workflow SHA, and belongs to the
+  reviewed `main` history.
 * [ ] Full source SHA is recorded and matches the checked-out tag.
 * [ ] `/api/health`, `/api/health/live`, and `/api/health/ready` report that
   exact SHA, and `X-METTLE-Source-Revision` agrees. Production readiness rejects
@@ -25,6 +27,12 @@
 
 * [ ] Python 3.11 CI and Python 3.10 through 3.14 clean-wheel smokes pass on the SHA.
 * [ ] Wheel and source distribution build, install, expose the CLI, and pass `twine check`.
+* [ ] Two clean Linux builders and one clean macOS builder produce byte-identical
+  wheel and source-distribution hashes for the exact source SHA.
+* [ ] The public PyPI wheel passes a clean seven-tool MCP handshake and omits
+  `mettle_auto_verify`; public hashes match reproducibility evidence.
+* [ ] Official MCP Registry readback is active, latest, and points to the same
+  PyPI version and package.
 * [ ] Hashed production lock installs cleanly.
 * [ ] Runtime and development dependency audits pass.
 * [ ] Secret scan, Bandit, Ruff, mypy, Vulture, coverage, npm audit, and frontend checks pass.
@@ -38,6 +46,8 @@
 * [ ] Redis loss, recovery, and failover receipts identify the SHA and topology.
 * [ ] Holder soak, bounded load, production CORS, trusted host, proxy identity,
   security headers, and post-deploy smoke pass.
+* [ ] The read-only Render drift receipt matches both bound production services
+  and includes no secret values.
 * [ ] The public MCP handshake exposes exactly seven tools and does not expose
   `mettle_auto_verify`; no tool invocation is needed for this release check.
 * [ ] Rollback target and signing-key incident procedure are rehearsed.
