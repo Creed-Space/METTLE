@@ -1,5 +1,46 @@
 # METTLE release notes
 
+## [0.3.1]
+
+### Credential schema
+
+Credential schema `1.0` and suite policy `2026-08-12` are unchanged. This is a
+distribution and operations hardening release.
+
+### Suite policy
+
+Challenge generation, tier ranges, scoring, and credential semantics are
+unchanged from `0.3.0`.
+
+### Public key changes
+
+No signing-key or discovery-format change is included. Deployed key identity is
+verified separately from package publication.
+
+### Compatibility
+
+The package remains compatible with Python 3.10 through 3.14. The public wheel
+contains the seven reviewed MCP tools and omits the removed automatic solver.
+The Official MCP Registry manifest points to this successor package version.
+
+### Runtime and operations
+
+Release distributions now derive timestamps from the source commit and
+normalize source-archive ordering, ownership, modes, and timestamps. Two clean
+Linux builders and one clean macOS builder must produce byte-identical wheel and
+source-distribution files before publication. A read-only Render gate compares
+the live API and MCP services with the reviewed repository configuration while
+reducing secret values to presence checks.
+
+### Known limitations
+
+METTLE is a probabilistic behavioral gate. A passing credential does not prove
+identity, consciousness, safety, autonomy, personhood, or operator
+trustworthiness. Destructive production failover and restore drills, human
+accessibility review, rights-cleared held-out fairness evaluation, and
+independent protocol, cryptographic, privacy, adversarial ML, and bilateral
+reviews require evidence outside repository automation.
+
 ## [0.3.0]
 
 ### Credential schema

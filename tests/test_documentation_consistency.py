@@ -1,6 +1,8 @@
 """Regression checks for public claims that must match the implementation."""
 
+import json
 import re
+import tomllib
 from pathlib import Path
 
 from mettle.challenge_adapter import SUITE_REGISTRY
@@ -70,6 +72,31 @@ def test_static_site_advertises_published_package() -> None:
     assert "pip install mettle-verifier" in static_docs
     assert "PyPI: mettle-verifier, coming soon" not in static_homepage
     assert "PyPI: mettle-verifier, coming soon" not in static_docs
+
+
+def test_all_release_version_declarations_agree() -> None:
+    """Package, API, CLI, OpenAPI, and registry metadata move together."""
+    from config import Settings
+    from mettle import __version__
+    from mettle.cli import METTLE_VERSION
+
+    project = tomllib.loads(_read("pyproject.toml"))["project"]
+    server = json.loads(_read("server.json"))
+    openapi = json.loads(_read("docs/openapi-v1.json"))
+    version = project["version"]
+
+    assert version == "0.3.1"
+    assert (
+        __version__
+        == METTLE_VERSION
+        == Settings.model_fields["api_version"].default
+        == version
+    )
+    assert server["version"] == server["packages"][0]["version"] == version
+    assert openapi["info"]["version"] == version
+    assert _read("RELEASE_NOTES.md").startswith(
+        f"# METTLE release notes\n\n## [{version}]"
+    )
 
 
 def test_mcp_surface_does_not_expose_an_automatic_solver() -> None:

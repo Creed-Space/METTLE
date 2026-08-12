@@ -18,7 +18,7 @@ def test_release_manifest_records_artifact_hashes_and_policy(tmp_path: Path) -> 
         dist=dist,
         notes_path=Path("RELEASE_NOTES.md"),
         source_sha="a" * 40,
-        tag="v0.3.0",
+        tag="v0.3.1",
         output=output,
         release_body=body,
     )
@@ -29,7 +29,7 @@ def test_release_manifest_records_artifact_hashes_and_policy(tmp_path: Path) -> 
     assert manifest["artifacts"][0]["name"] == "mettle.whl"
     assert len(manifest["artifacts"][0]["sha256"]) == 64
     assert output.is_file()
-    assert body.read_text(encoding="utf-8").startswith("## [0.3.0]")
+    assert body.read_text(encoding="utf-8").startswith("## [0.3.1]")
 
 
 def test_release_manifest_rejects_tag_or_sha_drift(tmp_path: Path) -> None:
@@ -46,4 +46,4 @@ def test_release_manifest_rejects_tag_or_sha_drift(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="does not match"):
         build_manifest(source_sha="a" * 40, tag="v9.9.9", **common)
     with pytest.raises(ValueError, match="source SHA"):
-        build_manifest(source_sha="short", tag="v0.3.0", **common)
+        build_manifest(source_sha="short", tag="v0.3.1", **common)

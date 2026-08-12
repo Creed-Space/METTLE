@@ -198,3 +198,48 @@ def test_tag_release_reuses_full_ci_on_the_exact_candidate() -> None:
             in workflow
         )
         assert "scripts/finalize_server_sbom.py" in workflow
+
+
+def test_release_requires_reproducibility_before_publication() -> None:
+    """No public package may precede three-builder byte-identity proof."""
+    root = Path(__file__).parent.parent
+    ci = (root / ".github/workflows/ci.yml").read_text()
+    release = (root / ".github/workflows/release.yml").read_text()
+
+    assert "builder: [linux-1, linux-2]" in ci
+    assert 'python-version: "3.13.14"' in ci
+    assert "-m scripts.build_distributions" in ci
+    assert "name: Reproducibility gate" in release
+    assert 'python-version: "3.13.14"' in release
+    assert "--min-linux-builders 2 --require-macos" in release
+    assert "name: Prepare exact release bundle" in release
+    assert "needs: [validate-candidate, reproducibility, render-drift]" in release
+    assert "environment:\n      name: pypi" in release
+    sha_prefix = "ec4db0b4ddc65acdf4bf"  # pragma: allowlist secret
+    sha_suffix = "f5fa45ac92d78b56bdf0"  # pragma: allowlist secret
+    pypi_action_sha = sha_prefix + sha_suffix
+    assert f"pypa/gh-action-pypi-publish@{pypi_action_sha}" in release
+    assert "scripts/verify_pypi_release.py" in release
+    assert "mcp-publisher publish" in release
+    assert "scripts/build_distribution_receipt.py" in release
+    assert "name: Publish complete GitHub Release" in release
+    assert "needs: [prepare-release, verify-and-publish-registry]" in release
+    assert "name: Render configuration drift gate" in release
+    assert "scripts/check_render_drift.py" in release
+
+
+def test_render_drift_gate_is_read_only_and_scheduled() -> None:
+    """Provider configuration has an exact, recurring, secret-safe check."""
+    root = Path(__file__).parent.parent
+    workflow = (root / ".github/workflows/render-drift.yml").read_text()
+    contract = (root / "deploy/render-production.json").read_text()
+    checker = (root / "scripts/check_render_drift.py").read_text()
+
+    assert 'cron: "17 5 * * *"' in workflow
+    assert "--token-stdin" in workflow
+    assert "RENDER_API_TOKEN" in workflow
+    assert '"srv-d5ujjr7pm1nc73bu5k3g"' in contract
+    assert '"srv-d9h2p5beo5us73b4fh90"' in contract
+    assert "urllib.request.Request" in checker
+    for mutating_method in ('method="POST"', 'method="PUT"', 'method="PATCH"'):
+        assert mutating_method not in checker

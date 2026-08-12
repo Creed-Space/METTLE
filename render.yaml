@@ -2,7 +2,11 @@ services:
   - type: web
     name: mettle-api
     runtime: python
+    repo: https://github.com/Creed-Space/METTLE
+    branch: main
     plan: starter
+    region: oregon
+    numInstances: 1
     buildCommand: pip install --require-hashes -r requirements-production.txt
     # Legacy and v2 live session authority is Redis-backed and CI alternates one
     # legacy session across two independent workers before this count may ship.
@@ -55,10 +59,13 @@ services:
   - type: web
     name: mettle-mcp
     runtime: docker
+    repo: https://github.com/Creed-Space/METTLE
+    branch: main
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: starter
     region: oregon
+    numInstances: 1
     healthCheckPath: /health
     autoDeploy: true
     envVars:

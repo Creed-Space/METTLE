@@ -47,12 +47,22 @@ jobs:
       - name: Check for unused Python code
         run: |
           vulture main.py config.py database.py \
-            mettle red_team scripts/engine.py --min-confidence 80
+            mettle red_team scripts/engine.py \
+            scripts/build_distribution_receipt.py \
+            scripts/build_distributions.py \
+            scripts/check_render_drift.py \
+            scripts/compare_distributions.py \
+            scripts/normalize_sdist.py \
+            scripts/verify_pypi_release.py \
+            scripts/testing/smoke_installed_mcp.py \
+            --min-confidence 80
 
       - name: Build and validate Python distributions
         run: |
-          python -m build
-          twine check dist/*
+          python -m scripts.build_distributions \
+            --source-revision "$GITHUB_SHA" \
+            --builder-id "ci-linux-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          twine check dist/*.whl dist/*.tar.gz
           python -m venv /tmp/mettle-production-lock
           /tmp/mettle-production-lock/bin/python -m pip install --require-hashes \
             -r requirements-production.txt
@@ -73,6 +83,14 @@ jobs:
           status=$?
           set -e
           test "$status" -eq 1
+
+      - name: Validate installed MCP surface
+        run: |
+          python -m venv /tmp/mettle-mcp-wheel-smoke
+          wheel=$(printf '%s' dist/*.whl)
+          /tmp/mettle-mcp-wheel-smoke/bin/python -m pip install "${wheel}[mcp]"
+          /tmp/mettle-mcp-wheel-smoke/bin/python \
+            scripts/testing/smoke_installed_mcp.py
 
       - name: Validate production dependency lock
         run: |
@@ -144,7 +162,15 @@ jobs:
       - name: Security scan with bandit
         run: |
           bandit -q -r main.py config.py database.py \
-            mettle red_team scripts/engine.py --skip B101
+            mettle red_team scripts/engine.py \
+            scripts/build_distribution_receipt.py \
+            scripts/build_distributions.py \
+            scripts/check_render_drift.py \
+            scripts/compare_distributions.py \
+            scripts/normalize_sdist.py \
+            scripts/verify_pypi_release.py \
+            scripts/testing/smoke_installed_mcp.py \
+            --skip B101
 
       - name: Scan for committed secrets
         run: |
@@ -227,6 +253,32 @@ jobs:
           status=$?
           set -e
           test "$status" -eq 1
+
+  reproducible-build:
+    name: Reproducible distribution (${{ matrix.builder }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        builder: [linux-1, linux-2]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.13.14"
+      - name: Build deterministic distributions
+        run: |
+          python -m pip install --disable-pip-version-check build==1.5.0
+          python -m scripts.build_distributions \
+            --source-revision "$GITHUB_SHA" \
+            --builder-id "${{ matrix.builder }}"
+      - name: Upload independent distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: reproducible-${{ matrix.builder }}-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
 
   legacy-multiworker:
     name: Legacy session multiworker authority

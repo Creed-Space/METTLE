@@ -12,13 +12,10 @@ jobs:
   validate-candidate:
     uses: ./.github/workflows/ci.yml
 
-  release:
-    needs: validate-candidate
+  prepare-release:
+    name: Prepare exact release bundle
+    needs: [validate-candidate, reproducibility, render-drift]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -27,12 +24,34 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Build release artifacts
+      - name: Verify annotated tag belongs to main
+        run: |
+          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
+          test "$(git rev-list -n 1 "$GITHUB_REF_NAME")" = "$GITHUB_SHA"
+          test "$GITHUB_REF_NAME" = \
+            "v$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
+      - name: Download reproducible release distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: reproducible-linux-1-${{ github.sha }}
+          path: dist/
+      - name: Download reproducibility receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: distribution-reproducibility-${{ github.sha }}
+          path: dist/
+      - name: Download provider drift receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: render-drift-${{ github.sha }}
+          path: dist/
+      - name: Validate release distributions and build SBOM
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-          python -m build
-          twine check dist/*
+          twine check dist/*.whl dist/*.tar.gz
           python -m venv /tmp/mettle-production-lock
           /tmp/mettle-production-lock/bin/python -m pip install --require-hashes \
             -r requirements-production.txt
@@ -45,24 +64,245 @@ jobs:
             --input dist/mettle-server.raw.cdx.json \
             --output dist/mettle-server.cdx.json
           rm dist/mettle-server.raw.cdx.json
+      - name: Upload exact release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-prepared-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
+
+  reproducibility:
+    name: Reproducibility gate
+    needs: validate-candidate
+    runs-on: macos-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.13.14"
+      - name: Download first independent Linux distribution
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: reproducible-linux-1-${{ github.sha }}
+          path: output/reproducibility/linux-1
+      - name: Download second independent Linux distribution
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: reproducible-linux-2-${{ github.sha }}
+          path: output/reproducibility/linux-2
+      - name: Build independent macOS distributions
+        run: |
+          python -m pip install --disable-pip-version-check build==1.5.0
+          python -m scripts.build_distributions \
+            --source-revision "$GITHUB_SHA" \
+            --builder-id macos \
+            --outdir output/reproducibility/macos
+      - name: Require byte identity across three builders
+        run: |
+          python scripts/compare_distributions.py \
+            --builder linux-1=output/reproducibility/linux-1 \
+            --builder linux-2=output/reproducibility/linux-2 \
+            --builder macos=output/reproducibility/macos \
+            --min-linux-builders 2 --require-macos \
+            --output output/evidence/DISTRIBUTION-REPRODUCIBILITY.json
+      - name: Upload reproducibility receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: distribution-reproducibility-${{ github.sha }}
+          path: output/evidence/DISTRIBUTION-REPRODUCIBILITY.json
+          if-no-files-found: error
+          retention-days: 90
+
+  render-drift:
+    name: Render configuration drift gate
+    needs: validate-candidate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Install parser
+        run: python -m pip install pyyaml==6.0.2
+      - name: Compare provider with reviewed contract
+        env:
+          RENDER_API_TOKEN: ${{ secrets.RENDER_API_TOKEN }}
+        run: |
+          test -n "$RENDER_API_TOKEN"
+          printf '%s' "$RENDER_API_TOKEN" \
+            | python scripts/check_render_drift.py --token-stdin \
+                --output output/evidence/RENDER-CONFIGURATION-DRIFT.json
+      - name: Upload drift receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: render-drift-${{ github.sha }}
+          path: output/evidence/RENDER-CONFIGURATION-DRIFT.json
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [prepare-release, reproducibility]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mettle-verifier
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: reproducible-linux-1-${{ github.sha }}
+          path: output/publish-build/
+      - name: Select only Python distributions
+        run: |
+          mkdir dist
+          cp output/publish-build/*.whl output/publish-build/*.tar.gz dist/
+      - name: Publish reviewed distributions
+        uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0  # v1.9.0
+        with:
+          skip-existing: true
+
+  verify-and-publish-registry:
+    name: Verify PyPI and publish MCP Registry
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Verify public PyPI artifacts
+        run: |
+          python scripts/verify_pypi_release.py \
+            --version "${GITHUB_REF_NAME#v}" \
+            --output output/evidence/PYPI-PUBLICATION.json
+          python -m venv /tmp/mettle-public-mcp
+          /tmp/mettle-public-mcp/bin/python -m pip install \
+            "mettle-verifier[mcp]==${GITHUB_REF_NAME#v}"
+          /tmp/mettle-public-mcp/bin/python - <<'PY'
+          import asyncio
+          import os
+          import sys
+
+          from mcp import ClientSession, StdioServerParameters
+          from mcp.client.stdio import stdio_client
+
+          expected = {
+              "mettle_start_session", "mettle_answer_challenge", "mettle_get_result",
+              "mettle_list_suites", "mettle_start_v2_session", "mettle_verify_suite",
+              "mettle_get_v2_result",
+          }
+
+          async def smoke():
+              params = StdioServerParameters(
+                  command=sys.executable,
+                  args=["-m", "mettle.mcp_server"],
+                  env={**os.environ, "METTLE_API_URL": "https://mettle.sh/api"},
+              )
+              async with stdio_client(params) as (read, write):
+                  async with ClientSession(read, write) as session:
+                      await session.initialize()
+                      result = await session.list_tools()
+              names = {tool.name for tool in result.tools}
+              if names != expected or "mettle_auto_verify" in names:
+                  raise RuntimeError(f"public MCP tools differ: {sorted(names)}")
+
+          asyncio.run(smoke())
+          print("public PyPI MCP smoke passed: 7 approved tools")
+          PY
+      - name: Install mcp-publisher
+        run: |
+          curl --fail-with-body --location --silent --show-error \
+            --output /tmp/mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz"
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  /tmp/mcp-publisher.tar.gz" \
+            | sha256sum --check --strict
+          tar xzf /tmp/mcp-publisher.tar.gz mcp-publisher
+          sudo mv mcp-publisher /usr/local/bin/
+      - name: Publish Official MCP Registry manifest
+        run: |
+          if python -c \
+            'from scripts.build_distribution_receipt import wait_for_registry; import os; wait_for_registry(os.environ["GITHUB_REF_NAME"].removeprefix("v"), attempts=1, delay=0)'
+          then
+            echo "Official MCP Registry already exposes the exact active release."
+          else
+            mcp-publisher login github-oidc
+            mcp-publisher publish
+          fi
+      - name: Download reproducibility receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: distribution-reproducibility-${{ github.sha }}
+          path: output/evidence/
+      - name: Verify registry readback and build distribution receipt
+        run: |
+          python scripts/build_distribution_receipt.py \
+            --pypi output/evidence/PYPI-PUBLICATION.json \
+            --reproducibility output/evidence/DISTRIBUTION-REPRODUCIBILITY.json \
+            --source-sha "$GITHUB_SHA" \
+            --tag "$GITHUB_REF_NAME" \
+            --workflow-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --output output/evidence/DISTRIBUTION-RELEASE-RECEIPT.json
+      - name: Upload distribution evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: distribution-release-${{ github.sha }}
+          path: |
+            output/evidence/PYPI-PUBLICATION.json
+            output/evidence/DISTRIBUTION-RELEASE-RECEIPT.json
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-github-release:
+    name: Publish complete GitHub Release
+    needs: [prepare-release, verify-and-publish-registry]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Download prepared release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: release-prepared-${{ github.sha }}
+          path: dist/
+      - name: Download public distribution receipts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: distribution-release-${{ github.sha }}
+          path: dist/
+      - name: Bind and checksum the complete release
+        run: |
           python scripts/build_release_manifest.py \
             --source-sha "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
           (cd dist && shasum -a 256 ./* > SHA256SUMS)
           (cd dist && shasum -a 256 --check SHA256SUMS)
-      - name: Attest release distributions
+      - name: Attest every release artifact
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a  # v3
         with:
-          subject-path: |
-            dist/*.whl
-            dist/*.tar.gz
-            dist/mettle-server.cdx.json
-            dist/RELEASE-MANIFEST.json
-            dist/SHA256SUMS
+          subject-path: dist/*
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
-        with:
-          generate_release_notes: false
-          body_path: dist/RELEASE-NOTES.md
-          fail_on_unmatched_files: true
-          files: |
-            dist/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --title "METTLE ${GITHUB_REF_NAME#v}" \
+            --notes-file dist/RELEASE-NOTES.md
