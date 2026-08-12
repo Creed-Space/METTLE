@@ -20,6 +20,8 @@ from sqlalchemy import (
     Text,
     create_engine,
     inspect,
+    insert,
+    select,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -49,6 +51,16 @@ else:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 logger = logging.getLogger(__name__)
+
+
+def check_health() -> bool:
+    """Return whether the configured database can execute a trivial query."""
+    try:
+        with engine.connect() as connection:
+            return connection.execute(text("SELECT 1")).scalar_one() == 1
+    except Exception as exc:
+        logger.warning("Database health check failed: %s", type(exc).__name__)
+        return False
 
 
 def _model_json_dict(value: object) -> dict:
@@ -140,25 +152,78 @@ class DBVerificationRecord(Base):
     )
 
 
+class DBSchemaMigration(Base):
+    """Applied database schema version."""
+
+    __tablename__ = "schema_migrations"
+
+    version = Column(Integer, primary_key=True)
+    applied_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 # === Database Functions ===
 
 
-def init_db():
-    """Initialize database tables."""
-    Base.metadata.create_all(bind=engine)
-    # Existing deployments may have the original sessions table. Add the two
-    # recovery columns without requiring a destructive table rebuild.
-    existing = {column["name"] for column in inspect(engine).get_columns("sessions")}
+LATEST_SCHEMA_VERSION = 2
+
+
+def _upgrade_session_recovery_columns(connection) -> None:
+    """Version 2: add restart-recovery and stable-badge session columns."""
+    existing = {
+        column["name"] for column in inspect(connection).get_columns("sessions")
+    }
     additions = [
         (DBSession.access_token_hash.name, "VARCHAR(64)"),
         (DBSession.badge_info_json.name, "TEXT"),
     ]
+    for column, column_type in additions:
+        if column not in existing:
+            connection.execute(
+                text(f"ALTER TABLE sessions ADD COLUMN {column} {column_type}")
+            )
+
+
+def init_db() -> None:
+    """Create tables and apply every pending forward-only schema migration."""
     with engine.begin() as connection:
-        for column, column_type in additions:
-            if column not in existing:
-                connection.execute(
-                    text(f"ALTER TABLE sessions ADD COLUMN {column} {column_type}")
+        # ``create_all`` establishes the version-1 baseline on a clean database.
+        # It deliberately does not mutate an existing table, leaving upgrades to
+        # the numbered migration below.
+        Base.metadata.create_all(bind=connection)
+        applied = set(
+            connection.execute(select(DBSchemaMigration.version)).scalars().all()
+        )
+        migrations = {
+            1: lambda _connection: None,
+            2: _upgrade_session_recovery_columns,
+        }
+        for version in range(1, LATEST_SCHEMA_VERSION + 1):
+            if version in applied:
+                continue
+            migrations[version](connection)
+            connection.execute(insert(DBSchemaMigration).values(version=version))
+
+
+def get_schema_version() -> int:
+    """Return the latest applied schema version, or zero before initialization."""
+    try:
+        if "schema_migrations" not in inspect(engine).get_table_names():
+            return 0
+        with engine.connect() as connection:
+            versions = connection.execute(
+                select(DBSchemaMigration.version).order_by(
+                    DBSchemaMigration.version.desc()
                 )
+            ).scalars()
+            return int(next(iter(versions), 0))
+    except Exception as exc:
+        logger.warning("Database schema version check failed: %s", type(exc).__name__)
+        return 0
+
+
+def check_schema_current() -> bool:
+    """Return whether every migration required by this release is applied."""
+    return get_schema_version() == LATEST_SCHEMA_VERSION
 
 
 @contextmanager
@@ -295,6 +360,40 @@ def get_recent_sessions(max_age_seconds: int = 1800, limit: int = 5000) -> list[
     except Exception as exc:
         logger.exception("Failed to load recent sessions: %s", exc)
         raise RuntimeError("Session recovery unavailable") from exc
+
+
+def purge_expired_private_data(
+    *,
+    now: datetime | None = None,
+    session_retention_seconds: int = 86400,
+    verification_retention_seconds: int = 86400,
+) -> dict[str, int]:
+    """Delete expired private session and collusion records in one transaction.
+
+    Revocations, API-key metadata, and webhook registrations are authority records
+    with explicit lifecycle operations, so this timed purge intentionally does not
+    remove them. Signed credentials are bearer artifacts and cannot be recalled by
+    deleting issuer-side data.
+    """
+    if session_retention_seconds < 1800 or verification_retention_seconds < 3600:
+        raise ValueError("Retention values are below the supported safety minimum")
+    current = now or datetime.now(timezone.utc)
+    session_cutoff = current - timedelta(seconds=session_retention_seconds)
+    verification_cutoff = current - timedelta(seconds=verification_retention_seconds)
+    with get_db() as db:
+        sessions_deleted = (
+            db.query(DBSession).filter(DBSession.created_at < session_cutoff).delete()
+        )
+        verifications_deleted = (
+            db.query(DBVerificationRecord)
+            .filter(DBVerificationRecord.created_at < verification_cutoff)
+            .delete()
+        )
+        db.commit()
+    return {
+        "sessions_deleted": int(sessions_deleted),
+        "verification_records_deleted": int(verifications_deleted),
+    }
 
 
 # === Revocation Operations ===
@@ -645,10 +744,3 @@ def get_ip_entities(ip_address: str, hours: int = 1) -> set[str]:
     except Exception as exc:
         logger.exception("Failed to fetch entities for IP '%s': %s", ip_address, exc)
         return set()
-
-
-# Initialize database on import
-try:
-    init_db()
-except Exception as e:
-    logger.exception("Database initialization failed; using in-memory mode: %s", e)

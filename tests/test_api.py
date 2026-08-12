@@ -24,6 +24,36 @@ class TestRootEndpoint:
         assert "POST /api/session/answer" in endpoints
 
 
+class TestErrorTaxonomy:
+    """Public errors retain detail while naming a stable category."""
+
+    def test_not_found_has_stable_code(self, client):
+        response = client.get("/api/route-that-does-not-exist")
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "not_found"
+        assert response.json()["detail"] == "Not Found"
+
+    def test_validation_error_has_stable_code(self, client):
+        response = client.post(
+            "/api/session/start", json={"difficulty": "not-a-difficulty"}
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "validation_error"
+        assert isinstance(response.json()["detail"], list)
+
+    def test_rate_limit_has_stable_code_and_legacy_error(self, client):
+        responses = [
+            client.post("/api/session/start", json={"difficulty": "basic"})
+            for _ in range(11)
+        ]
+
+        assert responses[-1].status_code == 429
+        assert responses[-1].json()["code"] == "rate_limited"
+        assert responses[-1].json()["error"] == responses[-1].json()["detail"]
+
+
 class TestSecurityAnswerLeakage:
     """SECURITY: Verify answers are never exposed to clients."""
 

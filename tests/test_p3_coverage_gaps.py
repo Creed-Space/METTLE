@@ -65,11 +65,13 @@ class TestConfigProductionValidation:
             Settings(
                 environment="production",
                 allowed_origins="https://example.com",
+                trusted_hosts="example.com",
                 secret_key="s" * 32,
                 admin_api_key="a" * 32,
                 vcp_signing_key="test-pem",
                 use_database=True,
                 database_url="postgresql://db.example/mettle",
+                redis_url="rediss://redis.example/mettle",
             )
             cors_warnings = [x for x in w if "CORS" in str(x.message)]
             assert len(cors_warnings) == 0

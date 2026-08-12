@@ -3,16 +3,18 @@ services:
     name: mettle-api
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
-    # Legacy `/api/session/*` state is still process-local. Keep one worker until
-    # that surface is migrated to Redis rather than randomly splitting sessions.
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
-    healthCheckPath: /api/health
+    buildCommand: pip install --require-hashes -r requirements-production.txt
+    # Legacy and v2 live session authority is Redis-backed and CI alternates one
+    # legacy session across two independent workers before this count may ship.
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /api/health/ready
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
       - key: METTLE_ENVIRONMENT
         value: production
+      - key: METTLE_CREDENTIAL_ISSUANCE_ENABLED
+        value: "true"
       - key: METTLE_SECRET_KEY
         generateValue: true
       - key: METTLE_ADMIN_API_KEY
@@ -23,9 +25,13 @@ services:
         value: mettle-vcp-v1
       - key: METTLE_ALLOWED_ORIGINS
         value: https://mettle.sh,https://www.mettle.sh,https://mettle.is,https://www.mettle.is
+      - key: METTLE_TRUSTED_HOSTS
+        value: mettle.sh,www.mettle.sh,mettle.is,www.mettle.is,mettle-api.onrender.com
       - key: METTLE_USE_DATABASE
         value: "true"
       - key: METTLE_DATABASE_URL
+        sync: false
+      - key: METTLE_REDIS_URL
         sync: false
       - key: METTLE_DEV_MODE
         value: "false"

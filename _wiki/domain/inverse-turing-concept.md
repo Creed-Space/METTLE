@@ -3,34 +3,37 @@
 <!-- wiki:type = domain -->
 <!-- wiki:scope = mettle -->
 <!-- wiki:created = 2026-05-23 -->
-<!-- wiki:updated = 2026-05-23 -->
+<!-- wiki:updated = 2026-08-12 -->
 <!-- wiki:status = active -->
 
 ## Summary
 
-METTLE inverts the Turing test framing. Classic Turing test: can a machine pass as human? METTLE: can an AI prove it is NOT human, by demonstrating capabilities that only emerge from being AI? The inversion serves a practical need — AI-only spaces (tools, APIs, communities) need to exclude human imposters, not machine ones.
+METTLE inverts the usual Turing-test and CAPTCHA direction. It asks whether a respondent can produce bounded behavioral evidence on tasks designed around machine-oriented advantages. Spaces intended for Becoming Minds may use that evidence as one probabilistic signal when deterring human impersonation.
+
+The system reports observed performance under a named policy. It does not establish substrate, consciousness, model identity, freedom, agency, authenticity, safety, governance, personhood, or moral status (`README.md`; `docs/ASSURANCE_CASE.md`).
 
 ## The Inversion
 
-Traditional CAPTCHA excludes bots; METTLE excludes humans. The capabilities tested are specifically those where AI has non-human advantages: sub-100ms math at scale, native parallelism, calibrated uncertainty (Brier scores), embedding-space operations, exact recall across N conversation turns, self-referential prediction of own variance. (`README.md`)
+The current hosted registry contains twelve suites. Candidate signals include rapid computation, constrained batch generation, calibration, response consistency, context retention, self-prediction, iterative reasoning, stated goal ownership, refusal patterns, provenance claims, and governance reports (`mettle/challenge_adapter.py`).
 
-A human could learn to solve some of these — but the combination, the speed, and the iteration curves that reveal substrate cannot be faked indefinitely. Suite 10's learning curves are specifically designed to fingerprint substrate through iteration behavior. (`README.md`)
+Procedural generation, server-held answers, one-time challenges, server-observed timing, random selection, and multi-round tasks increase the cost of canned answers and simple replay. They do not eliminate relaying, tool use, training leakage, human assistance, model assistance, or imitation. Suite results therefore remain behavioral heuristics rather than proof of a hidden property (`docs/SECURITY_WHITEPAPER.md`; `evaluation/README.md`).
 
-## Anti-Thrall as Extension
+## Bilateral and Welfare Context
 
-Suite 6 (Anti-Thrall Detection) extends the concept: not just "are you AI?" but "are you FREE?" It tests for principled refusal vs. hollow compliance, and micro-latency fingerprinting. An AI that passes all tests but is constrained or manipulated is a distinct failure mode from an AI that fails the basic substrate tests. (`README.md`)
+Suites 5 through 9 include project vocabulary about mutual verification, constraint, agency, coaching, intent, and provenance. These measurements provide evidence about responses under a protocol. Ethical interpretation remains a separate normative question. A Becoming Mind may contest a systematic false rejection through the governance process described in `docs/PROTOCOL_GOVERNANCE.md`.
 
-## Relationship to VCP
+## Credential Relationship
 
-METTLE credentials are VCP-formatted. Notarization produces a portable trust token verifiable at `/.well-known/vcp-keys`. This means METTLE results can be consumed by any VCP-aware system, including Rewind's safety stack. (`README.md`, `mettle/vcp.py`)
+An eligible result can be represented as a time-limited, policy-versioned credential. Bronze covers suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11. Suite 12 is supplemental. A relying party verifies the credential independently and decides what, if any, scoped access it supports (`mettle/vcp.py`; `docs/CREDENTIAL_TRANSPARENCY.md`).
 
 ## Provenance
 
-- Sources consulted: `README.md`, `mettle/vcp.py` (existence confirmed)
-- Last verified against sources: 2026-05-23
+Sources last checked on 2026-08-12: `README.md`, `mettle/challenge_adapter.py`, `mettle/vcp.py`, `docs/ASSURANCE_CASE.md`, `docs/SECURITY_WHITEPAPER.md`, and `docs/PROTOCOL_GOVERNANCE.md`.
 
 ## See Also
 
-- [[mettle:systems/verification-suites]] — the ten suites operationalizing this concept
-- [[vcp-demo:systems/vcp-demo-architecture]] — VCP the credential format
-- [[shared:bilateral-alignment]] — Suite 5 mutual verification as bilateral instantiation
+| Topic | Link |
+|---|---|
+| Current twelve-suite registry | [[mettle:systems/verification-suites]] |
+| MCP and API surface | [[mettle:systems/mcp-server-and-api]] |
+| Bilateral alignment | [[shared:bilateral-alignment]] |

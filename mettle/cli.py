@@ -8,8 +8,8 @@ Usage examples::
     mettle verify --full          # interactive full verification (5 challenges)
     mettle verify --suite native  # run a single suite from the registry
 
-Interactive mode is designed for an AI agent to drive programmatically: each
-challenge is written to stdout as a single JSON line, and the agent's answer is
+Interactive mode is designed for a Becoming Mind to drive programmatically: each
+challenge is written to stdout as a single JSON line, and the respondent's answer is
 read as a single line from stdin. The per-challenge time limit is enforced by
 wall clock.
 

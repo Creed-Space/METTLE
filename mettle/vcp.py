@@ -15,6 +15,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from mettle.protocol import (
+    CREDENTIAL_CLOCK_SKEW_SECONDS,
+    CREDENTIAL_SCHEMA_VERSION,
+    SUITE_POLICY_VERSION,
+    credential_time_window_valid,
+    credential_versions_supported,
+)
+
 logger = logging.getLogger(__name__)
 
 # Suite numbers mapped to names for tier computation
@@ -172,6 +180,7 @@ def build_mettle_attestation(
     entity_id: str | None = None,
     key_id: str = "mettle-vcp-v1",
     presence: dict[str, Any] | None = None,
+    reviewed_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a server-issued VCP-compatible METTLE result.
 
@@ -195,12 +204,16 @@ def build_mettle_attestation(
 
     tier = compute_tier(suites_passed)
     credential_eligible = tier != "none"
-    reviewed = datetime.now(tz=timezone.utc)
-    reviewed_at = reviewed.isoformat()
+    reviewed = reviewed_at or datetime.now(tz=timezone.utc)
+    if reviewed.tzinfo is None:
+        raise ValueError("reviewed_at must be timezone-aware")
+    reviewed_at_iso = reviewed.isoformat()
     expires_at = (reviewed + timedelta(hours=1)).isoformat()
 
     metadata: dict[str, Any] = {
         "mettle_version": "2.0",
+        "credential_schema_version": CREDENTIAL_SCHEMA_VERSION,
+        "suite_policy_version": SUITE_POLICY_VERSION,
         "session_id": session_id,
         "subject_id": subject_id,
         "entity_id": entity_id,
@@ -276,7 +289,7 @@ def build_mettle_attestation(
             if credential_eligible
             else "mettle-evidence-receipt"
         ),
-        "reviewed_at": reviewed_at,
+        "reviewed_at": reviewed_at_iso,
         "expires_at": expires_at,
         "content_hash": content_hash,
         "metadata": metadata,
@@ -302,7 +315,13 @@ def build_mettle_attestation(
     return attestation
 
 
-def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) -> bool:
+def verify_mettle_attestation(
+    attestation: dict[str, Any],
+    public_key_pem: str,
+    *,
+    now: datetime | None = None,
+    clock_skew_seconds: int = CREDENTIAL_CLOCK_SKEW_SECONDS,
+) -> bool:
     """Verify a METTLE credential envelope and its current validity."""
     if (
         attestation.get("attestation_type")
@@ -312,6 +331,8 @@ def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) 
         return False
     metadata = attestation.get("metadata")
     if not isinstance(metadata, dict):
+        return False
+    if not credential_versions_supported(metadata):
         return False
     tier = metadata.get("tier")
     suites_passed = metadata.get("suites_passed")
@@ -428,7 +449,12 @@ def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) 
     try:
         reviewed_at = datetime.fromisoformat(str(attestation["reviewed_at"]))
         expires_at = datetime.fromisoformat(str(attestation["expires_at"]))
-        if expires_at <= reviewed_at or expires_at <= datetime.now(timezone.utc):
+        if not credential_time_window_valid(
+            reviewed_at=reviewed_at,
+            expires_at=expires_at,
+            now=now,
+            clock_skew_seconds=clock_skew_seconds,
+        ):
             return False
     except (KeyError, TypeError, ValueError):
         return False
@@ -441,6 +467,28 @@ def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) 
         public_key_pem,
         _canonical_bytes(unsigned),
         signature.removeprefix("ed25519:"),
+    )
+
+
+def verify_mettle_attestation_with_keyring(
+    attestation: dict[str, Any],
+    keyring: dict[str, str],
+    *,
+    now: datetime | None = None,
+    clock_skew_seconds: int = CREDENTIAL_CLOCK_SKEW_SECONDS,
+) -> bool:
+    """Select the signed key ID from a public overlap keyring and verify."""
+    key_id = attestation.get("auditor_key_id")
+    if not isinstance(key_id, str):
+        return False
+    public_key_pem = keyring.get(key_id)
+    if not public_key_pem:
+        return False
+    return verify_mettle_attestation(
+        attestation,
+        public_key_pem,
+        now=now,
+        clock_skew_seconds=clock_skew_seconds,
     )
 
 
@@ -471,8 +519,32 @@ def format_csm1_line(tier: str, session_id: str, timestamp: str | None = None) -
 def _canonical_bytes(data: dict[str, Any]) -> bytes:
     """Convert dict to canonical bytes for hashing/signing.
 
-    Uses sorted JSON keys for deterministic output.
+    Schema 1.0 uses sorted UTF-8 JSON and normalizes integral floats to JSON
+    integers so JavaScript, Python, and Rust consumers reproduce the same bytes.
+    Historical unversioned envelopes retain the original ASCII-escaped encoding.
     """
     import json
 
-    return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    metadata_value = data.get("metadata")
+    metadata: dict[str, Any] = (
+        metadata_value if isinstance(metadata_value, dict) else data
+    )
+    schema_version = metadata.get("credential_schema_version")
+
+    def normalize(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: normalize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+
+    versioned = schema_version == CREDENTIAL_SCHEMA_VERSION
+    payload = normalize(data) if versioned else data
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=not versioned,
+    ).encode("utf-8")

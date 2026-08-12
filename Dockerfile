@@ -14,28 +14,18 @@ WORKDIR /app
 
 # Copy the package and its build metadata only. The image does not need the
 # FastAPI app, tests, or static frontend.
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml README.md LICENSE requirements-mcp-lock.txt ./
 COPY mettle ./mettle
+COPY --chmod=755 deploy/mcp/entrypoint.sh /usr/local/bin/mettle-mcp-entrypoint
 
-RUN pip install --no-cache-dir '.[mcp]'
+RUN pip install --no-cache-dir --require-hashes -r requirements-mcp-lock.txt && \
+    pip install --no-cache-dir --no-deps .
 
 # Default transport. The hosted HTTP deploy overrides this to "http" via env.
 ENV METTLE_MCP_TRANSPORT=stdio
 # The HTTP deploy injects $PORT at runtime; expose a sensible default for local runs.
 EXPOSE 8080
 
-# stdio by default (clean stdin/stdout for the MCP protocol). In http mode, bind
-# all interfaces so the gateway can reach us and honor the injected $PORT.
-#
-# METTLE_MCP_ALLOW_INSECURE_HTTP opts out of the server's "no unauthenticated
-# non-loopback bind" guard. It is set inline on the http branch only — a
-# container is an isolated network namespace whose only ingress is whatever the
-# platform puts in front of it (Smithery's gateway, which authenticates
-# clients). Anyone importing mettle._http directly still gets the guard.
-#
-# `exec` replaces the shell so signals and stdio pass straight through.
-ENTRYPOINT if [ "$METTLE_MCP_TRANSPORT" = "http" ]; then \
-        METTLE_MCP_ALLOW_INSECURE_HTTP=true exec mettle-mcp --transport http --host 0.0.0.0 --port "${PORT:-8080}"; \
-    else \
-        exec mettle-mcp; \
-    fi
+# The wrapper validates the selected transport and uses exec so signals and
+# stdio reach the MCP process directly.
+ENTRYPOINT ["/usr/local/bin/mettle-mcp-entrypoint"]

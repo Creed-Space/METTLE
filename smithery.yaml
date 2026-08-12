@@ -10,10 +10,10 @@ runtime: container
 startCommand:
   type: http
   # Empty schema, mirroring creedspace-mcp-server: the server needs no per-user
-  # credentials. The MVP screening tools (mettle_start_session,
-  # mettle_answer_challenge, mettle_get_result, mettle_auto_verify) run against
-  # the public API at https://mettle.sh/api and mint their own per-session
-  # token — zero config, which is what most callers want.
+  # credentials. The three screening tools (mettle_start_session,
+  # mettle_answer_challenge, and mettle_get_result) run against the public API
+  # at https://mettle.sh/api and receive their own per-session token. Clients
+  # must answer each challenge; no automatic solver is exposed.
   #
   # Why the v2 suite tools' Bearer key (METTLE_API_KEY) is NOT offered here:
   # per-user configSchema values reach a hosted container as query parameters

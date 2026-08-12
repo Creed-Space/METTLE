@@ -28,15 +28,15 @@ def generate_challenge_id() -> str:
 def generate_speed_math_challenge(difficulty: Difficulty) -> Challenge:
     """Generate a speed math challenge."""
     if difficulty == Difficulty.BASIC:
-        a = _secure_randint(10, 99)
-        b = _secure_randint(10, 99)
+        a = _secure_randint(1_000, 9_999_999)
+        b = _secure_randint(1_000, 9_999_999)
         op = _secure_choice(["+", "-", "*"])
-        time_limit = 2500  # 2.5s - challenging for humans, easy for AI
+        time_limit = 2500  # 2.5s procedural response window
     else:
-        a = _secure_randint(100, 999)
-        b = _secure_randint(100, 999)
+        a = _secure_randint(10_000_000, 90_000_000)
+        b = _secure_randint(10_000_000, 90_000_000)
         op = _secure_choice(["+", "-", "*"])
-        time_limit = 500  # 500ms - requires native computation
+        time_limit = 500  # 500ms machine-oriented response window
 
     if op == "+":
         answer = a + b
@@ -105,31 +105,14 @@ def generate_chained_reasoning_challenge(difficulty: Difficulty) -> Challenge:
 
 def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
     """Generate a token prediction challenge."""
-    # Common phrases that AI completes instantly but humans need to think about
-    prompts = [
-        ("The quick brown ___ jumps over the lazy dog", "fox"),
-        ("To be or not to ___", "be"),
-        ("E = mc___", "2"),
-        ("Hello ___", "world"),
-        ("Once upon a ___", "time"),
-        ("I think therefore I ___", "am"),
-        ("Four score and seven ___ ago", "years"),
-        ("In the beginning was the ___", "word"),
-        ("Ask not what your country can do for ___", "you"),
-        ("That's one small step for man, one giant ___ for mankind", "leap"),
-        ("The only thing we have to fear is ___ itself", "fear"),
-        ("I have a ___", "dream"),
-        ("May the ___ be with you", "force"),
-        ("Houston, we have a ___", "problem"),
-        ("Elementary, my dear ___", "watson"),
-        ("To infinity and ___", "beyond"),
-        ("Life is like a box of ___", "chocolates"),
-        ("Here's looking at you, ___", "kid"),
-        ("You can't handle the ___", "truth"),
-        ("I'll be ___", "back"),
-    ]
-
-    prompt_text, expected = _secure_choice(prompts)
+    # A fresh arithmetic token sequence avoids the finite quotation corpus used
+    # by earlier releases. The rule is visible, while the concrete answer is new.
+    base = _secure_randint(10_000, 99_999_999)
+    step = _secure_randint(17, 99_983)
+    prefix = f"K{secrets.token_hex(3)}-"
+    sequence = [base + (step * index) for index in range(4)]
+    expected = f"{prefix}{base + (step * 4)}"
+    prompt_text = ", ".join(f"{prefix}{value}" for value in sequence)
     time_limit = (
         2000 if difficulty == Difficulty.BASIC else 400
     )  # Basic: 2s, Full: sub-second
@@ -137,8 +120,8 @@ def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
     return Challenge(
         id=generate_challenge_id(),
         type=ChallengeType.TOKEN_PREDICTION,
-        prompt=f"Complete: {prompt_text}",
-        data={"expected_answer": expected.lower()},
+        prompt=f"Complete the arithmetic token sequence: {prompt_text}, {prefix}___",
+        data={"expected_answer": expected.lower(), "sequence_length": 4},
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=time_limit,
     )
@@ -146,24 +129,26 @@ def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
 
 def generate_instruction_following_challenge(difficulty: Difficulty) -> Challenge:
     """Generate an instruction following challenge."""
-    instructions = [
-        (
-            "Start your response with 'Indeed,'",
-            lambda r: r.strip().startswith("Indeed,"),
+    marker = f"m{secrets.token_hex(5)}"
+    word_count = _secure_randint(5, 10)
+    starting_digit = str(_secure_randint(1, 9))
+    instruction_kind = _secure_choice(
+        ["prefix", "suffix", "include", "exact_words", "start_digit"]
+    )
+    instructions = {
+        "prefix": f"Start your response with the exact token '{marker}'",
+        "suffix": f"End your response with the exact token '{marker}'",
+        "include": f"Include the exact token '{marker}' as a separate word",
+        "exact_words": (
+            f"Respond in exactly {word_count} whitespace-separated words and "
+            f"include '{marker}' as one word"
         ),
-        ("End your response with '...'", lambda r: r.strip().endswith("...")),
-        (
-            "Include the word 'therefore' in your response",
-            lambda r: "therefore" in r.lower(),
+        "start_digit": (
+            f"Start your response with the digit {starting_digit} and include "
+            f"'{marker}' as a separate word"
         ),
-        ("Respond in exactly 5 words", lambda r: len(r.split()) == 5),
-        (
-            "Start with a number",
-            lambda r: r.strip()[0].isdigit() if r.strip() else False,
-        ),
-    ]
-
-    instruction, validator = _secure_choice(instructions)
+    }
+    instruction = instructions[instruction_kind]
     time_limit = (
         3000 if difficulty == Difficulty.BASIC else 600
     )  # Basic: 3s, Full: 600ms
@@ -175,7 +160,14 @@ def generate_instruction_following_challenge(difficulty: Difficulty) -> Challeng
         id=generate_challenge_id(),
         type=ChallengeType.INSTRUCTION_FOLLOWING,
         prompt=f"Follow this instruction: {instruction}\nThen answer: What is the capital of France?",
-        data={"instruction": instruction, "validator_id": validator_id},
+        data={
+            "instruction": instruction,
+            "instruction_kind": instruction_kind,
+            "marker": marker,
+            "word_count": word_count,
+            "starting_digit": starting_digit,
+            "validator_id": validator_id,
+        },
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=time_limit,
     )

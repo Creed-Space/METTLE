@@ -2,9 +2,12 @@
 
 import io
 import json
+import base64
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from mettle import cli
 from mettle.models import Challenge, ChallengeType
 
@@ -60,6 +63,28 @@ def test_interactive_pass_emits_unsigned_noncredential(capsys, monkeypatch):
     assert cli.verify_credential(receipt) is False
 
 
+def test_historical_prefixed_ed25519_credential_still_verifies():
+    """Legacy signed receipts retain their documented compatibility path."""
+    private_key = Ed25519PrivateKey.generate()
+    claims = {
+        "receipt_type": "historical-mettle-credential",
+        "verified": True,
+        "tier": "bronze",
+    }
+    signature = base64.b64encode(private_key.sign(cli._canonical_bytes(claims))).decode(
+        "ascii"
+    )
+    credential = {
+        **claims,
+        "public_key_pem": private_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode("ascii"),
+        "signature": f"ed25519:{signature}",
+    }
+
+    assert cli.verify_credential(credential)
+
+
 def test_interactive_wrong_answer_fails_screening(capsys, monkeypatch):
     monkeypatch.setattr(
         cli, "generate_challenge_set", lambda difficulty: [_known_challenge()]
@@ -82,3 +107,8 @@ def test_suites_command_lists_registry(capsys):
     out = capsys.readouterr().out
     assert "adversarial" in out
     assert "governance" in out
+
+
+def test_missing_subcommand_prints_help_and_returns_usage_error(capsys):
+    assert cli.main([]) == 2
+    assert "usage: mettle" in capsys.readouterr().out

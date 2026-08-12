@@ -22,6 +22,10 @@ htmlcov/
 .tox/
 .nox/
 .hypothesis/
+test-results/
+playwright-report/
+.playwright-cli/
+output/
 
 # Database
 mettle.db

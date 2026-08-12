@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreFiles": [
+      "static/vendor/**"
+    ],
+    "ignoreValues": [
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          "static/about.html"
+        ],
+        "reason": "The eyebrow is rendered on the dark hero, and axe verifies the computed contrast. The static parser assumes a white ancestor."
+      }
+    ]
+  }
+}

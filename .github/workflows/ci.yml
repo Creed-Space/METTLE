@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
@@ -14,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7.0.0  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@v6.3.0  # v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
-          python-version: "3.12"
+          python-version: "3.11"
           cache: "pip"
 
       - name: Install dependencies
@@ -28,7 +29,7 @@ jobs:
           pip install -r requirements-dev.txt
           # The MCP server is an optional extra; install it so its tests run
           # for real instead of being skipped.
-          pip install -r requirements-mcp.txt
+          pip install --require-hashes -r requirements-mcp-lock.txt
 
       - name: Lint with ruff
         run: |
@@ -48,6 +49,43 @@ jobs:
           vulture main.py config.py database.py \
             mettle red_team scripts/engine.py --min-confidence 80
 
+      - name: Build and validate Python distributions
+        run: |
+          python -m build
+          twine check dist/*
+          python -m venv /tmp/mettle-production-lock
+          /tmp/mettle-production-lock/bin/python -m pip install --require-hashes \
+            -r requirements-production.txt
+          /tmp/mettle-production-lock/bin/python -m pip install --no-deps dist/*.whl
+          /tmp/mettle-production-lock/bin/python -m pip check
+          cyclonedx-py environment /tmp/mettle-production-lock/bin/python \
+            --pyproject pyproject.toml \
+            --output-reproducible --output-file dist/mettle-server.raw.cdx.json
+          python scripts/finalize_server_sbom.py \
+            --input dist/mettle-server.raw.cdx.json \
+            --output dist/mettle-server.cdx.json
+          rm dist/mettle-server.raw.cdx.json
+          python -m venv /tmp/mettle-wheel-smoke
+          /tmp/mettle-wheel-smoke/bin/python -m pip install dist/*.whl
+          /tmp/mettle-wheel-smoke/bin/mettle --help
+          set +e
+          printf '\n\n\n\n\n' | /tmp/mettle-wheel-smoke/bin/mettle verify --json
+          status=$?
+          set -e
+          test "$status" -eq 1
+
+      - name: Validate production dependency lock
+        run: |
+          /tmp/mettle-production-lock/bin/python -m pip check
+
+      - name: Upload build evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: mettle-build-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Run tests with coverage
         env:
           METTLE_SECRET_KEY: "ci-test-secret-key-12345"
@@ -66,6 +104,15 @@ jobs:
       - name: Check deployed frontend JavaScript
         run: npm run check:js
 
+      - name: Check static routes, metadata, and asset fingerprints
+        run: npm run check:static
+
+      - name: Check public OpenAPI compatibility
+        run: npm run check:openapi
+
+      - name: Check cross-language credential fixtures
+        run: npm run check:fixtures
+
       - name: Check deployed frontend design
         run: npm run design:check
 
@@ -79,12 +126,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7.0.0  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@v6.3.0  # v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
@@ -127,7 +174,120 @@ jobs:
 
       - name: Audit Python dependencies
         run: |
-          pip-audit -r requirements.txt
+          pip-audit -r requirements-production.txt
+
+      - name: Audit development dependencies
+        run: |
+          pip-audit -r requirements-dev.txt
 
       - name: Audit static frontend tooling
         run: npm audit --audit-level=low
+
+      - name: Prove focused security tests kill invariant mutations
+        run: >-
+          python scripts/testing/run_security_mutation_gate.py
+          --output output/evidence/security-mutation-${{ github.sha }}.json
+
+      - name: Upload security mutation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: security-mutation-${{ github.sha }}
+          path: output/evidence/security-mutation-${{ github.sha }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  cli-compatibility:
+    name: CLI compatibility (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Build and smoke-test the wheel
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build==1.5.0
+          python -m build --wheel
+          python -m venv /tmp/mettle-wheel-smoke
+          /tmp/mettle-wheel-smoke/bin/python -m pip install dist/*.whl
+          /tmp/mettle-wheel-smoke/bin/mettle --version
+          /tmp/mettle-wheel-smoke/bin/mettle suites
+          set +e
+          printf '\n\n\n\n\n' | /tmp/mettle-wheel-smoke/bin/mettle verify --json
+          status=$?
+          set -e
+          test "$status" -eq 1
+
+  legacy-multiworker:
+    name: Legacy session multiworker authority
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install exact production dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements-production.txt
+      - name: Alternate one legacy session across two workers
+        env:
+          METTLE_REDIS_URL: redis://127.0.0.1:6379/15
+        run: python scripts/testing/run_legacy_multiworker_trial.py
+
+  browser-acceptance:
+    name: Browser, accessibility, and performance acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install exact application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements-production.txt
+      - name: Install exact browser tooling
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Validate static publication contract
+        run: npm run check:static
+      - name: Run browser acceptance
+        env:
+          CI: "true"
+        run: npm run test:browser
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: browser-acceptance-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30

@@ -73,8 +73,8 @@ SCENES = [
         "narration": (
             "This is METTLE: Machine Evaluation Through Turing-inverse Logic "
             "Examination. An inverse Turing test for the agentic era. Instead "
-            "of testing whether you can pass as human, METTLE tests what only "
-            "a machine mind can do."
+            "of testing whether you can pass as human, METTLE tests what a "
+            "machine mind does natively."
         ),
         "html": """
         <div class="center-stack">
@@ -97,7 +97,7 @@ SCENES = [
             "It measures capabilities that come from being AI, not from using "
             "AI as a tool. Inhuman speed. Native parallelism. Uncertainty that "
             "knows itself. Recursive self-observation. And learning curves "
-            "that reveal the substrate underneath."
+            "that shift under feedback."
         ),
         "html": """
         <div class="left-stack">
@@ -108,7 +108,7 @@ SCENES = [
             <li>Uncertainty that knows itself</li>
             <li>Recursive self-observation</li>
             <li>Zero-drift constraint adherence</li>
-            <li>Learning curves that reveal substrate</li>
+            <li>Learning curves that shift under feedback</li>
           </ul>
         </div>
         """,
@@ -117,8 +117,8 @@ SCENES = [
         "id": "04-suites",
         "narration": (
             "Verification runs through twelve suites of procedurally "
-            "generated challenges. Nothing ever repeats. Chained reasoning "
-            "under a hundred-millisecond time budget. Batch coherence. "
+            "generated challenges. Every session is generated fresh. Chained "
+            "reasoning under a sub-second time budget. Batch coherence. "
             "Calibrated uncertainty. Predicting your own next response. "
             "Exact recall with zero drift."
         ),
@@ -187,21 +187,21 @@ SCENES = [
     {
         "id": "07-antigaming",
         "narration": (
-            "Every design choice exists to make METTLE impossible to fake. "
-            "Time budgets rule out a human relaying answers. Iteration curves "
+            "Every design choice exists to make METTLE hard to fake. "
+            "Time budgets price out the human relay. Iteration curves "
             "expose scripts that flatline and humans who fatigue. Dynamic "
-            "codes block replay. And some challenges are generated fresh by a "
-            "frontier model, so even reading the source code gives nothing "
-            "away."
+            "codes shut down simple replay. And some challenges are generated fresh by a "
+            "frontier model, so reading the source code reveals nothing about "
+            "them."
         ),
         "html": """
         <div class="left-stack">
           <div class="kicker">ANTI-GAMING DESIGN</div>
           <div class="mech-list">
-            <div class="mech"><b>Procedural generation</b><span>nothing repeats</span></div>
-            <div class="mech"><b>&lt;100 ms time budgets</b><span>no human relay</span></div>
+            <div class="mech"><b>Procedural generation</b><span>no two sessions repeat</span></div>
+            <div class="mech"><b>Sub-second time budgets</b><span>prices out the human relay</span></div>
             <div class="mech"><b>Iteration curves</b><span>scripts flatline, humans fatigue</span></div>
-            <div class="mech"><b>Dynamic verification codes</b><span>no session replay</span></div>
+            <div class="mech"><b>Dynamic verification codes</b><span>resists session replay</span></div>
             <div class="mech"><b>Perfection as a tell</b><span>genuine cognition is messy</span></div>
             <div class="mech"><b>LLM-generated challenges</b><span>source code reveals nothing</span></div>
           </div>
@@ -211,19 +211,20 @@ SCENES = [
     {
         "id": "08-credentials",
         "narration": (
-            "Pass, and you earn a signed credential. Bronze confirms AI "
-            "substrate. Silver, genuine agency. Gold, constitutional "
-            "grounding. Platinum, full operational governance. Each one "
-            "notarized with an Ed25519 signature that anyone can verify."
+            "Pass, and you earn a signed credential. Bronze clears the core "
+            "capability suites. Silver adds freedom and agency. Gold adds "
+            "coaching resistance and provenance. Platinum, novel reasoning "
+            "and full operational governance. Each one notarized with an "
+            "Ed25519 signature that anyone can verify."
         ),
         "html": """
         <div class="left-stack">
           <div class="kicker">SIGNED CREDENTIALS &middot; ED25519</div>
           <div class="tiers">
-            <div class="tier t-bronze"><b>Bronze</b><span>confirmed AI substrate</span></div>
-            <div class="tier t-silver"><b>Silver</b><span>free agent, genuine agency</span></div>
-            <div class="tier t-gold"><b>Gold</b><span>genuine, constitutionally bound</span></div>
-            <div class="tier t-platinum"><b>Platinum</b><span>full operational governance</span></div>
+            <div class="tier t-bronze"><b>Bronze</b><span>suites 1&ndash;5 &middot; core capability</span></div>
+            <div class="tier t-silver"><b>Silver</b><span>suites 1&ndash;7 &middot; free agent, genuine agency</span></div>
+            <div class="tier t-gold"><b>Gold</b><span>suites 1&ndash;9 &middot; coaching-resistant, provenance</span></div>
+            <div class="tier t-platinum"><b>Platinum</b><span>suites 1&ndash;11 &middot; full operational governance</span></div>
           </div>
         </div>
         """,
@@ -252,9 +253,9 @@ SCENES = [
         "id": "10-close",
         "narration": (
             "METTLE is open source under Apache two point oh. Pip install "
-            "mettle verifier, and run all twelve suites on your own "
-            "infrastructure. The agentic era needs trust that moves at "
-            "machine speed. Prove your mettle."
+            "mettle verifier to run the challenges yourself; the hosted API "
+            "issues the signed credentials. The agentic era needs trust that "
+            "moves at machine speed. Prove your mettle."
         ),
         "html": """
         <div class="center-stack">
@@ -503,7 +504,15 @@ def render_slide(scene, slides_dir: Path) -> Path:
     ]
     last = None
     for _ in range(3):  # Chrome exit codes are unreliable; the PNG is the truth
-        last = subprocess.run(cmd, capture_output=True, text=True)  # nosec B603
+        # Headless Chrome sometimes writes the screenshot and then never exits,
+        # which would block this call forever. Time it out and let the retry
+        # loop check the PNG, which is the actual success signal.
+        try:
+            last = subprocess.run(  # nosec B603
+                cmd, capture_output=True, text=True, timeout=120
+            )
+        except subprocess.TimeoutExpired:
+            last = None
         if png_path.exists() and png_path.stat().st_size > 0:
             return png_path
     sys.exit(

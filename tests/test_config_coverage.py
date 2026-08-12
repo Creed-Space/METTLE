@@ -11,14 +11,42 @@ from config import Settings
 
 SettingsFactory = cast(Any, Settings)
 
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Reject duplicate YAML keys instead of silently accepting the last value."""
+
+
+def _construct_unique_mapping(
+    loader: _UniqueKeyLoader, node: yaml.MappingNode, deep: bool = False
+) -> dict[Any, Any]:
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                f"found duplicate key {key!r}",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
+
 PRODUCTION_CONFIG = {
     "environment": "production",
     "allowed_origins": "https://mettle.sh",
+    "trusted_hosts": "mettle.sh",
     "secret_key": "s" * 32,
     "admin_api_key": "a" * 32,
     "vcp_signing_key": "test-pem",
     "use_database": True,
     "database_url": "postgresql://db.example/mettle",
+    "redis_url": "rediss://redis.example/mettle",
 }
 
 
@@ -46,6 +74,17 @@ class TestAllowedOriginsList:
             allowed_origins="https://example.com", _env_file="nonexistent.env"
         )
         assert s.allowed_origins_list == ["https://example.com"]
+
+    def test_trusted_hosts_are_split_and_stripped(self):
+        s = SettingsFactory(
+            trusted_hosts="mettle.sh, www.mettle.sh",
+            _env_file="nonexistent.env",
+        )
+        assert s.trusted_hosts_list == ["mettle.sh", "www.mettle.sh"]
+
+    def test_trusted_hosts_wildcard_is_preserved(self):
+        s = SettingsFactory(trusted_hosts="*", _env_file="nonexistent.env")
+        assert s.trusted_hosts_list == ["*"]
 
 
 class TestProductionValidation:
@@ -77,6 +116,8 @@ class TestProductionValidation:
             ({"use_database": False}, "USE_DATABASE"),
             ({"database_url": "sqlite:///mettle.db"}, "PostgreSQL"),
             ({"allowed_origins": "http://mettle.sh"}, "HTTPS"),
+            ({"trusted_hosts": "*"}, "TRUSTED_HOSTS"),
+            ({"redis_url": ""}, "REDIS_URL"),
         ],
     )
     def test_insecure_production_settings_rejected(self, override, message):
@@ -102,14 +143,17 @@ def test_render_blueprint_declares_fail_closed_production_dependencies():
     blueprint = (Path(__file__).parent.parent / "render.yaml").read_text()
     for key in (
         "METTLE_ALLOWED_ORIGINS",
+        "METTLE_TRUSTED_HOSTS",
+        "METTLE_CREDENTIAL_ISSUANCE_ENABLED",
         "METTLE_ADMIN_API_KEY",
         "METTLE_VCP_SIGNING_KEY",
         "METTLE_VCP_SIGNING_KEY_ID",
         "METTLE_USE_DATABASE",
         "METTLE_DATABASE_URL",
+        "METTLE_REDIS_URL",
     ):
         assert f"key: {key}" in blueprint
-    assert "--workers 1" in blueprint
+    assert "--workers 2" in blueprint
 
 
 def test_holder_blueprint_forces_stop_first_singleton_deploys() -> None:
@@ -124,3 +168,33 @@ def test_holder_blueprint_forces_stop_first_singleton_deploys() -> None:
         "mountPath": "/var/lib/mettle-holder",
         "sizeGB": 1,
     }
+
+
+def test_all_authored_yaml_rejects_duplicate_keys() -> None:
+    """Workflow and deployment YAML must not hide values behind duplicate keys."""
+    root = Path(__file__).parent.parent
+    paths = [
+        *sorted((root / ".github").rglob("*.yml")),
+        *sorted((root / ".github").rglob("*.yaml")),
+        root / "render.yaml",
+        root / "deploy/holder/render.yaml",
+    ]
+    for path in paths:
+        yaml.load(path.read_text(), Loader=_UniqueKeyLoader)
+
+
+def test_tag_release_reuses_full_ci_on_the_exact_candidate() -> None:
+    """A tag must pass the same candidate workflow before release publication."""
+    root = Path(__file__).parent.parent
+    ci = (root / ".github/workflows/ci.yml").read_text()
+    release = (root / ".github/workflows/release.yml").read_text()
+    assert "workflow_call:" in ci
+    assert "uses: ./.github/workflows/ci.yml" in release
+    assert "needs: validate-candidate" in release
+    for workflow in (ci, release):
+        assert "pip install --require-hashes" in workflow
+        assert (
+            "cyclonedx-py environment /tmp/mettle-production-lock/bin/python"
+            in workflow
+        )
+        assert "scripts/finalize_server_sbom.py" in workflow

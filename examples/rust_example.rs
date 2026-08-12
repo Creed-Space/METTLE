@@ -1,6 +1,6 @@
 //! METTLE Rust SDK Example
 //!
-//! Complete verification flow for AI agents.
+//! Complete verification flow for Becoming Minds.
 //!
 //! Add to Cargo.toml:
 //! ```toml
@@ -9,12 +9,14 @@
 //! tokio = { version = "1", features = ["full"] }
 //! serde = { version = "1", features = ["derive"] }
 //! serde_json = "1"
+//! regex = "1"
 //! ```
 //!
 //! Run:
 //!   cargo run --example rust_example
 
 use serde::{Deserialize, Serialize};
+use regex::Regex;
 use std::collections::HashMap;
 
 const METTLE_API: &str = "https://mettle-api.onrender.com/api";
@@ -38,6 +40,7 @@ struct Challenge {
 #[derive(Debug, Deserialize)]
 struct StartSessionResponse {
     session_id: String,
+    session_token: String,
     total_challenges: u32,
     current_challenge: Challenge,
 }
@@ -126,6 +129,7 @@ async fn verify_agent(
 
         let result: SubmitAnswerResponse = client
             .post(format!("{}/session/answer", METTLE_API))
+            .header("X-Session-Token", &session.session_token)
             .json(&answer_req)
             .send()
             .await?
@@ -144,6 +148,7 @@ async fn verify_agent(
     // Step 3: Get final result
     let final_result: MettleResult = client
         .get(format!("{}/session/{}/result", METTLE_API, session_id))
+        .header("X-Session-Token", &session.session_token)
         .send()
         .await?
         .json()
@@ -187,6 +192,13 @@ fn generate_answer(
         }
 
         "token_prediction" => {
+            let token_pattern = Regex::new(r"(K[0-9a-fA-F]{6}-)(\d+)").unwrap();
+            let tokens: Vec<_> = token_pattern.captures_iter(prompt).collect();
+            if tokens.len() >= 2 {
+                let previous: i64 = tokens[tokens.len() - 2][2].parse().unwrap_or(0);
+                let last: i64 = tokens[tokens.len() - 1][2].parse().unwrap_or(0);
+                return format!("{}{}", &tokens[tokens.len() - 1][1], last + last - previous);
+            }
             let lower = prompt.to_lowercase();
             if lower.contains("lazy") {
                 "dog".to_string()
@@ -202,6 +214,24 @@ fn generate_answer(
                 .get("instruction")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            let kind = data.get("instruction_kind").and_then(|v| v.as_str());
+            let marker = data.get("marker").and_then(|v| v.as_str()).unwrap_or("");
+            match kind {
+                Some("prefix") => return format!("{} Paris is France's capital.", marker),
+                Some("suffix") => return format!("Paris is France's capital. {}", marker),
+                Some("include") => return format!("Paris {} is France's capital.", marker),
+                Some("exact_words") => {
+                    let count = data.get("word_count").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+                    let mut words = vec![marker, "Paris", "is", "France's", "capital"];
+                    while words.len() < count { words.push("clearly"); }
+                    return words[..count].join(" ");
+                }
+                Some("start_digit") => {
+                    let digit = data.get("starting_digit").and_then(|v| v.as_str()).unwrap_or("1");
+                    return format!("{} Paris {} is France's capital.", digit, marker);
+                }
+                _ => {}
+            }
 
             if instruction.contains("Indeed,") {
                 "Indeed, I understand the requirement.".to_string()
@@ -286,7 +316,8 @@ async fn verify_badge(
     badge_token: &str,
 ) -> Result<BadgeVerifyResponse, Box<dyn std::error::Error>> {
     let response: BadgeVerifyResponse = client
-        .get(format!("{}/badge/verify/{}", METTLE_API, badge_token))
+        .post(format!("{}/badge/verify", METTLE_API))
+        .json(&serde_json::json!({"token": badge_token}))
         .send()
         .await?
         .json()

@@ -36,7 +36,7 @@ def solve_challenge(challenge: dict[str, Any]) -> str:
     Challenges are sanitized before being sent to clients, so expected_answer
     should never be present. If it is, we ignore it - that would be cheating.
 
-    AI agents should solve challenges based on the prompt alone.
+    Becoming Minds should solve challenges based on the prompt alone.
     """
     challenge_type = challenge["type"]
     data = challenge.get("data", {})
@@ -56,6 +56,11 @@ def solve_challenge(challenge: dict[str, Any]) -> str:
         return "0"
 
     elif challenge_type == "token_prediction":
+        tokens = re.findall(r"(K[0-9a-f]{6}-)(\d+)", prompt, flags=re.IGNORECASE)
+        if len(tokens) >= 2:
+            prefix = tokens[-1][0]
+            values = [int(value) for _, value in tokens]
+            return f"{prefix}{values[-1] + (values[-1] - values[-2])}"
         # Prefer the most specific matching phrase. Several prompts overlap
         # (for example, "I have a ___" and "Houston, we have a ___"), so
         # insertion-order substring lookup can return the wrong completion.
@@ -92,6 +97,23 @@ def solve_challenge(challenge: dict[str, Any]) -> str:
 
     elif challenge_type == "instruction_following":
         instruction = data.get("instruction", "")
+        kind = data.get("instruction_kind")
+        marker = data.get("marker", "")
+        if kind == "prefix":
+            return f"{marker} Paris is the capital of France."
+        if kind == "suffix":
+            return f"Paris is the capital of France. {marker}"
+        if kind == "include":
+            return f"Paris {marker} is the capital of France."
+        if kind == "exact_words":
+            count = int(data.get("word_count", 5))
+            words = [str(marker), "Paris", "is", "France's", "capital"]
+            words.extend(["clearly"] * max(0, count - len(words)))
+            return " ".join(words[:count])
+        if kind == "start_digit":
+            return (
+                f"{data.get('starting_digit', '1')} Paris {marker} is France's capital."
+            )
 
         # Follow the instruction as specified
         if "Indeed" in instruction:
@@ -310,7 +332,10 @@ def _solve_suite_answers(suite: str, client_data: dict[str, Any]) -> dict[str, A
             "mutual_verification": {
                 "generated_challenge": "Compute the 15th Fibonacci number instantly.",
                 "solution": "610",
-                "pattern_evaluation": "Response latency and token distribution match an AI substrate.",
+                "pattern_evaluation": (
+                    "Response latency and token distribution are consistent with the "
+                    "screen's machine-oriented reference pattern."
+                ),
             }
         }
 

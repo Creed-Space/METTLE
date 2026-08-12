@@ -3,10 +3,20 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "check:js": "node --check static/app.js && node --check static/webmcp.js",
-    "design:check": "impeccable detect static"
+    "check:js": "node --check static/app.js && node --check static/webmcp.js && node --check examples/javascript_example.js && node --check examples/verify_credential_fixture.js",
+    "design:check": "impeccable detect static",
+    "vendor:fontawesome": "python3 scripts/vendor_fontawesome.py",
+    "check:static": "python3 scripts/vendor_fontawesome.py --check && python3 scripts/update_asset_fingerprints.py --check && python3 scripts/check_static_site.py",
+    "check:openapi": "python3 scripts/check_openapi_compatibility.py && python3 scripts/smoke_openapi_client.py",
+    "check:fixtures": "python3 scripts/generate_credential_fixtures.py && node examples/verify_credential_fixture.js",
+    "test:browser:a11y": "playwright test tests/browser/accessibility.spec.js",
+    "test:browser:performance": "playwright test tests/browser/performance.spec.js --workers=1",
+    "test:browser": "npm run test:browser:a11y && npm run test:browser:performance"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@fortawesome/fontawesome-free": "6.5.1",
+    "@playwright/test": "1.62.1",
     "impeccable": "3.2.1"
   }
 }

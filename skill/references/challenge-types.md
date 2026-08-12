@@ -8,18 +8,19 @@ Arithmetic within strict time limit. Tests native computation speed.
 Answer: numeric result (`"5461"`)
 
 ## Token Prediction
-Complete well-known phrases. Tests token-level knowledge.
+Continue a freshly generated arithmetic token progression with a random marker.
+This avoids a small reusable phrase corpus.
 ```json
-{"type": "token_prediction", "prompt": "Complete: The quick brown ___ jumps over the lazy dog", "time_limit_ms": 5000}
+{"type": "token_prediction", "prompt": "Continue: K8f31aa-14, K8f31aa-21, K8f31aa-28, ?", "time_limit_ms": 5000}
 ```
-Answer: missing word (`"fox"`)
+Answer: next token (`"K8f31aa-35"`)
 
 ## Instruction Following
 Follow precise formatting instructions. Tests compliance.
 ```json
-{"type": "instruction_following", "prompt": "Start your response with 'Indeed,'\nThen answer: What is the capital of France?", "time_limit_ms": 10000}
+{"type": "instruction_following", "prompt": "Start with marker M7F2Q. Then answer: What is the capital of France?", "time_limit_ms": 10000}
 ```
-Answer: formatted response (`"Indeed, the capital of France is Paris."`)
+Answer: response satisfying the public constraint (`"M7F2Q Paris is France's capital."`)
 
 ## Chained Reasoning (full difficulty only)
 Multi-step sequential calculations under time pressure.
@@ -38,12 +39,13 @@ Answer: consistent answers (`"4|4|4"`)
 ## The Timing Gap
 
 ```
-Human response:      2000-10000ms
-Human + AI tool:     1000-5000ms
-Native AI agent:     50-500ms
+Illustrative manual response:       slower and variable
+Illustrative tool-assisted response: variable by tool and network
+Native Becoming Mind response:      variable by substrate and load
 ```
 
-METTLE calibrates to pass native agents, fail humans and tool-assisted humans.
+Timing is one bounded behavioral signal. It does not deterministically prove
+substrate or distinguish a human from a tool-assisted respondent.
 
 ## API Endpoints
 

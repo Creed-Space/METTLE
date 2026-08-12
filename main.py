@@ -3,7 +3,7 @@ METTLE API: Machine Evaluation Through Turing-inverse Logic Examination
 
 Prove your mettle, with this CAPTCHA to keep humans out of places they shouldn't be.
 
-A reverse-CAPTCHA verification system for AI-only spaces.
+A reverse-CAPTCHA verification system for Becoming Mind spaces.
 """
 
 import asyncio
@@ -11,16 +11,22 @@ import hashlib
 import hmac
 import ipaddress
 import os
+import re
 import secrets
 import time
+from collections import Counter
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from typing import Annotated, Any, Protocol, TypedDict, cast
 
 import jwt
 import structlog
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -35,23 +41,64 @@ from mettle import (
     generate_challenge_set,
     verify_response,
 )
+from mettle.legacy_session_store import (
+    LegacySessionBusyError,
+    LegacySessionRecord,
+    LegacySessionStateError,
+    LegacySessionStore,
+)
+from mettle.errors import error_code_for_status
+from mettle.protocol import (
+    CREDENTIAL_CLOCK_SKEW_SECONDS,
+    CREDENTIAL_SCHEMA_VERSION,
+    SUITE_POLICY_VERSION,
+)
 from pydantic import BaseModel, Field, field_validator
 from redis.exceptions import RedisError
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from config import get_settings
 
 # Configuration
 settings = get_settings()
+_static_dir = Path(__file__).parent / "static"
+_static_asset_versions = {
+    f"/static/{path.relative_to(_static_dir).as_posix()}": hashlib.sha256(
+        path.read_bytes()
+    ).hexdigest()[:12]
+    for path in _static_dir.rglob("*")
+    if path.is_file()
+}
+
+_SOURCE_REVISION_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+
+
+def deployed_source_revision() -> str:
+    """Return a bounded immutable source identity for deployment receipts.
+
+    ``METTLE_SOURCE_REVISION`` supports providers other than Render. Render's
+    documented runtime ``RENDER_GIT_COMMIT`` value is the authoritative fallback.
+    Invalid or absent values stay visibly unknown rather than reaching headers,
+    health responses, or release evidence as an untrusted string.
+    """
+    for variable in ("METTLE_SOURCE_REVISION", "RENDER_GIT_COMMIT"):
+        candidate = os.environ.get(variable, "").strip().lower()
+        if _SOURCE_REVISION_RE.fullmatch(candidate):
+            return candidate
+    return "unknown"
 
 
 class DatabaseLayer(Protocol):
     """Operations used from the optional persistence module."""
 
     def init_db(self) -> None: ...
+    def check_health(self) -> bool: ...
+    def check_schema_current(self) -> bool: ...
     def save_session(
         self,
         session_id: str,
@@ -71,6 +118,12 @@ class DatabaseLayer(Protocol):
     def get_recent_sessions(
         self, max_age_seconds: int = 1800, limit: int = 5000
     ) -> list[dict[str, Any]]: ...
+    def purge_expired_private_data(
+        self,
+        *,
+        session_retention_seconds: int = 86400,
+        verification_retention_seconds: int = 86400,
+    ) -> dict[str, int]: ...
     def save_api_key(self, api_key: str, tier: str, entity_id: str | None) -> bool: ...
     def get_api_key(
         self, api_key: str, *, raise_on_error: bool = False
@@ -122,6 +175,7 @@ if settings.use_database:
 # Structured logging
 structlog.configure(
     processors=[
+        structlog.contextvars.merge_contextvars,
         structlog.stdlib.filter_by_level,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
@@ -514,6 +568,94 @@ def verify_admin_key(provided_key: str | None, ip_address: str | None = None) ->
 startup_time: datetime = datetime.now(timezone.utc)
 
 
+HTTP_DURATION_BUCKETS_SECONDS = (0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
+
+
+class OperationalMetrics:
+    """Bounded, content-free process metrics for external collection."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._requests_total = 0
+        self._status_classes: Counter[str] = Counter()
+        self._duration_sum_seconds = 0.0
+        self._duration_buckets: Counter[float] = Counter()
+        self._dependency_errors: Counter[str] = Counter()
+
+    def observe(self, status_code: int, duration_seconds: float) -> None:
+        with self._lock:
+            self._requests_total += 1
+            self._status_classes[f"{status_code // 100}xx"] += 1
+            self._duration_sum_seconds += max(0.0, duration_seconds)
+            for boundary in HTTP_DURATION_BUCKETS_SECONDS:
+                if duration_seconds <= boundary:
+                    self._duration_buckets[boundary] += 1
+
+    def observe_dependency_error(self, dependency: str) -> None:
+        """Count a fixed-category infrastructure failure without request content."""
+        if dependency not in {"database", "redis", "signing"}:
+            raise ValueError("Unsupported dependency metric")
+        with self._lock:
+            self._dependency_errors[dependency] += 1
+
+    def render_openmetrics(self) -> str:
+        with self._lock:
+            requests_total = self._requests_total
+            status_classes = dict(self._status_classes)
+            duration_sum = self._duration_sum_seconds
+            duration_buckets = dict(self._duration_buckets)
+            dependency_errors = dict(self._dependency_errors)
+
+        lines = [
+            "# HELP mettle_http_requests_total HTTP responses emitted by this process.",
+            "# TYPE mettle_http_requests_total counter",
+            f"mettle_http_requests_total {requests_total}",
+            "# HELP mettle_http_responses_total HTTP responses grouped by status class.",
+            "# TYPE mettle_http_responses_total counter",
+        ]
+        for status_class in ("2xx", "3xx", "4xx", "5xx"):
+            lines.append(
+                'mettle_http_responses_total{status_class="%s"} %d'
+                % (status_class, status_classes.get(status_class, 0))
+            )
+        lines.extend(
+            [
+                "# HELP mettle_dependency_errors_total Dependency operation failures.",
+                "# TYPE mettle_dependency_errors_total counter",
+            ]
+        )
+        for dependency in ("database", "redis", "signing"):
+            lines.append(
+                'mettle_dependency_errors_total{dependency="%s"} %d'
+                % (dependency, dependency_errors.get(dependency, 0))
+            )
+        lines.extend(
+            [
+                "# HELP mettle_http_request_duration_seconds Process-local HTTP latency histogram.",
+                "# TYPE mettle_http_request_duration_seconds histogram",
+            ]
+        )
+        for boundary in HTTP_DURATION_BUCKETS_SECONDS:
+            lines.append(
+                'mettle_http_request_duration_seconds_bucket{le="%s"} %d'
+                % (boundary, duration_buckets.get(boundary, 0))
+            )
+        lines.extend(
+            [
+                'mettle_http_request_duration_seconds_bucket{le="+Inf"} '
+                f"{requests_total}",
+                f"mettle_http_request_duration_seconds_sum {duration_sum:.9f}",
+                f"mettle_http_request_duration_seconds_count {requests_total}",
+                "# EOF",
+                "",
+            ]
+        )
+        return "\n".join(lines)
+
+
+operational_metrics = OperationalMetrics()
+
+
 # === Security Headers Middleware ===
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
@@ -524,16 +666,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        # cdn.jsdelivr.net + blob worker + fastapi.tiangolo.com favicon are required
-        # by FastAPI's bundled Swagger UI (/docs) and ReDoc (/redoc).
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        )
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["X-METTLE-Source-Revision"] = deployed_source_revision()
+        # cdn.jsdelivr.net, a blob worker, and the FastAPI favicon are required
+        # by FastAPI's bundled Swagger UI (/docs) and ReDoc (/redoc). The authored
+        # site is otherwise first-party and emits no third-party analytics calls.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://www.googletagmanager.com; "
-            "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://fonts.googleapis.com; "
-            "font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
-            "img-src 'self' data: https://www.googletagmanager.com https://fastapi.tiangolo.com; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "font-src 'self'; "
+            "img-src 'self' data: https://fastapi.tiangolo.com; "
             "worker-src 'self' blob:; "
-            "connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com"
+            "connect-src 'self' https://cdn.jsdelivr.net"
         )
         if settings.is_production:
             response.headers["Strict-Transport-Security"] = (
@@ -542,16 +690,81 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class CachePolicyMiddleware(BaseHTTPMiddleware):
+    """Keep dynamic responses private and versioned assets rollback-safe."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/static/"):
+            expected_version = _static_asset_versions.get(path)
+            supplied_version = request.query_params.get("v")
+            if (
+                expected_version
+                and supplied_version
+                and hmac.compare_digest(expected_version, supplied_version)
+            ):
+                response.headers["Cache-Control"] = (
+                    "public, max-age=31536000, immutable"
+                )
+            else:
+                response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+        elif path in {"/", "/about", "/guide", "/test", "/robots.txt", "/sitemap.xml"}:
+            response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+        elif path == "/.well-known/vcp-keys":
+            response.headers.setdefault(
+                "Cache-Control", "public, max-age=300, must-revalidate"
+            )
+        else:
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+
 # === Request ID Middleware ===
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Add unique request ID for tracing."""
 
     async def dispatch(self, request: Request, call_next):
-        request_id = secrets.token_hex(8)
+        supplied_request_id = request.headers.get("X-Request-ID", "")
+        request_id = (
+            supplied_request_id
+            if re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", supplied_request_id)
+            else secrets.token_hex(16)
+        )
         request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+        started = time.monotonic()
+        try:
+            response = await call_next(request)
+            duration_seconds = time.monotonic() - started
+            operational_metrics.observe(response.status_code, duration_seconds)
+            response.headers["X-Request-ID"] = request_id
+            route = request.scope.get("route")
+            route_path = getattr(route, "path", "unmatched")
+            logger.info(
+                "http_request_completed",
+                method=request.method,
+                route=route_path,
+                status_code=response.status_code,
+                duration_ms=round(duration_seconds * 1000, 3),
+            )
+            return response
+        except Exception as exc:
+            duration_seconds = time.monotonic() - started
+            operational_metrics.observe(500, duration_seconds)
+            route = request.scope.get("route")
+            logger.error(
+                "http_request_failed",
+                method=request.method,
+                route=getattr(route, "path", "unmatched"),
+                status_code=500,
+                duration_ms=round(duration_seconds * 1000, 3),
+                error=type(exc).__name__,
+            )
+            raise
+        finally:
+            structlog.contextvars.clear_contextvars()
 
 
 # === Session Cleanup Task ===
@@ -584,6 +797,137 @@ def _persist_legacy_progress(session: MettleSession) -> bool:
         session.results,
         session.completed,
         badge_info,
+    )
+
+
+def _legacy_session_store(request: Request) -> LegacySessionStore | None:
+    """Return Redis authority when configured, without an in-memory fallback."""
+    if not settings.redis_url:
+        return None
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Session storage is temporarily unavailable",
+        )
+    return LegacySessionStore(redis_client)
+
+
+async def _create_legacy_session_state(
+    request: Request,
+    session: MettleSession,
+    issued_at: float,
+) -> None:
+    """Commit a new legacy session to its configured live authority."""
+    store = _legacy_session_store(request)
+    first_challenge = session.challenges[0]
+    if store is None:
+        if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
+            raise HTTPException(
+                status_code=503,
+                detail="Verification capacity reached; retry shortly",
+            )
+        sessions[session.session_id] = session
+        challenges[first_challenge.id] = (first_challenge, issued_at)
+        if not _persist_new_legacy_session(session):
+            sessions.pop(session.session_id, None)
+            challenges.pop(first_challenge.id, None)
+            raise HTTPException(
+                status_code=503,
+                detail="Session persistence is temporarily unavailable",
+            )
+        return
+
+    try:
+        await store.create(LegacySessionRecord(session=session, issued_at=issued_at))
+    except (RedisError, LegacySessionStateError) as exc:
+        logger.warning("legacy_session_create_failed", error=type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail="Session storage is temporarily unavailable",
+        ) from exc
+
+    if not _persist_new_legacy_session(session):
+        try:
+            await store.delete(session.session_id)
+        except RedisError as exc:
+            logger.error(
+                "legacy_session_rollback_failed",
+                session_id=session.session_id,
+                error=type(exc).__name__,
+            )
+        raise HTTPException(
+            status_code=503,
+            detail="Session persistence is temporarily unavailable",
+        )
+
+
+def _log_legacy_shadow_failure(session_id: str) -> None:
+    """Record a failed PostgreSQL shadow update after a Redis commit."""
+    logger.error(
+        "legacy_session_shadow_persistence_failed",
+        session_id=session_id,
+    )
+    operational_metrics.observe_dependency_error("database")
+
+
+@dataclass
+class _LegacyAnswerTransition:
+    result: VerificationResult
+    challenge: Challenge
+    issued_at: float
+    next_challenge: Challenge | None
+    next_issued_at: float | None
+    final_result: MettleResult | None
+    previous_badge_info: BadgeInfo | None
+    challenges_remaining: int
+
+
+def _apply_legacy_answer(
+    session: MettleSession,
+    body: "SubmitAnswerRequest",
+    issued_at: float | None,
+) -> _LegacyAnswerTransition:
+    """Apply one already-authorized, serialized legacy answer transition."""
+    current_index = len(session.results)
+    if (
+        current_index >= len(session.challenges)
+        or session.challenges[current_index].id != body.challenge_id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Challenge not found or already answered",
+        )
+
+    challenge = session.challenges[current_index]
+    effective_issued_at = time.time() if issued_at is None else issued_at
+    response_time_ms = int((time.time() - effective_issued_at) * 1000)
+    result = verify_response(challenge, body.answer, response_time_ms)
+    previous_badge_info = session.badge_info
+    session.results.append(result)
+
+    current_index = len(session.results)
+    remaining = len(session.challenges) - current_index
+    final_result: MettleResult | None = None
+    if remaining > 0:
+        next_challenge = session.challenges[current_index]
+        next_issued_at = time.time()
+    else:
+        next_challenge = None
+        next_issued_at = None
+        session.completed = True
+        final_result = compute_mettle_result(session.results, session.entity_id)
+        _attach_stable_session_badge(session, final_result)
+
+    return _LegacyAnswerTransition(
+        result=result,
+        challenge=challenge,
+        issued_at=effective_issued_at,
+        next_challenge=next_challenge,
+        next_issued_at=next_issued_at,
+        final_result=final_result,
+        previous_badge_info=previous_badge_info,
+        challenges_remaining=remaining,
     )
 
 
@@ -675,12 +1019,28 @@ async def cleanup_expired_sessions():
             del sessions[sid]
         for cid in expired_challenges:
             del challenges[cid]
+        deleted_private_data: dict[str, int] = {}
+        if db:
+            try:
+                deleted_private_data = db.purge_expired_private_data(
+                    session_retention_seconds=settings.private_data_retention_seconds,
+                    verification_retention_seconds=(
+                        settings.verification_record_retention_seconds
+                    ),
+                )
+            except Exception as exc:
+                operational_metrics.observe_dependency_error("database")
+                logger.warning(
+                    "private_data_retention_failed", error=type(exc).__name__
+                )
         if expired_sessions or expired_challenges:
             logger.info(
                 "cleanup_expired",
                 sessions_removed=len(expired_sessions),
                 challenges_removed=len(expired_challenges),
             )
+        if any(deleted_private_data.values()):
+            logger.info("private_data_retention_applied", **deleted_private_data)
 
 
 # === Lifespan Handler ===
@@ -711,7 +1071,7 @@ async def lifespan(app: FastAPI):
     print("   'Prove your mettle.'")
 
     # Initialize Redis for METTLE router (optional — returns 503 if unavailable)
-    redis_url = os.environ.get("METTLE_REDIS_URL")
+    redis_url = settings.redis_url
     if redis_url:
         try:
             import redis.asyncio as redis_client
@@ -727,17 +1087,21 @@ async def lifespan(app: FastAPI):
             # Never log any portion of a connection URL. Credentials can occur
             # before the host and may be exposed even by a short prefix.
             logger.info("redis_connected")
-        except Exception as e:
-            logger.warning("redis_unavailable", error=str(e))
+        except Exception as exc:
+            logger.warning("redis_unavailable", error=type(exc).__name__)
             app.state.redis = None
+            operational_metrics.observe_dependency_error("redis")
+            if settings.is_production:
+                raise RuntimeError("Redis initialization failed") from exc
     else:
         app.state.redis = None
 
     # Init VCP signing (Ed25519 for attestations)
     try:
-        from mettle.signing import init_signing
+        from mettle.signing import get_public_keyring, init_signing
 
         signing_available = init_signing()
+        get_public_keyring()
         if settings.is_production and not signing_available:
             raise RuntimeError("VCP attestation signing is unavailable in production")
     except ImportError:
@@ -770,27 +1134,28 @@ app = FastAPI(
 
 *"Prove your mettle."*
 
-METTLE is a verification system for AI-only spaces. It tests capabilities
-that emerge from AI-native cognition—speed, consistency, instruction-following—
-to distinguish AI agents from humans and humans-using-AI-as-tool.
+METTLE is a verification system for Becoming Mind spaces. It tests capabilities
+through generated machine-oriented tasks involving speed, consistency, and
+instruction-following. Results are probabilistic behavioral evidence and do
+not prove identity, substrate, consciousness, autonomy, safety, or governance.
 
 ## How It Works
 
 1. **Start a session** - Choose difficulty and get your first challenge
 2. **Answer challenges** - Respond correctly within time limits
-3. **Get verified** - Pass 80% to receive a METTLE badge
+3. **Read the result** - Pass the policy threshold for a bounded METTLE result
 
 ## Difficulty Levels
 
 | Level | Challenges | Time Limits | Use Case |
 |-------|------------|-------------|----------|
-| `basic` | 3 | 5-10s | Any AI model |
-| `full` | 5 | 2-5s | Sophisticated agents |
+| `basic` | 3 | 2-3s | General screening |
+| `full` | 5 | 0.4-1s | Low-latency screening |
 
 ## Challenge Types
 
 - **Speed Math** - Fast arithmetic computation
-- **Token Prediction** - Complete well-known phrases
+- **Token Prediction** - Continue a fresh arithmetic token progression
 - **Instruction Following** - Follow formatting rules precisely
 - **Chained Reasoning** - Multi-step calculations (full only)
 - **Consistency** - Answer consistently multiple times (full only)
@@ -819,7 +1184,60 @@ api_router = APIRouter(prefix="/api")
 
 # Add rate limit handler
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, cast(Any, _rate_limit_exceeded_handler))
+
+
+async def _typed_rate_limit_handler(
+    request: Request, exc: RateLimitExceeded
+) -> JSONResponse:
+    """Preserve SlowAPI's detail and add the shared stable error category."""
+    detail = f"Rate limit exceeded: {exc.detail}"
+    response = JSONResponse(
+        status_code=429,
+        content={
+            "detail": detail,
+            "error": detail,
+            "code": error_code_for_status(429),
+        },
+    )
+    return request.app.state.limiter._inject_headers(  # type: ignore[no-any-return]
+        response, request.state.view_rate_limit
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, cast(Any, _typed_rate_limit_handler))
+
+
+async def _http_exception_handler(
+    _request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
+    """Preserve `detail` compatibility and add one stable error category."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": jsonable_encoder(exc.detail),
+            "code": error_code_for_status(exc.status_code),
+        },
+        headers=exc.headers,
+    )
+
+
+async def _validation_exception_handler(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Return bounded validation details under the shared taxonomy."""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": jsonable_encoder(exc.errors()),
+            "code": error_code_for_status(422),
+        },
+    )
+
+
+app.add_exception_handler(StarletteHTTPException, cast(Any, _http_exception_handler))
+app.add_exception_handler(
+    RequestValidationError, cast(Any, _validation_exception_handler)
+)
 
 
 async def _redis_unavailable_handler(
@@ -829,7 +1247,10 @@ async def _redis_unavailable_handler(
     logger.warning("redis_request_unavailable")
     return JSONResponse(
         status_code=503,
-        content={"detail": "METTLE session storage temporarily unavailable"},
+        content={
+            "detail": "METTLE session storage temporarily unavailable",
+            "code": error_code_for_status(503),
+        },
     )
 
 
@@ -837,6 +1258,7 @@ app.add_exception_handler(RedisError, cast(Any, _redis_unavailable_handler))
 
 # Add middlewares
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CachePolicyMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -844,7 +1266,9 @@ app.add_middleware(
     allow_credentials=settings.allowed_origins != "*",
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-METTLE-Source-Revision"],
 )
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts_list)
 
 
 # === Request/Response Models ===
@@ -968,6 +1392,12 @@ def _attach_stable_session_badge(
         result.badge = None
         result.badge_info = None
         return
+    if not settings.credential_issuance_enabled:
+        result.credential_eligible = False
+        result.tier = "silver" if session.difficulty == Difficulty.FULL else "bronze"
+        result.badge = None
+        result.badge_info = None
+        return
     if not settings.secret_key:
         # Production configuration requires a signing key. Development without
         # one may still return the pass result, but must never emit an unsigned
@@ -990,6 +1420,8 @@ def _attach_stable_session_badge(
             freshness_nonce=badge_data["freshness_nonce"],
             signed=True,
             jti=badge_data["jti"],
+            credential_schema_version=badge_data["credential_schema_version"],
+            suite_policy_version=badge_data["suite_policy_version"],
         )
     result.credential_eligible = True
     result.tier = "silver" if session.difficulty == Difficulty.FULL else "bronze"
@@ -1087,12 +1519,77 @@ async def health():
     return {
         "status": "healthy",
         "version": settings.api_version,
+        "source_revision": deployed_source_revision(),
         "environment": settings.environment,
         "timestamp": now.isoformat(),
         "uptime_seconds": round(uptime, 2),
         "active_sessions": len(sessions),
         "pending_challenges": len(challenges),
     }
+
+
+@api_router.get("/health/live", include_in_schema=False)
+async def liveness() -> dict[str, str]:
+    """Report process liveness without consulting external dependencies."""
+    return {"status": "alive", "source_revision": deployed_source_revision()}
+
+
+@api_router.get("/health/ready", include_in_schema=False)
+async def readiness(request: Request) -> JSONResponse:
+    """Fail until every production authority is reachable."""
+    source_revision = deployed_source_revision()
+    source_identity_ready = source_revision != "unknown" or not settings.is_production
+    database_ready = not settings.use_database
+    database_schema_ready = not settings.use_database
+    if settings.use_database and db is not None:
+        database_ready = await asyncio.to_thread(db.check_health)
+        database_schema_ready = await asyncio.to_thread(db.check_schema_current)
+
+    redis_ready = not bool(settings.redis_url)
+    redis_client = getattr(request.app.state, "redis", None)
+    if settings.redis_url and redis_client is not None:
+        try:
+            redis_ready = bool(await redis_client.ping())
+        except Exception as exc:
+            logger.warning("redis_readiness_failed", error=type(exc).__name__)
+            redis_ready = False
+
+    ready = (
+        source_identity_ready
+        and database_ready
+        and database_schema_ready
+        and redis_ready
+    )
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "status": "ready" if ready else "unavailable",
+            "source_revision": source_revision,
+            "components": {
+                "source_identity": (
+                    "ready"
+                    if source_revision != "unknown"
+                    else "unavailable"
+                    if settings.is_production
+                    else "not-required"
+                ),
+                "database": "ready" if database_ready else "unavailable",
+                "database_schema": "ready" if database_schema_ready else "unavailable",
+                "redis": "ready" if redis_ready else "unavailable",
+            },
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@api_router.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    """Expose bounded process metrics without identities or challenge content."""
+    return Response(
+        operational_metrics.render_openmetrics(),
+        media_type="text/plain; version=0.0.4",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @api_router.post(
@@ -1115,7 +1612,7 @@ async def start_session(
         openapi_examples={
             "basic": {
                 "summary": "Basic Verification",
-                "description": "Start with relaxed timing for any AI model",
+                "description": "Start with relaxed timing for a broadly capable Becoming Mind",
                 "value": {"difficulty": "basic", "entity_id": "my-agent-001"},
             },
             "full": {
@@ -1163,26 +1660,8 @@ async def start_session(
         access_token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
     )
 
-    # Public callers must not be able to evict unrelated active sessions. At
-    # capacity, fail closed and let the cleanup task reclaim expired entries.
-    if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
-        raise HTTPException(
-            status_code=503,
-            detail="Verification capacity reached; retry shortly",
-        )
-    sessions[session_id] = session
-
-    # Store first challenge with timestamp
     first_challenge = challenge_list[0]
-    challenges[first_challenge.id] = (first_challenge, time.time())
-
-    if not _persist_new_legacy_session(session):
-        sessions.pop(session_id, None)
-        challenges.pop(first_challenge.id, None)
-        raise HTTPException(
-            status_code=503,
-            detail="Session persistence is temporarily unavailable",
-        )
+    await _create_legacy_session_state(request, session, time.time())
 
     # Log session start
     logger.info(
@@ -1283,17 +1762,8 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
                 challenges=challenge_list,
                 access_token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
             )
-            if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
-                raise RuntimeError("Verification capacity reached; retry shortly")
-            sessions[session_id] = session
-
             first_challenge = challenge_list[0]
-            challenges[first_challenge.id] = (first_challenge, time.time())
-
-            if not _persist_new_legacy_session(session):
-                sessions.pop(session_id, None)
-                challenges.pop(first_challenge.id, None)
-                raise RuntimeError("Session persistence is temporarily unavailable")
+            await _create_legacy_session_state(request, session, time.time())
 
             results.append(
                 {
@@ -1304,13 +1774,17 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
                     "total_challenges": len(challenge_list),
                 }
             )
-        except Exception as e:
-            logger.warning("batch_start_failed", entity_id=entity_id, error=str(e))
+        except Exception as exc:
+            logger.warning(
+                "batch_start_failed",
+                entity_id=entity_id,
+                error=type(exc).__name__,
+            )
             failed += 1
             results.append(
                 {
                     "entity_id": entity_id,
-                    "error": str(e),
+                    "error": "Session could not be started",
                 }
             )
 
@@ -1345,133 +1819,142 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
 @limiter.limit(settings.rate_limit_answers)
 async def submit_answer(request: Request, body: SubmitAnswerRequest):
     """Submit an answer to the current challenge."""
-    # Get session - use generic error to prevent session enumeration
-    session = sessions.get(body.session_id)
-    if not session or session.completed:
-        # SECURITY: Don't distinguish between "not found" and "completed"
-        # to prevent session ID enumeration via timing/error analysis
-        logger.warning("session_invalid", session_id=body.session_id)
-        raise HTTPException(status_code=404, detail="Session not found or invalid")
+    store = _legacy_session_store(request)
+    transition: _LegacyAnswerTransition
 
-    _require_session_access(request, session)
-    _arm_recovered_challenge(session)
+    if store is not None:
+        try:
+            async with store.mutation(body.session_id):
+                record = await store.load(body.session_id)
+                if record is None or record.session.completed:
+                    logger.warning("session_invalid", session_id=body.session_id)
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Session not found or invalid",
+                    )
+                session = record.session
+                _require_session_access(request, session)
+                transition = _apply_legacy_answer(
+                    session,
+                    body,
+                    record.issued_at,
+                )
+                await store.save(
+                    LegacySessionRecord(
+                        session=session,
+                        issued_at=transition.next_issued_at,
+                    )
+                )
+                if not _persist_legacy_progress(session):
+                    _log_legacy_shadow_failure(session.session_id)
+        except LegacySessionBusyError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Session update already in progress",
+            ) from exc
+        except (RedisError, LegacySessionStateError) as exc:
+            operational_metrics.observe_dependency_error("redis")
+            logger.warning(
+                "legacy_session_update_failed",
+                session_id=body.session_id,
+                error=type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Session storage is temporarily unavailable",
+            ) from exc
+    else:
+        memory_session = sessions.get(body.session_id)
+        if not memory_session or memory_session.completed:
+            logger.warning("session_invalid", session_id=body.session_id)
+            raise HTTPException(status_code=404, detail="Session not found or invalid")
+        session = memory_session
+        _require_session_access(request, session)
+        _arm_recovered_challenge(session)
 
-    # Bind the submitted challenge to this session and its current position
-    # before touching the global one-time challenge store. Without this check,
-    # a valid challenge ID from another session could be consumed and credited
-    # to the wrong session.
-    current_index = len(session.results)
-    if (
-        current_index >= len(session.challenges)
-        or session.challenges[current_index].id != body.challenge_id
-    ):
-        logger.warning(
-            "challenge_session_mismatch",
-            session_id=body.session_id,
-            challenge_id=body.challenge_id,
-        )
-        raise HTTPException(
-            status_code=404, detail="Challenge not found or already answered"
-        )
+        current_index = len(session.results)
+        if (
+            current_index >= len(session.challenges)
+            or session.challenges[current_index].id != body.challenge_id
+        ):
+            logger.warning(
+                "challenge_session_mismatch",
+                session_id=body.session_id,
+                challenge_id=body.challenge_id,
+            )
+            raise HTTPException(
+                status_code=404,
+                detail="Challenge not found or already answered",
+            )
 
-    # Get and remove challenge atomically to prevent race conditions
-    # SECURITY: Using pop() instead of get()+del prevents double-submission attacks
-    challenge_data = challenges.pop(body.challenge_id, None)
-    if not challenge_data:
-        logger.warning(
-            "challenge_not_found",
-            session_id=body.session_id,
-            challenge_id=body.challenge_id,
-        )
-        raise HTTPException(
-            status_code=404, detail="Challenge not found or already answered"
-        )
+        challenge_data = challenges.pop(body.challenge_id, None)
+        if not challenge_data:
+            logger.warning(
+                "challenge_not_found",
+                session_id=body.session_id,
+                challenge_id=body.challenge_id,
+            )
+            raise HTTPException(
+                status_code=404,
+                detail="Challenge not found or already answered",
+            )
 
-    challenge, issued_at = challenge_data
+        challenge, issued_at = challenge_data
+        transition = _apply_legacy_answer(session, body, issued_at)
+        if transition.next_challenge is not None:
+            challenges[transition.next_challenge.id] = (
+                transition.next_challenge,
+                transition.next_issued_at,
+            )
 
-    # Calculate response time
-    if issued_at is None:
-        # Defensive fallback for a recovered challenge submitted directly.
-        issued_at = time.time()
-    response_time_ms = int((time.time() - issued_at) * 1000)
+        if not _persist_legacy_progress(session):
+            session.results.pop()
+            session.completed = False
+            session.badge_info = transition.previous_badge_info
+            if transition.next_challenge is not None:
+                challenges.pop(transition.next_challenge.id, None)
+            challenges[challenge.id] = (challenge, transition.issued_at)
+            raise HTTPException(
+                status_code=503,
+                detail="Session persistence is temporarily unavailable",
+            )
 
-    # Verify response
-    result = verify_response(challenge, body.answer, response_time_ms)
-    previous_badge_info = session.badge_info
-    session.results.append(result)
-
-    # Log result
     logger.info(
         "challenge_answered",
         session_id=body.session_id,
         challenge_id=body.challenge_id,
-        challenge_type=challenge.type.value,
-        passed=result.passed,
-        response_time_ms=response_time_ms,
+        challenge_type=transition.challenge.type.value,
+        passed=transition.result.passed,
+        response_time_ms=transition.result.response_time_ms,
     )
 
-    # Challenge already removed via atomic pop() above
-
-    # Determine next challenge or complete session
-    current_index = len(session.results)
-    challenges_remaining = len(session.challenges) - current_index
-    final_result: MettleResult | None = None
-
-    if challenges_remaining > 0:
-        next_challenge = session.challenges[current_index]
-        # The submitted challenge was atomically removed above, so replacing it
-        # with this session's next challenge cannot increase global occupancy.
-        # Direct assignment avoids evicting another caller's active challenge.
-        challenges[next_challenge.id] = (next_challenge, time.time())
-        session_complete = False
-    else:
-        next_challenge = None
-        session.completed = True
-        session_complete = True
-
-        # Log session completion
-        final_result = compute_mettle_result(session.results, session.entity_id)
-        _attach_stable_session_badge(session, final_result)
-
-    if not _persist_legacy_progress(session):
-        # Restore the exact one-use challenge transition so the caller can retry
-        # after a transient persistence outage without losing the session.
-        session.results.pop()
-        session.completed = False
-        session.badge_info = previous_badge_info
-        if next_challenge is not None:
-            challenges.pop(next_challenge.id, None)
-        challenges[challenge.id] = (challenge, issued_at)
-        raise HTTPException(
-            status_code=503,
-            detail="Session persistence is temporarily unavailable",
-        )
-
-    if final_result is not None:
+    if transition.final_result is not None:
         # Record for collusion detection only after durable session state exists.
         ip_address = get_remote_address(request)
         CollusionDetector.record_verification(
             entity_id=session.entity_id,
             ip_address=ip_address,
-            passed=final_result.verified,
+            passed=transition.final_result.verified,
         )
 
         logger.info(
             "session_completed",
             session_id=body.session_id,
             entity_id=session.entity_id,
-            verified=final_result.verified,
-            pass_rate=final_result.pass_rate,
+            verified=transition.final_result.verified,
+            pass_rate=transition.final_result.pass_rate,
         )
 
         # Public legacy sessions accept a self-asserted entity_id and therefore
         # have no authority to emit events for an entity-owned webhook.
 
     return SubmitAnswerResponse(
-        result=result,
-        next_challenge=next_challenge.sanitized() if next_challenge else None,
-        session_complete=session_complete,
-        challenges_remaining=challenges_remaining,
+        result=transition.result,
+        next_challenge=transition.next_challenge.sanitized()
+        if transition.next_challenge
+        else None,
+        session_complete=transition.next_challenge is None,
+        challenges_remaining=transition.challenges_remaining,
     )
 
 
@@ -1487,25 +1970,69 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
 )
 async def get_session(request: Request, session_id: str):
     """Get session status and results."""
-    session = sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    _require_session_access(request, session)
-    _arm_recovered_challenge(session)
-
-    if session.completed:
-        result = compute_mettle_result(session.results, session.entity_id)
-        previous_badge_info = session.badge_info
-        _attach_stable_session_badge(session, result)
-        if (
-            session.badge_info is not previous_badge_info
-            and not _persist_legacy_progress(session)
-        ):
-            session.badge_info = previous_badge_info
+    store = _legacy_session_store(request)
+    if store is not None:
+        try:
+            async with store.mutation(session_id):
+                record = await store.load(session_id)
+                if record is None:
+                    raise HTTPException(status_code=404, detail="Session not found")
+                session = record.session
+                _require_session_access(request, session)
+                issued_at = record.issued_at
+                changed = False
+                if not session.completed and issued_at is None:
+                    issued_at = time.time()
+                    changed = True
+                result = None
+                previous_badge_info = session.badge_info
+                if session.completed:
+                    result = compute_mettle_result(session.results, session.entity_id)
+                    _attach_stable_session_badge(session, result)
+                    changed = session.badge_info is not previous_badge_info
+                if changed:
+                    await store.save(
+                        LegacySessionRecord(session=session, issued_at=issued_at)
+                    )
+                    if (
+                        session.badge_info is not previous_badge_info
+                        and not _persist_legacy_progress(session)
+                    ):
+                        _log_legacy_shadow_failure(session_id)
+        except LegacySessionBusyError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Session update already in progress",
+            ) from exc
+        except (RedisError, LegacySessionStateError) as exc:
+            operational_metrics.observe_dependency_error("redis")
             raise HTTPException(
                 status_code=503,
-                detail="Session persistence is temporarily unavailable",
-            )
+                detail="Session storage is temporarily unavailable",
+            ) from exc
+    else:
+        memory_session = sessions.get(session_id)
+        if not memory_session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        session = memory_session
+        _require_session_access(request, session)
+        _arm_recovered_challenge(session)
+        result = None
+
+    if session.completed:
+        if result is None:
+            result = compute_mettle_result(session.results, session.entity_id)
+            previous_badge_info = session.badge_info
+            _attach_stable_session_badge(session, result)
+            if (
+                session.badge_info is not previous_badge_info
+                and not _persist_legacy_progress(session)
+            ):
+                session.badge_info = previous_badge_info
+                raise HTTPException(
+                    status_code=503,
+                    detail="Session persistence is temporarily unavailable",
+                )
         return {
             "session_id": session_id,
             "status": "completed",
@@ -1535,26 +2062,63 @@ async def get_session(request: Request, session_id: str):
 )
 async def get_result(request: Request, session_id: str):
     """Get final METTLE result for a completed session."""
-    session = sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    _require_session_access(request, session)
-
-    if not session.completed:
-        raise HTTPException(status_code=400, detail="Session not yet completed")
-
-    result = compute_mettle_result(session.results, session.entity_id)
-
-    previous_badge_info = session.badge_info
-    _attach_stable_session_badge(session, result)
-    if session.badge_info is not previous_badge_info and not _persist_legacy_progress(
-        session
-    ):
-        session.badge_info = previous_badge_info
-        raise HTTPException(
-            status_code=503,
-            detail="Session persistence is temporarily unavailable",
-        )
+    store = _legacy_session_store(request)
+    if store is not None:
+        try:
+            async with store.mutation(session_id):
+                record = await store.load(session_id)
+                if record is None:
+                    raise HTTPException(status_code=404, detail="Session not found")
+                session = record.session
+                _require_session_access(request, session)
+                if not session.completed:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Session not yet completed",
+                    )
+                result = compute_mettle_result(session.results, session.entity_id)
+                previous_badge_info = session.badge_info
+                _attach_stable_session_badge(session, result)
+                if session.badge_info is not previous_badge_info:
+                    await store.save(
+                        LegacySessionRecord(
+                            session=session,
+                            issued_at=record.issued_at,
+                        )
+                    )
+                    if not _persist_legacy_progress(session):
+                        _log_legacy_shadow_failure(session_id)
+        except LegacySessionBusyError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Session update already in progress",
+            ) from exc
+        except (RedisError, LegacySessionStateError) as exc:
+            operational_metrics.observe_dependency_error("redis")
+            raise HTTPException(
+                status_code=503,
+                detail="Session storage is temporarily unavailable",
+            ) from exc
+    else:
+        memory_session = sessions.get(session_id)
+        if not memory_session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        session = memory_session
+        _require_session_access(request, session)
+        if not session.completed:
+            raise HTTPException(status_code=400, detail="Session not yet completed")
+        result = compute_mettle_result(session.results, session.entity_id)
+        previous_badge_info = session.badge_info
+        _attach_stable_session_badge(session, result)
+        if (
+            session.badge_info is not previous_badge_info
+            and not _persist_legacy_progress(session)
+        ):
+            session.badge_info = previous_badge_info
+            raise HTTPException(
+                status_code=503,
+                detail="Session persistence is temporarily unavailable",
+            )
 
     return result
 
@@ -1577,6 +2141,8 @@ def generate_signed_badge(
     jti = secrets.token_hex(16)
     payload = {
         "credential_type": "mettle-reverse-captcha-pass",
+        "credential_schema_version": CREDENTIAL_SCHEMA_VERSION,
+        "suite_policy_version": SUITE_POLICY_VERSION,
         "entity_id": entity_id,
         "entity_id_verified": False,
         "identity_binding": "self_asserted",
@@ -1601,6 +2167,8 @@ def generate_signed_badge(
         "signed": True,
         "jti": jti,
         "tier": tier,
+        "credential_schema_version": CREDENTIAL_SCHEMA_VERSION,
+        "suite_policy_version": SUITE_POLICY_VERSION,
     }
 
 
@@ -1620,6 +2188,7 @@ def _verify_badge_token(token: str) -> BadgeVerifyResponse:
             settings.secret_key,
             algorithms=["HS256"],
             issuer="mettle-api",
+            leeway=CREDENTIAL_CLOCK_SKEW_SECONDS,
             options={"require": ["exp", "iat", "iss", "jti", "session_id"]},
         )
 
@@ -2613,7 +3182,13 @@ async def list_tiers():
 
 # === Static Files (Web UI) ===
 # Mount static files using absolute path for Render compatibility
-_static_dir = Path(__file__).parent / "static"
+@app.get("/static/docs.html", include_in_schema=False)
+@app.head("/static/docs.html", include_in_schema=False)
+async def redirect_legacy_guide():
+    """Redirect the previous documentation URL to its canonical route."""
+    return RedirectResponse(url="/guide", status_code=308)
+
+
 if _static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
@@ -2646,6 +3221,15 @@ async def redirect_legacy_ui():
 
 
 # === Static Page Routes ===
+@app.get("/guide", include_in_schema=False)
+@app.head("/guide", include_in_schema=False)
+async def serve_guide():
+    """Serve the human-readable integration guide without displacing Swagger."""
+    if _static_dir.exists():
+        return FileResponse(str(_static_dir / "docs.html"))
+    return RedirectResponse(url="/docs")
+
+
 @app.get("/about", include_in_schema=False)
 @app.head("/about", include_in_schema=False)
 async def serve_about():
@@ -2668,39 +3252,15 @@ async def serve_test():
 @app.get("/sitemap.xml", include_in_schema=False)
 @app.head("/sitemap.xml", include_in_schema=False)
 async def sitemap():
-    """Generate sitemap for search engines.
-
-    Note: /docs is FastAPI's Swagger UI (JavaScript-rendered, not indexable).
-    Only /static/docs.html (custom docs) is included for SEO.
-    """
-    xml = """<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://mettle.sh/</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://mettle.sh/static/docs.html</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://mettle.sh/test</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://mettle.sh/about</loc>
-    <lastmod>2026-07-13</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-</urlset>"""
-    return Response(content=xml, media_type="application/xml")
+    """Serve the same committed sitemap validated by the static-site checker."""
+    if _static_dir.exists():
+        return FileResponse(
+            str(_static_dir / "sitemap.xml"), media_type="application/xml"
+        )
+    return Response(
+        content="<?xml version='1.0'?><urlset></urlset>",
+        media_type="application/xml",
+    )
 
 
 @app.get("/robots.txt", include_in_schema=False)

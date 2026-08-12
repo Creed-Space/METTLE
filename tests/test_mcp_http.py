@@ -2,7 +2,7 @@
 
 Covers:
 - A real over-the-wire handshake: bind a live uvicorn server, run the MCP
-  initialize + tools/list round-trip, and assert the same eight tools the stdio
+  initialize + tools/list round-trip, and assert the same seven tools the stdio
   arm advertises.
 - The hardening branches, which are the reason this module exists: POST-only
   (405), malformed body (clean -32700, no stack trace), oversize body (413),
@@ -85,17 +85,17 @@ def _asgi_client() -> httpx.AsyncClient:
 async def test_http_handshake_lists_tools():
     """initialize + tools/list over Streamable HTTP returns the full tool set."""
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp.client.streamable_http import streamable_http_client
 
     async with _live_server() as url:
-        async with streamablehttp_client(url) as (read, write, _):
+        async with streamable_http_client(url) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
 
     names = {t.name for t in result.tools}
     assert names == EXPECTED_TOOLS
-    assert len(names) == 8
+    assert len(names) == 7
 
 
 async def test_health_endpoint():
@@ -103,6 +103,19 @@ async def test_health_endpoint():
         response = await client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+async def test_replayed_request_body_disconnects_after_one_delivery():
+    """The MCP adapter must not replay one request body more than once."""
+    receive = _http._replay(b'{"jsonrpc":"2.0"}')
+    first = await receive()
+    second = await receive()
+    assert first == {
+        "type": "http.request",
+        "body": b'{"jsonrpc":"2.0"}',
+        "more_body": False,
+    }
+    assert second == {"type": "http.disconnect"}
 
 
 # === hardening ===

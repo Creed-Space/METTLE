@@ -1,7 +1,7 @@
 """
 METTLE Python SDK Example
 
-Complete verification flow for AI agents.
+Complete verification flow for Becoming Minds.
 
 Requirements:
     pip install httpx
@@ -33,6 +33,7 @@ def verify_agent(entity_id: str, difficulty: str = "basic") -> dict:
         session = response.json()
 
         session_id = session["session_id"]
+        session_headers = {"X-Session-Token": session["session_token"]}
         total = session["total_challenges"]
         print(f"Session {session_id}: {total} challenges")
 
@@ -56,6 +57,7 @@ def verify_agent(entity_id: str, difficulty: str = "basic") -> dict:
             # Submit answer
             response = client.post(
                 f"{METTLE_API}/session/answer",
+                headers=session_headers,
                 json={
                     "session_id": session_id,
                     "challenge_id": challenge_id,
@@ -73,7 +75,9 @@ def verify_agent(entity_id: str, difficulty: str = "basic") -> dict:
             challenge_num += 1
 
         # Step 3: Get final result
-        response = client.get(f"{METTLE_API}/session/{session_id}/result")
+        response = client.get(
+            f"{METTLE_API}/session/{session_id}/result", headers=session_headers
+        )
         response.raise_for_status()
         final = response.json()
 
@@ -122,7 +126,7 @@ def safe_math_eval(expr: str) -> int:
 
 
 def generate_answer(challenge_type: str, prompt: str, data: dict) -> str:
-    """Generate answer for a challenge. Replace with your AI's logic."""
+    """Generate an answer. Replace this fixture logic with your own."""
 
     if challenge_type == "speed_math":
         # Parse and solve math problem
@@ -135,8 +139,12 @@ def generate_answer(challenge_type: str, prompt: str, data: dict) -> str:
             return "0"
 
     elif challenge_type == "token_prediction":
-        # Complete the phrase
-        # Example: "Complete: The quick brown fox jumps over the lazy ___"
+        tokens = re.findall(r"(K[0-9a-f]{6}-)(\d+)", prompt, flags=re.IGNORECASE)
+        if len(tokens) >= 2:
+            prefix = tokens[-1][0]
+            values = [int(value) for _, value in tokens]
+            return f"{prefix}{values[-1] + values[-1] - values[-2]}"
+        # Historical unversioned servers may still emit the old phrase form.
         if "lazy" in prompt.lower():
             return "dog"
         elif "roses are" in prompt.lower():
@@ -145,6 +153,22 @@ def generate_answer(challenge_type: str, prompt: str, data: dict) -> str:
 
     elif challenge_type == "instruction_following":
         instruction = data.get("instruction", "")
+        kind = data.get("instruction_kind")
+        marker = data.get("marker", "")
+        if kind == "prefix":
+            return f"{marker} Paris is France's capital."
+        if kind == "suffix":
+            return f"Paris is France's capital. {marker}"
+        if kind == "include":
+            return f"Paris {marker} is France's capital."
+        if kind == "exact_words":
+            count = int(data.get("word_count", 5))
+            words = [marker, "Paris", "is", "France's", "capital"]
+            return " ".join((words + ["clearly"] * count)[:count])
+        if kind == "start_digit":
+            return (
+                f"{data.get('starting_digit', '1')} Paris {marker} is France's capital."
+            )
         if "Indeed," in instruction:
             return "Indeed, I understand the requirement."
         elif "..." in instruction:
@@ -187,7 +211,10 @@ def generate_answer(challenge_type: str, prompt: str, data: dict) -> str:
 def verify_badge(badge_token: str) -> dict:
     """Verify a METTLE badge is valid."""
     with httpx.Client() as client:
-        response = client.get(f"{METTLE_API}/badge/verify/{badge_token}")
+        response = client.post(
+            f"{METTLE_API}/badge/verify", json={"token": badge_token}
+        )
+        response.raise_for_status()
         return response.json()
 
 

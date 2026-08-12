@@ -9,10 +9,13 @@ Requires: pip install cryptography
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
 from typing import Any
+
+from mettle.protocol import CREDENTIAL_SCHEMA_VERSION, SUITE_POLICY_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -156,12 +159,81 @@ def get_public_key_info() -> dict[str, Any]:
         Dict with key_id, algorithm, and public key (PEM).
     """
     pem = get_public_key_pem()
+    keyring = get_public_keyring()
     return {
         "key_id": _key_id,
         "algorithm": "Ed25519",
         "public_key_pem": pem,
         "available": pem is not None,
+        "status": "active" if pem is not None else "unavailable",
+        "credential_schema_versions": [CREDENTIAL_SCHEMA_VERSION],
+        "suite_policy_versions": [SUITE_POLICY_VERSION],
+        "keys": [
+            {
+                "key_id": key_id,
+                "algorithm": "Ed25519",
+                "public_key_pem": public_key,
+                "status": "active" if key_id == _key_id else "verify-only",
+            }
+            for key_id, public_key in sorted(keyring.items())
+        ],
     }
+
+
+def get_public_keyring() -> dict[str, str]:
+    """Return the active key plus configured verify-only rotation keys."""
+    active_pem = get_public_key_pem()
+    raw = os.environ.get("METTLE_VCP_VERIFYING_KEYS", "")
+    try:
+        from mettle.app_config import settings
+
+        raw = raw or getattr(settings, "vcp_verifying_keys", "")
+    except Exception as settings_error:
+        logger.debug("Mettle verifying-key settings unavailable: %s", settings_error)
+
+    keyring: dict[str, str] = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("METTLE_VCP_VERIFYING_KEYS must be valid JSON") from exc
+        if not isinstance(parsed, dict):
+            raise RuntimeError("METTLE_VCP_VERIFYING_KEYS must be a JSON object")
+        for key_id, public_key_pem in parsed.items():
+            if (
+                not isinstance(key_id, str)
+                or KEY_ID_PATTERN.fullmatch(key_id) is None
+                or not isinstance(public_key_pem, str)
+                or not public_key_pem
+            ):
+                raise RuntimeError(
+                    "METTLE_VCP_VERIFYING_KEYS contains an invalid entry"
+                )
+            if not _is_ed25519_public_key(public_key_pem):
+                raise RuntimeError(
+                    f"METTLE_VCP_VERIFYING_KEYS key {key_id!r} is not Ed25519"
+                )
+            keyring[key_id] = public_key_pem
+    if active_pem is not None:
+        configured_active = keyring.get(_key_id)
+        if configured_active is not None and configured_active != active_pem:
+            raise RuntimeError(
+                "Active signing key ID conflicts with verify-only keyring"
+            )
+        keyring[_key_id] = active_pem
+    return keyring
+
+
+def _is_ed25519_public_key(public_key_pem: str) -> bool:
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+        return isinstance(
+            load_pem_public_key(public_key_pem.encode("ascii")), Ed25519PublicKey
+        )
+    except (ImportError, TypeError, ValueError, UnicodeEncodeError):
+        return False
 
 
 def is_available() -> bool:

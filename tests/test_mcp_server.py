@@ -30,7 +30,6 @@ EXPECTED_TOOLS = {
     "mettle_start_session",
     "mettle_answer_challenge",
     "mettle_get_result",
-    "mettle_auto_verify",
     "mettle_list_suites",
     "mettle_start_v2_session",
     "mettle_verify_suite",
@@ -138,41 +137,6 @@ async def test_answer_challenge_threads_token_through():
         )
 
     assert _headers(post)["X-Session-Token"] == "tok_from_start"
-
-
-@pytest.mark.asyncio
-async def test_auto_verify_threads_token_through_every_call():
-    """auto_verify mints a token on start and must reuse it for answer + result."""
-    start = _mock_response(
-        {
-            "session_id": "ses_1",
-            "session_token": "tok_auto",
-            "difficulty": "basic",
-            "total_challenges": 1,
-            "current_challenge": {
-                "id": "mtl_1",
-                "type": "speed_math",
-                "prompt": "Calculate: 2 + 2",
-                "data": {"a": 2, "b": 2, "op": "+"},
-                "time_limit_ms": 2500,
-            },
-        }
-    )
-    answer = _mock_response({"session_complete": True})
-    result = _mock_response(
-        {"verified": True, "passed": 1, "total": 1, "pass_rate": 1.0, "results": []}
-    )
-
-    post = AsyncMock(side_effect=[start, answer])
-    get = AsyncMock(return_value=result)
-    with patch.object(mcp_server.http_client, "post", post):
-        with patch.object(mcp_server.http_client, "get", get):
-            await mcp_server.call_tool("mettle_auto_verify", {"difficulty": "basic"})
-
-    # /session/start is unauthenticated; the answer and result calls are not.
-    assert "X-Session-Token" not in post.await_args_list[0].kwargs["headers"]
-    assert post.await_args_list[1].kwargs["headers"]["X-Session-Token"] == "tok_auto"
-    assert _headers(get)["X-Session-Token"] == "tok_auto"
 
 
 @pytest.mark.asyncio
@@ -298,45 +262,6 @@ async def test_get_result_renders_badge_and_per_challenge_rows():
 
 
 @pytest.mark.asyncio
-async def test_auto_verify_renders_final_result():
-    post = AsyncMock(
-        side_effect=[
-            _mock_response(START_PAYLOAD),
-            _mock_response({"session_complete": True}),
-        ]
-    )
-    get = AsyncMock(
-        return_value=_mock_response(
-            {
-                "verified": True,
-                "passed": 3,
-                "total": 3,
-                "pass_rate": 1.0,
-                "badge": "mettle:bronze",
-                "results": [
-                    {
-                        "challenge_type": "speed_math",
-                        "passed": True,
-                        "response_time_ms": 10,
-                        "time_limit_ms": 2500,
-                    }
-                ],
-            }
-        )
-    )
-    with patch.object(mcp_server.http_client, "post", post):
-        with patch.object(mcp_server.http_client, "get", get):
-            text = _text(
-                await mcp_server.call_tool(
-                    "mettle_auto_verify", {"difficulty": "basic"}
-                )
-            )
-
-    assert "VERIFIED" in text
-    assert "mettle:bronze" in text
-
-
-@pytest.mark.asyncio
 async def test_list_suites_renders_flags():
     payload = [
         {
@@ -442,6 +367,29 @@ async def test_unknown_tool_is_reported():
     assert "Unknown tool" in text
 
 
+@pytest.mark.asyncio
+async def test_auto_solver_is_not_exposed():
+    """An MCP client must solve its own challenges before any credential can issue."""
+    assert "mettle_auto_verify" not in {
+        tool.name for tool in await mcp_server.list_tools()
+    }
+    text = _text(await mcp_server.call_tool("mettle_auto_verify", {}))
+    assert "Unknown tool" in text
+
+
+@pytest.mark.asyncio
+async def test_mcp2_call_adapter_returns_protocol_content():
+    """The low-level MCP 2 handler preserves the transport-independent response."""
+    from mcp.types import CallToolRequestParams
+
+    result = await mcp_server._handle_call_tool(
+        MagicMock(), CallToolRequestParams(name="mettle_nope", arguments={})
+    )
+    assert len(result.content) == 1
+    assert result.content[0].type == "text"
+    assert "Unknown tool" in result.content[0].text
+
+
 # Every tool surfaces both an HTTP error and an unexpected error as text rather
 # than raising through the MCP transport.
 TOOL_CASES = [
@@ -457,7 +405,6 @@ TOOL_CASES = [
         "post",
     ),
     ("mettle_get_result", {"session_id": "s", "session_token": "t"}, "get"),
-    ("mettle_auto_verify", {}, "post"),
     ("mettle_list_suites", {}, "get"),
     ("mettle_start_v2_session", {}, "post"),
     (

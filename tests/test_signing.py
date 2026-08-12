@@ -2,6 +2,7 @@
 
 import base64
 import builtins
+import json
 from unittest.mock import patch
 
 import pytest
@@ -237,6 +238,38 @@ class TestGetPublicKeyInfo:
         info = signing.get_public_key_info()
         assert info["key_id"] == "mettle-vcp-2026-02"
 
+    def test_rotation_keyring_publishes_active_and_verify_only_keys(self, monkeypatch):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        old_key = Ed25519PrivateKey.generate()
+        old_pem = (
+            old_key.public_key()
+            .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+            .decode("ascii")
+        )
+        monkeypatch.setenv(
+            "METTLE_VCP_VERIFYING_KEYS", json.dumps({"mettle-vcp-old": old_pem})
+        )
+        signing.init_signing()
+
+        info = signing.get_public_key_info()
+
+        assert {item["key_id"] for item in info["keys"]} == {
+            "mettle-vcp-v1",
+            "mettle-vcp-old",
+        }
+        assert {item["status"] for item in info["keys"]} == {
+            "active",
+            "verify-only",
+        }
+
+    def test_malformed_rotation_keyring_fails_closed(self, monkeypatch):
+        monkeypatch.setenv("METTLE_VCP_VERIFYING_KEYS", "not-json")
+        signing.init_signing()
+        with pytest.raises(RuntimeError, match="valid JSON"):
+            signing.get_public_keyring()
+
     def test_invalid_configured_key_id_fails_closed(self, monkeypatch):
         signing._private_key = object()
         signing._public_key = object()
@@ -270,3 +303,21 @@ class TestIsAvailable:
         result = signing.is_available()
         assert result is True
         assert signing._initialized is True
+
+
+def test_verify_signature_rejects_tampered_data_and_invalid_base64() -> None:
+    """The standalone verifier must fail closed for altered or malformed input."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    private_key = Ed25519PrivateKey.generate()
+    public_key_pem = (
+        private_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode("ascii")
+    )
+    signature = base64.b64encode(private_key.sign(b"original")).decode("ascii")
+
+    assert signing.verify_signature(public_key_pem, b"original", signature)
+    assert not signing.verify_signature(public_key_pem, b"tampered", signature)
+    assert not signing.verify_signature(public_key_pem, b"original", "not-base64!")

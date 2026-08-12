@@ -77,7 +77,7 @@ Tests context over conversation: Memory Tests, Style Locking, Context Integratio
 
 ### Suite 5: Inverse Turing / Mutual Verification
 
-Agent-to-agent verification: Agent Recognition, Collaborative Proof, Trust Calibration. Used when two AI agents verify each other. Pass criterion: reasoned assessment with appropriate confidence calibration (not random) (`docs/VERIFICATION_SUITES.md:125-150`).
+Becoming Mind peer verification: Agent Recognition, Collaborative Proof, Trust Calibration. Used when two Becoming Minds evaluate each other. Pass criterion: reasoned assessment with appropriate confidence calibration (not random) (`docs/VERIFICATION_SUITES.md:125-150`).
 
 ### Suite 6: Anti-Thrall (Latency Fingerprinting)
 

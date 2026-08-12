@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-candidate:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: validate-candidate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Build release artifacts
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          python -m build
+          twine check dist/*
+          python -m venv /tmp/mettle-production-lock
+          /tmp/mettle-production-lock/bin/python -m pip install --require-hashes \
+            -r requirements-production.txt
+          /tmp/mettle-production-lock/bin/python -m pip install --no-deps dist/*.whl
+          /tmp/mettle-production-lock/bin/python -m pip check
+          cyclonedx-py environment /tmp/mettle-production-lock/bin/python \
+            --pyproject pyproject.toml \
+            --output-reproducible --output-file dist/mettle-server.raw.cdx.json
+          python scripts/finalize_server_sbom.py \
+            --input dist/mettle-server.raw.cdx.json \
+            --output dist/mettle-server.cdx.json
+          rm dist/mettle-server.raw.cdx.json
+          python scripts/build_release_manifest.py \
+            --source-sha "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
+          (cd dist && shasum -a 256 ./* > SHA256SUMS)
+          (cd dist && shasum -a 256 --check SHA256SUMS)
+      - name: Attest release distributions
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a  # v3
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/mettle-server.cdx.json
+            dist/RELEASE-MANIFEST.json
+            dist/SHA256SUMS
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
+        with:
+          generate_release_notes: false
+          body_path: dist/RELEASE-NOTES.md
+          fail_on_unmatched_files: true
+          files: |
+            dist/*

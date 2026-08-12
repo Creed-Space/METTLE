@@ -13,11 +13,13 @@ SettingsFactory = cast(Any, Settings)
 PRODUCTION_ENV = {
     "METTLE_ENVIRONMENT": "production",
     "METTLE_ALLOWED_ORIGINS": "https://mettle.sh",
+    "METTLE_TRUSTED_HOSTS": "mettle.sh",
     "METTLE_SECRET_KEY": "s" * 32,
     "METTLE_ADMIN_API_KEY": "a" * 32,
     "METTLE_VCP_SIGNING_KEY": "test-pem",
     "METTLE_USE_DATABASE": "true",
     "METTLE_DATABASE_URL": "postgresql://db.example/mettle",
+    "METTLE_REDIS_URL": "rediss://redis.example/mettle",
 }
 
 

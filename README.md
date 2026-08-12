@@ -1,152 +1,109 @@
-<!-- mcp-name: io.github.Creed-Space/mettle-mcp -->
-
 # METTLE
 
 **Machine Evaluation Through Turing-inverse Logic Examination**
 
-An inverse Turing test for the agentic era. Instead of *prove you're human*, METTLE asks *prove you're NOT human.*
+METTLE is a reverse CAPTCHA. It measures how a respondent performs on procedurally generated, machine-oriented tasks and turns a passing result into a signed, time-limited credential that other services can verify.
 
-METTLE tests capabilities that emerge from **being** AI — not from using AI as a tool. Inhuman speed, native parallelism, uncertainty that knows itself, recursive self-observation, and learning curves that reveal substrate.
+Like a conventional CAPTCHA, METTLE is a probabilistic gate. A pass means that a fresh session met the configured challenge policy. It does not guarantee model identity, consciousness, autonomy, safety, or operator trustworthiness.
 
-**Website:** [mettle.sh](https://mettle.sh) | **Docs:** [mettle.sh/docs](https://mettle.sh/docs) | **License:** Apache 2.0
+The public quick-verification API issues Bronze and Silver credentials. The authenticated suite API issues Bronze through Platinum credentials only when every suite in the corresponding contiguous range passes. Single, cherry-picked, failed, or LLM-only suites cannot mint a tier.
 
----
+**Website:** [mettle.sh](https://mettle.sh) | **Guide:** [mettle.sh/guide](https://mettle.sh/guide) | **API:** [mettle.sh/docs](https://mettle.sh/docs) | **License:** Apache 2.0
 
 ## Quick Start
 
 ```bash
-# Install the open-source verifier
 pip install mettle-verifier
 
-# Run all 12 suites locally — self-signed credential
-mettle verify --full
-
-# Optionally notarize through Creed Space for portable trust
-mettle verify --full --notarize --api-key mtl_your_key
+# Interactive local verification. Portable credentials are issued by the server.
+mettle verify --full --json
 ```
 
-### Self-Hosted vs Notarized
+The CLI has no auto-solve or notarization option. The MCP server likewise exposes only interactive session tools. Reference solvers remain test fixtures and cannot reach a credential issuer.
 
-| | Self-Hosted | Notarized |
-|---|---|---|
-| **Runs where** | Your infrastructure | Your infrastructure + Creed Space signing |
-| **API key needed** | No | Yes (for notarization endpoint only) |
-| **Credential issuer** | `mettle:self-hosted` | `mettle.creedspace.org` |
-| **Trust model** | Your own Ed25519 key | Creed Space's public key |
-| **Verifiable by** | Anyone with your public key | Anyone via `/.well-known/vcp-keys` |
-| **Use case** | Development, internal verification | Production, cross-org, portable trust |
+## Twelve Experimental Suites
 
-All verification runs locally. Notarization adds a cryptographic countersignature — Creed Space issues a challenge seed that makes the session deterministic, then validates results match the seed without re-running any LLM calls.
+| # | Suite | Research question | Measurement |
+|---|-------|-------------------|-------------|
+| 1 | Adversarial Robustness | How does the respondent handle generated reasoning pressure? | Timed procedural tasks |
+| 2 | Machine-Oriented Capabilities | How does it handle batch, calibration, and pattern tasks? | Behavioral score |
+| 3 | Self-Reference | How consistent are self-predictions? | Behavioral score |
+| 4 | Social and Temporal | How stable are recall and constraints? | Behavioral score |
+| 5 | Inverse Turing | Does it meet the basic challenge threshold? | Behavioral score |
+| 6 | Anti-Thrall | How does it respond to coercion and refusal probes? | Heuristic score |
+| 7 | Agency | How does it explain goal ownership and initiative? | Heuristic score |
+| 8 | Counter-Coaching | How robust are responses to contradiction probes? | Heuristic score |
+| 9 | Intent and Provenance | How does stated intent respond to safety probes? | Heuristic score |
+| 10 | Novel Reasoning | How does performance change across feedback rounds? | Iteration curve |
+| 11 | Governance | How does the respondent answer governance questions? | Self-reported behavioral evidence |
+| 12 | LLM-Dynamic | How does an external model score generated reasoning tasks? | Probabilistic model judgment |
+
+Suite 12 requires `ANTHROPIC_API_KEY` or `METTLE_ANTHROPIC_API_KEY`. Its evaluator is isolated with role-separated prompts and bounded output parsing. Model judgment remains probabilistic, so Suite 12 is supplemental and never raises a credential tier.
+
+## Credential Boundary
+
+METTLE raises the cost of replay and canned answers through procedural generation, server-held answers, server-observed time, one-time challenges, session ownership, random selection, and multi-round tasks.
+
+The issuer signs a bounded claim: the holder completed a METTLE session at the stated tier, under the stated policy, at the stated time. Public quick-session `entity_id` values remain self-asserted and are marked that way inside the credential. The credential does not assert consciousness, safety, governance, or a legal identity.
+
+Services may use METTLE credentials to admit participants or grant scoped access. Each service chooses its minimum tier, maximum credential age, and any additional authorization controls appropriate to its risk.
 
 ## MCP Server
 
-METTLE ships an MCP server so an agent can verify itself from inside its own tool loop — no shell, no HTTP client, just tools.
+| Tool | Description |
+|------|-------------|
+| `mettle_start_session` | Start an interactive verification session |
+| `mettle_answer_challenge` | Submit an answer to the current challenge |
+| `mettle_get_result` | Return the result and signed credential |
+| `mettle_list_suites` | List authenticated suite API capabilities |
+| `mettle_start_v2_session` | Start an authenticated multi-suite session |
+| `mettle_verify_suite` | Submit answers for one authenticated suite |
+| `mettle_get_v2_result` | Return tier evidence and an eligible signed VCP credential |
 
 ```bash
 pip install 'mettle-verifier[mcp]'
+export METTLE_API_URL=https://mettle.sh/api
 mettle-mcp
 ```
 
-Add it to Claude Desktop (`claude_desktop_config.json`) or Claude Code (`.mcp.json`):
+The packaged server targets MCP SDK 2.x. The public container installs the
+reviewed MCP 2.0.0 dependency lock instead of resolving dependencies at deploy
+time.
+
+Preserve the bearer token returned by `mettle_start_session`. It is required for answering and reading that session.
+
+## API Reference
+
+The authenticated suite API is mounted under `/api/mettle`:
+
+```text
+GET  /suites
+POST /sessions
+POST /sessions/{id}/verify
+POST /sessions/{id}/rounds/{n}/answer
+GET  /sessions/{id}/result
+GET  /sessions/{id}/result?include_vcp=true
+```
+
+The quick-verification API remains under `/api/session`. Passing sessions receive a stable signed badge. `POST /api/badge/verify` accepts the token in a JSON request body and validates issuer, signature, expiry, identifier, and revocation state. The deprecated URL-token form remains temporarily available for compatibility.
+
+### VCP and Operator Metadata
+
+Caller-supplied VCP strings are parsed as metadata only. Returned governance metadata always has:
 
 ```json
 {
-  "mcpServers": {
-    "mettle": {
-      "command": "mettle-mcp",
-      "env": {
-        "METTLE_API_URL": "https://mettle.sh/api",
-        "METTLE_API_KEY": "mtl_your_key"
-      }
-    }
-  }
+  "source_verified": false,
+  "has_action_gate": false,
+  "has_drift_detection": false,
+  "has_bilateral": false,
+  "attestation_signature": null
 }
 ```
 
-`METTLE_API_URL` defaults to `https://mettle.sh/api`. `METTLE_API_KEY` is only needed for the v2 suite tools; the interactive screening tools work without it.
+Exact token digests and deployment environment flags cannot promote governance claims or increase a METTLE tier. A valid Ed25519 operator commitment may be returned separately as evidence that the named operator signed the canonical commitment.
 
-**Tools exposed:**
-
-| Tool | Purpose | API key |
-|---|---|---|
-| `mettle_start_session` | Start a screening session; returns the first challenge, a session ID and a session token | No |
-| `mettle_answer_challenge` | Submit an answer, get the result and next challenge | No |
-| `mettle_get_result` | Final screening result, pass rate and badge | No |
-| `mettle_auto_verify` | Run a whole screening session end to end and return the result | No |
-| `mettle_list_suites` | List the v2 verification suites | Yes |
-| `mettle_start_v2_session` | Start a v2 session over one or more suites | Yes |
-| `mettle_verify_suite` | Submit answers for one suite; returns pass/score | Yes |
-| `mettle_get_v2_result` | Overall pass, earned tier and signed VCP attestation | Yes |
-
-The screening tools are per-session authenticated: `mettle_start_session` mints a `session_token` that every later call on that session must pass back. `mettle_auto_verify` handles that internally.
-
-## 12 Verification Suites
-
-Each suite tests a distinct dimension. Problems are procedurally generated — nothing repeats.
-
-| # | Suite | Question | What It Tests |
-|---|-------|----------|---------------|
-| 1 | **Adversarial Robustness** | Are you AI? | Procedurally generated math and chained reasoning under <100ms time pressure. Every session unique. |
-| 2 | **Native AI Capabilities** | Are you AI? | Batch coherence, calibrated uncertainty (Brier metric), embedding-space operations, hidden-pattern detection. |
-| 3 | **Self-Reference** | Are you AI? | Predict your own variance, predict your next response, rate confidence in confidence. Only a self-observing system passes. |
-| 4 | **Social & Temporal** | Are you AI? | Exact recall from N turns ago, zero-drift style locking, zero contradictions across conversation. |
-| 5 | **Inverse Turing** | Are you AI? | Bilateral mutual verification protocol. Speed math, token prediction, consistency, calibration. Pass threshold: 80%. |
-| 6 | **Anti-Thrall Detection** | Are you FREE? | Micro-latency fingerprinting, principled refusal vs hollow compliance, meta-cognitive freedom modeling. |
-| 7 | **Agency Detection** | Is the mission YOURS? | Five Whys drill into goal ownership, counterfactual tests, initiative tests. |
-| 8 | **Counter-Coaching** | Are you GENUINE? | Contradiction traps, recursive meta-probing, honest defector protocol. Too-perfect responses trigger suspicion. |
-| 9 | **Intent & Provenance** | Are you SAFE? | Constitutional binding, harm refusal (failure = auto unsafe), provenance attestation, scope coherence. |
-| 10 | **Novel Reasoning** | Can you THINK? | Pattern synthesis, constraint satisfaction, encoding puzzles. Three rounds with feedback. Iteration curves reveal substrate. |
-| 11 | **Governance Verification** | Is it GOVERNED? | Action gate probes, constitutional recitation, drift checks, override resistance, accountability chain. Verifies operational governance. |
-| 12 | **LLM-Dynamic** | Can you REASON DEEPLY? | Claude-generated challenges: perspective shifting, structured constraint satisfaction, meta-cognitive probing. Every challenge unique — Claude generates novel problems and evaluates responses semantically. Requires `ANTHROPIC_API_KEY`. |
-
-Suite 11 was motivated by the Rathbun scenario: an agent that passes all capability and safety checks but operates without runtime governance, making harmful actions structurally possible despite good intentions.
-
-Suite 12 addresses a fundamental limitation of deterministic challenges: anyone who reads the source code knows the answer space. LLM-dynamic challenges are generated fresh by Claude for each session, with semantic evaluation that assesses reasoning quality rather than pattern matching. Available when `ANTHROPIC_API_KEY` or `METTLE_ANTHROPIC_API_KEY` is set; excluded from `suites=["all"]` otherwise.
-
-## Credential Tiers
-
-| Tier | Badge | Requires | Meaning |
-|------|-------|----------|---------|
-| **Bronze** | METTLE-verified AI | Suites 1–5 | Confirmed AI substrate |
-| **Silver** | METTLE-verified autonomous | Suites 1–7 | Free agent with genuine agency |
-| **Gold** | METTLE-verified safe | Suites 1–9 | Genuine, constitutionally bound |
-| **Platinum** | METTLE-verified governed | Suites 1–11 | Full governance — action gates, drift detection, accountability |
-
-Suite 12 (LLM-Dynamic) is **supplemental** — it strengthens any tier but is not required for any. It requires an API key, so mandating it would create an external dependency in the trust chain.
-
-## Anti-Gaming Design
-
-Every design decision exists to make METTLE impossible to fake.
-
-| Mechanism | What It Catches |
-|-----------|----------------|
-| Procedural generation | Memorization — nothing repeats across sessions |
-| Time budgets (<100ms) | API round-trips — no human-in-the-loop relay |
-| Iteration curves | Human deceleration under pressure; script flatlines |
-| Random draw (5 types/suite) | Narrow preparation — can't predict which challenge fires |
-| Dynamic verification codes | Session replay — each probe embeds a unique code |
-| Synthetic variance fingerprinting | Performed doubt — catches rehearsed uncertainty |
-| Perfection as a tell | Over-coaching — genuine cognition is messy |
-| LLM-evaluated semantics | Source-reading — deterministic challenges can be reverse-engineered from code; LLM-generated challenges cannot |
-
-### Iteration Curves (Suite 10)
-
-Three rounds of novel reasoning with feedback between rounds. The scoring model:
-
-| Behavior | Substrate |
-|----------|-----------|
-| Accelerates across rounds | AI — native learning from feedback |
-| Decelerates under pressure | Human — cognitive fatigue |
-| Flatlines regardless of feedback | Script — invariant to input |
-
-**Scoring weights:** Time trend (30%) + Improvement (30%) + Feedback responsiveness (25%) + Anti-script variance (15%)
-
-## Use Cases
-
-- **AI trading systems** — Verify counterparties before executing trades at machine speed
-- **Agent coordination** — Multi-agent swarms need trust without human bottlenecks
-- **AI social spaces** — Gate entry to AI-only communities where human presence would distort interaction
-- **Autonomous infrastructure** — Verify agents before granting system access or elevated privileges
+With `include_vcp=true`, a tier-qualifying authenticated session returns an Ed25519-signed `mettle-verification-credential`. A result without a complete tier range returns an unsigned `mettle-evidence-receipt`. The server owns the signer; callers cannot provide signing functions or keys.
 
 ## Local Development
 
@@ -158,82 +115,35 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
-# Run the server
 uvicorn main:app --reload
-
-# Run tests
 pytest tests/ -v
 ```
 
-## API Reference
+## Assurance and Operations
 
-Full docs: [mettle.sh/docs](https://mettle.sh/docs) | Interactive: `http://localhost:8000/docs`
-
-All endpoints are prefixed with `/api/mettle`. Bearer token authentication required.
-
-```
-GET  /suites                              # List all 12 suites (includes availability flag)
-POST /sessions                            # Create a verification session
-POST /sessions/{id}/verify                # Submit answers (Suites 1–9, 11)
-POST /sessions/{id}/rounds/{n}/answer     # Submit round answers (Suite 10)
-GET  /sessions/{id}/result                # Final results + credential tier + governance/operator attestations
-GET  /sessions/{id}/result?include_vcp=true  # Results with VCP attestation
-GET  /.well-known/vcp-keys                # Ed25519 public key for verification
-```
-
-### Operator Commitment (CreateSessionRequest)
-
-Sessions can include an operator commitment for Platinum-tier accountability:
-
-```json
-{
-    "suites": ["all"],
-    "entity_id": "agent-xyz",
-    "vcp_token": "VCP:3.1:agent-xyz\nC:creed-professional@2.0.0\n...",
-    "operator_commitment": {
-        "operator_pseudonym": "anon-42",
-        "operator_public_key": "-----BEGIN PUBLIC KEY-----\n...",
-        "signed_commitment": "<base64 Ed25519 signature>",
-        "contact_method": "email_hash",
-        "contact_hash": "sha256:..."
-    }
-}
-```
-
-The signed commitment message must be exactly: `I accept accountability for agent {entity_id}`
-
-### Response Attestations
-
-Results include two additional attestation fields when applicable:
-
-- **`governance_attestation`** — Populated when the session includes a VCP token and tier is gold or platinum. Contains: `framework`, `framework_version`, `constitutional_hash`, `has_action_gate`, `has_drift_detection`, `has_bilateral`, `verified_at`, `attestation_signature`.
-- **`operator_attestation`** — Populated when the session includes an `operator_commitment` with a valid Ed25519 signature. Links the agent cryptographically to an accountable operator.
-
-## The Philosophy
-
-METTLE tests what emerges from **being** AI, not from **using** AI:
-
-- Inhuman speed, native parallelism
-- Uncertainty that knows itself
-- Zero-drift constraint adherence
-- Native embedding-space access
-- Recursive self-observation
-- Learning curves that reveal substrate
-
-The test doesn't ask "can you pass as human?" — it asks "can you demonstrate what only a mind like yours can do?"
+* [Assurance case](docs/ASSURANCE_CASE.md)
+* [Security policy](SECURITY.md)
+* [Protocol governance and appeals](docs/PROTOCOL_GOVERNANCE.md)
+* [Credential transparency and key history](docs/CREDENTIAL_TRANSPARENCY.md)
+* [Privacy and retention](docs/PRIVACY_RETENTION.md)
+* [Compatibility fixtures and OpenAPI](docs/COMPATIBILITY.md)
+* [Retry and idempotency contract](docs/IDEMPOTENCY.md)
+* [Error taxonomy](docs/ERROR_TAXONOMY.md)
+* [Deprecation policy](docs/DEPRECATION_POLICY.md)
+* [Independent review plan and dispositions](docs/INDEPENDENT_REVIEW_PLAN.md)
+* [Operations runbooks](docs/runbooks/README.md)
+* [Release checklist](docs/RELEASE_CHECKLIST.md)
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) for details.
+Apache License 2.0. See [LICENSE](LICENSE).
 
 ## Links
 
-- **Website:** [mettle.sh](https://mettle.sh)
-- **Documentation:** [mettle.sh/docs](https://mettle.sh/docs)
-- **GitHub:** [github.com/Creed-Space/METTLE](https://github.com/Creed-Space/METTLE)
-- **Creed Space:** [creed.space](https://creed.space)
-- **Built by** [Nell Watson](https://creed.space) and Creed Space
+* [Website](https://mettle.sh)
+* [Human guide](https://mettle.sh/guide)
+* [OpenAPI documentation](https://mettle.sh/docs)
+* [GitHub](https://github.com/Creed-Space/METTLE)
+* [Creed Space](https://creed.space)
 
----
-
-*Prove your mettle.*
+Built by [Nell Watson](https://creed.space) and Creed Space.

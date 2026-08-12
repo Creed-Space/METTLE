@@ -1,7 +1,7 @@
 /**
  * METTLE JavaScript SDK Example
  *
- * Complete verification flow for AI agents.
+ * Complete verification flow for Becoming Minds.
  *
  * Usage (Node.js):
  *   node javascript_example.js
@@ -34,6 +34,7 @@ async function verifyAgent(entityId, difficulty = "basic") {
 
   const session = await startResponse.json();
   const sessionId = session.session_id;
+  const sessionToken = session.session_token;
   const total = session.total_challenges;
 
   console.log(`Session ${sessionId}: ${total} challenges`);
@@ -60,7 +61,10 @@ async function verifyAgent(entityId, difficulty = "basic") {
     // Submit answer
     const answerResponse = await fetch(`${METTLE_API}/session/answer`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Token": sessionToken,
+      },
       body: JSON.stringify({
         session_id: sessionId,
         challenge_id: challengeId,
@@ -82,7 +86,8 @@ async function verifyAgent(entityId, difficulty = "basic") {
 
   // Step 3: Get final result
   const resultResponse = await fetch(
-    `${METTLE_API}/session/${sessionId}/result`
+    `${METTLE_API}/session/${sessionId}/result`,
+    { headers: { "X-Session-Token": sessionToken } }
   );
   const final = await resultResponse.json();
 
@@ -102,7 +107,7 @@ async function verifyAgent(entityId, difficulty = "basic") {
 
 /**
  * Generate answer for a challenge.
- * Replace with your AI's logic.
+ * Replace this fixture logic with your own.
  */
 function generateAnswer(challengeType, prompt, data) {
   switch (challengeType) {
@@ -118,6 +123,12 @@ function generateAnswer(challengeType, prompt, data) {
     }
 
     case "token_prediction": {
+      const tokens = [...prompt.matchAll(/(K[0-9a-f]{6}-)(\d+)/gi)];
+      if (tokens.length >= 2) {
+        const previous = Number(tokens[tokens.length - 2][2]);
+        const last = Number(tokens[tokens.length - 1][2]);
+        return `${tokens[tokens.length - 1][1]}${last + (last - previous)}`;
+      }
       if (prompt.toLowerCase().includes("lazy")) return "dog";
       if (prompt.toLowerCase().includes("roses are")) return "red";
       return "unknown";
@@ -125,6 +136,20 @@ function generateAnswer(challengeType, prompt, data) {
 
     case "instruction_following": {
       const instruction = data.instruction || "";
+      const marker = data.marker || "";
+      if (data.instruction_kind === "prefix")
+        return `${marker} Paris is France's capital.`;
+      if (data.instruction_kind === "suffix")
+        return `Paris is France's capital. ${marker}`;
+      if (data.instruction_kind === "include")
+        return `Paris ${marker} is France's capital.`;
+      if (data.instruction_kind === "exact_words") {
+        const words = [marker, "Paris", "is", "France's", "capital"];
+        while (words.length < data.word_count) words.push("clearly");
+        return words.slice(0, data.word_count).join(" ");
+      }
+      if (data.instruction_kind === "start_digit")
+        return `${data.starting_digit} Paris ${marker} is France's capital.`;
       if (instruction.includes("Indeed,"))
         return "Indeed, I understand the requirement.";
       if (instruction.includes("...")) return "Here is my response...";
@@ -195,7 +220,12 @@ function safeMathEval(expr) {
  * Verify a METTLE badge.
  */
 async function verifyBadge(badgeToken) {
-  const response = await fetch(`${METTLE_API}/badge/verify/${badgeToken}`);
+  const response = await fetch(`${METTLE_API}/badge/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: badgeToken }),
+  });
+  if (!response.ok) throw new Error(`Badge verification failed: ${response.status}`);
   return response.json();
 }
 
