@@ -46,7 +46,7 @@ async def _live_server():
 
     port = _free_port()
     config = uvicorn.Config(
-        _http.build_http_app(mcp_server.server),
+        _http.build_http_app(mcp_server.server, mcp_server.list_tools),
         host="127.0.0.1",
         port=port,
         log_level="warning",
@@ -74,7 +74,9 @@ def _asgi_client() -> httpx.AsyncClient:
     session manager, so no lifespan startup is required.
     """
     return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=_http.build_http_app(mcp_server.server)),
+        transport=httpx.ASGITransport(
+            app=_http.build_http_app(mcp_server.server, mcp_server.list_tools)
+        ),
         base_url="http://testserver",
     )
 
@@ -103,6 +105,31 @@ async def test_health_endpoint():
         response = await client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+async def test_server_card_matches_canonical_tool_surface():
+    """Static discovery must stay identical to tools/list and exclude the solver."""
+    async with _asgi_client() as client:
+        response = await client.get("/.well-known/mcp/server-card.json")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "public, max-age=300"
+    card = response.json()
+    assert card["serverInfo"] == {"name": "mettle", "version": "0.3.1"}
+    assert card["authentication"] == {"required": False, "schemes": []}
+    assert card["resources"] == []
+    assert card["prompts"] == []
+
+    card_tools = card["tools"]
+    canonical_tools = [
+        tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+        for tool in await mcp_server.list_tools()
+    ]
+    assert card_tools == canonical_tools
+    names = {tool["name"] for tool in card_tools}
+    assert names == EXPECTED_TOOLS
+    assert len(names) == 7
+    assert "mettle_auto_verify" not in names
 
 
 async def test_replayed_request_body_disconnects_after_one_delivery():
@@ -298,8 +325,13 @@ def test_cli_http_args():
 def test_main_http_dispatches_to_run_http(monkeypatch):
     seen: dict[str, object] = {}
 
-    def fake_run_http(server, host, port):
-        seen.update(server=server, host=host, port=port)
+    def fake_run_http(server, host, port, tool_provider):
+        seen.update(
+            server=server,
+            host=host,
+            port=port,
+            tool_provider=tool_provider,
+        )
 
     monkeypatch.setattr(_http, "run_http", fake_run_http)
     mcp_server.main(["--transport", "http", "--port", "8123"])
@@ -307,6 +339,7 @@ def test_main_http_dispatches_to_run_http(monkeypatch):
     assert seen["server"] is mcp_server.server
     assert seen["host"] == "127.0.0.1"
     assert seen["port"] == 8123
+    assert seen["tool_provider"] is mcp_server.list_tools
 
 
 def test_main_stdio_does_not_touch_http(monkeypatch):

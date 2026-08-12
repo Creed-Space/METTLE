@@ -28,10 +28,12 @@ import contextlib
 import ipaddress
 import json
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from mcp.server import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.types import Tool
+from mettle import __version__
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -54,6 +56,8 @@ MAX_BODY_BYTES = 1_048_576
 ALLOW_INSECURE_ENV = "METTLE_MCP_ALLOW_INSECURE_HTTP"
 
 _LOOPBACK_HOSTNAMES = frozenset({"localhost", ""})
+
+ToolProvider = Callable[[], Awaitable[list[Tool]]]
 
 
 def _jsonrpc_error(code: int, message: str, status_code: int, **kwargs) -> JSONResponse:
@@ -129,7 +133,27 @@ async def _read_capped_body(request: Request) -> bytes | None:
     return b"".join(chunks)
 
 
-def build_http_app(server: Server) -> Starlette:
+def build_server_card(tools: list[Tool]) -> dict[str, object]:
+    """Return Smithery's static MCP server card from the canonical tool models.
+
+    Deriving the card from the same :class:`mcp.types.Tool` objects returned by
+    ``tools/list`` prevents a stale discovery surface from reintroducing a
+    removed tool. The card contains public schemas only and no runtime
+    configuration or credential values.
+    """
+    return {
+        "serverInfo": {"name": "mettle", "version": __version__},
+        "authentication": {"required": False, "schemes": []},
+        "tools": [
+            tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+            for tool in tools
+        ],
+        "resources": [],
+        "prompts": [],
+    }
+
+
+def build_http_app(server: Server, tool_provider: ToolProvider) -> Starlette:
     """Wrap a low-level MCP ``Server`` in a Starlette ASGI app over Streamable HTTP.
 
     Stateless mode (a fresh transport per request, no persisted sessions) avoids
@@ -188,6 +212,12 @@ def build_http_app(server: Server) -> Starlette:
     async def health(_request: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
+    async def server_card(_request: Request) -> JSONResponse:
+        return JSONResponse(
+            build_server_card(await tool_provider()),
+            headers={"Cache-Control": "public, max-age=300"},
+        )
+
     @contextlib.asynccontextmanager
     async def lifespan(_app: Starlette) -> AsyncGenerator[None]:
         # run() sets up the manager's task group; it must live for the app's
@@ -201,6 +231,11 @@ def build_http_app(server: Server) -> Starlette:
         debug=False,
         routes=[
             Route("/health", health, methods=["GET"]),
+            Route(
+                "/.well-known/mcp/server-card.json",
+                server_card,
+                methods=["GET"],
+            ),
             Mount("/mcp", app=handle_mcp),
         ],
         lifespan=lifespan,
@@ -241,7 +276,12 @@ def resolve_port(explicit: int | None) -> int:
     return 8080
 
 
-def run_http(server: Server, host: str, port: int | None) -> None:  # pragma: no cover
+def run_http(
+    server: Server,
+    host: str,
+    port: int | None,
+    tool_provider: ToolProvider,
+) -> None:  # pragma: no cover
     """Serve ``server`` over Streamable HTTP (blocking).
 
     ``uvicorn`` is imported lazily so stdio-only runs never require it.
@@ -251,7 +291,7 @@ def run_http(server: Server, host: str, port: int | None) -> None:  # pragma: no
     resolved_port = resolve_port(port)
     check_bind_allowed(host)
     uvicorn.run(
-        build_http_app(server),
+        build_http_app(server, tool_provider),
         host=host,
         port=resolved_port,
         log_level="info",

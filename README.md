@@ -68,7 +68,10 @@ mettle-mcp
 
 The packaged server targets MCP SDK 2.x. The public container installs the
 reviewed MCP 2.0.0 dependency lock instead of resolving dependencies at deploy
-time.
+time. Hosted discovery is available at
+`/.well-known/mcp/server-card.json`; it is generated from the same seven tool
+models returned by `tools/list` so registry metadata cannot drift from the
+runtime surface.
 
 Preserve the bearer token returned by `mettle_start_session`. It is required for answering and reading that session.
 
