@@ -82,8 +82,13 @@ def test_distribution_source_requires_checkout_head_and_clean_tree() -> None:
     _require_exact_source(head, allow_dirty=True)
     with pytest.raises(RuntimeError, match="checkout HEAD"):
         _require_exact_source("0" * 40, allow_dirty=True)
-    with pytest.raises(RuntimeError, match="checkout is not clean"):
-        _require_exact_source(head, allow_dirty=False)
+    marker = Path(".distribution-dirty-test-marker")
+    marker.write_text("test-only", encoding="utf-8")
+    try:
+        with pytest.raises(RuntimeError, match="checkout is not clean"):
+            _require_exact_source(head, allow_dirty=False)
+    finally:
+        marker.unlink()
 
 
 def test_distribution_builder_refuses_nonempty_output(tmp_path: Path) -> None:
