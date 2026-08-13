@@ -228,6 +228,27 @@ def test_release_requires_reproducibility_before_publication() -> None:
     assert "scripts/check_render_drift.py" in release
 
 
+def test_github_release_recovery_is_exact_and_cannot_republish_packages() -> None:
+    """A failed final job can recover preserved artifacts without a second publish."""
+    root = Path(__file__).parent.parent
+    recovery = (root / ".github/workflows/recover-github-release.yml").read_text()
+    manifest_builder = (root / "scripts/build_release_manifest.py").read_text()
+
+    assert "workflow_dispatch:" in recovery
+    assert "failed_release_run_id:" in recovery
+    assert 'test "$(git rev-list -n 1 "$recovery_ref")" = "$SOURCE_SHA"' in recovery
+    assert "release-prepared-${{ inputs.source_sha }}" in recovery
+    assert "distribution-release-${{ inputs.source_sha }}" in recovery
+    assert "run-id: ${{ inputs.failed_release_run_id }}" in recovery
+    assert "Attest every recovered release artifact" in recovery
+    assert "actions/attest-build-provenance@" in recovery
+    assert "gh release create" in recovery
+    assert "gh-action-pypi-publish" not in recovery
+    assert "mcp-publisher publish" not in recovery
+    assert "load_protocol_versions" in manifest_builder
+    assert "from mettle.protocol import" not in manifest_builder
+
+
 def test_render_drift_gate_is_read_only_and_scheduled() -> None:
     """Provider configuration has an exact, recurring, secret-safe check."""
     root = Path(__file__).parent.parent

@@ -1,0 +1,207 @@
+name: Recover GitHub Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated release tag to recover
+        required: true
+        type: string
+      source_sha:
+        description: Exact commit targeted by the annotated tag
+        required: true
+        type: string
+      failed_release_run_id:
+        description: Failed Release workflow run containing reviewed artifacts
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  recover-github-release:
+    name: Attest and publish preserved release artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Verify recovery authority and immutable identities
+        env:
+          FAILED_RELEASE_RUN_ID: ${{ inputs.failed_release_run_id }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$FAILED_RELEASE_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9._+-]+)?$ ]]
+          test "$GITHUB_REF" = "refs/heads/main"
+
+          git fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"
+          git fetch --no-tags origin \
+            "refs/tags/$TAG:refs/tags/recovery-$GITHUB_RUN_ID"
+          recovery_ref="refs/tags/recovery-$GITHUB_RUN_ID"
+          test "$(git cat-file -t "$recovery_ref")" = tag
+          test "$(git rev-list -n 1 "$recovery_ref")" = "$SOURCE_SHA"
+          git merge-base --is-ancestor "$SOURCE_SHA" HEAD
+
+          source_version=$(git show "$SOURCE_SHA:pyproject.toml" \
+            | python -c 'import sys, tomllib; print(tomllib.loads(sys.stdin.read())["project"]["version"])')
+          test "$TAG" = "v$source_version"
+          test "$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" \
+            = "$source_version"
+          git diff --quiet "$SOURCE_SHA" HEAD -- \
+            pyproject.toml RELEASE_NOTES.md mettle/protocol.py
+
+          test "$(gh run view "$FAILED_RELEASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" --json workflowName --jq .workflowName)" = Release
+          test "$(gh run view "$FAILED_RELEASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" --json event --jq .event)" = push
+          test "$(gh run view "$FAILED_RELEASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = failure
+          test "$(gh run view "$FAILED_RELEASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" --json headSha --jq .headSha)" = "$SOURCE_SHA"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists; refusing recovery overwrite." >&2
+            exit 1
+          fi
+      - name: Download preserved release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: release-prepared-${{ inputs.source_sha }}
+          path: dist/
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.failed_release_run_id }}
+      - name: Download preserved public distribution receipts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: distribution-release-${{ inputs.source_sha }}
+          path: dist/
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.failed_release_run_id }}
+      - name: Validate preserved publication evidence
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          dist = Path("dist")
+          source_sha = os.environ["SOURCE_SHA"]
+          tag = os.environ["TAG"]
+          version = tag.removeprefix("v")
+          wheel = f"mettle_verifier-{version}-py3-none-any.whl"
+          sdist = f"mettle_verifier-{version}.tar.gz"
+          expected = {
+              "BUILD-ENVIRONMENT.json",
+              "DISTRIBUTION-RELEASE-RECEIPT.json",
+              "DISTRIBUTION-REPRODUCIBILITY.json",
+              "PYPI-PUBLICATION.json",
+              "RENDER-CONFIGURATION-DRIFT.json",
+              "mettle-server.cdx.json",
+              wheel,
+              sdist,
+          }
+          observed = {path.name for path in dist.iterdir() if path.is_file()}
+          if observed != expected:
+              raise SystemExit(
+                  f"recovered artifact set differs: expected {sorted(expected)}, "
+                  f"observed {sorted(observed)}"
+              )
+
+          pypi = json.loads((dist / "PYPI-PUBLICATION.json").read_text())
+          reproducibility = json.loads(
+              (dist / "DISTRIBUTION-REPRODUCIBILITY.json").read_text()
+          )
+          receipt = json.loads(
+              (dist / "DISTRIBUTION-RELEASE-RECEIPT.json").read_text()
+          )
+          if (
+              pypi.get("version") != version
+              or pypi.get("automatic_solver_absent") is not True
+              or pypi.get("mcp_ownership_marker")
+              != "mcp-name: io.github.Creed-Space/mettle-mcp"
+              or reproducibility.get("source_sha") != source_sha
+              or reproducibility.get("result") != "byte-identical"
+              or receipt.get("source_sha") != source_sha
+              or receipt.get("tag") != tag
+              or receipt.get("pypi") != pypi
+          ):
+              raise SystemExit("recovered distribution evidence does not bind the release")
+          official = receipt["official_mcp_registry"]
+          registry_meta = official["_meta"][
+              "io.modelcontextprotocol.registry/official"
+          ]
+          registry_package = official["server"]["packages"][0]
+          if (
+              official["server"]["name"] != "io.github.Creed-Space/mettle-mcp"
+              or official["server"]["version"] != version
+              or registry_package.get("identifier") != "mettle-verifier"
+              or registry_package.get("version") != version
+              or registry_meta.get("status") != "active"
+              or registry_meta.get("isLatest") is not True
+          ):
+              raise SystemExit("recovered MCP Registry receipt is not active and exact")
+
+          pypi_hashes = {
+              item["filename"]: item["sha256"] for item in pypi["artifacts"]
+          }
+          reproducible_hashes = {
+              item["name"]: item["sha256"]
+              for item in reproducibility["artifacts"]
+          }
+          actual_hashes = {
+              name: hashlib.sha256((dist / name).read_bytes()).hexdigest()
+              for name in (wheel, sdist)
+          }
+          if pypi_hashes != reproducible_hashes or pypi_hashes != actual_hashes:
+              raise SystemExit("recovered distributions differ from public evidence")
+          print("preserved release artifacts and publication receipts are exact")
+          PY
+      - name: Bind and checksum the recovered release
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          python scripts/build_release_manifest.py \
+            --source-sha "$SOURCE_SHA" --tag "$TAG"
+          (cd dist && shasum -a 256 ./* > SHA256SUMS)
+          (cd dist && shasum -a 256 --check SHA256SUMS)
+      - name: Attest every recovered release artifact
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a  # v3
+        with:
+          subject-path: dist/*
+      - name: Publish recovered GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "METTLE ${TAG#v}" \
+            --notes-file dist/RELEASE-NOTES.md
+      - name: Verify GitHub Release readback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease,assets \
+            --jq '{tagName,isDraft,isPrerelease,assets:[.assets[].name]}'

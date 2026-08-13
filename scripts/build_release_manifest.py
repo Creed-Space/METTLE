@@ -4,18 +4,41 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import re
-import sys
 import tomllib
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 
-from mettle.protocol import CREDENTIAL_SCHEMA_VERSION, SUITE_POLICY_VERSION  # noqa: E402
+
+def load_protocol_versions(path: Path) -> tuple[str, str]:
+    """Read release constants without importing the runtime package graph."""
+    required = {"CREDENTIAL_SCHEMA_VERSION", "SUITE_POLICY_VERSION"}
+    values: dict[str, str] = {}
+    module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for statement in module.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1:
+            continue
+        target = statement.targets[0]
+        if not isinstance(target, ast.Name) or target.id not in required:
+            continue
+        value = ast.literal_eval(statement.value)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"protocol version {target.id} must be a nonempty string")
+        values[target.id] = value
+    if set(values) != required:
+        missing = sorted(required - set(values))
+        raise ValueError(f"protocol version constants are missing: {missing}")
+    return values["CREDENTIAL_SCHEMA_VERSION"], values["SUITE_POLICY_VERSION"]
+
+
+CREDENTIAL_SCHEMA_VERSION, SUITE_POLICY_VERSION = load_protocol_versions(
+    ROOT / "mettle/protocol.py"
+)
 
 REQUIRED_SECTIONS = (
     "Credential schema",
