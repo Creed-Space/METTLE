@@ -85,7 +85,7 @@ def test_all_release_version_declarations_agree() -> None:
     openapi = json.loads(_read("docs/openapi-v1.json"))
     version = project["version"]
 
-    assert version == "0.3.1"
+    assert version == "0.3.2"
     assert (
         __version__
         == METTLE_VERSION
@@ -94,6 +94,7 @@ def test_all_release_version_declarations_agree() -> None:
     )
     assert server["version"] == server["packages"][0]["version"] == version
     assert openapi["info"]["version"] == version
+    assert f"<!-- mcp-name: {server['name']} -->" in _read("README.md")
     assert _read("RELEASE_NOTES.md").startswith(
         f"# METTLE release notes\n\n## [{version}]"
     )

@@ -8,7 +8,30 @@ from pathlib import Path
 import pytest
 
 from scripts.build_distribution_receipt import build_receipt
-from scripts.verify_pypi_release import _require_https
+from scripts.verify_pypi_release import (
+    MCP_SERVER_NAME,
+    _require_https,
+    _require_mcp_ownership_marker,
+    _version_json_url,
+)
+
+
+def test_mcp_ownership_marker_matches_registry_identity() -> None:
+    marker = f"mcp-name: {MCP_SERVER_NAME}"
+    assert _require_mcp_ownership_marker(f"<!-- {marker} -->") == marker
+
+
+def test_mcp_ownership_marker_rejects_missing_or_wrong_identity() -> None:
+    with pytest.raises(RuntimeError, match="ownership marker"):
+        _require_mcp_ownership_marker("mcp-name: io.github.example/other")
+
+
+def test_publication_verifier_targets_one_exact_version() -> None:
+    assert _version_json_url("0.3.2") == (
+        "https://pypi.org/pypi/mettle-verifier/0.3.2/json"
+    )
+    with pytest.raises(ValueError, match="unsafe PyPI version"):
+        _version_json_url("../forged")
 
 
 def _inputs(tmp_path: Path) -> tuple[Path, Path, dict]:

@@ -1,5 +1,37 @@
 # METTLE release notes
 
+## [0.3.2]
+
+### Credential schema
+
+Credential schema `1.0` and suite policy `2026-08-12` remain unchanged.
+This release repairs package ownership metadata for registry publication.
+
+### Suite policy
+
+Challenge generation, tier ranges, scoring, and credential semantics remain
+unchanged from `0.3.1`.
+
+### Public key changes
+
+No signing key or discovery format change is included. Deployed key identity is
+verified separately from package publication.
+
+### Compatibility
+
+The package remains compatible with Python 3.10 through 3.14 and exposes the
+same seven reviewed MCP tools. The package README now carries the exact
+ownership marker required by the Official MCP Registry. Package, API, and
+registry versions advance together to `0.3.2`.
+
+### Known limitations
+
+PyPI `0.3.1` remains a functional package release, but its immutable description
+lacks the ownership marker now required for Official MCP Registry publication.
+Registry consumers should use `0.3.2`. The broader probabilistic, operational,
+human review, rights, and independent review limitations documented for
+`0.3.1` remain in force.
+
 ## [0.3.1]
 
 ### Credential schema
