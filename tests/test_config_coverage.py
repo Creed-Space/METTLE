@@ -215,8 +215,8 @@ def test_release_requires_reproducibility_before_publication() -> None:
     assert "name: Prepare exact release bundle" in release
     assert "needs: [validate-candidate, reproducibility, render-drift]" in release
     assert "environment:\n      name: pypi" in release
-    sha_prefix = "ec4db0b4ddc65acdf4bf"  # pragma: allowlist secret
-    sha_suffix = "f5fa45ac92d78b56bdf0"  # pragma: allowlist secret
+    sha_prefix = "dc37677b2e1c63e2034f"  # pragma: allowlist secret
+    sha_suffix = "94d8a5b11f265b73ba33"  # pragma: allowlist secret
     pypi_action_sha = sha_prefix + sha_suffix
     assert f"pypa/gh-action-pypi-publish@{pypi_action_sha}" in release
     assert "scripts/verify_pypi_release.py" in release
