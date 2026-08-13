@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import tempfile
 import time
 import urllib.error
@@ -17,8 +18,9 @@ from pathlib import Path
 from typing import Any
 
 
-PYPI_JSON = "https://pypi.org/pypi/mettle-verifier/json"
+PYPI_PROJECT = "https://pypi.org/pypi/mettle-verifier"
 MAX_ARTIFACT_BYTES = 50 * 1024 * 1024
+MCP_SERVER_NAME = "io.github.Creed-Space/mettle-mcp"
 
 
 def _require_https(url: str, hosts: set[str]) -> None:
@@ -39,6 +41,21 @@ def _get_json(url: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("PyPI returned a non-object response")
     return payload
+
+
+def _version_json_url(version: str) -> str:
+    """Build the exact-version PyPI endpoint without permitting path injection."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+!-]{0,127}", version):
+        raise ValueError(f"unsafe PyPI version: {version!r}")
+    return f"{PYPI_PROJECT}/{urllib.parse.quote(version, safe='')}/json"
+
+
+def _require_mcp_ownership_marker(description: str) -> str:
+    """Require the package proof consumed by Official MCP Registry validation."""
+    marker = f"mcp-name: {MCP_SERVER_NAME}"
+    if marker not in description:
+        raise RuntimeError("PyPI description is missing the MCP ownership marker")
+    return marker
 
 
 def _download(url: str, target: Path, expected_size: int) -> str:
@@ -70,23 +87,25 @@ def _download(url: str, target: Path, expected_size: int) -> str:
 
 def verify_release(version: str, *, attempts: int, delay: float) -> dict[str, Any]:
     """Wait for and verify exactly one public wheel and source distribution."""
+    public_index = _version_json_url(version)
     payload: dict[str, Any] | None = None
     for attempt in range(1, attempts + 1):
         try:
-            candidate = _get_json(PYPI_JSON)
+            candidate = _get_json(public_index)
         except urllib.error.URLError:
             candidate = {}
-        if version in candidate.get("releases", {}):
+        if candidate.get("info", {}).get("version") == version:
             payload = candidate
             break
         if attempt < attempts:
             time.sleep(delay)
     if payload is None:
         raise RuntimeError(f"PyPI version {version} did not become visible")
-    if payload.get("info", {}).get("version") != version:
-        raise RuntimeError(f"PyPI latest version is not {version}")
+    ownership_marker = _require_mcp_ownership_marker(
+        str(payload.get("info", {}).get("description", ""))
+    )
 
-    files = payload["releases"][version]
+    files = payload.get("urls", [])
     if len(files) != 2 or {item["packagetype"] for item in files} != {
         "bdist_wheel",
         "sdist",
@@ -159,7 +178,8 @@ def verify_release(version: str, *, attempts: int, delay: float) -> dict[str, An
         "checked_at": datetime.now(UTC).isoformat(),
         "project": "mettle-verifier",
         "version": version,
-        "public_index": PYPI_JSON,
+        "public_index": public_index,
+        "mcp_ownership_marker": ownership_marker,
         "automatic_solver_absent": True,
         "artifacts": artifact_receipts,
     }

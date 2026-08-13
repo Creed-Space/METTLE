@@ -1,5 +1,7 @@
 # METTLE
 
+<!-- mcp-name: io.github.Creed-Space/mettle-mcp -->
+
 **Machine Evaluation Through Turing-inverse Logic Examination**
 
 METTLE is a reverse CAPTCHA. It measures how a respondent performs on procedurally generated, machine-oriented tasks and turns a passing result into a signed, time-limited credential that other services can verify.
