@@ -78,7 +78,7 @@ The scan ended at its configured 40-run cap before semantic saturation. It valid
 
 | # | Candidate | Cluster | Question | Primary locus | Status | Closure evidence |
 |---:|---|---|---|---|---|---|
-| 59 | `candidate-e5c0141bab12da47` | Datastore transport | Production configuration permits plaintext Redis and PostgreSQL transport for security critical state. | `config.py:138` | External | `config.py` rejects plaintext Redis and PostgreSQL without `sslmode=verify-full`; production probes on 2026-08-14 negotiated verified Redis TLS and PostgreSQL TLS 1.3. Final candidate environment reconciliation and post-deploy recheck remain. |
+| 59 | `candidate-e5c0141bab12da47` | Datastore transport | Production configuration permits plaintext Redis and PostgreSQL transport for security critical state. | `config.py:138` | External | `config.py` rejects plaintext Redis and PostgreSQL without `sslmode=verify-full`, and `check_render_drift.py` now rejects semantically insecure provider URLs without disclosing them. The first exact-v0.4.2 production attempt on 2026-08-14 failed before promotion because the provider database URL omitted `sslmode`; v0.3.2 remained live. Provider correction, successful v0.4.2 promotion, and post-deploy transport proof remain. |
 | 60 | `candidate-0b68dfa49a465c5b` | Redirect integrity | Allowlisted download and provider requests do not revalidate the final redirect origin. | `scripts/verify_pypi_release.py:26` | Fixed | PyPI and Render clients reject redirects before forwarding authorization and verify the final fixed origin; `test_publication_verifier_rejects_redirects_before_following` and `test_render_checker_rejects_redirects_before_forwarding_bearer`. |
 | 61 | `candidate-7a4142a8e10e1b9c` | Proxy identity | Client IP controls depend on an unverified proxy trust configuration. | `main.py:1635` | External | `render.yaml` makes Uvicorn proxy trust explicit and limits the service port to Render ingress by provider architecture. A final deployed spoof-resistance probe remains before this infrastructure-dependent question can be closed as live proof. |
 
@@ -90,8 +90,8 @@ review. Its report SHA-256 is
 and its snapshot digest is
 `codex-security-snapshot/v1:sha256:ffc51baf3397d9e2c7429d387904c8175197b7319fd06a0ad13a825e0b064a7c`.
 All 14 reportable residual findings have candidate fixes and focused regression
-evidence. The provider-dependent proxy question remains row 61 above until live
-proof is obtained.
+evidence. The provider-dependent datastore and proxy questions remain rows 59
+and 61 above until live proof is obtained.
 
 The resulting pre-release candidate received a third sealed security diff
 review. Its report SHA-256 is

@@ -118,6 +118,13 @@ def test_promote_release_binds_both_services_to_one_commit(
 def test_terminal_provider_failure_cannot_produce_a_live_receipt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    failed = {
+        "id": "dep-failed",
+        "status": "update_failed",
+        "commit": {"id": SOURCE_REVISION},
+        "trigger": "api",
+    }
+
     def request(
         path: str,
         _token: str,
@@ -128,38 +135,40 @@ def test_terminal_provider_failure_cannot_produce_a_live_receipt(
         del payload
         if method == "GET":
             return 200, [
+                {"deploy": failed},
                 {
                     "deploy": {
                         "id": "dep-previous",
                         "status": "live",
                         "commit": {"id": "0" * 40},
                     }
-                }
+                },
             ]
-        if path.endswith("/rollback"):
-            rollback = _live("dep-api-rollback")
-            rollback["commit"] = {"id": "0" * 40}
-            rollback["trigger"] = "rollback"
-            return 201, rollback
-        return 201, {
-            "id": "dep-failed",
-            "status": "build_failed",
-            "commit": {"id": SOURCE_REVISION},
-            "trigger": "api",
-        }
+        return 201, failed
 
     monkeypatch.setattr(release, "_request_json", request)
     with pytest.raises(release.RenderPromotionError) as raised:
         release.promote_release(
             _contract(), SOURCE_REVISION, "v0.4.0", "secret-token", poll_seconds=0
         )
-    assert raised.value.rollbacks[0]["restored_commit_id"] == "0" * 40
+    assert raised.value.rollbacks == [
+        {
+            "name": "mettle-api",
+            "service_id": "srv-api",
+            "action": "already_live",
+            "rollback_deploy_id": "dep-previous",
+            "restored_commit_id": "0" * 40,
+            "status": "live",
+        }
+    ]
 
 
 def test_later_service_failure_rolls_back_already_promoted_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    api_is_promoted = False
 
     def request(
         path: str,
@@ -168,10 +177,11 @@ def test_later_service_failure_rolls_back_already_promoted_service(
         method: str = "GET",
         payload: dict[str, object] | None = None,
     ) -> tuple[int, object]:
+        nonlocal api_is_promoted
         calls.append((method, path, payload))
         if method == "GET":
             service = "api" if "srv-api" in path else "mcp"
-            return 200, [
+            deployments: list[dict[str, object]] = [
                 {
                     "deploy": {
                         "id": f"dep-{service}-previous",
@@ -180,7 +190,23 @@ def test_later_service_failure_rolls_back_already_promoted_service(
                     }
                 }
             ]
+            if service == "api" and api_is_promoted:
+                deployments.insert(0, {"deploy": _live("dep-api-release")})
+            if service == "mcp" and api_is_promoted:
+                deployments.insert(
+                    0,
+                    {
+                        "deploy": {
+                            "id": "dep-mcp-failed",
+                            "status": "build_failed",
+                            "commit": {"id": SOURCE_REVISION},
+                            "trigger": "api",
+                        }
+                    },
+                )
+            return 200, deployments
         if path == "/services/srv-api/deploys":
+            api_is_promoted = True
             return 201, _live("dep-api-release")
         if path == "/services/srv-mcp/deploys":
             return 201, {
@@ -212,13 +238,15 @@ def test_later_service_failure_rolls_back_already_promoted_service(
         {
             "name": "mettle-mcp",
             "service_id": "srv-mcp",
-            "rollback_deploy_id": "dep-mcp-rollback",
+            "action": "already_live",
+            "rollback_deploy_id": "dep-mcp-previous",
             "restored_commit_id": "0" * 40,
             "status": "live",
         },
         {
             "name": "mettle-api",
             "service_id": "srv-api",
+            "action": "rollback",
             "rollback_deploy_id": "dep-api-rollback",
             "restored_commit_id": "0" * 40,
             "status": "live",
@@ -284,6 +312,7 @@ def test_timeout_after_deploy_trigger_rolls_back_the_current_service(
         {
             "name": "mettle-api",
             "service_id": "srv-api",
+            "action": "rollback",
             "rollback_deploy_id": "dep-api-rollback",
             "restored_commit_id": "0" * 40,
             "status": "live",

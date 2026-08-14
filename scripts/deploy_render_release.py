@@ -295,6 +295,42 @@ def rollback_service(
         or SOURCE_REVISION_RE.fullmatch(previous_commit_id) is None
     ):
         raise RenderAPIError("promotion receipt has no valid rollback target")
+    deployments = _list_deploys(service_id, token)
+    current_live = next(
+        (
+            deployment
+            for deployment in deployments
+            if deployment.get("status") == "live"
+        ),
+        None,
+    )
+    attempted_commit_id = promoted.get("commit_id")
+    terminal_attempt = next(
+        (
+            deployment
+            for deployment in deployments
+            if isinstance(attempted_commit_id, str)
+            and isinstance(deployment.get("commit"), dict)
+            and deployment["commit"].get("id") == attempted_commit_id
+            and deployment.get("status") in FAILURE_STATUSES
+        ),
+        None,
+    )
+    if (
+        isinstance(current_live, dict)
+        and current_live.get("id") == previous_deploy_id
+        and isinstance(current_live.get("commit"), dict)
+        and current_live["commit"].get("id") == previous_commit_id
+        and terminal_attempt is not None
+    ):
+        return {
+            "name": promoted["name"],
+            "service_id": service_id,
+            "action": "already_live",
+            "rollback_deploy_id": previous_deploy_id,
+            "restored_commit_id": previous_commit_id,
+            "status": "live",
+        }
     status_code, payload = _request_json(
         f"/services/{service_id}/rollback",
         token,
@@ -315,6 +351,7 @@ def rollback_service(
     return {
         "name": promoted["name"],
         "service_id": service_id,
+        "action": "rollback",
         "rollback_deploy_id": live["id"],
         "restored_commit_id": previous_commit_id,
         "status": "live",

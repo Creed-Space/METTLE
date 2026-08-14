@@ -28,6 +28,58 @@ SECRET_FINGERPRINT_ENV = (
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 
+def _url_secret_semantics(key: str, value: object) -> str | None:
+    """Return a secret-safe verdict for structured transport credentials."""
+    if key not in {
+        "METTLE_DATABASE_URL",
+        "METTLE_HOLDER_DATABASE_URL",
+        "METTLE_HOLDER_VAULT_URL",
+        "METTLE_REDIS_URL",
+    }:
+        return None
+    if not isinstance(value, str) or not value:
+        return "mismatch"
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        hostname = parsed.hostname
+    except ValueError:
+        return "mismatch"
+    if not hostname:
+        return "mismatch"
+    if key in {"METTLE_DATABASE_URL", "METTLE_HOLDER_DATABASE_URL"}:
+        ssl_modes = query.get("sslmode", [])
+        valid = (
+            parsed.scheme in {"postgres", "postgresql"}
+            and len(ssl_modes) == 1
+            and ssl_modes[0].strip().lower() == "verify-full"
+        )
+    elif key == "METTLE_REDIS_URL":
+        certificate_requirements = query.get("ssl_cert_reqs", [])
+        hostname_checks = query.get("ssl_check_hostname", [])
+        valid = (
+            parsed.scheme == "rediss"
+            and (
+                not certificate_requirements
+                or (
+                    len(certificate_requirements) == 1
+                    and certificate_requirements[0].strip().lower()
+                    in {"required", "cert_required"}
+                )
+            )
+            and (
+                not hostname_checks
+                or (
+                    len(hostname_checks) == 1
+                    and hostname_checks[0].strip().lower() == "true"
+                )
+            )
+        )
+    else:
+        valid = parsed.scheme == "https"
+    return "match" if valid else "mismatch"
+
+
 class _RejectRedirects(urllib.request.HTTPRedirectHandler):
     """Never forward the Render bearer token across an HTTP redirect."""
 
@@ -441,6 +493,15 @@ def evaluate_drift(
                     identity,
                 )
             )
+            semantics = _url_secret_semantics(key, secret)
+            if semantics is not None:
+                checks.append(
+                    Check(
+                        f"secret_semantics.{key}",
+                        "match",
+                        semantics,
+                    )
+                )
         expected_keys = set(nonsecret) | set(secret_keys)
         checks.append(
             Check("environment_keys", sorted(expected_keys), sorted(environment))

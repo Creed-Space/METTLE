@@ -121,6 +121,44 @@ def _fingerprints(contract: dict, live: dict) -> dict[str, str]:
     return fingerprints
 
 
+def _semantic_contract(
+    tmp_path: Path,
+) -> tuple[dict, dict, dict[str, str]]:
+    blueprint, deployment = _contract_files(tmp_path)
+    blueprint.write_text(
+        blueprint.read_text(encoding="utf-8").replace(
+            "      - key: REQUIRED_SECRET\n        sync: false\n",
+            """      - key: REQUIRED_SECRET
+        sync: false
+      - key: METTLE_DATABASE_URL
+        sync: false
+      - key: METTLE_REDIS_URL
+        sync: false
+      - key: METTLE_HOLDER_DATABASE_URL
+        sync: false
+      - key: METTLE_HOLDER_VAULT_URL
+        sync: false
+""",
+        ),
+        encoding="utf-8",
+    )
+    live = _live()
+    live["services"]["service"]["environment"].update(
+        {
+            "METTLE_DATABASE_URL": (
+                "postgresql://user:password@db.example/mettle?sslmode=verify-full"  # pragma: allowlist secret
+            ),
+            "METTLE_REDIS_URL": "rediss://redis.example/mettle",
+            "METTLE_HOLDER_DATABASE_URL": (
+                "postgres://user:password@holder-db.example/mettle?sslmode=verify-full"  # pragma: allowlist secret
+            ),
+            "METTLE_HOLDER_VAULT_URL": "https://vault.example",
+        }
+    )
+    contract = load_contract(blueprint, deployment)
+    return contract, live, _fingerprints(contract, live)
+
+
 def test_matching_provider_contract_is_green_and_secret_safe(tmp_path: Path) -> None:
     blueprint, deployment = _contract_files(tmp_path)
     contract = load_contract(blueprint, deployment)
@@ -132,6 +170,68 @@ def test_matching_provider_contract_is_green_and_secret_safe(tmp_path: Path) -> 
     assert "never-print-this-either" not in serialized
     assert "never-print-file-secret" not in serialized
     assert '"observed": "match"' in serialized
+
+
+def test_structured_secret_semantics_are_checked_without_disclosure(
+    tmp_path: Path,
+) -> None:
+    contract, live, fingerprints = _semantic_contract(tmp_path)
+    receipt = evaluate_drift(contract, live, fingerprints)
+    serialized = json.dumps(receipt)
+    semantic_checks = {
+        check["field"]: check
+        for check in receipt["services"][0]["checks"]
+        if str(check["field"]).startswith("secret_semantics.")
+    }
+
+    assert receipt["result"] == "match"
+    assert set(semantic_checks) == {
+        "secret_semantics.METTLE_DATABASE_URL",
+        "secret_semantics.METTLE_REDIS_URL",
+        "secret_semantics.METTLE_HOLDER_DATABASE_URL",
+        "secret_semantics.METTLE_HOLDER_VAULT_URL",
+    }
+    assert all(check["observed"] == "match" for check in semantic_checks.values())
+    assert "user:password" not in serialized
+    assert "db.example" not in serialized
+    assert "vault.example" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("METTLE_DATABASE_URL", "postgresql://db.example/mettle"),
+        (
+            "METTLE_DATABASE_URL",
+            "postgresql://db.example/mettle?sslmode=verify-full&sslmode=disable",
+        ),
+        ("METTLE_REDIS_URL", "redis://redis.example/mettle"),
+        (
+            "METTLE_REDIS_URL",
+            "rediss://redis.example/mettle?ssl_check_hostname=false",
+        ),
+        ("METTLE_HOLDER_DATABASE_URL", "sqlite:///holder.db"),
+        ("METTLE_HOLDER_VAULT_URL", "http://vault.example"),
+    ],
+)
+def test_insecure_structured_secret_fails_drift_without_disclosure(
+    tmp_path: Path, key: str, value: str
+) -> None:
+    contract, live, fingerprints = _semantic_contract(tmp_path)
+    live["services"]["service"]["environment"][key] = value
+    fingerprints[f"service.{key}"] = hashlib.sha256(value.encode()).hexdigest()
+
+    receipt = evaluate_drift(contract, live, fingerprints)
+    serialized = json.dumps(receipt)
+    semantic_check = next(
+        check
+        for check in receipt["services"][0]["checks"]
+        if check["field"] == f"secret_semantics.{key}"
+    )
+
+    assert receipt["result"] == "drift"
+    assert semantic_check["observed"] == "mismatch"
+    assert value not in serialized
 
 
 def test_substituted_nonempty_secret_is_detected_without_disclosing_it(
