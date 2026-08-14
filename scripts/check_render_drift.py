@@ -4,20 +4,52 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
+import os
+import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
 RENDER_API = "https://api.render.com/v1"
+SECRET_FINGERPRINT_ENV = (
+    "RENDER_SECRET_FINGERPRINTS"  # pragma: allowlist secret  # nosec B105
+)
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+
+
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward the Render bearer token across an HTTP redirect."""
+
+    def redirect_request(
+        self,
+        req: object,
+        fp: object,
+        code: int,
+        _msg: str,
+        headers: object,
+        _newurl: str,
+    ) -> None:
+        raise urllib.error.HTTPError(
+            getattr(req, "full_url", RENDER_API),
+            code,
+            "redirect rejected",
+            cast(Any, headers),
+            cast(Any, fp),
+        )
+
+
+_HTTPS_OPENER = urllib.request.build_opener(_RejectRedirects())
 
 
 @dataclass(frozen=True)
@@ -43,20 +75,62 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _blueprint_label(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(ROOT.resolve()))
+    except ValueError:
+        return path.name
+
+
+def _load_blueprint(path: Path) -> dict[str, dict[str, Any]]:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    services = payload.get("services") if isinstance(payload, dict) else None
+    if not isinstance(services, list) or not services:
+        raise ValueError(f"blueprint has no services: {_blueprint_label(path)}")
+    authored = {
+        service["name"]: service for service in services if isinstance(service, dict)
+    }
+    if len(authored) != len(services):
+        raise ValueError(
+            f"blueprint has invalid or duplicate services: {_blueprint_label(path)}"
+        )
+    return authored
+
+
 def load_contract(blueprint_path: Path, deployment_path: Path) -> dict[str, Any]:
     """Load the declarative service contract without resolving any secrets."""
-    blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8"))
     deployment = json.loads(deployment_path.read_text(encoding="utf-8"))
-    authored_services = blueprint["services"]
-    authored = {service["name"]: service for service in authored_services}
-    if len(authored) != len(authored_services):
-        raise ValueError("blueprint contains duplicate service names")
     bindings = deployment["services"]
     binding_names = [binding["blueprint_name"] for binding in bindings]
     if len(set(binding_names)) != len(binding_names):
         raise ValueError("deployment contains duplicate service bindings")
+    default_blueprint = blueprint_path.resolve()
+    blueprints: dict[Path, dict[str, dict[str, Any]]] = {
+        default_blueprint: _load_blueprint(default_blueprint)
+    }
+    for declared_path in deployment.get("required_blueprints", []):
+        relative_path = Path(str(declared_path))
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise ValueError("additional blueprint path must be repository-relative")
+        source_path = (deployment_path.parent / relative_path).resolve()
+        blueprints[source_path] = _load_blueprint(source_path)
     services: dict[str, dict[str, Any]] = {}
+    bound_by_blueprint: dict[Path, set[str]] = {path: set() for path in blueprints}
     for binding in bindings:
+        relative_blueprint = binding.get("blueprint_path")
+        if relative_blueprint is None:
+            source_path = default_blueprint
+        else:
+            relative_path = Path(str(relative_blueprint))
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                raise ValueError(
+                    "additional blueprint path must be repository-relative"
+                )
+            source_path = (deployment_path.parent / relative_path).resolve()
+            if source_path not in blueprints:
+                blueprints[source_path] = _load_blueprint(source_path)
+            bound_by_blueprint.setdefault(source_path, set())
+        authored = blueprints[source_path]
         name = binding["blueprint_name"]
         if name not in authored:
             raise ValueError(f"deployment binding has no blueprint service: {name}")
@@ -65,8 +139,24 @@ def load_contract(blueprint_path: Path, deployment_path: Path) -> dict[str, Any]
             raise ValueError(
                 f"repository identity differs for blueprint service: {name}"
             )
+        if name in services:
+            raise ValueError(f"service name is repeated across blueprints: {name}")
+        bound_by_blueprint[source_path].add(name)
         nonsecret_env: dict[str, str] = {}
         secret_keys: set[str] = set(binding.get("provider_secret_keys", []))
+        raw_secret_files = binding.get("provider_secret_files", [])
+        if not isinstance(raw_secret_files, list) or any(
+            not isinstance(filename, str)
+            or not filename.strip()
+            or len(filename) > 255
+            or Path(filename).name != filename
+            or filename in {".", ".."}
+            for filename in raw_secret_files
+        ):
+            raise ValueError(f"provider secret file names are invalid for {name}")
+        if len(set(raw_secret_files)) != len(raw_secret_files):
+            raise ValueError(f"provider secret file names are duplicated for {name}")
+        secret_files = sorted(raw_secret_files)
         for declaration in service.get("envVars", []):
             key = declaration["key"]
             if "value" in declaration:
@@ -86,18 +176,59 @@ def load_contract(blueprint_path: Path, deployment_path: Path) -> dict[str, Any]
         services[name] = {
             "binding": binding,
             "blueprint": service,
+            "blueprint_label": _blueprint_label(source_path),
             "nonsecret_env": nonsecret_env,
             "secret_keys": sorted(secret_keys),
+            "secret_files": secret_files,
         }
-    if set(services) != set(authored):
-        missing = sorted(set(authored) - set(services))
-        raise ValueError(f"blueprint services lack production bindings: {missing}")
+    for source_path, authored in blueprints.items():
+        missing = sorted(set(authored) - bound_by_blueprint[source_path])
+        if missing:
+            raise ValueError(
+                f"blueprint services lack deployment bindings in "
+                f"{_blueprint_label(source_path)}: {missing}"
+            )
     return {
         "repository": deployment["repository"],
         "services": services,
-        "blueprint_sha256": _sha256(blueprint_path),
+        "blueprint_sha256": {
+            _blueprint_label(path): _sha256(path) for path in sorted(blueprints)
+        },
         "deployment_sha256": _sha256(deployment_path),
     }
+
+
+def load_secret_fingerprints(
+    serialized: str, contract: dict[str, Any]
+) -> dict[str, str]:
+    """Validate the encrypted, release-controlled secret identity inventory."""
+    try:
+        payload = json.loads(serialized)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError("secret fingerprint inventory is not valid JSON") from exc
+    if not isinstance(payload, dict) or payload.get("schema_version") != "1.0":
+        raise ValueError("secret fingerprint inventory schema is unsupported")
+    fingerprints = payload.get("fingerprints")
+    if not isinstance(fingerprints, dict):
+        raise ValueError("secret fingerprint inventory is missing fingerprints")
+    expected = {
+        f"{name}.{key}"
+        for name, service in contract["services"].items()
+        for key in service["secret_keys"]
+    }
+    expected.update(
+        f"{name}.secret_file:{filename}"
+        for name, service in contract["services"].items()
+        for filename in service["secret_files"]
+    )
+    if set(fingerprints) != expected:
+        raise ValueError(
+            "secret fingerprint inventory does not match reviewed secret keys"
+        )
+    for fingerprint in fingerprints.values():
+        if not isinstance(fingerprint, str) or not _SHA256_RE.fullmatch(fingerprint):
+            raise ValueError("secret fingerprint inventory contains an invalid digest")
+    return dict(fingerprints)
 
 
 def _request(path: str, token: str) -> object:
@@ -111,7 +242,11 @@ def _request(path: str, token: str) -> object:
             "User-Agent": "METTLE-Render-Drift-Check/1.0",
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
+    with _HTTPS_OPENER.open(request, timeout=30) as response:  # nosec B310
+        final = urllib.parse.urlsplit(response.geturl())
+        expected = urllib.parse.urlsplit(RENDER_API)
+        if (final.scheme, final.netloc) != (expected.scheme, expected.netloc):
+            raise ValueError("Render API response changed origin")
         return json.load(response)
 
 
@@ -130,18 +265,49 @@ def fetch_live(contract: dict[str, Any], token: str) -> dict[str, Any]:
         service_id = expected["binding"]["service_id"]
         service = _request(f"/services/{service_id}", token)
         env_payload = _request(f"/services/{service_id}/env-vars?limit=100", token)
-        if not isinstance(service, dict) or not isinstance(env_payload, list):
+        secret_file_payload = _request(
+            f"/services/{service_id}/secret-files?limit=100", token
+        )
+        if (
+            not isinstance(service, dict)
+            or not isinstance(env_payload, list)
+            or not isinstance(secret_file_payload, list)
+        ):
             raise ValueError(f"unexpected Render response for {name}")
         environment = {}
         for item in env_payload:
             declaration = item.get("envVar", item)
+            if declaration["key"] in environment:
+                raise ValueError(f"duplicate Render environment key for {name}")
             environment[declaration["key"]] = declaration.get("value", "")
-        services[name] = {"service": service, "environment": environment}
+        secret_files = {}
+        for item in secret_file_payload:
+            declaration = item.get("secretFile", item)
+            if not isinstance(declaration, dict):
+                raise ValueError(f"unexpected Render secret file for {name}")
+            filename = declaration.get("name")
+            content = declaration.get("content")
+            if (
+                not isinstance(filename, str)
+                or not isinstance(content, str)
+                or filename in secret_files
+            ):
+                raise ValueError(f"invalid or duplicate Render secret file for {name}")
+            secret_files[filename] = content
+        services[name] = {
+            "service": service,
+            "environment": environment,
+            "secret_files": secret_files,
+        }
     return {"owners": owners, "services": services}
 
 
-def evaluate_drift(contract: dict[str, Any], live: dict[str, Any]) -> dict[str, Any]:
-    """Return a receipt containing only nonsecret values and secret presence."""
+def evaluate_drift(
+    contract: dict[str, Any],
+    live: dict[str, Any],
+    secret_fingerprints: dict[str, str],
+) -> dict[str, Any]:
+    """Return a receipt containing nonsecret values and secret identity verdicts."""
     service_receipts = []
     all_checks: list[Check] = []
     for name, expected in sorted(contract["services"].items()):
@@ -152,10 +318,18 @@ def evaluate_drift(contract: dict[str, Any], live: dict[str, Any]) -> dict[str, 
         details = service.get("serviceDetails", {})
         runtime = details.get("envSpecificDetails", {})
         environment = current["environment"]
+        secret_files = current["secret_files"]
+        service_type = {"web": "web_service", "pserv": "private_service"}.get(
+            blueprint.get("type")
+        )
+        if service_type is None:
+            raise ValueError(
+                f"unsupported Render service type: {blueprint.get('type')}"
+            )
         checks = [
             Check("service_id", binding["service_id"], service.get("id")),
             Check("name", name, service.get("name")),
-            Check("type", "web_service", service.get("type")),
+            Check("type", service_type, service.get("type")),
             Check("workspace_id", binding["workspace_id"], service.get("ownerId")),
             Check(
                 "workspace_name",
@@ -172,15 +346,42 @@ def evaluate_drift(contract: dict[str, Any], live: dict[str, Any]) -> dict[str, 
             Check("runtime", blueprint["runtime"], details.get("runtime")),
             Check("plan", blueprint["plan"], details.get("plan")),
             Check("region", blueprint["region"], details.get("region")),
-            Check(
-                "num_instances", blueprint["numInstances"], details.get("numInstances")
-            ),
-            Check(
-                "health_check_path",
-                blueprint["healthCheckPath"],
-                details.get("healthCheckPath"),
-            ),
         ]
+        if "numInstances" in blueprint:
+            checks.append(
+                Check(
+                    "num_instances",
+                    blueprint["numInstances"],
+                    details.get("numInstances"),
+                )
+            )
+        if "healthCheckPath" in blueprint:
+            checks.append(
+                Check(
+                    "health_check_path",
+                    blueprint["healthCheckPath"],
+                    details.get("healthCheckPath"),
+                )
+            )
+        if "maxShutdownDelaySeconds" in blueprint:
+            checks.append(
+                Check(
+                    "max_shutdown_delay_seconds",
+                    blueprint["maxShutdownDelaySeconds"],
+                    details.get("maxShutdownDelaySeconds"),
+                )
+            )
+        if "disk" in blueprint:
+            expected_disk = blueprint["disk"]
+            observed_disk = details.get("disk") or {}
+            for field in ("name", "mountPath", "sizeGB"):
+                checks.append(
+                    Check(
+                        f"disk.{field}",
+                        expected_disk.get(field),
+                        observed_disk.get(field),
+                    )
+                )
         if blueprint["runtime"] == "python":
             checks.extend(
                 [
@@ -220,21 +421,57 @@ def evaluate_drift(contract: dict[str, Any], live: dict[str, Any]) -> dict[str, 
         for key, value in sorted(nonsecret.items()):
             checks.append(Check(f"env.{key}", value, environment.get(key)))
         for key in secret_keys:
+            secret = environment.get(key)
+            if not secret:
+                identity = "missing"
+            else:
+                observed_fingerprint = hashlib.sha256(str(secret).encode()).hexdigest()
+                identity = (
+                    "match"
+                    if hmac.compare_digest(
+                        observed_fingerprint,
+                        secret_fingerprints[f"{name}.{key}"],
+                    )
+                    else "mismatch"
+                )
             checks.append(
                 Check(
-                    f"secret.{key}",
-                    "present",
-                    "present" if bool(environment.get(key)) else "missing",
+                    f"secret_identity.{key}",
+                    "match",
+                    identity,
                 )
             )
         expected_keys = set(nonsecret) | set(secret_keys)
         checks.append(
             Check("environment_keys", sorted(expected_keys), sorted(environment))
         )
+        for filename in expected["secret_files"]:
+            content = secret_files.get(filename)
+            if content is None:
+                identity = "missing"
+            else:
+                observed_fingerprint = hashlib.sha256(content.encode()).hexdigest()
+                identity = (
+                    "match"
+                    if hmac.compare_digest(
+                        observed_fingerprint,
+                        secret_fingerprints[f"{name}.secret_file:{filename}"],
+                    )
+                    else "mismatch"
+                )
+            checks.append(Check(f"secret_file_identity.{filename}", "match", identity))
+        checks.append(
+            Check(
+                "secret_file_names",
+                expected["secret_files"],
+                sorted(secret_files),
+            )
+        )
         all_checks.extend(checks)
         service_receipts.append(
             {
                 "name": name,
+                "blueprint": expected["blueprint_label"],
                 "service_id": binding["service_id"],
                 "provider_updated_at": service.get("updatedAt"),
                 "status": "pass" if all(check.passed for check in checks) else "drift",
@@ -243,7 +480,7 @@ def evaluate_drift(contract: dict[str, Any], live: dict[str, Any]) -> dict[str, 
         )
 
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "checked_at": datetime.now(UTC).isoformat(),
         "result": "match" if all(check.passed for check in all_checks) else "drift",
         "blueprint_sha256": contract["blueprint_sha256"],
@@ -269,10 +506,17 @@ def main() -> None:
     exit_status = 0
     try:
         contract = load_contract(args.blueprint, args.deployment)
-        receipt = evaluate_drift(contract, fetch_live(contract, token))
+        fingerprints = load_secret_fingerprints(
+            os.environ.get(SECRET_FINGERPRINT_ENV, ""), contract
+        )
+        receipt = evaluate_drift(
+            contract,
+            fetch_live(contract, token),
+            fingerprints,
+        )
     except (OSError, ValueError, KeyError, urllib.error.URLError) as error:
         receipt = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "checked_at": datetime.now(UTC).isoformat(),
             "result": "error",
             "error_type": type(error).__name__,

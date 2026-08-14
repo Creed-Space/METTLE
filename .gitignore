@@ -50,6 +50,7 @@ memory/transcript_backups/
 
 # Node / Frontend
 node_modules/
+examples/target/
 .svelte-kit/
 
 # OS

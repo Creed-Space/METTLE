@@ -26,6 +26,14 @@ pytest.importorskip("mcp")
 
 from mettle import mcp_server  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def clear_session_token_vault():
+    mcp_server._session_tokens.clear()
+    yield
+    mcp_server._session_tokens.clear()
+
+
 EXPECTED_TOOLS = {
     "mettle_start_session",
     "mettle_answer_challenge",
@@ -112,7 +120,7 @@ async def test_no_session_token_means_no_header():
 
 @pytest.mark.asyncio
 async def test_answer_challenge_threads_token_through():
-    """The tool handler must forward the caller's token, not drop it."""
+    """The tool handler forwards its page-local token without model echo."""
     post = AsyncMock(
         return_value=_mock_response(
             {
@@ -125,12 +133,12 @@ async def test_answer_challenge_threads_token_through():
             }
         )
     )
+    mcp_server._remember_session_token("ses_1", "tok_from_start")
     with patch.object(mcp_server.http_client, "post", post):
         await mcp_server.call_tool(
             "mettle_answer_challenge",
             {
                 "session_id": "ses_1",
-                "session_token": "tok_from_start",
                 "challenge_id": "mtl_1",
                 "answer": "44",
             },
@@ -144,6 +152,24 @@ async def test_v2_endpoint_requires_api_key():
     with patch.object(mcp_server, "API_KEY", None):
         with pytest.raises(RuntimeError, match="METTLE_API_KEY"):
             await mcp_server.api_call("/mettle/suites", auth=True)
+
+
+@pytest.mark.asyncio
+async def test_http_caller_key_overrides_any_process_credential():
+    from mettle.mcp_context import caller_api_key, http_request_active
+
+    get = AsyncMock(return_value=_mock_response([]))
+    key_token = caller_api_key.set("mtl_" + "c" * 32)
+    http_token = http_request_active.set(True)
+    try:
+        with patch.object(mcp_server, "API_KEY", "shared-process-key"):
+            with patch.object(mcp_server.http_client, "get", get):
+                await mcp_server.api_call("/mettle/suites", auth=True)
+    finally:
+        http_request_active.reset(http_token)
+        caller_api_key.reset(key_token)
+
+    assert _headers(get)["Authorization"] == "Bearer mtl_" + "c" * 32
 
 
 @pytest.mark.parametrize("bad", ["../etc", "a/b", "x?y", "", "z" * 65])
@@ -193,7 +219,8 @@ async def test_start_session_reports_ids_and_first_challenge():
         text = _text(await mcp_server.call_tool("mettle_start_session", {}))
 
     assert "ses_1" in text
-    assert "tok_1" in text
+    assert "tok_1" not in text
+    assert mcp_server._get_session_token("ses_1") == "tok_1"
     assert "Calculate: 2 + 2" in text
 
 
@@ -211,13 +238,13 @@ async def test_answer_challenge_reports_next_challenge():
         },
     }
     post = AsyncMock(return_value=_mock_response(payload))
+    mcp_server._remember_session_token("ses_1", "tok_1")
     with patch.object(mcp_server.http_client, "post", post):
         text = _text(
             await mcp_server.call_tool(
                 "mettle_answer_challenge",
                 {
                     "session_id": "ses_1",
-                    "session_token": "tok_1",
                     "challenge_id": "mtl_1",
                     "answer": "4",
                 },
@@ -248,17 +275,42 @@ async def test_get_result_renders_badge_and_per_challenge_rows():
         ],
     }
     get = AsyncMock(return_value=_mock_response(payload))
+    mcp_server._remember_session_token("ses_1", "tok_1")
     with patch.object(mcp_server.http_client, "get", get):
         text = _text(
-            await mcp_server.call_tool(
-                "mettle_get_result", {"session_id": "ses_1", "session_token": "tok_1"}
-            )
+            await mcp_server.call_tool("mettle_get_result", {"session_id": "ses_1"})
         )
 
     assert "VERIFIED" in text
     assert "mettle:bronze" in text
     assert "agent-7" in text
     assert "speed_math" in text
+    with pytest.raises(ValueError, match="Unknown or expired"):
+        mcp_server._get_session_token("ses_1")
+
+
+@pytest.mark.asyncio
+async def test_tool_schemas_never_expose_session_bearer_tokens():
+    tools = {tool.name: tool for tool in await mcp_server.list_tools()}
+    for name in ("mettle_answer_challenge", "mettle_get_result"):
+        schema_text = str(tools[name].input_schema)
+        assert "session_token" not in schema_text
+
+
+def test_session_token_vault_is_isolated_by_authenticated_principal():
+    from mettle.mcp_context import caller_principal
+
+    first = caller_principal.set("caller-a")
+    try:
+        mcp_server._remember_session_token("ses_1", "tok_a")
+    finally:
+        caller_principal.reset(first)
+    second = caller_principal.set("caller-b")
+    try:
+        with pytest.raises(ValueError, match="Unknown or expired"):
+            mcp_server._get_session_token("ses_1")
+    finally:
+        caller_principal.reset(second)
 
 
 @pytest.mark.asyncio
@@ -398,13 +450,12 @@ TOOL_CASES = [
         "mettle_answer_challenge",
         {
             "session_id": "s",
-            "session_token": "t",
             "challenge_id": "c",
             "answer": "a",
         },
         "post",
     ),
-    ("mettle_get_result", {"session_id": "s", "session_token": "t"}, "get"),
+    ("mettle_get_result", {"session_id": "s"}, "get"),
     ("mettle_list_suites", {}, "get"),
     ("mettle_start_v2_session", {}, "post"),
     (
@@ -420,6 +471,8 @@ TOOL_CASES = [
 @pytest.mark.parametrize("tool,args,verb", TOOL_CASES)
 async def test_tools_report_http_errors_as_text(tool, args, verb):
     mock = AsyncMock(side_effect=_http_error(400, "boom"))
+    if tool in {"mettle_answer_challenge", "mettle_get_result"}:
+        mcp_server._remember_session_token("s", "t")
     with patch.object(mcp_server, "API_KEY", "mtl_test"):
         with patch.object(mcp_server.http_client, verb, mock):
             text = _text(await mcp_server.call_tool(tool, args))
@@ -432,6 +485,8 @@ async def test_tools_report_http_errors_as_text(tool, args, verb):
 @pytest.mark.parametrize("tool,args,verb", TOOL_CASES)
 async def test_tools_report_unexpected_errors_as_text(tool, args, verb):
     mock = AsyncMock(side_effect=RuntimeError("kaboom"))
+    if tool in {"mettle_answer_challenge", "mettle_get_result"}:
+        mcp_server._remember_session_token("s", "t")
     with patch.object(mcp_server, "API_KEY", "mtl_test"):
         with patch.object(mcp_server.http_client, verb, mock):
             text = _text(await mcp_server.call_tool(tool, args))
@@ -443,8 +498,6 @@ async def test_tools_report_unexpected_errors_as_text(tool, args, verb):
 @pytest.mark.asyncio
 async def test_get_result_rejects_injected_session_id():
     text = _text(
-        await mcp_server.call_tool(
-            "mettle_get_result", {"session_id": "../admin", "session_token": "t"}
-        )
+        await mcp_server.call_tool("mettle_get_result", {"session_id": "../admin"})
     )
     assert "invalid session_id" in text

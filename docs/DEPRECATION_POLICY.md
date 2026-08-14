@@ -12,11 +12,19 @@ Public API, credential, and suite semantics use these minimum windows:
 * urgent security removal may use a shorter window only with an incident record,
   migration guidance, and release-authority approval.
 
-The current deprecated `GET /api/badge/verify/{token}` form puts a credential in
-URLs and is replaced by `POST /api/badge/verify`. Its proposed earliest removal
-date is **2027-02-12**. Removal is not authorized until a release note confirms
-the date, privacy-preserving usage evidence is reviewed, and the OpenAPI breaking
-change is explicitly accepted.
+`GET /api/badge/verify/{token}` placed credentials in URLs, so it was removed as
+an urgent security exception on 2026-08-14. `POST /api/badge/verify` is the only
+supported form and carries the credential in a JSON body. The removal is recorded
+in the release notes and accepted as an intentional OpenAPI break. No compatibility
+shim may reintroduce a credential in a path, query, or redirect URL.
+
+Credential schema `1.0`, suite policy `2026-08-12`, and envelopes omitting those
+version fields were also rejected as an urgent security exception on
+2026-08-14. Those credentials were issued under the solver-exposed policy and
+cannot be safely interpreted as current evidence merely because their issuer
+signature remains valid. Schema `1.1` with policy `2026-08-14` is the migration
+target. No compatibility shim may bypass its JTI, signed status, identity
+binding, or current-policy requirements.
 
 ## Telemetry limit
 
@@ -40,6 +48,7 @@ and known integrations.
 6. Remove implementation, tests, examples, and documentation together.
 7. Publish the exact removal SHA and rollback plan.
 
-Working if: deprecated operations are visible in schema and release notes,
-telemetry contains no participant content, and removal cannot pass compatibility
-checks without an explicit reviewed decision.
+Working if: active deprecations are visible in schema and release notes,
+security exceptions identify their replacement and removal date, telemetry
+contains no participant content, and a removal cannot pass compatibility checks
+without an explicit reviewed decision.

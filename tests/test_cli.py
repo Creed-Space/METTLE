@@ -63,7 +63,7 @@ def test_interactive_pass_emits_unsigned_noncredential(capsys, monkeypatch):
     assert cli.verify_credential(receipt) is False
 
 
-def test_historical_prefixed_ed25519_credential_still_verifies():
+def test_claimant_supplied_historical_key_is_not_trusted():
     """Legacy signed receipts retain their documented compatibility path."""
     private_key = Ed25519PrivateKey.generate()
     claims = {
@@ -82,7 +82,7 @@ def test_historical_prefixed_ed25519_credential_still_verifies():
         "signature": f"ed25519:{signature}",
     }
 
-    assert cli.verify_credential(credential)
+    assert cli.verify_credential(credential) is False
 
 
 def test_interactive_wrong_answer_fails_screening(capsys, monkeypatch):

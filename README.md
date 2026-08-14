@@ -10,7 +10,7 @@ Like a conventional CAPTCHA, METTLE is a probabilistic gate. A pass means that a
 
 The public quick-verification API issues Bronze and Silver credentials. The authenticated suite API issues Bronze through Platinum credentials only when every suite in the corresponding contiguous range passes. Single, cherry-picked, failed, or LLM-only suites cannot mint a tier.
 
-**Website:** [mettle.sh](https://mettle.sh) | **Guide:** [mettle.sh/guide](https://mettle.sh/guide) | **API:** [mettle.sh/docs](https://mettle.sh/docs) | **License:** Apache 2.0
+**Website:** [mettle.sh](https://mettle.sh) | **Guide and API:** [mettle.sh/guide](https://mettle.sh/guide) | **OpenAPI:** [docs/openapi-v1.json](docs/openapi-v1.json) | **License:** Apache 2.0
 
 ## Quick Start
 
@@ -40,7 +40,7 @@ The CLI has no auto-solve or notarization option. The MCP server likewise expose
 | 11 | Governance | How does the respondent answer governance questions? | Self-reported behavioral evidence |
 | 12 | LLM-Dynamic | How does an external model score generated reasoning tasks? | Probabilistic model judgment |
 
-Suite 12 requires `ANTHROPIC_API_KEY` or `METTLE_ANTHROPIC_API_KEY`. Its evaluator is isolated with role-separated prompts and bounded output parsing. Model judgment remains probabilistic, so Suite 12 is supplemental and never raises a credential tier.
+Suite 12 requires `ANTHROPIC_API_KEY` or `METTLE_ANTHROPIC_API_KEY`. Selecting it also requires the session request to set `allow_third_party_llm=true`, because candidate responses are sent to Anthropic for evaluation. Its evaluator uses role-separated prompts and bounded output parsing. Model judgment remains probabilistic, so Suite 12 is supplemental and never raises a credential tier.
 
 ## Credential Boundary
 
@@ -48,7 +48,14 @@ METTLE raises the cost of replay and canned answers through procedural generatio
 
 The issuer signs a bounded claim: the holder completed a METTLE session at the stated tier, under the stated policy, at the stated time. Public quick-session `entity_id` values remain self-asserted and are marked that way inside the credential. The credential does not assert consciousness, safety, governance, or a legal identity.
 
-Services may use METTLE credentials to admit participants or grant scoped access. Each service chooses its minimum tier, maximum credential age, and any additional authorization controls appropriate to its risk.
+Portable Ed25519 acceptance requires credential schema `1.1`, suite policy
+`2026-08-14`, and a fresh issuer-signed good status receipt. Legacy,
+version-omitting, and unknown envelopes fail closed. Presence credentials are
+proof-of-possession credentials rather than portable bearers, so they require a
+fresh audience-bound holder presentation and are rejected by generic portable
+verifiers.
+
+Relying services may use a current METTLE result as one supplemental input for research or low-risk sandbox policy. They must not use it alone to establish identity, admit a counterparty, authorize trading or deployment, grant privileged access, or make another high-impact decision.
 
 ## MCP Server
 
@@ -75,6 +82,13 @@ time. Hosted discovery is available at
 models returned by `tools/list` so registry metadata cannot drift from the
 runtime surface.
 
+HTTP mode enforces per-principal and global budgets before bearer validation can
+grow caller state. Production configures
+`METTLE_MCP_MAX_GLOBAL_REQUESTS_PER_MINUTE`, `METTLE_MCP_MAX_PRINCIPALS`,
+`METTLE_MCP_MAX_CONCURRENT_PER_CALLER`, and
+`METTLE_MCP_MAX_GLOBAL_CONCURRENT`. Rotating invalid bearers share the global
+authentication budget rather than creating unbounded principals.
+
 Preserve the bearer token returned by `mettle_start_session`. It is required for answering and reading that session.
 
 ## API Reference
@@ -90,9 +104,9 @@ GET  /sessions/{id}/result
 GET  /sessions/{id}/result?include_vcp=true
 ```
 
-The quick-verification API remains under `/api/session`. Passing sessions receive a stable signed badge. `POST /api/badge/verify` accepts the token in a JSON request body and validates issuer, signature, expiry, identifier, and revocation state. The deprecated URL-token form remains temporarily available for compatibility.
+The quick-verification API remains under `/api/session`. Passing sessions receive a stable signed badge. `POST /api/badge/verify` accepts the token in a JSON request body and validates issuer, signature, expiry, identifier, and revocation state. The credential is never accepted in a request URL.
 
-### VCP and Operator Metadata
+### VCP Metadata
 
 Caller-supplied VCP strings are parsed as metadata only. Returned governance metadata always has:
 
@@ -106,7 +120,7 @@ Caller-supplied VCP strings are parsed as metadata only. Returned governance met
 }
 ```
 
-Exact token digests and deployment environment flags cannot promote governance claims or increase a METTLE tier. A valid Ed25519 operator commitment may be returned separately as evidence that the named operator signed the canonical commitment.
+Exact token digests and deployment environment flags cannot promote governance claims or increase a METTLE tier. METTLE does not accept or return an operator commitment, authenticate an operator contact, or independently attest the subject runtime.
 
 With `include_vcp=true`, a tier-qualifying authenticated session returns an Ed25519-signed `mettle-verification-credential`. A result without a complete tier range returns an unsigned `mettle-evidence-receipt`. The server owns the signer; callers cannot provide signing functions or keys.
 
@@ -147,7 +161,7 @@ Apache License 2.0. See [LICENSE](LICENSE).
 
 * [Website](https://mettle.sh)
 * [Human guide](https://mettle.sh/guide)
-* [OpenAPI documentation](https://mettle.sh/docs)
+* [OpenAPI snapshot](docs/openapi-v1.json)
 * [GitHub](https://github.com/Creed-Space/METTLE)
 * [Creed Space](https://creed.space)
 

@@ -64,11 +64,13 @@ class SessionRateLimitError(ValueError):
 
 
 _RATE_RESERVATION_SCRIPT = """
-local active_count = redis.call('SCARD', KEYS[1])
+local now = tonumber(ARGV[6])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+local active_count = redis.call('ZCARD', KEYS[1])
 if active_count >= tonumber(ARGV[2]) then return -1 end
 local hourly_count = tonumber(redis.call('GET', KEYS[2]) or '0')
 if hourly_count >= tonumber(ARGV[3]) then return -2 end
-redis.call('SADD', KEYS[1], ARGV[1])
+redis.call('ZADD', KEYS[1], now + tonumber(ARGV[4]), ARGV[1])
 redis.call('EXPIRE', KEYS[1], tonumber(ARGV[4]))
 hourly_count = redis.call('INCR', KEYS[2])
 if hourly_count == 1 then
@@ -84,8 +86,15 @@ end
 return 0
 """
 
+_LOCK_REFRESH_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
+end
+return 0
+"""
+
 _RATE_RESERVATION_RELEASE_SCRIPT = """
-local removed = redis.call('SREM', KEYS[1], ARGV[1])
+local removed = redis.call('ZREM', KEYS[1], ARGV[1])
 if removed == 1 then
   local hourly_count = tonumber(redis.call('GET', KEYS[2]) or '0')
   if hourly_count > 0 then redis.call('DECR', KEYS[2]) end
@@ -134,8 +143,8 @@ class SessionManager:
         difficulty: str = "standard",
         entity_id: str | None = None,
         vcp_token: str | None = None,
-        operator_commitment: dict[str, Any] | None = None,
         presence: dict[str, Any] | None = None,
+        allow_third_party_llm: bool = False,
     ) -> tuple[str, dict[str, Any], dict[str, Any]]:
         """Create a new verification session.
 
@@ -144,7 +153,9 @@ class SessionManager:
         """
         # Reject malformed or unavailable suite requests before reserving quota.
         # Otherwise five invalid requests can occupy every active-session slot.
-        resolved_suites = self._resolve_suites(suites)
+        resolved_suites = self._resolve_suites(
+            suites, allow_third_party_llm=allow_third_party_llm
+        )
         if LLM_DYNAMIC_SUITE in resolved_suites and not llm_available():
             raise ValueError(
                 "llm-dynamic suite requires ANTHROPIC_API_KEY and anthropic package"
@@ -165,8 +176,8 @@ class SessionManager:
                 difficulty=difficulty,
                 entity_id=entity_id,
                 vcp_token=vcp_token,
-                operator_commitment=operator_commitment,
                 presence_registration=presence,
+                third_party_llm_acknowledged=allow_third_party_llm,
             )
         except BaseException:
             # Cancellation is a control-flow BaseException. Shield the cleanup
@@ -183,8 +194,8 @@ class SessionManager:
         difficulty: str,
         entity_id: str | None,
         vcp_token: str | None,
-        operator_commitment: dict[str, Any] | None,
         presence_registration: dict[str, Any] | None,
+        third_party_llm_acknowledged: bool,
     ) -> tuple[str, dict[str, Any], dict[str, Any]]:
         """Generate and persist a session after its Redis quota reservation."""
         now = datetime.now(tz=timezone.utc)
@@ -286,7 +297,6 @@ class SessionManager:
             "user_id": user_id,
             "entity_id": entity_id,
             "vcp_token": vcp_token,
-            "operator_commitment": operator_commitment,
             "suites": resolved_suites,
             "difficulty": difficulty,
             "status": SessionStatus.CHALLENGES_GENERATED.value,
@@ -306,6 +316,11 @@ class SessionManager:
             "suite_results": {},
             "round_data": [],
             "presence": presence_state,
+            "third_party_llm_acknowledged_at": (
+                now.isoformat()
+                if LLM_DYNAMIC_SUITE in resolved_suites and third_party_llm_acknowledged
+                else None
+            ),
         }
 
         # Store in Redis
@@ -353,7 +368,7 @@ class SessionManager:
         await self.redis.setex(
             _key(session_id), COMPLETED_SESSION_TTL, json.dumps(session)
         )
-        await self.redis.srem(_rate_key(user_id, "active"), session_id)
+        await self._remove_active_session(user_id, session_id)
         return True
 
     # ---- Single-Shot Verification ----
@@ -432,6 +447,11 @@ class SessionManager:
             result = await evaluate_llm_challenges(
                 evaluation_answers, suite_server, response_time_ms=elapsed_ms
             )
+            # External evaluation time belongs to the same authoritative session
+            # budget. A result that returns after the deadline must not be stored
+            # as a pass or become credential evidence.
+            await self._enforce_time_budget(session)
+            result["credential_eligible"] = False
         else:
             result = ChallengeAdapter.evaluate_single_shot(
                 suite, evaluation_answers, suite_server
@@ -442,11 +462,11 @@ class SessionManager:
         session["suite_results"][suite] = result
 
         # Check if all suites completed
-        if set(session["suites_completed"]) == set(session["suites"]):
+        completed = set(session["suites_completed"]) == set(session["suites"])
+        if completed:
             session["status"] = SessionStatus.COMPLETED.value
+            session["completed_at"] = datetime.now(tz=timezone.utc).isoformat()
             ttl = COMPLETED_SESSION_TTL
-            # Clean up active session tracking for rate limiting
-            await self.redis.srem(_rate_key(session["user_id"], "active"), session_id)
         else:
             ttl = self._remaining_active_ttl(session)
 
@@ -470,6 +490,11 @@ class SessionManager:
             completed=session["status"] == SessionStatus.COMPLETED.value,
         )
         await self.redis.setex(_key(session_id), ttl, json.dumps(session))
+        if completed:
+            # Persistence is the authority for completion. Release quota only
+            # after it succeeds, so a signer or Redis failure leaves the active
+            # reservation conservatively intact rather than undercounting work.
+            await self._remove_active_session(session["user_id"], session_id)
         response = dict(result)
         response["presence"] = response_presence
         response["next_challenge"] = next_challenge
@@ -557,6 +582,10 @@ class SessionManager:
         num_challenges = 0
 
         challenge_answers = evaluation_answers.get("challenges", evaluation_answers)
+        if not isinstance(challenge_answers, dict) or any(
+            not isinstance(value, dict) for value in challenge_answers.values()
+        ):
+            raise ValueError("Round challenge answers must be objects")
         expected_challenges = set(novel_server.get("challenges", {}))
         if set(challenge_answers) != expected_challenges:
             missing = sorted(expected_challenges - set(challenge_answers))
@@ -598,10 +627,7 @@ class SessionManager:
         # Determine next round data
         next_round_data = None
         if not is_final_round:
-            next_round_data = {
-                "round": round_num + 1,
-                "note": "Continue with updated challenge data",
-            }
+            next_round_data = self._novel_round_payload(novel_server, round_num + 1)
 
         if is_final_round:
             # Analyze iteration curve
@@ -617,10 +643,7 @@ class SessionManager:
             # Check if all suites completed
             if set(session["suites_completed"]) == set(session["suites"]):
                 session["status"] = SessionStatus.COMPLETED.value
-                # Clean up active session tracking for rate limiting
-                await self.redis.srem(
-                    _rate_key(session["user_id"], "active"), session_id
-                )
+                session["completed_at"] = datetime.now(tz=timezone.utc).isoformat()
 
         ttl = (
             COMPLETED_SESSION_TTL
@@ -655,6 +678,11 @@ class SessionManager:
             completed=session["status"] == SessionStatus.COMPLETED.value,
         )
         await self.redis.setex(_key(session_id), ttl, json.dumps(session))
+        if session["status"] == SessionStatus.COMPLETED.value:
+            # Keep the reservation if any presence or persistence step fails.
+            # A later ZREM failure can only overcount, which is the safe side of
+            # the active-session quota invariant.
+            await self._remove_active_session(session["user_id"], session_id)
 
         return {
             "round_num": round_num,
@@ -716,6 +744,7 @@ class SessionManager:
             "overall_passed": all_passed,
             "iteration_curve": iteration_curve,
             "elapsed_ms": elapsed_ms,
+            "completed_at": session.get("completed_at"),
             "presence": issuer_signed_session_presence(
                 session.get("presence"), session_id=session_id, completed=True
             ),
@@ -863,7 +892,7 @@ class SessionManager:
         round_data: list[dict[str, Any]],
         server_answers: dict[str, Any],
     ) -> dict[str, Any]:
-        """Analyze the iteration improvement curve for substrate detection."""
+        """Analyze the iteration improvement curve as a behavioral signal."""
         from scripts.engine import IterationCurveAnalyzer
 
         # Format round data for the analyzer
@@ -888,7 +917,24 @@ class SessionManager:
 
         curve = IterationCurveAnalyzer.analyze_curve(analyzer_rounds)
         pass_threshold = server_answers.get("pass_threshold", 0.65)
-        passed = curve["overall"] > pass_threshold and curve["signature"] == "AI"
+        expected_rounds = int(server_answers.get("num_rounds", len(round_data)))
+        complete_rounds = (
+            expected_rounds > 0
+            and len(round_data) == expected_rounds
+            and [rd.get("round") for rd in round_data]
+            == list(range(1, expected_rounds + 1))
+        )
+        final_accuracy = (
+            float(round_data[-1].get("accuracy", 0.0)) if round_data else 0.0
+        )
+        final_threshold = float(server_answers.get("final_accuracy_threshold", 0.8))
+        final_accuracy_met = final_accuracy >= final_threshold
+        passed = bool(
+            complete_rounds
+            and final_accuracy_met
+            and curve["overall"] > pass_threshold
+            and curve["signature"] == "AI"
+        )
 
         return {
             "passed": passed,
@@ -898,8 +944,35 @@ class SessionManager:
             "details": {
                 "signature": curve["signature"],
                 "threshold": pass_threshold,
+                "complete_rounds": complete_rounds,
+                "final_accuracy": round(final_accuracy, 4),
+                "final_accuracy_threshold": final_threshold,
+                "final_accuracy_met": final_accuracy_met,
             },
+            "credential_eligible": True,
         }
+
+    @staticmethod
+    def _novel_round_payload(
+        server_answers: dict[str, Any], round_num: int
+    ) -> dict[str, Any]:
+        """Build the next client payload from server-held progressive material."""
+        challenges: dict[str, Any] = {}
+        for challenge_name, challenge_data in server_answers.get(
+            "challenges", {}
+        ).items():
+            rounds = challenge_data.get("client_rounds")
+            if not isinstance(rounds, dict):
+                raise RuntimeError(
+                    f"Novel challenge {challenge_name!r} has no progressive data"
+                )
+            payload = rounds.get(str(round_num), rounds.get(round_num))
+            if not isinstance(payload, dict):
+                raise RuntimeError(
+                    f"Novel challenge {challenge_name!r} has no round {round_num}"
+                )
+            challenges[challenge_name] = payload
+        return {"round": round_num, "challenges": challenges}
 
     # ---- Rate Limiting ----
 
@@ -949,6 +1022,7 @@ class SessionManager:
             MAX_SESSIONS_PER_HOUR,
             ACTIVE_SESSION_TTL,
             RATE_LIMIT_WINDOW,
+            int(time.time()),
         )
         if result == -1:
             raise SessionRateLimitError(
@@ -975,15 +1049,23 @@ class SessionManager:
             )
             return
 
-        await self.redis.srem(_rate_key(user_id, "active"), session_id)
+        await self._remove_active_session(user_id, session_id)
         decr_fn = getattr(self.redis, "decr", None)
         hourly_raw = await self.redis.get(_rate_key(user_id, "hourly"))
         if callable(decr_fn) and hourly_raw and int(hourly_raw) > 0:
             await decr_fn(_rate_key(user_id, "hourly"))
 
+    async def _remove_active_session(self, user_id: str, session_id: str) -> None:
+        """Remove one active reservation from the production ZSET or test set."""
+        zrem = getattr(self.redis, "zrem", None)
+        if callable(zrem):
+            await zrem(_rate_key(user_id, "active"), session_id)
+            return
+        await self.redis.srem(_rate_key(user_id, "active"), session_id)
+
     @asynccontextmanager
     async def _session_lock(self, session_id: str):
-        """Serialize state transitions for one session across workers."""
+        """Serialize state transitions and renew the lease across slow I/O."""
         set_fn = getattr(self.redis, "set", None)
         eval_fn = getattr(self.redis, "eval", None)
         if not callable(set_fn) or not callable(eval_fn):
@@ -996,30 +1078,74 @@ class SessionManager:
         acquired = await set_fn(lock_key, token, nx=True, ex=SESSION_LOCK_TTL)
         if not acquired:
             raise ValueError("Session operation already in progress")
+        owner = asyncio.current_task()
+        if owner is None:
+            raise RuntimeError("Session lock requires an active asyncio task")
+        refresh_task = asyncio.create_task(
+            self._refresh_session_lock(lock_key, token, owner)
+        )
         try:
             yield
         finally:
+            refresh_task.cancel()
+            await asyncio.gather(refresh_task, return_exceptions=True)
             await asyncio.shield(eval_fn(_LOCK_RELEASE_SCRIPT, 1, lock_key, token))
+
+    async def _refresh_session_lock(
+        self,
+        lock_key: str,
+        token: str,
+        owner: asyncio.Task[Any],
+    ) -> None:
+        """Renew a held lock; cancel its owner if exclusivity is lost."""
+        eval_fn = self.redis.eval
+        try:
+            while True:
+                await asyncio.sleep(max(1.0, SESSION_LOCK_TTL / 3))
+                renewed = await eval_fn(
+                    _LOCK_REFRESH_SCRIPT,
+                    1,
+                    lock_key,
+                    token,
+                    SESSION_LOCK_TTL,
+                )
+                if int(renewed) != 1:
+                    logger.error("session_lock_lease_lost")
+                    owner.cancel()
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("session_lock_refresh_failed")
+            owner.cancel()
 
     # ---- Helpers ----
 
     @staticmethod
-    def _resolve_suites(suites: list[str]) -> list[str]:
+    def _resolve_suites(
+        suites: list[str], *, allow_third_party_llm: bool = False
+    ) -> list[str]:
         """Resolve 'all' to full suite list and validate names."""
         if len(suites) != len(set(suites)):
             raise ValueError("Duplicate suites are not allowed")
         if "all" in suites and len(suites) != 1:
             raise ValueError("'all' cannot be combined with explicit suites")
         if "all" in suites:
-            # Exclude llm-dynamic from "all" when API key isn't available
+            # Third-party processing is never selected by a default request.
             resolved = list(SUITE_NAMES)
-            if not llm_available():
+            if not allow_third_party_llm or not llm_available():
                 resolved = [s for s in resolved if s != LLM_DYNAMIC_SUITE]
             return resolved
 
         invalid = [s for s in suites if s not in SUITE_NAMES]
         if invalid:
             raise ValueError(f"Unknown suites: {invalid}. Valid: {SUITE_NAMES}")
+
+        if LLM_DYNAMIC_SUITE in suites and not allow_third_party_llm:
+            raise ValueError(
+                "llm-dynamic requires allow_third_party_llm=true because candidate "
+                "responses are sent to Anthropic for evaluation"
+            )
 
         return suites
 
@@ -1046,7 +1172,5 @@ class SessionManager:
             COMPLETED_SESSION_TTL,
             json.dumps(session),
         )
-        await self.redis.srem(
-            _rate_key(session["user_id"], "active"), session["session_id"]
-        )
+        await self._remove_active_session(session["user_id"], session["session_id"])
         raise ValueError("Session time budget exceeded")

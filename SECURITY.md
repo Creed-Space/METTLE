@@ -4,9 +4,9 @@
 
 | Version | Security fixes | Status |
 |---|---|---|
-| `0.3.x` | Yes | Current supported line |
+| `0.4.x` | Yes | Current supported line |
 | `main` | Yes | Development candidate, not a release |
-| Earlier than `0.3` | No | Upgrade before reporting version-specific defects |
+| Earlier than `0.4` | No | Upgrade before reporting version-specific defects |
 
 The latest patch in the supported line supersedes earlier patches. If a defect
 also affects an older version, the project may document it, but only the current

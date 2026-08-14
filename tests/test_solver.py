@@ -2,7 +2,7 @@
 
 import pytest
 
-from mettle.solver import solve_challenge
+from scripts.testing.solver import solve_challenge
 
 
 @pytest.mark.parametrize(

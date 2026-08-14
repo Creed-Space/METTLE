@@ -57,7 +57,10 @@ The LLM evaluator uses role-separated prompts and treats respondent content as q
 
 VCP tokens are caller-supplied strings. METTLE may parse and hash them, but returns `source_verified=false`, false operational-governance flags, and a null attestation signature. Digest allowlists and deployment environment variables cannot promote these claims.
 
-An Ed25519 operator commitment is verified over canonical JSON binding the declared operator fields to `entity_id`. This proves possession of the signing key for that statement only. It does not verify the agent, runtime, governance system, or challenge result.
+METTLE does not accept or return an operator commitment. It does not authenticate
+an operator identity, contact method, relationship to the subject, runtime, or
+governance system. Low-entropy contact values must not be represented by raw
+unsalted digests because those digests are recoverable by offline guessing.
 
 ## Badge Issuance And Compatibility
 

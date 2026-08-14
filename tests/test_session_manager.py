@@ -24,7 +24,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import mettle.session_manager as session_manager_module
+
 from mettle.api_models import (
+    LLM_DYNAMIC_SUITE,
     MULTI_ROUND_SUITE,
     SessionStatus,
 )
@@ -308,6 +311,53 @@ class TestSessionSecurityBoundaries:
         assert stored is not None
         assert stored["status"] == SessionStatus.EXPIRED.value
 
+    @pytest.mark.asyncio
+    async def test_llm_result_returning_after_deadline_is_not_stored(
+        self,
+        manager: SessionManager,
+        fake_redis: FakeRedis,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        session_id = "llm-deadline"
+        session: dict[str, Any] = {
+            "session_id": session_id,
+            "user_id": "user1",
+            "entity_id": None,
+            "difficulty": "standard",
+            "suites": [LLM_DYNAMIC_SUITE],
+            "status": SessionStatus.CHALLENGES_GENERATED.value,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": datetime.now(timezone.utc).isoformat(),
+            "time_budget_ms": 1000,
+            "start_time": 100.0,
+            "current_round": 0,
+            "suites_completed": [],
+            "suite_results": {},
+            "round_data": [],
+            "presence": None,
+        }
+        await _inject_session(
+            fake_redis,
+            session_id,
+            session,
+            answers={LLM_DYNAMIC_SUITE: {"challenges": []}},
+        )
+        evaluator = AsyncMock(
+            return_value={"passed": True, "score": 1.0, "details": {}}
+        )
+        monkeypatch.setattr("mettle.llm_challenges.evaluate_llm_challenges", evaluator)
+        clock = iter((100.1, 100.2, 101.5))
+        monkeypatch.setattr(session_manager_module.time, "time", lambda: next(clock))
+
+        with pytest.raises(ValueError, match="time budget exceeded"):
+            await manager.verify_single_shot(session_id, LLM_DYNAMIC_SUITE, {})
+
+        stored = await manager.get_session(session_id)
+        assert stored is not None
+        assert stored["status"] == SessionStatus.EXPIRED.value
+        assert stored["suites_completed"] == []
+        assert stored["suite_results"] == {}
+
     def test_active_ttl_cannot_extend_absolute_expiry(self) -> None:
         session = {
             "expires_at": datetime.fromtimestamp(
@@ -357,6 +407,19 @@ class TestSessionSecurityBoundaries:
             await manager._reserve_rate_limits("user-1", "session-1")
 
     @pytest.mark.asyncio
+    async def test_atomic_rate_reservation_prunes_expired_members_before_counting(
+        self,
+    ) -> None:
+        redis = AsyncMock()
+        redis.eval.return_value = 1
+        manager = SessionManager(redis)
+
+        await manager._reserve_rate_limits("user-1", "session-1")
+
+        script = redis.eval.await_args.args[0]
+        assert script.index("ZREMRANGEBYSCORE") < script.index("ZCARD")
+
+    @pytest.mark.asyncio
     async def test_session_transition_lock_rejects_concurrent_operation(self) -> None:
         redis = AsyncMock()
         redis.set.return_value = False
@@ -377,6 +440,54 @@ class TestSessionSecurityBoundaries:
 
         redis.set.assert_awaited_once()
         redis.eval.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_session_transition_lock_renews_while_body_is_active(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        redis = AsyncMock()
+        redis.set.return_value = True
+        redis.eval.return_value = 1
+        manager = SessionManager(redis)
+        monkeypatch.setattr(session_manager_module, "SESSION_LOCK_TTL", 3)
+
+        async with manager._session_lock("session-1"):
+            await asyncio.sleep(1.05)
+
+        scripts = [call.args[0] for call in redis.eval.await_args_list]
+        assert session_manager_module._LOCK_REFRESH_SCRIPT in scripts
+        assert scripts[-1] == session_manager_module._LOCK_RELEASE_SCRIPT
+
+    @pytest.mark.asyncio
+    async def test_session_transition_lock_cancels_owner_when_lease_is_lost(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        redis = AsyncMock()
+        redis.eval.return_value = 0
+        manager = SessionManager(redis)
+        owner_started = asyncio.Event()
+
+        async def held_operation() -> None:
+            owner_started.set()
+            await asyncio.Event().wait()
+
+        owner = asyncio.create_task(held_operation())
+        await owner_started.wait()
+        monkeypatch.setattr(
+            session_manager_module.asyncio, "sleep", AsyncMock(return_value=None)
+        )
+
+        await manager._refresh_session_lock("lock-key", "token", owner)
+        await asyncio.gather(owner, return_exceptions=True)
+
+        assert owner.cancelled()
+        redis.eval.assert_awaited_once_with(
+            session_manager_module._LOCK_REFRESH_SCRIPT,
+            1,
+            "lock-key",
+            "token",
+            session_manager_module.SESSION_LOCK_TTL,
+        )
 
 
 # ---- 2. Cancel already completed session ----
@@ -1429,3 +1540,65 @@ class TestSessionManagerEdgeCases:
         assert "accuracy" in result
         assert "round_num" in result
         assert result["round_num"] == 1
+
+    @pytest.mark.asyncio
+    async def test_submit_round_rejects_non_object_nested_answers(
+        self, manager: SessionManager
+    ) -> None:
+        session_id, challenges, _ = await manager.create_session(
+            user_id="user1", suites=["novel-reasoning"], difficulty="easy"
+        )
+        names = list(challenges["novel-reasoning"]["challenges"])
+        malformed = {"challenges": {name: "not-an-object" for name in names}}
+
+        with pytest.raises(ValueError, match="must be objects"):
+            await manager.submit_round_answer(session_id, 1, malformed)
+
+
+class TestCompletionQuotaPersistenceOrdering:
+    """Completion failures must retain the conservative active reservation."""
+
+    @pytest.mark.asyncio
+    async def test_single_shot_persistence_failure_keeps_active_reservation(
+        self,
+        manager: SessionManager,
+        fake_redis: FakeRedis,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        session_id, _, _ = await manager.create_session(
+            user_id="single-order", suites=["adversarial"]
+        )
+
+        async def fail_setex(key: str, ttl: int, value: str) -> None:
+            raise ConnectionError("simulated completed-state write failure")
+
+        monkeypatch.setattr(fake_redis, "setex", fail_setex)
+        with pytest.raises(ConnectionError, match="completed-state write failure"):
+            await manager.verify_single_shot(session_id, "adversarial", {})
+
+        assert session_id in fake_redis._sets[_rate_key("single-order", "active")]
+
+    @pytest.mark.asyncio
+    async def test_multi_round_persistence_failure_keeps_active_reservation(
+        self,
+        manager: SessionManager,
+        fake_redis: FakeRedis,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        session_id, challenges, _ = await manager.create_session(
+            user_id="multi-order",
+            suites=[MULTI_ROUND_SUITE],
+            difficulty="easy",
+        )
+        names = challenges[MULTI_ROUND_SUITE]["challenges"]
+        submitted: dict[str, Any] = {"challenges": {name: {} for name in names}}
+        await manager.submit_round_answer(session_id, 1, submitted)
+
+        async def fail_setex(key: str, ttl: int, value: str) -> None:
+            raise ConnectionError("simulated completed-state write failure")
+
+        monkeypatch.setattr(fake_redis, "setex", fail_setex)
+        with pytest.raises(ConnectionError, match="completed-state write failure"):
+            await manager.submit_round_answer(session_id, 2, submitted)
+
+        assert session_id in fake_redis._sets[_rate_key("multi-order", "active")]

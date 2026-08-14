@@ -100,9 +100,13 @@ def main() -> int:
                 attestation = request.get("attestation")
                 if not isinstance(attestation, dict):
                     raise ValueError("attestation must be an object")
+                status_receipt = request.get("status_receipt")
+                if not isinstance(status_receipt, dict):
+                    raise ValueError("status_receipt must be an object")
                 credential_jti = holder.register_credential(
                     issuer=_required_string(request, "issuer"),
                     attestation=attestation,
+                    status_receipt=status_receipt,
                 )
                 result = {"credential_jti": credential_jti, **holder.status()}
             elif action == "sign_presentation":

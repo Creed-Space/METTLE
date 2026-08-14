@@ -131,6 +131,7 @@ def _build_app(user: MagicMock, fake_redis: FakeRedis) -> FastAPI:
 
     app = FastAPI()
     app.include_router(router)
+    app.state.credential_issuance_guard = lambda: True
 
     app.dependency_overrides[require_authenticated_user] = lambda: user
 

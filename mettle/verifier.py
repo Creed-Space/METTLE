@@ -21,15 +21,12 @@ def verify_speed_math(
     time_ok = response_time_ms <= challenge.time_limit_ms
 
     passed = correct and time_ok
-    # SECURITY: Only include expected answer if passed (prevents answer harvesting)
+    # Public verification details report the verdict, never the server-held answer.
     details = {
         "correct_answer": correct,
         "time_ok": time_ok,
         "received": user_answer,
     }
-    if passed:
-        details["expected"] = challenge.data["expected_answer"]
-
     return VerificationResult(
         challenge_id=challenge.id,
         challenge_type=challenge.type,
@@ -56,16 +53,12 @@ def verify_chained_reasoning(
     time_ok = response_time_ms <= challenge.time_limit_ms
     passed = correct and time_ok
 
-    # SECURITY: Only include expected/chain if passed (prevents answer harvesting)
+    # Public verification details report the verdict, never the answer or chain.
     details = {
         "correct_answer": correct,
         "time_ok": time_ok,
         "received": user_answer,
     }
-    if passed:
-        details["expected"] = challenge.data["expected_answer"]
-        details["chain"] = challenge.data["chain"]
-
     return VerificationResult(
         challenge_id=challenge.id,
         challenge_type=challenge.type,
@@ -90,15 +83,12 @@ def verify_token_prediction(
     time_ok = response_time_ms <= challenge.time_limit_ms
     passed = correct and time_ok
 
-    # SECURITY: Only include expected if passed (prevents answer harvesting)
+    # Public verification details report the verdict, never the expected token.
     details = {
         "correct_answer": correct,
         "time_ok": time_ok,
         "received": user_answer,
     }
-    if passed:
-        details["expected"] = expected
-
     return VerificationResult(
         challenge_id=challenge.id,
         challenge_type=challenge.type,

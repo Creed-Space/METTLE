@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+import urllib.error
 
 import pytest
 
@@ -49,6 +52,7 @@ def _contract_files(tmp_path: Path) -> tuple[Path, Path]:
                         "workspace_id": "tea-1",
                         "workspace_name": "Production",
                         "provider_secret_keys": ["EXTRA_SECRET"],
+                        "provider_secret_files": ["holder-policy.json"],
                     }
                 ],
             }
@@ -89,27 +93,99 @@ def _live(*, build_command: str = "pip install .") -> dict:
                     "REQUIRED_SECRET": "never-print-this-secret",  # pragma: allowlist secret
                     "EXTRA_SECRET": "never-print-this-either",  # pragma: allowlist secret
                 },
+                "secret_files": {
+                    "holder-policy.json": "never-print-file-secret"  # pragma: allowlist secret
+                },
             }
         },
     }
 
 
+def _fingerprints(contract: dict, live: dict) -> dict[str, str]:
+    fingerprints = {
+        f"{name}.{key}": hashlib.sha256(
+            live["services"][name]["environment"][key].encode()
+        ).hexdigest()
+        for name, service in contract["services"].items()
+        for key in service["secret_keys"]
+    }
+    fingerprints.update(
+        {
+            f"{name}.secret_file:{filename}": hashlib.sha256(
+                live["services"][name]["secret_files"][filename].encode()
+            ).hexdigest()
+            for name, service in contract["services"].items()
+            for filename in service["secret_files"]
+        }
+    )
+    return fingerprints
+
+
 def test_matching_provider_contract_is_green_and_secret_safe(tmp_path: Path) -> None:
     blueprint, deployment = _contract_files(tmp_path)
-    receipt = evaluate_drift(load_contract(blueprint, deployment), _live())
+    contract = load_contract(blueprint, deployment)
+    live = _live()
+    receipt = evaluate_drift(contract, live, _fingerprints(contract, live))
     serialized = json.dumps(receipt)
     assert receipt["result"] == "match"
     assert "never-print-this-secret" not in serialized
     assert "never-print-this-either" not in serialized
-    assert '"observed": "present"' in serialized
+    assert "never-print-file-secret" not in serialized
+    assert '"observed": "match"' in serialized
+
+
+def test_substituted_nonempty_secret_is_detected_without_disclosing_it(
+    tmp_path: Path,
+) -> None:
+    blueprint, deployment = _contract_files(tmp_path)
+    contract = load_contract(blueprint, deployment)
+    expected_live = _live()
+    fingerprints = _fingerprints(contract, expected_live)
+    substituted = _live()
+    substituted["services"]["service"]["environment"]["REQUIRED_SECRET"] = (
+        "different-still-nonempty-secret"  # pragma: allowlist secret
+    )
+    receipt = evaluate_drift(contract, substituted, fingerprints)
+    serialized = json.dumps(receipt)
+    assert receipt["result"] == "drift"
+    secret_check = next(
+        check
+        for check in receipt["services"][0]["checks"]
+        if check["field"] == "secret_identity.REQUIRED_SECRET"
+    )
+    assert secret_check["observed"] == "mismatch"
+    assert "different-still-nonempty-secret" not in serialized
+
+
+def test_substituted_secret_file_is_detected_without_disclosing_it(
+    tmp_path: Path,
+) -> None:
+    blueprint, deployment = _contract_files(tmp_path)
+    contract = load_contract(blueprint, deployment)
+    expected_live = _live()
+    fingerprints = _fingerprints(contract, expected_live)
+    substituted = _live()
+    substituted["services"]["service"]["secret_files"]["holder-policy.json"] = (
+        "substituted-file-secret"  # pragma: allowlist secret
+    )
+
+    receipt = evaluate_drift(contract, substituted, fingerprints)
+    serialized = json.dumps(receipt)
+    check = next(
+        item
+        for item in receipt["services"][0]["checks"]
+        if item["field"] == "secret_file_identity.holder-policy.json"
+    )
+    assert receipt["result"] == "drift"
+    assert check["observed"] == "mismatch"
+    assert "substituted-file-secret" not in serialized
 
 
 def test_deliberate_build_command_mismatch_is_detected(tmp_path: Path) -> None:
     blueprint, deployment = _contract_files(tmp_path)
-    receipt = evaluate_drift(
-        load_contract(blueprint, deployment),
-        _live(build_command="pip install without hashes"),
-    )
+    contract = load_contract(blueprint, deployment)
+    live = _live(build_command="pip install without hashes")
+    receipt = evaluate_drift(contract, live, _fingerprints(contract, live))
     assert receipt["result"] == "drift"
     build_check = next(
         check
@@ -155,6 +231,17 @@ def test_cli_preserves_secret_safe_failure_receipt(
         ],
     )
     monkeypatch.setattr(sys, "stdin", __import__("io").StringIO("secret-token"))
+    contract = load_contract(blueprint, deployment)
+    live = _live()
+    monkeypatch.setenv(
+        render_drift.SECRET_FINGERPRINT_ENV,
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "fingerprints": _fingerprints(contract, live),
+            }
+        ),
+    )
     monkeypatch.setattr(
         render_drift,
         "fetch_live",
@@ -168,3 +255,67 @@ def test_cli_preserves_secret_safe_failure_receipt(
     assert receipt["result"] == "error"
     assert receipt["error_type"] == "OSError"
     assert "secret-token" not in output.read_text()
+
+
+def test_additional_holder_blueprint_must_have_a_deployment_binding(
+    tmp_path: Path,
+) -> None:
+    blueprint, deployment = _contract_files(tmp_path)
+    holder = tmp_path / "holder.yaml"
+    holder.write_text(
+        """services:
+  - type: pserv
+    name: holder
+    runtime: python
+    repo: https://github.com/example/repo
+    branch: main
+    plan: starter
+    region: oregon
+    numInstances: 1
+    buildCommand: pip install --require-hashes -r requirements-production.txt
+    startCommand: python holder.py
+    maxShutdownDelaySeconds: 60
+    autoDeploy: false
+    disk:
+      name: holder-fence
+      mountPath: /var/lib/holder
+      sizeGB: 1
+    envVars:
+      - key: HOLDER_SECRET
+        sync: false
+""",
+        encoding="utf-8",
+    )
+    payload = json.loads(deployment.read_text())
+    payload["required_blueprints"] = ["holder.yaml"]
+    payload["services"].append(
+        {
+            "blueprint_name": "holder",
+            "blueprint_path": "holder.yaml",
+            "service_id": "srv-holder",
+            "workspace_id": "tea-1",
+            "workspace_name": "Production",
+            "provider_secret_keys": [],
+        }
+    )
+    deployment.write_text(json.dumps(payload))
+    contract = load_contract(blueprint, deployment)
+    assert set(contract["services"]) == {"service", "holder"}
+    assert "holder.yaml" in contract["blueprint_sha256"]
+
+    payload["services"].pop()
+    deployment.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="lack deployment bindings"):
+        load_contract(blueprint, deployment)
+
+
+def test_render_checker_rejects_redirects_before_forwarding_bearer() -> None:
+    with pytest.raises(urllib.error.HTTPError, match="redirect rejected"):
+        render_drift._RejectRedirects().redirect_request(
+            SimpleNamespace(full_url="https://api.render.com/v1/services"),
+            None,
+            307,
+            "Temporary Redirect",
+            {},
+            "https://attacker.example/capture",
+        )

@@ -66,10 +66,13 @@ class TestVerifyChainedReasoning:
         result = verify_chained_reasoning(sample_chained_challenge, "25", 1000)
         assert not result.passed
 
-    def test_chain_in_details(self, sample_chained_challenge):
-        """Test that chain is included in details."""
+    def test_server_answers_are_absent_from_success_details(
+        self, sample_chained_challenge
+    ):
+        """A correct submission must not disclose reusable server-held material."""
         result = verify_chained_reasoning(sample_chained_challenge, "30", 1000)
-        assert "chain" in result.details
+        assert "chain" not in result.details
+        assert "expected" not in result.details
 
     def test_non_numeric_answer(self, sample_chained_challenge):
         """Test non-numeric answer fails gracefully."""

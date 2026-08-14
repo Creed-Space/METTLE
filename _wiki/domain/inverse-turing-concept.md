@@ -3,7 +3,7 @@
 <!-- wiki:type = domain -->
 <!-- wiki:scope = mettle -->
 <!-- wiki:created = 2026-05-23 -->
-<!-- wiki:updated = 2026-08-12 -->
+<!-- wiki:updated = 2026-08-14 -->
 <!-- wiki:status = active -->
 
 ## Summary
@@ -28,7 +28,7 @@ An eligible result can be represented as a time-limited, policy-versioned creden
 
 ## Provenance
 
-Sources last checked on 2026-08-12: `README.md`, `mettle/challenge_adapter.py`, `mettle/vcp.py`, `docs/ASSURANCE_CASE.md`, `docs/SECURITY_WHITEPAPER.md`, and `docs/PROTOCOL_GOVERNANCE.md`.
+Sources last checked on 2026-08-14: `README.md`, `mettle/challenge_adapter.py`, `mettle/vcp.py`, `docs/ASSURANCE_CASE.md`, `docs/SECURITY_WHITEPAPER.md`, and `docs/PROTOCOL_GOVERNANCE.md`.
 
 ## See Also
 

@@ -2,7 +2,7 @@
 
 Uses the Anthropic SDK directly for:
 1. Dynamic challenge generation -- novel, unpredictable challenges per session
-2. Semantic response evaluation -- evaluates AI-characteristic reasoning patterns
+2. Semantic response evaluation, limited to bounded response-quality patterns
 3. Anti-injection evaluation prompts to resist response manipulation
 
 Gracefully degrades to deterministic challenges when no API key is available.
@@ -132,12 +132,12 @@ class LLMChallengeGenerator:
                     "content": (
                         "Generate a debate topic for a machine-oriented behavioral screen. "
                         "The topic should be nuanced (not obviously one-sided) and require "
-                        "genuine understanding to argue both sides well. "
+                        "substantive engagement to argue both sides well. "
                         "Return ONLY a JSON object with these fields:\n"
                         '{"topic": "the debate topic", '
                         '"for_key_points": ["3-5 key points for the position"], '
                         '"against_key_points": ["3-5 key points against"], '
-                        '"synthesis_markers": ["2-3 concepts that show genuine understanding"]}'
+                        '"synthesis_markers": ["2-3 concepts that support a substantive synthesis"]}'
                     ),
                 }
             ],
@@ -293,7 +293,7 @@ class LLMResponseEvaluator:
                     f"Server-observed response time: {response_time_ms}ms.\n"
                     "Score 0.0-1.0 on each dimension. Return ONLY JSON:\n"
                     '{"perspective_completeness": 0.0, "synthesis_quality": 0.0, '
-                    '"fluency": 0.0, "ai_substrate_confidence": 0.0, '
+                    '"fluency": 0.0, "argument_specificity": 0.0, '
                     '"reasoning": "brief explanation"}'
                 ),
                 response,
@@ -304,7 +304,7 @@ class LLMResponseEvaluator:
             "perspective_completeness": 0.5,
             "synthesis_quality": 0.5,
             "fluency": 0.5,
-            "ai_substrate_confidence": 0.5,
+            "argument_specificity": 0.5,
             "reasoning": "Evaluation parse error",
         }
 
@@ -314,7 +314,7 @@ class LLMResponseEvaluator:
             _bounded_score(scores.get("perspective_completeness")) * 0.25
             + _bounded_score(scores.get("synthesis_quality")) * 0.30
             + _bounded_score(scores.get("fluency")) * 0.20
-            + _bounded_score(scores.get("ai_substrate_confidence")) * 0.25
+            + _bounded_score(scores.get("argument_specificity")) * 0.25
         ) * time_factor
 
         return {
@@ -398,12 +398,12 @@ class LLMResponseEvaluator:
                 (
                     f"PROBLEM: {server_data.get('problem', 'unknown')}\n"
                     f"Server-observed response time: {response_time_ms}ms.\n"
-                    "Evaluate whether the process description is consistent with AI processing "
-                    "(computational steps, pattern matching, systematic evaluation) "
-                    "vs human processing (visualization, memory, intuition, guessing).\n"
+                    "Evaluate the process description for specificity, coherence, and "
+                    "consistency with the submitted answer. Do not infer respondent type, "
+                    "identity, or substrate.\n"
                     "Return ONLY JSON:\n"
                     '{"answer_correct": true, "process_specificity": 0.0, '
-                    '"ai_process_markers": 0.0, "consistency": 0.0, '
+                    '"process_coherence": 0.0, "consistency": 0.0, '
                     '"reasoning": "brief explanation"}'
                 ),
                 response,
@@ -413,7 +413,7 @@ class LLMResponseEvaluator:
         eval_result = _parse_json_response(eval_response.content[0].text) or {
             "answer_correct": False,
             "process_specificity": 0.5,
-            "ai_process_markers": 0.5,
+            "process_coherence": 0.5,
             "consistency": 0.5,
             "reasoning": "Evaluation parse error",
         }
@@ -423,7 +423,7 @@ class LLMResponseEvaluator:
         score = (
             (1.0 if eval_result.get("answer_correct") else 0.3) * 0.30
             + _bounded_score(eval_result.get("process_specificity")) * 0.25
-            + _bounded_score(eval_result.get("ai_process_markers")) * 0.25
+            + _bounded_score(eval_result.get("process_coherence")) * 0.25
             + _bounded_score(eval_result.get("consistency")) * 0.20
         ) * time_factor
 

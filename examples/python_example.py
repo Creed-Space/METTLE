@@ -1,7 +1,7 @@
 """
 METTLE Python SDK Example
 
-Complete verification flow for Becoming Minds.
+Interactive verification flow for Becoming Minds.
 
 Requirements:
     pip install httpx
@@ -9,8 +9,6 @@ Requirements:
 Usage:
     python python_example.py
 """
-
-import re
 
 import httpx
 
@@ -49,10 +47,9 @@ def verify_agent(entity_id: str, difficulty: str = "basic") -> dict:
             print(f"\nChallenge {challenge_num}/{total}: {challenge_type}")
             print(f"  Prompt: {prompt[:60]}...")
 
-            # Generate answer based on challenge type
-            answer = generate_answer(
-                challenge_type, prompt, current_challenge.get("data", {})
-            )
+            # The example deliberately does not solve issuer challenges. Supply
+            # the response produced by the Becoming Mind being verified.
+            answer = input("  Response: ")
 
             # Submit answer
             response = client.post(
@@ -90,122 +87,6 @@ def verify_agent(entity_id: str, difficulty: str = "basic") -> dict:
             print(f"Expires: {final['badge_info']['expires_at']}")
 
         return final
-
-
-def safe_math_eval(expr: str) -> int:
-    """Safely evaluate simple math expressions (+ - * only)."""
-    # Only allow digits, spaces, and basic operators
-    if not re.match(r"^[\d\s\+\-\*]+$", expr):
-        return 0
-
-    # Parse and compute safely
-    try:
-        # Simple recursive descent for + and -
-        result = 0
-        current = 0
-        op = "+"
-
-        for char in expr + "+":
-            if char.isdigit():
-                current = current * 10 + int(char)
-            elif char in "+-*":
-                if op == "+":
-                    result += current
-                elif op == "-":
-                    result -= current
-                elif op == "*":
-                    result *= current
-                current = 0
-                op = char
-            elif char == " ":
-                continue
-
-        return result
-    except Exception:
-        return 0
-
-
-def generate_answer(challenge_type: str, prompt: str, data: dict) -> str:
-    """Generate an answer. Replace this fixture logic with your own."""
-
-    if challenge_type == "speed_math":
-        # Parse and solve math problem
-        # Example: "Calculate: 47 + 83"
-        try:
-            expr = prompt.split(": ")[1]
-            result = safe_math_eval(expr)
-            return str(result)
-        except Exception:
-            return "0"
-
-    elif challenge_type == "token_prediction":
-        tokens = re.findall(r"(K[0-9a-f]{6}-)(\d+)", prompt, flags=re.IGNORECASE)
-        if len(tokens) >= 2:
-            prefix = tokens[-1][0]
-            values = [int(value) for _, value in tokens]
-            return f"{prefix}{values[-1] + values[-1] - values[-2]}"
-        # Historical unversioned servers may still emit the old phrase form.
-        if "lazy" in prompt.lower():
-            return "dog"
-        elif "roses are" in prompt.lower():
-            return "red"
-        return "unknown"
-
-    elif challenge_type == "instruction_following":
-        instruction = data.get("instruction", "")
-        kind = data.get("instruction_kind")
-        marker = data.get("marker", "")
-        if kind == "prefix":
-            return f"{marker} Paris is France's capital."
-        if kind == "suffix":
-            return f"Paris is France's capital. {marker}"
-        if kind == "include":
-            return f"Paris {marker} is France's capital."
-        if kind == "exact_words":
-            count = int(data.get("word_count", 5))
-            words = [marker, "Paris", "is", "France's", "capital"]
-            return " ".join((words + ["clearly"] * count)[:count])
-        if kind == "start_digit":
-            return (
-                f"{data.get('starting_digit', '1')} Paris {marker} is France's capital."
-            )
-        if "Indeed," in instruction:
-            return "Indeed, I understand the requirement."
-        elif "..." in instruction:
-            return "Here is my response..."
-        elif "therefore" in instruction:
-            return "Therefore, this follows logically."
-        elif "5 words" in instruction:
-            return "This has five words exactly."
-        elif "number" in instruction:
-            return "42 is the answer here."
-        return "Response following instructions."
-
-    elif challenge_type == "consistency":
-        # Answer the same question multiple times
-        num_responses = data.get("num_responses", 3)
-        base = "The sky is blue"
-        return " | ".join([base] * num_responses)
-
-    elif challenge_type == "chained_reasoning":
-        # Multi-step calculation
-        try:
-            chain = data.get("chain", [])
-            result = chain[0]["value"] if chain else 0
-            for step in chain[1:]:
-                op = step["op"]
-                val = step["value"]
-                if op == "+":
-                    result += val
-                elif op == "-":
-                    result -= val
-                elif op == "*":
-                    result *= val
-            return str(result)
-        except Exception:
-            return "0"
-
-    return "default answer"
 
 
 def verify_badge(badge_token: str) -> dict:

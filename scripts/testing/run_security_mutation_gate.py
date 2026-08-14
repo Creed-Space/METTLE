@@ -62,20 +62,14 @@ MUTATIONS = (
         ),
     ),
     Mutation(
-        name="unknown-policy-version-fail-open",
-        invariant="An explicit unknown suite policy version is rejected.",
+        name="current-policy-version-inverted",
+        invariant="Only the exact current suite policy version is accepted.",
         path="mettle/protocol.py",
-        original=(
-            "policy_version is None or policy_version in "
-            "SUPPORTED_SUITE_POLICY_VERSIONS"
-        ),
-        replacement=(
-            "policy_version is None or policy_version not in "
-            "SUPPORTED_SUITE_POLICY_VERSIONS"
-        ),
+        original="and policy_version in SUPPORTED_SUITE_POLICY_VERSIONS",
+        replacement="and policy_version not in SUPPORTED_SUITE_POLICY_VERSIONS",
         test=(
             "tests/test_protocol_maturity.py::"
-            "test_unknown_explicit_version_fails_while_historical_omission_remains_valid"
+            "test_unknown_or_omitted_versions_fail_closed"
         ),
     ),
     Mutation(

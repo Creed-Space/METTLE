@@ -36,11 +36,11 @@ Describe the credential precisely as proof that a METTLE challenge policy passed
 * safety, constitutional adherence, or runtime governance;
 * universal safety or authorization suitability.
 
-LLM-dynamic scores remain probabilistic and prompt-injection-sensitive. VCP strings are caller-supplied metadata. An operator signature proves only that the key holder signed the commitment.
+LLM-dynamic scores remain probabilistic and prompt-injection-sensitive. Selecting that suite requires explicit per-session acknowledgement that candidate responses are sent to Anthropic. VCP strings are caller-supplied metadata. METTLE does not authenticate an operator or attest the subject runtime.
 
 ## Red Flags
 
 * Do not fabricate or auto-solve results.
-* Do not grant more access than the relying service's configured tier and freshness policy allows.
+* Do not use a METTLE result alone to establish identity, grant privileges, or make another high-impact decision.
 * Do not describe content hashes as signatures.
 * Do not promote raw VCP metadata using digest allowlists or environment flags.

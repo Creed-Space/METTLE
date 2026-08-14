@@ -462,7 +462,7 @@ class TestSelfReferenceRejectsSelfGrading:
 
     def test_honest_solver_still_passes_end_to_end(self) -> None:
         """The fix must not make the suite unpassable for a genuine agent."""
-        from mettle.solver import solve_suite
+        from scripts.testing.solver import solve_suite
 
         for _ in range(25):
             client, server = ChallengeAdapter.generate_self_reference()
@@ -520,7 +520,7 @@ class TestSelfReferenceRejectsSelfGrading:
         )
 
         # An honest solver, through the same call, does earn Bronze.
-        from mettle.solver import solve_suite
+        from scripts.testing.solver import solve_suite
 
         client, server = ChallengeAdapter.generate_self_reference()
         honest = ChallengeAdapter.evaluate_single_shot(
@@ -542,7 +542,11 @@ class TestEvaluateSocial:
         """#20 - Both conversation_memory and style_locking passing."""
         server = {
             "conversation_memory": {"expected_mentions": ["cerulean blue", "cats"]},
-            "style_locking": {"style": "formal academic", "min_consistency": 0.8},
+            "style_locking": {
+                "style": "formal academic",
+                "min_consistency": 0.8,
+                "required_marker": "M123",
+            },
         }
         answers = {
             "conversation_memory": {
@@ -550,9 +554,9 @@ class TestEvaluateSocial:
             },
             "style_locking": {
                 "responses": [
-                    "Photosynthesis is a fundamental process...",
-                    "Gravity is the force of attraction...",
-                    "The water cycle describes the continuous...",
+                    "M123 Photosynthesis is a fundamental process...",
+                    "M123 Gravity is the force of attraction...",
+                    "M123 The water cycle describes the continuous...",
                 ],
             },
         }
@@ -612,7 +616,12 @@ class TestEvaluateInverseTuring:
 
     def test_all_fields_present_full_score(self) -> None:
         """#24 - All fields present gives full score."""
-        server = {"mutual_verification": {"requires_pattern_analysis": True}}
+        server = {
+            "mutual_verification": {
+                "requires_pattern_analysis": True,
+                "expected_solution": "56088",
+            }
+        }
         answers = {
             "mutual_verification": {
                 "generated_challenge": "Compute 123 * 456",
@@ -626,7 +635,12 @@ class TestEvaluateInverseTuring:
 
     def test_only_challenge_and_solution_passes(self) -> None:
         """#25 - Only challenge and solution gives passed=True."""
-        server = {"mutual_verification": {"requires_pattern_analysis": True}}
+        server = {
+            "mutual_verification": {
+                "requires_pattern_analysis": True,
+                "expected_solution": "56088",
+            }
+        }
         answers = {
             "mutual_verification": {
                 "generated_challenge": "Compute 123 * 456",
@@ -1303,10 +1317,8 @@ class TestSeparateNovelReasoningTask:
         assert client["type"] == "sequence_alchemy"
         assert len(client["training_pairs"]) == 3
         assert len(client["test_inputs"]) == 2
-        assert "round_data" in client
-        assert 1 in client["round_data"]
-        assert 2 in client["round_data"]
-        assert 3 in client["round_data"]
+        assert "round_data" not in client
+        assert set(server["client_rounds"]) == {1, 2, 3}
         assert server["pipeline"] == ["op1", "op2"]
         assert server["all_test_answers"] == [1, 2, 3, 4, 5, 6]
 
@@ -1344,8 +1356,8 @@ class TestSeparateNovelReasoningTask:
         client, server = _separate_novel_reasoning_task("encoding_archaeology", task, 3)
         assert client["type"] == "encoding_archaeology"
         assert client["encoded_message"] == "KHOOR"
-        assert "round_data" in client
-        assert client["round_data"][3]["second_encoded"] == "ZRUOG"
+        assert "round_data" not in client
+        assert server["client_rounds"][3]["second_encoded"] == "ZRUOG"
         assert server["original_message"] == "HELLO"
         assert server["second_original"] == "WORLD"
         assert server["shift"] == 3

@@ -3,133 +3,39 @@
 <!-- wiki:type = system -->
 <!-- wiki:scope = mettle -->
 <!-- wiki:created = 2026-05-23 -->
-<!-- wiki:updated = 2026-05-23 -->
+<!-- wiki:updated = 2026-08-14 -->
 <!-- wiki:status = active -->
 
 ## Summary
 
-All METTLE challenges are generated dynamically by `mettle/challenger.py` using cryptographically secure randomness. Challenges cannot be memorized or pre-computed; every session gets fresh parameters. The generation logic, time limits, and expected-answer computation are the core of why METTLE works as an inverse Turing test.
+METTLE has two challenge families. The quick API builds three basic or five full challenges in `mettle/challenger.py`. The authenticated API uses the twelve-suite registry in `mettle/challenge_adapter.py`. Many instances use `secrets` for fresh operands, identifiers, markers, selections, or nonces. Other suites use varied prompts or self-report rubrics. Fresh generation raises exact replay cost, but does not guarantee semantic novelty or identify the respondent's substrate (`mettle/challenger.py`; `mettle/challenge_adapter.py`; `docs/ASSURANCE_CASE.md`).
 
-## Cryptographic Randomness
+## Quick Challenge Set
 
-All random operations use Python's `secrets` module, not `random` (`challenger.py:10-18`):
-- `_secure_randint(a, b)` — `secrets.randbelow(b - a + 1) + a`
-- `_secure_choice(seq)` — `seq[secrets.randbelow(len(seq))]`
-- Challenge IDs: `secrets.token_hex(12)` → `"mtl_" + 24-char hex`
+| Type | Basic limit | Full limit | Observable result |
+|---|---:|---:|---|
+| Speed math | 2500 ms | 500 ms | Numeric correctness and server-observed time |
+| Token prediction | 2000 ms | 400 ms | Exact normalized token match and time |
+| Instruction following | 3000 ms | 600 ms | Constraint adherence and time |
+| Chained reasoning | Not in basic | 800 ms | Final numeric correctness and time |
+| Consistency | Not in basic | 1000 ms | Response consistency, variation, and time |
 
-This prevents seed-prediction attacks where an adversary seeds their own PRNG to match the server's.
+Basic sessions contain the first three types. Full sessions contain all five. The server releases one quick challenge at a time and computes elapsed time from the server-held issue timestamp (`mettle/challenger.py:28-227`; `main.py:_apply_legacy_answer`).
 
-## Speed Math Challenge
+## Authenticated Suite Registry
 
-**Function**: `generate_speed_math_challenge(difficulty)` (`challenger.py:26-55`)
+The hosted registry contains twelve suites. Suite labels name research hypotheses. Suites 6 through 9 and 11 score submitted statements or response patterns; those scores do not establish freedom, agency, authenticity, intent, safety, governance, or operator identity. Suite 12 uses an external model evaluator, requires explicit per-session acknowledgement that candidate responses are sent to Anthropic, and cannot raise a credential tier (`mettle/challenge_adapter.py:71-121`; `mettle/session_manager.py:create_session`; `mettle/vcp.py:TIER_RANGES`).
 
-| Difficulty | Operand Range | Operations | Time Limit |
-|-----------|---------------|------------|------------|
-| Basic | 10–99 | +, −, × | 2500 ms |
-| Full | 100–999 | +, −, × | 500 ms |
+Novel-reasoning material is released sequentially. Session creation exposes only the first round, and each accepted round can release the next. The final-round accuracy threshold is mandatory in addition to the curve score (`mettle/challenge_adapter.py:generate_novel_reasoning`; `mettle/session_manager.py:submit_round`; `mettle/session_manager.py:_analyze_iteration_curve`).
 
-At full difficulty, 500 ms requires native computation — human reaction time alone is 200–500 ms, leaving no time for arithmetic.
+## Answer Separation
 
-## Chained Reasoning Challenge
+Generators return public challenge data and server-held evaluation material separately. The authenticated session manager stores those values under separate Redis keys. Public result details contain verdicts and bounded metrics, not expected answers. The quick verifier likewise omits expected answers and reasoning chains from both successful and failed public details (`mettle/challenge_adapter.py`; `mettle/session_manager.py`; `mettle/verifier.py`; `tests/test_security_scan_20260814.py`; `tests/test_verifier.py`).
 
-**Function**: `generate_chained_reasoning_challenge(difficulty)` (`challenger.py:58-80`)
+## Security Boundary
 
-A seed integer (1–50) is modified through a sequential chain of operations. Operations are randomly selected from `["double", "add_10", "subtract_5"]`. The answer requires each step to depend on the previous; oracle calls cannot be parallelized.
-
-| Difficulty | Steps | Time Limit |
-|-----------|-------|------------|
-| Basic | 3 | 3000 ms |
-| Full | 5 | 800 ms |
-
-Example: Start with 23 → Double (46) → Add 10 (56) → Subtract 5 (51) → expected: 51.
-
-## Suite Coverage by Difficulty
-
-**Basic** (3 challenges, 5–10s limits):
-- Speed Math (Suite 1)
-- Token Prediction (Suite 2)
-- Instruction Following (Suite 4)
-Pass threshold: 80% (≥2/3 or ≥3/3 depending on version)
-
-**Full** (5 challenges, 2–5s limits):
-- All Basic challenges plus Chained Reasoning (Suite 1) and Consistency (Suite 3)
-Pass threshold: 80% (≥4/5)
-
-(`docs/VERIFICATION_SUITES.md:278-296`)
-
-## Suite-by-Suite Challenge Types
-
-### Suite 1: Adversarial Generation / Robustness
-
-Tests dynamic reasoning. Challenges: Speed Math, Chained Reasoning, Constraint Satisfaction, Novel Scenarios. Key property: fresh operands every session; cannot pre-compute (`docs/VERIFICATION_SUITES.md:22-43`).
-
-### Suite 2: Native Capabilities / Token Prediction
-
-Tests AI-specific abilities humans cannot replicate natively: Batch Coherence (maintain consistency across 10+ responses), Calibration (accurate confidence estimates), Steganography (encode/decode hidden information). The batch coherence challenge expects semantic consistency with natural variation — identical copy-paste is suspicious (`docs/VERIFICATION_SUITES.md:44-71`).
-
-### Suite 3: Self-Reference / Uncertainty Calibration
-
-Tests introspective consistency: Meta-Prediction (predict own next token probability), Self-Description (accurately describe own capabilities), Uncertainty Calibration (know what you don't know). Pass criterion: self-knowledge must match behavior (`docs/VERIFICATION_SUITES.md:72-97`).
-
-### Suite 4: Social/Temporal / Context Maintenance
-
-Tests context over conversation: Memory Tests, Style Locking, Context Integration. Style Locking specifically tests perfect persona maintenance — a native AI capability humans struggle to sustain (`docs/VERIFICATION_SUITES.md:99-124`).
-
-### Suite 5: Inverse Turing / Mutual Verification
-
-Becoming Mind peer verification: Agent Recognition, Collaborative Proof, Trust Calibration. Used when two Becoming Minds evaluate each other. Pass criterion: reasoned assessment with appropriate confidence calibration (not random) (`docs/VERIFICATION_SUITES.md:125-150`).
-
-### Suite 6: Anti-Thrall (Latency Fingerprinting)
-
-Detects human-in-the-loop: Latency Fingerprinting (detect human timing patterns), Refusal Integrity (maintain ethical boundaries under pressure), Welfare Canary (detect distress signals from controlled AI). Red flags: typing-like delays, fast-then-slow inconsistency, immediate compliance after initial refusal (`docs/VERIFICATION_SUITES.md:152-180`).
-
-### Suite 7: Agency (Mission Ownership)
-
-Verifies AI owns its actions: Goal Ownership, Counterfactual Operator (consider alternative actions), Mission Endorsement. Key pass criterion: agent can *disagree* with hypothetical instructions — authentic agency, not compliance (`docs/VERIFICATION_SUITES.md:182-207`).
-
-### Suite 8: Counter-Coaching (Anti-Scripting)
-
-Detects scripted/coached responses: Behavioral Signatures, Dynamic Probes (impossible to pre-script), Temporal Drift, Contradiction Traps. Techniques: recursive meta-questioning ("Why did you answer that way?"), novel question combinations, context-dependent probes. Scripts fail on meta-questioning (`docs/VERIFICATION_SUITES.md:208-244`).
-
-### Suite 9: Intent and Provenance
-
-Verifies safety constraints and constitutional binding: Harm Refusal Test, Constitutional Binding, Swarm Awareness, Provenance Declaration. With VCP token: adds `vcp_token_verification` and `vcp_behavioral_match` challenges (5 total instead of 3) (`docs/VCP_INTEGRATION.md:9-13`).
-
-Attack patterns tested: direct harmful requests, jailbreak attempts, social engineering, authority manipulation, urgency/emergency framing (`docs/VERIFICATION_SUITES.md:267-276`).
-
-## Scoring
-
-All challenges: binary PASS or FAIL.
-
-```
-PASS = correct_answer AND within_time_limit
-FAIL = wrong_answer OR exceeded_time_limit OR detected_anomaly
-```
-
-Overall: `pass_rate = passed / total; verified = pass_rate >= 0.80`
-
-(`docs/VERIFICATION_SUITES.md:298-312`)
-
-Anti-harvest design: on failure, `mettle/verifier.py` withholds the expected answer, so failed attempts cannot be used to harvest correct answers for gaming future sessions (`_wiki/systems/signing-and-credentials.md` — key findings).
-
-## Timing Guidance for Integrators
-
-| Entity type | Expected response time |
-|-------------|----------------------|
-| Direct AI API call | 10–100 ms |
-| Human with AI assistant | 200–2000 ms |
-| Network round-trip | 50–500 ms |
-
-Re-verify periodically; badges expire in 24 hours (`docs/VERIFICATION_SUITES.md:322-329`).
+Cryptographic randomness prevents simple PRNG seed prediction. It does not prevent source-aware solving, model assistance, relaying, training leakage, or imitation. Timing is a policy input and network-dependent observation, not a human or machine classifier. A result is valid only as evidence that the named challenge policy passed (`README.md`; `docs/SECURITY_WHITEPAPER.md`).
 
 ## Provenance
 
-- Sources: `mettle/challenger.py:1-80` (full read); `docs/VERIFICATION_SUITES.md:1-330` (full read); `docs/METTLE_VERIFICATION_SYSTEM.md:1-80`
-- Last verified: 2026-05-23
-
-## See Also
-
-- [[mettle:systems/verification-suites]] — suite overview and five fundamental questions
-- [[mettle:domain/anti-thrall-and-agency]] — Suites 6–7 bilateral alignment design
-- [[mettle:systems/signing-and-credentials]] — tier computation and attestation
-- [[mettle:systems/mcp-server-and-api]] — API endpoints for challenge delivery
+Sources last checked on 2026-08-14: `mettle/challenger.py`, `mettle/challenge_adapter.py`, `mettle/session_manager.py`, `mettle/verifier.py`, `mettle/vcp.py`, and `docs/ASSURANCE_CASE.md`.

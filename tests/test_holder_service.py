@@ -43,7 +43,7 @@ from mettle.presence import (
     submission_signing_bytes,
     transcript_hash_after_submission,
 )
-from mettle.vcp import build_mettle_attestation
+from mettle.vcp import build_credential_status_receipt, build_mettle_attestation
 
 
 ISSUER = "https://mettle.example"
@@ -57,6 +57,7 @@ BRONZE_SUITES = [
 ]
 STATE_KEY = b"s" * 32
 AUTHORIZATION = {"Authorization": "Bearer holder-control-token"}
+POSTGRES_URL = "postgresql://database.example/mettle?sslmode=verify-full"
 
 
 def _ca_pem() -> str:
@@ -168,6 +169,7 @@ def _holder(
     issuer_public_key: str,
     *,
     private_key: Ed25519PrivateKey | None = None,
+    signer: Any | None = None,
     **policy_overrides: Any,
 ) -> PresenceHolder:
     policy_values: dict[str, Any] = {
@@ -180,7 +182,7 @@ def _holder(
     }
     policy_values.update(policy_overrides)
     return PresenceHolder(
-        EphemeralEd25519Signer(private_key), HolderPolicy(**policy_values)
+        signer or EphemeralEd25519Signer(private_key), HolderPolicy(**policy_values)
     )
 
 
@@ -285,7 +287,11 @@ def _complete_credential(
             ],
         },
     )
-    return runtime.register_credential(issuer=ISSUER, attestation=attestation)
+    return runtime.register_credential(
+        issuer=ISSUER,
+        attestation=attestation,
+        status_receipt=build_credential_status_receipt("c" * 32, revoked=False),
+    )
 
 
 def test_file_secret_provider_reads_on_demand_without_retaining_secret(
@@ -485,6 +491,92 @@ def test_persistence_failure_disables_holder_before_returning_signature(
         runtime.status()
 
 
+def test_submission_reservation_is_durable_before_external_signing(
+    issuer_key: str,
+) -> None:
+    class CountingSigner(EphemeralEd25519Signer):
+        def __init__(self, key: Ed25519PrivateKey) -> None:
+            super().__init__(key)
+            self.messages: list[bytes] = []
+
+        def sign(self, message: bytes) -> bytes:
+            self.messages.append(message)
+            return super().sign(message)
+
+    class ControlledStore(MemoryHolderStateStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.saves = 0
+            self.fail_on_save: int | None = None
+
+        def save(self, envelope: dict[str, Any], expected_revision: int) -> int:
+            self.saves += 1
+            if self.saves == self.fail_on_save:
+                raise HolderServiceUnavailable("database unavailable")
+            return super().save(envelope, expected_revision)
+
+    private_key = Ed25519PrivateKey.generate()
+    unavailable_signer = CountingSigner(private_key)
+    unavailable_store = ControlledStore()
+    unavailable = PersistentHolderRuntime(
+        _holder(issuer_key, signer=unavailable_signer), unavailable_store, STATE_KEY
+    )
+    unavailable.authorize_session(
+        issuer=ISSUER,
+        session_id="unavailable-reservation",
+        presence=_presence(unavailable.holder, session_id="unavailable-reservation"),
+    )
+    unavailable_store.fail_on_save = 2
+    with pytest.raises(HolderServiceUnavailable, match="persistence failed"):
+        unavailable.sign_submission(
+            session_id="unavailable-reservation",
+            action="suite:adversarial",
+            nonce="n" * 32,
+            previous_transcript_hash="sha256:" + "a" * 64,
+            payload_hash="sha256:" + "b" * 64,
+        )
+    assert unavailable_signer.messages == []
+
+    first_signer = CountingSigner(private_key)
+    store = ControlledStore()
+    first = PersistentHolderRuntime(
+        _holder(issuer_key, signer=first_signer), store, STATE_KEY
+    )
+    session_id = "reserve-before-sign"
+    first.authorize_session(
+        issuer=ISSUER,
+        session_id=session_id,
+        presence=_presence(first.holder, session_id=session_id),
+    )
+    values = {
+        "session_id": session_id,
+        "action": "suite:adversarial",
+        "nonce": "n" * 32,
+        "previous_transcript_hash": "sha256:" + "a" * 64,
+        "payload_hash": "sha256:" + "b" * 64,
+    }
+
+    # Save 2 commits the unsigned exact-message reservation. Save 3, after the
+    # external signer returns, fails before any signature reaches the caller.
+    store.fail_on_save = 3
+    with pytest.raises(HolderServiceUnavailable, match="persistence failed"):
+        first.sign_submission(**values)
+    assert len(first_signer.messages) == 1
+
+    restarted_signer = CountingSigner(private_key)
+    restarted = PersistentHolderRuntime(
+        _holder(issuer_key, signer=restarted_signer), store, STATE_KEY
+    )
+    with pytest.raises(HolderPolicyError, match="different submission"):
+        restarted.sign_submission(**{**values, "payload_hash": "sha256:" + "c" * 64})
+    assert restarted_signer.messages == []
+
+    # Retrying the exact reserved message is safe and can complete durably.
+    store.fail_on_save = None
+    assert restarted.sign_submission(**values)
+    assert len(restarted_signer.messages) == 1
+
+
 def test_holder_service_authentication_limits_and_security_headers(
     issuer_key: str,
 ) -> None:
@@ -553,7 +645,7 @@ def test_holder_service_settings_require_explicit_numeric_vault_key_version(
         "METTLE_HOLDER_POLICY_FILE": "/etc/secrets/policy",
         "METTLE_HOLDER_CONTROL_TOKEN_FILE": "/etc/secrets/control-token",
         "METTLE_HOLDER_STATE_HMAC_KEY_FILE": "/etc/secrets/state-key",
-        "METTLE_HOLDER_DATABASE_URL": "postgresql://database.example/mettle",
+        "METTLE_HOLDER_DATABASE_URL": POSTGRES_URL,
     }
     for name, value in values.items():
         monkeypatch.setenv(name, value)
@@ -583,9 +675,7 @@ def test_postgres_store_persists_revisions_and_releases_lock(
     monkeypatch.setattr(
         "mettle.holder_service.psycopg2.connect", lambda *_args, **_kwargs: connection
     )
-    store = PostgresHolderStateStore(
-        "postgresql://database.example/mettle", "holder-postgres-test"
-    )
+    store = PostgresHolderStateStore(POSTGRES_URL, "holder-postgres-test")
     assert connection.autocommit is False
     assert store.load() == (None, 0)
     first = {"schema": "envelope", "snapshot": {"sequence": 1}}
@@ -608,9 +698,7 @@ def test_postgres_store_fails_closed_on_split_brain_and_database_errors(
         "mettle.holder_service.psycopg2.connect", lambda *_args, **_kwargs: locked
     )
     with pytest.raises(HolderServiceUnavailable, match="Another holder instance"):
-        PostgresHolderStateStore(
-            "postgresql://database.example/mettle", "holder-split-brain"
-        )
+        PostgresHolderStateStore(POSTGRES_URL, "holder-split-brain")
     assert locked.rollbacks == 1
     assert locked.closed == 1
 
@@ -621,9 +709,7 @@ def test_postgres_store_fails_closed_on_split_brain_and_database_errors(
     with pytest.raises(
         HolderServiceUnavailable, match="initialization failed"
     ) as error:
-        PostgresHolderStateStore(
-            "postgresql://database.example/mettle", "holder-db-failure"
-        )
+        PostgresHolderStateStore(POSTGRES_URL, "holder-db-failure")
     assert "sensitive database diagnostic" not in str(error.value)
 
 
@@ -634,9 +720,7 @@ def test_postgres_store_detects_revision_conflict_and_health_failure(
     monkeypatch.setattr(
         "mettle.holder_service.psycopg2.connect", lambda *_args, **_kwargs: connection
     )
-    store = PostgresHolderStateStore(
-        "postgresql://database.example/mettle", "holder-conflict-test"
-    )
+    store = PostgresHolderStateStore(POSTGRES_URL, "holder-conflict-test")
     assert store.save({"snapshot": 1}, 0) == 1
     with pytest.raises(HolderServiceUnavailable, match="revision changed"):
         store.save({"snapshot": 2}, 0)
@@ -682,7 +766,7 @@ def test_environment_runtime_loads_strict_secret_files_and_policy(
         "METTLE_HOLDER_POLICY_FILE": str(paths["policy"]),
         "METTLE_HOLDER_CONTROL_TOKEN_FILE": str(paths["control-token"]),
         "METTLE_HOLDER_STATE_HMAC_KEY_FILE": str(paths["state-key"]),
-        "METTLE_HOLDER_DATABASE_URL": "postgresql://database.example/mettle",
+        "METTLE_HOLDER_DATABASE_URL": POSTGRES_URL,
     }
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
@@ -850,9 +934,7 @@ def test_postgres_store_sanitizes_load_and_save_failures(
     monkeypatch.setattr(
         "mettle.holder_service.psycopg2.connect", lambda *_args, **_kwargs: connection
     )
-    store = PostgresHolderStateStore(
-        "postgresql://database.example/mettle", "holder-io-failure"
-    )
+    store = PostgresHolderStateStore(POSTGRES_URL, "holder-io-failure")
     connection.fail_on = "SELECT state_envelope"
     with pytest.raises(HolderServiceUnavailable, match="load failed") as load_error:
         store.load()
@@ -871,7 +953,7 @@ def test_postgres_store_rejects_invalid_configuration_and_setup_failure(
     with pytest.raises(HolderServiceUnavailable, match="database URL"):
         PostgresHolderStateStore("", "holder")
     with pytest.raises(HolderServiceUnavailable, match="Holder ID"):
-        PostgresHolderStateStore("postgresql://database.example/mettle", "bad id")
+        PostgresHolderStateStore(POSTGRES_URL, "bad id")
 
     connection = _FakePostgresConnection()
     connection.fail_on = "CREATE TABLE"
@@ -879,9 +961,7 @@ def test_postgres_store_rejects_invalid_configuration_and_setup_failure(
         "mettle.holder_service.psycopg2.connect", lambda *_args, **_kwargs: connection
     )
     with pytest.raises(HolderServiceUnavailable, match="initialization failed"):
-        PostgresHolderStateStore(
-            "postgresql://database.example/mettle", "holder-setup-failure"
-        )
+        PostgresHolderStateStore(POSTGRES_URL, "holder-setup-failure")
     assert connection.closed == 1
 
 
@@ -926,7 +1006,7 @@ def test_holder_service_routes_all_authenticated_mutations(
         assert client.post(
             "/v1/credentials/register",
             headers=AUTHORIZATION,
-            json={"issuer": ISSUER, "attestation": {}},
+            json={"issuer": ISSUER, "attestation": {}, "status_receipt": {}},
         ).json() == {"credential_jti": "c" * 32}
         assert client.post(
             "/v1/presentations/sign",

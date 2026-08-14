@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
 from typing import Any, AsyncIterator, Callable, Protocol
+from urllib.parse import parse_qs, urlparse
 
 import psycopg2
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -101,6 +102,14 @@ class PostgresHolderStateStore:
     def __init__(self, database_url: str, holder_id: str) -> None:
         if not isinstance(database_url, str) or not database_url:
             raise HolderServiceUnavailable("Holder database URL is required")
+        parsed_database = urlparse(database_url)
+        if (
+            parsed_database.scheme not in {"postgres", "postgresql"}
+            or parse_qs(parsed_database.query).get("sslmode", [""])[-1] != "verify-full"
+        ):
+            raise HolderServiceUnavailable(
+                "Holder database URL must use PostgreSQL with sslmode=verify-full"
+            )
         if HOLDER_ID_PATTERN.fullmatch(holder_id) is None:
             raise HolderServiceUnavailable("Holder ID is invalid")
         self._holder_id = holder_id
@@ -305,18 +314,20 @@ class PersistentHolderRuntime:
         if not self._available:
             raise HolderServiceUnavailable("Holder service is unavailable")
 
+    def _persist(self) -> None:
+        """Commit the current holder snapshot or permanently fail this runtime."""
+        try:
+            envelope = _seal_state(self.holder.export_state(), self._state_key)
+            self._revision = self._store.save(envelope, self._revision)
+        except Exception:
+            self._available = False
+            raise HolderServiceUnavailable("Holder state persistence failed") from None
+
     def _mutate(self, operation: Callable[[], Any]) -> Any:
         with self._lock:
             self._require_available()
             result = operation()
-            try:
-                envelope = _seal_state(self.holder.export_state(), self._state_key)
-                self._revision = self._store.save(envelope, self._revision)
-            except Exception:
-                self._available = False
-                raise HolderServiceUnavailable(
-                    "Holder state persistence failed"
-                ) from None
+            self._persist()
             return result
 
     def authorize_session(
@@ -331,7 +342,17 @@ class PersistentHolderRuntime:
         return self._mutate(operation)
 
     def sign_submission(self, **values: str) -> str:
-        return self._mutate(lambda: self.holder.sign_submission(**values))
+        with self._lock:
+            self._require_available()
+            message = self.holder.reserve_submission(**values)
+            # The exact one-time transition is durable before Vault is asked to
+            # create an externally valid signature.
+            self._persist()
+            signature = self.holder.sign_reserved_submission(
+                session_id=values["session_id"], message=message
+            )
+            self._persist()
+            return signature
 
     def commit_submission(
         self, *, session_id: str, presence: dict[str, Any]
@@ -342,15 +363,35 @@ class PersistentHolderRuntime:
 
         return self._mutate(operation)
 
-    def register_credential(self, *, issuer: str, attestation: dict[str, Any]) -> str:
+    def register_credential(
+        self,
+        *,
+        issuer: str,
+        attestation: dict[str, Any],
+        status_receipt: dict[str, Any],
+    ) -> str:
         return self._mutate(
             lambda: self.holder.register_credential(
-                issuer=issuer, attestation=attestation
+                issuer=issuer,
+                attestation=attestation,
+                status_receipt=status_receipt,
             )
         )
 
     def sign_presentation(self, **values: str) -> str:
-        return self._mutate(lambda: self.holder.sign_presentation(**values))
+        with self._lock:
+            self._require_available()
+            message = self.holder.reserve_presentation(**values)
+            # Reserve the challenge ID and presentation budget durably before
+            # the external signer can emit a usable signature.
+            self._persist()
+            signature = self.holder.sign_reserved_presentation(
+                challenge_id=values["challenge_id"],
+                credential_jti=values["credential_jti"],
+                message=message,
+            )
+            self._persist()
+            return signature
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -590,6 +631,7 @@ class CommitSubmissionRequest(StrictModel):
 class RegisterCredentialRequest(StrictModel):
     issuer: str = Field(min_length=1, max_length=512)
     attestation: dict[str, Any]
+    status_receipt: dict[str, Any]
 
 
 class SignPresentationRequest(StrictModel):

@@ -19,10 +19,12 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    case,
     inspect,
     insert,
     select,
     text,
+    update,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -43,14 +45,35 @@ DATABASE_URL = _database_url_from_env()
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Create engine with appropriate settings
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
+def _build_engine(database_url: str):
+    if database_url.startswith("sqlite"):
+        return create_engine(
+            database_url,
+            connect_args={"check_same_thread": False},
+        )
+    return create_engine(database_url, pool_pre_ping=True)
+
+
+engine = _build_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 logger = logging.getLogger(__name__)
+
+
+def configure_database(database_url: str) -> None:
+    """Bind persistence to the exact URL validated by the application settings."""
+    global DATABASE_URL, SessionLocal, engine
+    normalized = database_url.replace("postgres://", "postgresql://", 1)
+    if not normalized or "://" not in normalized:
+        raise ValueError("Database URL is invalid")
+    if normalized == DATABASE_URL:
+        return
+    replacement = _build_engine(normalized)
+    previous = engine
+    DATABASE_URL = normalized
+    engine = replacement
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    previous.dispose()
 
 
 def check_health() -> bool:
@@ -164,7 +187,10 @@ class DBSchemaMigration(Base):
 # === Database Functions ===
 
 
-LATEST_SCHEMA_VERSION = 2
+LATEST_SCHEMA_VERSION = 3
+_MIGRATION_LOCK_ID = int.from_bytes(
+    hashlib.sha256(b"mettle-schema-migrations").digest()[:8], "big"
+) & ((1 << 63) - 1)
 
 
 def _upgrade_session_recovery_columns(connection) -> None:
@@ -183,9 +209,53 @@ def _upgrade_session_recovery_columns(connection) -> None:
             )
 
 
+def _upgrade_api_key_digests(connection) -> None:
+    """Version 3: irreversibly hash every key created under the plaintext schema.
+
+    Migration version, rather than value shape, distinguishes legacy plaintext
+    from new digests. A two-phase rewrite avoids a transient unique-key conflict
+    when one legacy value happens to equal another row's eventual digest.
+    """
+    records = list(connection.execute(select(DBAPIKey.id, DBAPIKey.api_key)).all())
+    targets = {
+        record.id: hashlib.sha256(record.api_key.encode("utf-8")).hexdigest()
+        for record in records
+    }
+    if len(set(targets.values())) != len(targets):
+        raise RuntimeError("API key digest collision during migration")
+
+    reserved = {record.api_key for record in records} | set(targets.values())
+    temporary: dict[int, str] = {}
+    for record in records:
+        counter = 0
+        while True:
+            candidate = hashlib.sha256(
+                f"mettle-v3-temporary:{record.id}:{counter}".encode("utf-8")
+            ).hexdigest()
+            if candidate not in reserved:
+                temporary[record.id] = candidate
+                reserved.add(candidate)
+                break
+            counter += 1
+
+    for record_id, digest in temporary.items():
+        connection.execute(
+            update(DBAPIKey).where(DBAPIKey.id == record_id).values(api_key=digest)
+        )
+    for record_id, digest in targets.items():
+        connection.execute(
+            update(DBAPIKey).where(DBAPIKey.id == record_id).values(api_key=digest)
+        )
+
+
 def init_db() -> None:
     """Create tables and apply every pending forward-only schema migration."""
     with engine.begin() as connection:
+        if connection.dialect.name == "postgresql":
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": _MIGRATION_LOCK_ID},
+            )
         # ``create_all`` establishes the version-1 baseline on a clean database.
         # It deliberately does not mutate an existing table, leaving upgrades to
         # the numbered migration below.
@@ -196,6 +266,7 @@ def init_db() -> None:
         migrations = {
             1: lambda _connection: None,
             2: _upgrade_session_recovery_columns,
+            3: _upgrade_api_key_digests,
         }
         for version in range(1, LATEST_SCHEMA_VERSION + 1):
             if version in applied:
@@ -267,11 +338,11 @@ def save_session(
             db.commit()
             return True
     except Exception as exc:
-        logger.exception("Failed to save session '%s': %s", session_id, exc)
+        logger.error("Database save-session failed: %s", type(exc).__name__)
         return False
 
 
-def get_session(session_id: str) -> dict | None:
+def get_session(session_id: str, *, raise_on_error: bool = False) -> dict | None:
     """Get session from database."""
     try:
         with get_db() as db:
@@ -294,7 +365,9 @@ def get_session(session_id: str) -> dict | None:
                 }
             return None
     except Exception as exc:
-        logger.exception("Failed to fetch session '%s': %s", session_id, exc)
+        logger.error("Database fetch-session failed: %s", type(exc).__name__)
+        if raise_on_error:
+            raise RuntimeError("Session persistence unavailable") from exc
         return None
 
 
@@ -314,17 +387,22 @@ def update_session_results(
                 db_session.results_json = json.dumps(
                     [_model_json_dict(result) for result in results]
                 )
-                db_session.completed = completed
-                db_session.badge_info_json = (
-                    json.dumps(badge_info, default=str) if badge_info else None
-                )
+                db_session.completed = bool(db_session.completed or completed)
+                if db_session.badge_info_json:
+                    existing_badge = json.loads(db_session.badge_info_json)
+                    if badge_info is not None and existing_badge != badge_info:
+                        raise RuntimeError(
+                            "A session credential cannot be replaced after issuance"
+                        )
+                elif badge_info is not None:
+                    db_session.badge_info_json = json.dumps(badge_info, default=str)
                 if completed:
                     db_session.completed_at = datetime.now(timezone.utc)
                 db.commit()
                 return True
             return False
     except Exception as exc:
-        logger.exception("Failed to update session '%s' results: %s", session_id, exc)
+        logger.error("Database update-session failed: %s", type(exc).__name__)
         return False
 
 
@@ -358,7 +436,7 @@ def get_recent_sessions(max_age_seconds: int = 1800, limit: int = 5000) -> list[
                 if row.access_token_hash
             ]
     except Exception as exc:
-        logger.exception("Failed to load recent sessions: %s", exc)
+        logger.error("Database session-recovery failed: %s", type(exc).__name__)
         raise RuntimeError("Session recovery unavailable") from exc
 
 
@@ -415,7 +493,7 @@ def add_revoked_badge(
             db.commit()
             return True
     except Exception as exc:
-        logger.exception("Failed to add revoked badge '%s': %s", jti, exc)
+        logger.error("Database add-revocation failed: %s", type(exc).__name__)
         return False
 
 
@@ -426,7 +504,7 @@ def is_badge_revoked(jti: str, *, raise_on_error: bool = False) -> bool:
             result = db.query(DBRevokedBadge).filter(DBRevokedBadge.jti == jti).first()
             return result is not None
     except Exception as exc:
-        logger.exception("Failed to check revoked badge '%s': %s", jti, exc)
+        logger.error("Database check-revocation failed: %s", type(exc).__name__)
         if raise_on_error:
             raise RuntimeError("Badge revocation status unavailable") from exc
         return False
@@ -455,7 +533,7 @@ def get_revoked_badges(limit: int = 100, *, raise_on_error: bool = False) -> lis
                 for r in results
             ]
     except Exception as exc:
-        logger.exception("Failed to list revoked badges: %s", exc)
+        logger.error("Database list-revocations failed: %s", type(exc).__name__)
         if raise_on_error:
             raise RuntimeError("Badge revocation audit unavailable") from exc
         return []
@@ -467,7 +545,7 @@ def count_revoked_badges(*, raise_on_error: bool = False) -> int:
         with get_db() as db:
             return db.query(DBRevokedBadge).count()
     except Exception as exc:
-        logger.exception("Failed to count revoked badges: %s", exc)
+        logger.error("Database count-revocations failed: %s", type(exc).__name__)
         if raise_on_error:
             raise RuntimeError("Badge revocation audit unavailable") from exc
         return 0
@@ -481,10 +559,32 @@ def _api_key_digest(api_key: str) -> str:
     return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
 
+def _api_key_lookup_digests(api_key: str) -> tuple[str, ...]:
+    """Return current and migration-v3 double-digest lookup aliases."""
+    current = _api_key_digest(api_key)
+    migrated = _api_key_digest(current)
+    return tuple(dict.fromkeys((current, migrated)))
+
+
+def _find_api_key_record(db, api_key: str):
+    """Resolve exactly one logical key across migration-safe digest aliases."""
+    records = (
+        db.query(DBAPIKey)
+        .filter(DBAPIKey.api_key.in_(_api_key_lookup_digests(api_key)))
+        .limit(2)
+        .all()
+    )
+    if len(records) > 1:
+        raise RuntimeError("Ambiguous API key digest aliases")
+    return records[0] if records else None
+
+
 def save_api_key(api_key: str, tier: str, entity_id: str | None) -> bool:
     """Save only an API key digest so a database read cannot recover the key."""
     try:
         with get_db() as db:
+            if _find_api_key_record(db, api_key) is not None:
+                return False
             record = DBAPIKey(
                 api_key=_api_key_digest(api_key),
                 tier=tier,
@@ -494,7 +594,7 @@ def save_api_key(api_key: str, tier: str, entity_id: str | None) -> bool:
             db.commit()
             return True
     except Exception as exc:
-        logger.exception("Failed to save API key: %s", exc)
+        logger.error("Database save-api-key failed: %s", type(exc).__name__)
         return False
 
 
@@ -502,14 +602,7 @@ def get_api_key(api_key: str, *, raise_on_error: bool = False) -> dict | None:
     """Get API key info."""
     try:
         with get_db() as db:
-            digest = _api_key_digest(api_key)
-            result = db.query(DBAPIKey).filter(DBAPIKey.api_key == digest).first()
-            if result is None:
-                # Transparently migrate records written by older releases.
-                result = db.query(DBAPIKey).filter(DBAPIKey.api_key == api_key).first()
-                if result is not None:
-                    result.api_key = digest
-                    db.commit()
+            result = _find_api_key_record(db, api_key)
             if result:
                 return {
                     "tier": result.tier,
@@ -522,53 +615,67 @@ def get_api_key(api_key: str, *, raise_on_error: bool = False) -> dict | None:
                 }
             return None
     except Exception as exc:
-        logger.exception("Failed to fetch API key metadata: %s", exc)
+        logger.error("Database fetch-api-key failed: %s", type(exc).__name__)
         if raise_on_error:
             raise RuntimeError("API key persistence unavailable") from exc
         return None
 
 
 def delete_api_key(api_key: str, *, raise_on_error: bool = False) -> bool:
-    """Delete a digest-backed API key, with legacy plaintext compatibility."""
+    """Delete a digest-backed API key."""
     try:
         with get_db() as db:
-            record = (
-                db.query(DBAPIKey)
-                .filter(DBAPIKey.api_key == _api_key_digest(api_key))
-                .first()
-            )
-            if record is None:
-                record = db.query(DBAPIKey).filter(DBAPIKey.api_key == api_key).first()
+            record = _find_api_key_record(db, api_key)
             if record is None:
                 return False
             db.delete(record)
             db.commit()
             return True
     except Exception as exc:
-        logger.exception("Failed to delete API key: %s", exc)
+        logger.error("Database delete-api-key failed: %s", type(exc).__name__)
         if raise_on_error:
             raise RuntimeError("API key persistence unavailable") from exc
         return False
 
 
-def update_api_key_usage(api_key: str, usage_date: str, usage_count: int) -> bool:
-    """Update API key usage."""
+def reserve_api_key_usage(
+    api_key: str,
+    usage_date: str,
+    amount: int,
+    maximum: int,
+) -> bool | None:
+    """Atomically reserve daily API-key quota across every worker.
+
+    ``True`` means reserved, ``False`` means missing or exhausted, and ``None``
+    means the durable authority was unavailable.
+    """
+    if amount < 1 or maximum < 1:
+        raise ValueError("Quota amount and maximum must be positive")
     try:
         with get_db() as db:
-            record = (
-                db.query(DBAPIKey)
-                .filter(DBAPIKey.api_key == _api_key_digest(api_key))
-                .first()
+            record = _find_api_key_record(db, api_key)
+            if record is None:
+                return False
+            next_count = case(
+                (
+                    DBAPIKey.usage_date == usage_date,
+                    DBAPIKey.usage_count + amount,
+                ),
+                else_=amount,
             )
-            if record:
-                record.usage_date = usage_date
-                record.usage_count = usage_count
-                db.commit()
-                return True
-            return False
+            result = db.execute(
+                update(DBAPIKey)
+                .where(
+                    DBAPIKey.id == record.id,
+                    next_count <= maximum,
+                )
+                .values(usage_date=usage_date, usage_count=next_count)
+            )
+            db.commit()
+            return result.rowcount == 1
     except Exception as exc:
-        logger.exception("Failed to update API key usage: %s", exc)
-        return False
+        logger.error("Database reserve-api-key-quota failed: %s", type(exc).__name__)
+        return None
 
 
 # === Webhook Operations ===
@@ -592,7 +699,7 @@ def save_webhook(
             db.commit()
             return True
     except Exception as exc:
-        logger.exception("Failed to save webhook for entity '%s': %s", entity_id, exc)
+        logger.error("Database save-webhook failed: %s", type(exc).__name__)
         return False
 
 
@@ -614,7 +721,7 @@ def get_webhook(entity_id: str) -> dict | None:
                 }
             return None
     except Exception as exc:
-        logger.exception("Failed to fetch webhook for entity '%s': %s", entity_id, exc)
+        logger.error("Database fetch-webhook failed: %s", type(exc).__name__)
         return None
 
 
@@ -636,7 +743,7 @@ def get_webhooks(limit: int = 1000, *, raise_on_error: bool = False) -> list[dic
                 for row in rows
             ]
     except Exception as exc:
-        logger.exception("Failed to load webhook registrations: %s", exc)
+        logger.error("Database load-webhooks failed: %s", type(exc).__name__)
         if raise_on_error:
             raise RuntimeError("Webhook recovery unavailable") from exc
         return []
@@ -652,7 +759,7 @@ def delete_webhook(entity_id: str) -> bool:
             db.commit()
             return result > 0
     except Exception as exc:
-        logger.exception("Failed to delete webhook for entity '%s': %s", entity_id, exc)
+        logger.error("Database delete-webhook failed: %s", type(exc).__name__)
         return False
 
 
@@ -672,9 +779,7 @@ def save_verification_record(entity_id: str, ip_address: str, passed: bool) -> b
             db.commit()
             return True
     except Exception as exc:
-        logger.exception(
-            "Failed to save verification record for entity '%s': %s", entity_id, exc
-        )
+        logger.error("Database save-verification failed: %s", type(exc).__name__)
         return False
 
 
@@ -702,7 +807,7 @@ def get_recent_verifications(hours: int = 1) -> list[dict]:
                 for r in results
             ]
     except Exception as exc:
-        logger.exception("Failed to fetch recent verifications: %s", exc)
+        logger.error("Database fetch-verifications failed: %s", type(exc).__name__)
         return []
 
 
@@ -720,9 +825,7 @@ def get_entity_verification_count(entity_id: str, hours: int = 1) -> int:
                 .count()
             )
     except Exception as exc:
-        logger.exception(
-            "Failed to count verifications for entity '%s': %s", entity_id, exc
-        )
+        logger.error("Database count-verifications failed: %s", type(exc).__name__)
         return 0
 
 
@@ -742,5 +845,5 @@ def get_ip_entities(ip_address: str, hours: int = 1) -> set[str]:
             )
             return {r.entity_id for r in results}
     except Exception as exc:
-        logger.exception("Failed to fetch entities for IP '%s': %s", ip_address, exc)
+        logger.error("Database fetch-ip-entities failed: %s", type(exc).__name__)
         return set()

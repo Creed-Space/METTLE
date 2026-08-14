@@ -15,7 +15,10 @@ import os
 import re
 from typing import Any
 
-from mettle.protocol import CREDENTIAL_SCHEMA_VERSION, SUITE_POLICY_VERSION
+from mettle.protocol import (
+    SUPPORTED_CREDENTIAL_SCHEMA_VERSIONS,
+    SUPPORTED_SUITE_POLICY_VERSIONS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -166,8 +169,8 @@ def get_public_key_info() -> dict[str, Any]:
         "public_key_pem": pem,
         "available": pem is not None,
         "status": "active" if pem is not None else "unavailable",
-        "credential_schema_versions": [CREDENTIAL_SCHEMA_VERSION],
-        "suite_policy_versions": [SUITE_POLICY_VERSION],
+        "credential_schema_versions": sorted(SUPPORTED_CREDENTIAL_SCHEMA_VERSIONS),
+        "suite_policy_versions": sorted(SUPPORTED_SUITE_POLICY_VERSIONS),
         "keys": [
             {
                 "key_id": key_id,

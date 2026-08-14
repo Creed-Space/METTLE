@@ -7,7 +7,9 @@ webhooks, and verification records using an isolated in-memory SQLite database.
 import hashlib
 import os
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from threading import Barrier
 from unittest.mock import patch
 
 import pytest
@@ -135,7 +137,7 @@ class TestInitDb:
                 versions = connection.execute(
                     text("SELECT version FROM schema_migrations ORDER BY version")
                 ).scalars()
-                assert list(versions) == [1, 2]
+                assert list(versions) == [1, 2, 3]
         legacy_engine.dispose()
 
     def test_sqlite_backup_restores_sessions_and_revocations(
@@ -334,6 +336,12 @@ class TestGetSession:
             result = db.get_session("err-sess")
             assert result is None
 
+    def test_get_session_can_fail_closed(self, isolated_db):
+        db = isolated_db
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            with pytest.raises(RuntimeError, match="Session persistence unavailable"):
+                db.get_session("err-sess", raise_on_error=True)
+
 
 class TestUpdateSessionResults:
     def test_update_results_success(self, isolated_db):
@@ -372,6 +380,26 @@ class TestUpdateSessionResults:
             "upd-badge", [MockResult()], completed=True, badge_info=badge_info
         )
         assert db.get_session("upd-badge")["badge_info"] == badge_info
+
+    def test_issued_badge_is_immutable_and_not_cleared_by_later_progress(
+        self, isolated_db
+    ):
+        db = isolated_db
+        db.save_session("immutable-badge", "e1", "basic", [MockChallenge()])
+        original = {"token": "signed-token", "signed": True}
+        replacement = {"token": "different-token", "signed": True}
+
+        assert db.update_session_results(
+            "immutable-badge", [MockResult()], completed=True, badge_info=original
+        )
+        assert db.update_session_results(
+            "immutable-badge", [MockResult()], completed=True, badge_info=None
+        )
+        assert db.get_session("immutable-badge")["badge_info"] == original
+        assert not db.update_session_results(
+            "immutable-badge", [MockResult()], completed=True, badge_info=replacement
+        )
+        assert db.get_session("immutable-badge")["badge_info"] == original
 
 
 class TestGetRecentSessions:
@@ -604,21 +632,101 @@ class TestDeleteApiKey:
         assert db.delete_api_key("delete-key") is True
         assert db.get_api_key("delete-key") is None
 
-    def test_deletes_legacy_plaintext_key(self, isolated_db):
+    def test_startup_migrates_then_deletes_legacy_plaintext_key(self, isolated_db):
         db = isolated_db
+        hexadecimal_plaintext = "a" * 64  # pragma: allowlist secret
         with db.get_db() as session:
-            session.add(
-                db.DBAPIKey(
-                    api_key="legacy-delete-key",  # pragma: allowlist secret
-                    tier="basic",
-                    entity_id="legacy-entity",
-                )
+            session.add_all(
+                [
+                    db.DBSchemaMigration(version=1),
+                    db.DBSchemaMigration(version=2),
+                    db.DBAPIKey(
+                        api_key="legacy-delete-key",  # pragma: allowlist secret
+                        tier="basic",
+                        entity_id="legacy-entity",
+                    ),
+                    db.DBAPIKey(
+                        api_key=hexadecimal_plaintext,
+                        tier="premium",
+                        entity_id="hex-legacy-entity",
+                    ),
+                ]
             )
             session.commit()
 
+        db.init_db()
+        with db.get_db() as session:
+            stored = {
+                record.entity_id: record.api_key
+                for record in session.query(db.DBAPIKey).all()
+            }
+        assert stored == {
+            "legacy-entity": hashlib.sha256(b"legacy-delete-key").hexdigest(),
+            "hex-legacy-entity": hashlib.sha256(
+                hexadecimal_plaintext.encode("utf-8")
+            ).hexdigest(),
+        }
+        assert db.get_api_key(hexadecimal_plaintext)["tier"] == "premium"
+
+        db.init_db()
+        with db.get_db() as session:
+            assert {
+                record.entity_id: record.api_key
+                for record in session.query(db.DBAPIKey).all()
+            } == stored
+
         assert db.delete_api_key("legacy-delete-key") is True
         with db.get_db() as session:
-            assert session.query(db.DBAPIKey).count() == 0
+            assert session.query(db.DBAPIKey).count() == 1
+
+    def test_v3_double_digest_migration_preserves_v2_logical_keys(self, isolated_db):
+        db = isolated_db
+        logical_key = "v2-digest-key"
+        original_digest = hashlib.sha256(logical_key.encode()).hexdigest()
+        with db.get_db() as session:
+            session.add_all(
+                [
+                    db.DBSchemaMigration(version=1),
+                    db.DBSchemaMigration(version=2),
+                    db.DBAPIKey(
+                        api_key=original_digest,
+                        tier="premium",
+                        entity_id="v2-digested-entity",
+                    ),
+                ]
+            )
+            session.commit()
+
+        db.init_db()
+
+        with db.get_db() as session:
+            stored = session.query(db.DBAPIKey).one().api_key
+        assert stored == hashlib.sha256(original_digest.encode()).hexdigest()
+        assert db.get_api_key(logical_key)["tier"] == "premium"
+        assert db.reserve_api_key_usage(logical_key, "2026-08-14", 1, 10) is True
+        assert db.save_api_key(logical_key, "basic", "duplicate") is False
+
+        db.init_db()
+        assert db.delete_api_key(logical_key) is True
+
+    def test_ambiguous_digest_aliases_fail_closed(self, isolated_db):
+        db = isolated_db
+        logical_key = "ambiguous-key"
+        current, migrated = db._api_key_lookup_digests(logical_key)
+        with db.get_db() as session:
+            session.add_all(
+                [
+                    db.DBAPIKey(api_key=current, tier="basic", entity_id="current"),
+                    db.DBAPIKey(api_key=migrated, tier="basic", entity_id="migrated"),
+                ]
+            )
+            session.commit()
+
+        assert db.get_api_key(logical_key) is None
+        assert db.delete_api_key(logical_key) is False
+        assert db.reserve_api_key_usage(logical_key, "2026-08-14", 1, 10) is None
+        with pytest.raises(RuntimeError, match="persistence unavailable"):
+            db.get_api_key(logical_key, raise_on_error=True)
 
     def test_delete_unknown_key_returns_false(self, isolated_db):
         assert isolated_db.delete_api_key("missing-key") is False
@@ -630,27 +738,92 @@ class TestDeleteApiKey:
                 db.delete_api_key("err-key", raise_on_error=True)
 
 
-class TestUpdateApiKeyUsage:
-    def test_update_usage_success(self, isolated_db):
+class TestReserveApiKeyUsage:
+    def test_reserve_usage_success(self, isolated_db):
         db = isolated_db
         db.save_api_key("usage-key", "basic", "e1")
-        result = db.update_api_key_usage("usage-key", "2026-02-15", 42)
+        result = db.reserve_api_key_usage("usage-key", "2026-02-15", 42, 100)
         assert result is True
 
         key_data = db.get_api_key("usage-key")
         assert key_data["usage_date"] == "2026-02-15"
         assert key_data["usage_count"] == 42
 
-    def test_update_nonexistent_key_returns_false(self, isolated_db):
+    def test_reserve_nonexistent_key_returns_false(self, isolated_db):
         db = isolated_db
-        result = db.update_api_key_usage("no-key", "2026-01-01", 1)
+        result = db.reserve_api_key_usage("no-key", "2026-01-01", 1, 100)
         assert result is False
 
-    def test_update_api_key_usage_error_returns_false(self, isolated_db):
+    def test_reserve_api_key_usage_error_returns_none(self, isolated_db):
         db = isolated_db
         with patch.object(db, "get_db", side_effect=Exception("db error")):
-            result = db.update_api_key_usage("err-key", "2026-01-01", 1)
-            assert result is False
+            result = db.reserve_api_key_usage("err-key", "2026-01-01", 1, 100)
+            assert result is None
+
+    def test_database_errors_never_log_bound_secret_values(self, isolated_db):
+        db = isolated_db
+        callback_secret = "callback-query-secret"  # pragma: allowlist secret
+        signing_secret = "webhook-signing-secret"  # pragma: allowlist secret
+        with (
+            patch.object(
+                db,
+                "get_db",
+                side_effect=Exception(f"https://example.test/?token={callback_secret}"),
+            ),
+            patch.object(db, "logger") as mock_logger,
+        ):
+            assert not db.save_webhook(
+                "entity-1",
+                f"https://example.test/?token={callback_secret}",
+                ["session.completed"],
+                signing_secret,
+            )
+
+        serialized_logs = repr(mock_logger.method_calls)
+        assert callback_secret not in serialized_logs
+        assert signing_secret not in serialized_logs
+        assert "Exception" in serialized_logs
+
+    def test_reservation_at_limit_is_atomic(self, isolated_db):
+        db = isolated_db
+        db.save_api_key("limit-key", "basic", "e1")
+        assert db.reserve_api_key_usage("limit-key", "2026-02-15", 99, 100)
+        assert not db.reserve_api_key_usage("limit-key", "2026-02-15", 2, 100)
+        assert db.get_api_key("limit-key")["usage_count"] == 99
+
+    def test_parallel_workers_cannot_overbook_final_slot(self, isolated_db, tmp_path):
+        db = isolated_db
+        concurrent_engine = create_engine(
+            f"sqlite:///{tmp_path / 'quota.db'}",
+            connect_args={"check_same_thread": False, "timeout": 10},
+        )
+        concurrent_sessions = sessionmaker(
+            autocommit=False, autoflush=False, bind=concurrent_engine
+        )
+        db.Base.metadata.create_all(bind=concurrent_engine)
+        gate = Barrier(2)
+
+        with (
+            patch.object(db, "engine", concurrent_engine),
+            patch.object(db, "SessionLocal", concurrent_sessions),
+        ):
+            db.save_api_key("parallel-key", "basic", "e1")
+
+            def reserve() -> bool | None:
+                gate.wait()
+                return db.reserve_api_key_usage("parallel-key", "2026-02-15", 1, 1)
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = [
+                    future.result()
+                    for future in [pool.submit(reserve) for _ in range(2)]
+                ]
+
+            assert results.count(True) == 1
+            assert results.count(False) == 1
+            assert db.get_api_key("parallel-key")["usage_count"] == 1
+
+        concurrent_engine.dispose()
 
 
 # ── Webhook Operations ───────────────────────────────────────────────────────
@@ -1020,8 +1193,8 @@ class TestEdgeCases:
         db = isolated_db
         db.save_api_key("multi-use", "basic", "e1")
 
-        db.update_api_key_usage("multi-use", "2026-02-14", 10)
-        db.update_api_key_usage("multi-use", "2026-02-15", 25)
+        db.reserve_api_key_usage("multi-use", "2026-02-14", 10, 100)
+        db.reserve_api_key_usage("multi-use", "2026-02-15", 25, 100)
 
         key = db.get_api_key("multi-use")
         assert key["usage_date"] == "2026-02-15"

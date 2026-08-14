@@ -9,25 +9,26 @@ runtime: container
 
 startCommand:
   type: http
-  # Empty schema, mirroring creedspace-mcp-server: the server needs no per-user
-  # credentials. The three screening tools (mettle_start_session,
-  # mettle_answer_challenge, and mettle_get_result) run against the public API
-  # at https://mettle.sh/api and receive their own per-session token. Clients
-  # must answer each challenge; no automatic solver is exposed.
-  #
-  # Why the v2 suite tools' Bearer key (METTLE_API_KEY) is NOT offered here:
-  # per-user configSchema values reach a hosted container as query parameters
-  # on each HTTP request, not as env vars — but mettle/mcp_server.py reads
-  # METTLE_API_KEY from the environment at import time and mettle/_http.py
-  # parses no query params. An apiKey field would be dead UI: fillable,
-  # ignored. Operators who want the v2 suite/tier/attestation tools set
-  # METTLE_API_KEY in the service environment at deploy time; without it those
-  # tools return a clear error and the screening tools still work.
+  # Smithery passes each caller's API key in a secret-bearing HTTP header. The
+  # server validates it against the canonical METTLE API before dispatch and
+  # uses only that caller's identity and quota upstream. No process-wide key is
+  # accepted by the HTTP transport.
   configSchema:
     type: object
-    properties: {}
+    properties:
+      mettleApiKey:
+        type: string
+        title: METTLE API key
+        description: A caller-owned METTLE API key
+        x-from:
+          header: x-mettle-api-key
+        x-to:
+          header: x-mettle-api-key
+    required:
+      - mettleApiKey
     additionalProperties: false
-  exampleConfig: {}
+  exampleConfig:
+    mettleApiKey: mtl_REPLACE_WITH_YOUR_KEY  # pragma: allowlist secret
 
 build:
   dockerfile: Dockerfile
@@ -39,3 +40,4 @@ build:
 # `docker run` of the image.
 env:
   METTLE_MCP_TRANSPORT: "http"
+  METTLE_MCP_ALLOWED_HOSTS: "*.smithery.run,*.smithery.ai"

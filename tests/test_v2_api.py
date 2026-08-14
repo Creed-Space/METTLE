@@ -12,8 +12,8 @@ import json
 import sys
 import time
 from collections.abc import Generator
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -49,6 +49,7 @@ from mettle.api_models import (  # noqa: E402
     SessionStatus,
 )
 from mettle.auth import AuthenticatedUser, require_authenticated_user  # noqa: E402
+from mettle.challenge_adapter import ChallengeAdapter  # noqa: E402
 from mettle.router import router  # noqa: E402
 from mettle.session_manager import (  # noqa: E402
     COMPLETED_SESSION_TTL,
@@ -59,6 +60,8 @@ from mettle.session_manager import (  # noqa: E402
     _key,
     _rate_key,
 )
+
+_REAL_EVALUATE_SINGLE_SHOT = ChallengeAdapter.evaluate_single_shot
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +163,17 @@ _NOVEL_SERVER_STUB = {
     "time_budget_s": 30,
     "num_rounds": 3,
     "pass_threshold": 0.65,
-    "challenges": {"seq": {"all_test_answers": [1, 2]}},
+    "final_accuracy_threshold": 0.8,
+    "challenges": {
+        "seq": {
+            "all_test_answers": [1, 2],
+            "client_rounds": {
+                1: {"type": "sequence_alchemy", "test_inputs": [1]},
+                2: {"type": "sequence_alchemy", "test_inputs": [1, 2]},
+                3: {"type": "sequence_alchemy", "test_inputs": [1, 2]},
+            },
+        }
+    },
 }
 
 
@@ -194,6 +207,17 @@ def _ensure_mock_engine():
 @pytest.fixture(autouse=True)
 def _patch_challenge_adapter():
     """Patch ChallengeAdapter methods for ALL tests to avoid real challenge generation."""
+
+    def evaluate_single_shot(_suite, answers, _server_answers):
+        if any(not isinstance(value, dict) for value in answers.values()):
+            return {
+                "passed": False,
+                "score": 0.0,
+                "details": {"error": "invalid_answer_shape"},
+                "credential_eligible": False,
+            }
+        return {"passed": True, "score": 0.9, "details": {}}
+
     methods = {
         "generate_adversarial": (_CLIENT_STUB, _SERVER_STUB),
         "generate_native": (_CLIENT_STUB, _SERVER_STUB),
@@ -215,7 +239,7 @@ def _patch_challenge_adapter():
         started.append(p)
     p1 = patch(
         "mettle.session_manager.ChallengeAdapter.evaluate_single_shot",
-        return_value={"passed": True, "score": 0.9, "details": {}},
+        side_effect=evaluate_single_shot,
     )
     p1.start()
     started.append(p1)
@@ -311,6 +335,15 @@ class TestResolveSuites:
     def test_invalid_name_raises(self):
         with pytest.raises(ValueError, match="Unknown suites"):
             SessionManager._resolve_suites(["adversarial", "bogus"])
+
+    def test_llm_suite_requires_explicit_third_party_acknowledgement(self, monkeypatch):
+        monkeypatch.setattr("mettle.session_manager.llm_available", lambda: True)
+        with pytest.raises(ValueError, match="allow_third_party_llm=true"):
+            SessionManager._resolve_suites(["llm-dynamic"])
+        assert "llm-dynamic" not in SessionManager._resolve_suites(["all"])
+        assert "llm-dynamic" in SessionManager._resolve_suites(
+            ["all"], allow_third_party_llm=True
+        )
 
 
 class TestCreateSession:
@@ -451,7 +484,7 @@ class TestVerifySingleShot:
     @pytest.mark.asyncio
     async def test_verify_success(self, mgr, fake_redis):
         sid, _, _ = await _create_session(mgr, ["adversarial"])
-        result = await mgr.verify_single_shot(sid, "adversarial", {"q1": 42})
+        result = await mgr.verify_single_shot(sid, "adversarial", {"q1": {"value": 42}})
         assert result["passed"] is True
         assert result["score"] == 0.9
 
@@ -736,6 +769,7 @@ def _make_test_app(fake_redis: FakeRedis) -> FastAPI:
     test_app = FastAPI()
     test_app.include_router(router)
     test_app.state.redis = fake_redis
+    test_app.state.credential_issuance_guard = lambda: True
 
     async def mock_auth():
         return AuthenticatedUser(user_id=TEST_USER)
@@ -781,6 +815,91 @@ class TestRouterGetSessionManager:
         resp = c.post("/api/mettle/sessions", json={"suites": ["adversarial"]})
         assert resp.status_code == 503
         app.dependency_overrides.clear()
+
+
+class TestCredentialStatus:
+    def test_status_is_signed_and_reflects_revocation(
+        self, client, test_app, monkeypatch
+    ):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from mettle import signing
+        from mettle.vcp import verify_credential_status_receipt
+
+        private_key = Ed25519PrivateKey.generate()
+        monkeypatch.setattr(signing, "_private_key", private_key)
+        monkeypatch.setattr(signing, "_public_key", private_key.public_key())
+        monkeypatch.setattr(signing, "_key_id", "mettle-vcp-v1")
+        monkeypatch.setattr(signing, "_initialized", True)
+        test_app.state.credential_revocation_checker = lambda jti: jti == "f" * 32
+
+        good = client.post(
+            "/api/mettle/credentials/status",
+            json={"credential_jti": "a" * 32},
+        )
+        assert good.status_code == 200
+        assert good.json()["status"] == "good"
+        public_key = signing.get_public_key_pem()
+        assert public_key is not None
+        assert verify_credential_status_receipt(
+            good.json(),
+            {"mettle-vcp-v1": public_key},
+            credential_jti="a" * 32,
+        )
+
+        revoked = client.post(
+            "/api/mettle/credentials/status",
+            json={"credential_jti": "f" * 32},
+        )
+        assert revoked.status_code == 200
+        assert revoked.json()["status"] == "revoked"
+
+    def test_status_route_bounds_revocation_checks_and_signatures(self, monkeypatch):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from slowapi import _rate_limit_exceeded_handler
+        from slowapi.errors import RateLimitExceeded
+
+        from mettle import signing
+        from mettle.rate_limit import limiter
+
+        private_key = Ed25519PrivateKey.generate()
+        monkeypatch.setattr(signing, "_private_key", private_key)
+        monkeypatch.setattr(signing, "_public_key", private_key.public_key())
+        monkeypatch.setattr(signing, "_key_id", "mettle-vcp-v1")
+        monkeypatch.setattr(signing, "_initialized", True)
+        checks = 0
+
+        def checker(_jti: str) -> bool:
+            nonlocal checks
+            checks += 1
+            return False
+
+        app = FastAPI()
+        app.include_router(router)
+        app.state.limiter = limiter
+        app.state.credential_revocation_checker = checker
+        app.add_exception_handler(
+            RateLimitExceeded, cast(Any, _rate_limit_exceeded_handler)
+        )
+        limited_client = TestClient(app, client=("status-limit-test", 50000))
+
+        statuses = [
+            limited_client.post(
+                "/api/mettle/credentials/status",
+                json={"credential_jti": f"{index:032x}"},
+            ).status_code
+            for index in range(61)
+        ]
+
+        assert statuses[:60] == [200] * 60
+        assert statuses[60] == 429
+        assert checks == 60
+
+    def test_status_fails_closed_without_revocation_authority(self, client):
+        response = client.post(
+            "/api/mettle/credentials/status",
+            json={"credential_jti": "a" * 32},
+        )
+        assert response.status_code == 503
 
 
 class TestRouterListSuites:
@@ -889,7 +1008,7 @@ class TestRouterVerifySingleShot:
         sid = _create_via_api(client, ["adversarial"])
         resp = client.post(
             f"/api/mettle/sessions/{sid}/verify",
-            json={"suite": "adversarial", "answers": {"q1": 42}},
+            json={"suite": "adversarial", "answers": {"q1": {"value": 42}}},
         )
         assert resp.status_code == 200
         assert resp.json()["passed"] is True
@@ -919,6 +1038,35 @@ class TestRouterVerifySingleShot:
         )
         assert resp.status_code == 400
 
+    def test_verify_malformed_nested_answer_fails_without_500(self, client):
+        sid = _create_via_api(client, ["adversarial"])
+        resp = client.post(
+            f"/api/mettle/sessions/{sid}/verify",
+            json={"suite": "adversarial", "answers": {"q1": "not-an-object"}},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["passed"] is False
+
+    def test_verify_native_string_collection_cannot_pass_evidence(self, client):
+        sid = _create_via_api(client, ["native"])
+        with patch.object(
+            ChallengeAdapter,
+            "evaluate_single_shot",
+            side_effect=_REAL_EVALUATE_SINGLE_SHOT,
+        ):
+            resp = client.post(
+                f"/api/mettle/sessions/{sid}/verify",
+                json={
+                    "suite": "native",
+                    "answers": {"batch_coherence": {"responses": "VERIFIED"}},
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["passed"] is False
+        assert resp.json()["details"] == {"error": "invalid_answer_shape"}
+
     def test_verify_unexpected_error(self, client):
         sid = _create_via_api(client, ["adversarial"])
         with patch.object(
@@ -940,6 +1088,16 @@ class TestRouterSubmitRoundAnswer:
         )
         assert resp.status_code == 200
         assert resp.json()["round_num"] == 1
+
+    def test_submit_round_malformed_nested_answer_returns_400(self, client):
+        sid = _create_via_api(client, [MULTI_ROUND_SUITE])
+        resp = client.post(
+            f"/api/mettle/sessions/{sid}/rounds/1/answer",
+            json={"answers": {"challenges": {"seq": "not-an-object"}}},
+        )
+
+        assert resp.status_code == 400
+        assert "must be objects" in resp.json()["detail"]
 
     def test_submit_round_not_found(self, client):
         resp = client.post(
@@ -1019,7 +1177,7 @@ class TestRouterGetSessionResult:
         sid = _create_via_api(client, ["adversarial"])
         client.post(
             f"/api/mettle/sessions/{sid}/verify",
-            json={"suite": "adversarial", "answers": {"q1": 42}},
+            json={"suite": "adversarial", "answers": {"q1": {"value": 42}}},
         )
         resp = client.get(f"/api/mettle/sessions/{sid}/result")
         assert resp.status_code == 200
@@ -1049,7 +1207,7 @@ class TestRouterGetSessionResult:
         sid = _create_via_api(client, ["adversarial"])
         client.post(
             f"/api/mettle/sessions/{sid}/verify",
-            json={"suite": "adversarial", "answers": {"q1": 42}},
+            json={"suite": "adversarial", "answers": {"q1": {"value": 42}}},
         )
         resp = client.get(f"/api/mettle/sessions/{sid}/result?include_vcp=true")
         assert resp.status_code == 200
@@ -1062,7 +1220,7 @@ class TestRouterGetSessionResult:
         sid = _create_via_api(client, ["adversarial"])
         client.post(
             f"/api/mettle/sessions/{sid}/verify",
-            json={"suite": "adversarial", "answers": {"q1": 42}},
+            json={"suite": "adversarial", "answers": {"q1": {"value": 42}}},
         )
         monkeypatch.setattr(
             router_module.settings, "credential_issuance_enabled", False
@@ -1073,11 +1231,59 @@ class TestRouterGetSessionResult:
         assert response.status_code == 503
         assert "issuance" in response.json()["detail"].lower()
 
+    def test_unhealthy_dependency_guard_stops_vcp_issuance(self, client, test_app):
+        sid = _create_via_api(client, ["adversarial"])
+        client.post(
+            f"/api/mettle/sessions/{sid}/verify",
+            json={"suite": "adversarial", "answers": {"q1": {"value": 42}}},
+        )
+        test_app.state.credential_issuance_guard = lambda: False
+
+        response = client.get(f"/api/mettle/sessions/{sid}/result?include_vcp=true")
+
+        assert response.status_code == 503
+        assert "dependencies" in response.json()["detail"].lower()
+
+    def test_absent_dependency_guard_stops_vcp_issuance(self, client, test_app):
+        sid = _create_via_api(client, ["adversarial"])
+        client.post(
+            f"/api/mettle/sessions/{sid}/verify",
+            json={"suite": "adversarial", "answers": {"q1": {"value": 42}}},
+        )
+        del test_app.state.credential_issuance_guard
+
+        response = client.get(f"/api/mettle/sessions/{sid}/result?include_vcp=true")
+
+        assert response.status_code == 503
+        assert "dependencies" in response.json()["detail"].lower()
+
+    def test_delayed_vcp_uses_completion_time_for_freshness(self, client, fake_redis):
+        sid = _create_via_api(client, ["adversarial"])
+        client.post(
+            f"/api/mettle/sessions/{sid}/verify",
+            json={"suite": "adversarial", "answers": {"q1": {"value": 42}}},
+        )
+        completed_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+        raw = asyncio.run(fake_redis.get(_key(sid)))
+        assert raw is not None
+        session = json.loads(raw)
+        session["completed_at"] = completed_at.isoformat()
+        _store_session(fake_redis, sid, session)
+
+        response = client.get(f"/api/mettle/sessions/{sid}/result?include_vcp=true")
+
+        assert response.status_code == 200
+        attestation = response.json()["vcp_attestation"]
+        assert attestation["reviewed_at"] == completed_at.isoformat()
+        assert datetime.fromisoformat(attestation["expires_at"]) == (
+            completed_at + timedelta(hours=1)
+        )
+
     def test_get_result_with_vcp_and_signing(self, client):
         sid = _create_via_api(client, ["adversarial"])
         client.post(
             f"/api/mettle/sessions/{sid}/verify",
-            json={"suite": "adversarial", "answers": {"q1": 42}},
+            json={"suite": "adversarial", "answers": {"q1": {"value": 42}}},
         )
         mock_signing = MagicMock()
         mock_signing.is_available.return_value = True

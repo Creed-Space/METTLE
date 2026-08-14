@@ -1,5 +1,8 @@
 """Tests for config.py allowed-origin parsing and production validation."""
 
+import os
+import subprocess
+import sys
 import warnings
 from pathlib import Path
 from typing import Any, cast
@@ -45,7 +48,7 @@ PRODUCTION_CONFIG = {
     "admin_api_key": "a" * 32,
     "vcp_signing_key": "test-pem",
     "use_database": True,
-    "database_url": "postgresql://db.example/mettle",
+    "database_url": "postgresql://db.example/mettle?sslmode=verify-full",
     "redis_url": "rediss://redis.example/mettle",
 }
 
@@ -115,15 +118,54 @@ class TestProductionValidation:
             ({"vcp_signing_key": ""}, "VCP_SIGNING_KEY"),
             ({"use_database": False}, "USE_DATABASE"),
             ({"database_url": "sqlite:///mettle.db"}, "PostgreSQL"),
+            ({"database_url": "postgresql://db.example/mettle"}, "sslmode"),
             ({"allowed_origins": "http://mettle.sh"}, "HTTPS"),
             ({"trusted_hosts": "*"}, "TRUSTED_HOSTS"),
             ({"redis_url": ""}, "REDIS_URL"),
+            ({"redis_url": "redis://redis.example/mettle"}, "rediss"),
         ],
     )
     def test_insecure_production_settings_rejected(self, override, message):
         config = {**PRODUCTION_CONFIG, **override}
         with pytest.raises(ValueError, match=message):
             SettingsFactory(**config, _env_file="nonexistent.env")
+
+    @pytest.mark.parametrize(
+        "redis_url",
+        [
+            "rediss://redis.example/mettle?ssl_cert_reqs=none",
+            "rediss://redis.example/mettle?ssl_check_hostname=false",
+            ("rediss://redis.example/mettle?ssl_cert_reqs=required&ssl_cert_reqs=none"),
+            (
+                "rediss://redis.example/mettle?ssl_check_hostname=true"
+                "&ssl_check_hostname=false"
+            ),
+        ],
+    )
+    def test_redis_tls_query_cannot_downgrade_verification(self, redis_url):
+        with pytest.raises(ValueError, match="TLS (certificate|hostname)"):
+            SettingsFactory(
+                **{**PRODUCTION_CONFIG, "redis_url": redis_url},
+                _env_file="nonexistent.env",
+            )
+
+    @pytest.mark.parametrize(
+        "redis_url",
+        [
+            "rediss://redis.example/mettle",
+            (
+                "rediss://redis.example/mettle?ssl_cert_reqs=required"
+                "&ssl_check_hostname=true"
+            ),
+            "rediss://redis.example/mettle?ssl_cert_reqs=cert_required",
+        ],
+    )
+    def test_redis_tls_query_accepts_required_verification(self, redis_url):
+        settings = SettingsFactory(
+            **{**PRODUCTION_CONFIG, "redis_url": redis_url},
+            _env_file="nonexistent.env",
+        )
+        assert settings.redis_url == redis_url
 
     def test_development_wildcard_no_warning(self):
         """Development mode with wildcard does not warn."""
@@ -151,9 +193,50 @@ def test_render_blueprint_declares_fail_closed_production_dependencies():
         "METTLE_USE_DATABASE",
         "METTLE_DATABASE_URL",
         "METTLE_REDIS_URL",
+        "METTLE_FORWARDED_ALLOW_IPS",
     ):
         assert f"key: {key}" in blueprint
     assert "--workers 2" in blueprint
+    parsed = yaml.safe_load(blueprint)
+    env = {item["key"]: item for item in parsed["services"][0]["envVars"]}
+    assert env["METTLE_FORWARDED_ALLOW_IPS"] == {
+        "key": "METTLE_FORWARDED_ALLOW_IPS",
+        "value": "*",
+    }
+
+
+def test_configured_database_import_failure_stops_application_startup() -> None:
+    code = """
+import builtins
+original_import = builtins.__import__
+def guarded_import(name, *args, **kwargs):
+    if name == 'database':
+        raise ImportError('database unavailable')
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = guarded_import
+import main
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "METTLE_ENVIRONMENT": "development",
+            "METTLE_USE_DATABASE": "true",
+            "METTLE_DATABASE_URL": "postgresql://example.invalid/mettle",
+        }
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert "Configured database module is unavailable" in completed.stderr
 
 
 def test_holder_blueprint_forces_stop_first_singleton_deploys() -> None:
@@ -198,6 +281,22 @@ def test_tag_release_reuses_full_ci_on_the_exact_candidate() -> None:
             in workflow
         )
         assert "scripts/finalize_server_sbom.py" in workflow
+    assert "-r requirements-release-lock.txt" in release
+    assert "pip install -r requirements-dev.txt" not in release
+
+
+def test_security_gate_covers_release_code_and_every_workflow_lock() -> None:
+    """New release authority and its dependency sets stay inside CI security scope."""
+    ci = (Path(__file__).parent.parent / ".github/workflows/ci.yml").read_text()
+
+    assert ci.count("scripts/deploy_render_release.py") == 2
+    for lock in (
+        "requirements-mcp-lock.txt",
+        "requirements-build-lock.txt",
+        "requirements-drift-lock.txt",
+        "requirements-release-lock.txt",
+    ):
+        assert f"pip-audit -r {lock}" in ci
 
 
 def test_release_requires_reproducibility_before_publication() -> None:
@@ -261,6 +360,9 @@ def test_render_drift_gate_is_read_only_and_scheduled() -> None:
     assert "RENDER_API_TOKEN" in workflow
     assert '"srv-d5ujjr7pm1nc73bu5k3g"' in contract
     assert '"srv-d9h2p5beo5us73b4fh90"' in contract
+    assert '"srv-d9b36jjeo5us73drljbg"' in contract
+    assert '"holder/render.yaml"' in contract
+    assert "RENDER_SECRET_FINGERPRINTS" in workflow
     assert "urllib.request.Request" in checker
     for mutating_method in ('method="POST"', 'method="PUT"', 'method="PATCH"'):
         assert mutating_method not in checker

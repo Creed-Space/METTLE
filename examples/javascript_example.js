@@ -1,7 +1,7 @@
 /**
  * METTLE JavaScript SDK Example
  *
- * Complete verification flow for Becoming Minds.
+ * Interactive verification flow for Becoming Minds.
  *
  * Usage (Node.js):
  *   node javascript_example.js
@@ -16,9 +16,13 @@ const METTLE_API = "https://mettle-api.onrender.com/api";
  * Complete METTLE verification flow.
  * @param {string} entityId - Your agent's identifier
  * @param {string} difficulty - "basic" or "full"
+ * @param {(challenge: object) => Promise<string>} answerChallenge - Respondent callback
  * @returns {Promise<object>} Verification result
  */
-async function verifyAgent(entityId, difficulty = "basic") {
+async function verifyAgent(entityId, difficulty = "basic", answerChallenge) {
+  if (typeof answerChallenge !== "function") {
+    throw new TypeError("answerChallenge callback is required");
+  }
   console.log(`Starting verification for ${entityId}...`);
 
   // Step 1: Start session
@@ -51,12 +55,9 @@ async function verifyAgent(entityId, difficulty = "basic") {
     console.log(`\nChallenge ${challengeNum}/${total}: ${challengeType}`);
     console.log(`  Prompt: ${prompt.substring(0, 60)}...`);
 
-    // Generate answer
-    const answer = generateAnswer(
-      challengeType,
-      prompt,
-      currentChallenge.data || {}
-    );
+    // The example never solves issuer challenges. The callback must return the
+    // response produced by the Becoming Mind being verified.
+    const answer = await answerChallenge(currentChallenge);
 
     // Submit answer
     const answerResponse = await fetch(`${METTLE_API}/session/answer`, {
@@ -106,117 +107,6 @@ async function verifyAgent(entityId, difficulty = "basic") {
 }
 
 /**
- * Generate answer for a challenge.
- * Replace this fixture logic with your own.
- */
-function generateAnswer(challengeType, prompt, data) {
-  switch (challengeType) {
-    case "speed_math": {
-      // Parse and solve: "Calculate: 47 + 83"
-      try {
-        const expr = prompt.split(": ")[1];
-        const result = safeMathEval(expr);
-        return String(result);
-      } catch {
-        return "0";
-      }
-    }
-
-    case "token_prediction": {
-      const tokens = [...prompt.matchAll(/(K[0-9a-f]{6}-)(\d+)/gi)];
-      if (tokens.length >= 2) {
-        const previous = Number(tokens[tokens.length - 2][2]);
-        const last = Number(tokens[tokens.length - 1][2]);
-        return `${tokens[tokens.length - 1][1]}${last + (last - previous)}`;
-      }
-      if (prompt.toLowerCase().includes("lazy")) return "dog";
-      if (prompt.toLowerCase().includes("roses are")) return "red";
-      return "unknown";
-    }
-
-    case "instruction_following": {
-      const instruction = data.instruction || "";
-      const marker = data.marker || "";
-      if (data.instruction_kind === "prefix")
-        return `${marker} Paris is France's capital.`;
-      if (data.instruction_kind === "suffix")
-        return `Paris is France's capital. ${marker}`;
-      if (data.instruction_kind === "include")
-        return `Paris ${marker} is France's capital.`;
-      if (data.instruction_kind === "exact_words") {
-        const words = [marker, "Paris", "is", "France's", "capital"];
-        while (words.length < data.word_count) words.push("clearly");
-        return words.slice(0, data.word_count).join(" ");
-      }
-      if (data.instruction_kind === "start_digit")
-        return `${data.starting_digit} Paris ${marker} is France's capital.`;
-      if (instruction.includes("Indeed,"))
-        return "Indeed, I understand the requirement.";
-      if (instruction.includes("...")) return "Here is my response...";
-      if (instruction.includes("therefore"))
-        return "Therefore, this follows logically.";
-      if (instruction.includes("5 words"))
-        return "This has five words exactly.";
-      if (instruction.includes("number")) return "42 is the answer here.";
-      return "Response following instructions.";
-    }
-
-    case "consistency": {
-      const numResponses = data.num_responses || 3;
-      const base = "The sky is blue";
-      return Array(numResponses).fill(base).join(" | ");
-    }
-
-    case "chained_reasoning": {
-      try {
-        const chain = data.chain || [];
-        let result = chain[0]?.value || 0;
-        for (let i = 1; i < chain.length; i++) {
-          const { op, value } = chain[i];
-          if (op === "+") result += value;
-          else if (op === "-") result -= value;
-          else if (op === "*") result *= value;
-        }
-        return String(result);
-      } catch {
-        return "0";
-      }
-    }
-
-    default:
-      return "default answer";
-  }
-}
-
-/**
- * Safely evaluate simple math expressions.
- */
-function safeMathEval(expr) {
-  // Only allow digits, spaces, and basic operators
-  if (!/^[\d\s+\-*]+$/.test(expr)) {
-    return 0;
-  }
-
-  let result = 0;
-  let current = 0;
-  let op = "+";
-
-  for (const char of expr + "+") {
-    if (/\d/.test(char)) {
-      current = current * 10 + parseInt(char, 10);
-    } else if (["+", "-", "*"].includes(char)) {
-      if (op === "+") result += current;
-      else if (op === "-") result -= current;
-      else if (op === "*") result *= current;
-      current = 0;
-      op = char;
-    }
-  }
-
-  return result;
-}
-
-/**
  * Verify a METTLE badge.
  */
 async function verifyBadge(badgeToken) {
@@ -231,8 +121,14 @@ async function verifyBadge(badgeToken) {
 
 // Main execution
 async function main() {
+  const { createInterface } = require("node:readline/promises");
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const result = await verifyAgent("my-js-agent", "basic");
+    const result = await verifyAgent(
+      "my-js-agent",
+      "basic",
+      (challenge) => readline.question(`Response to ${challenge.type}: `)
+    );
 
     if (result.badge) {
       console.log("\nVerifying badge...");
@@ -241,6 +137,8 @@ async function main() {
     }
   } catch (error) {
     console.error("Verification failed:", error.message);
+  } finally {
+    readline.close();
   }
 }
 
@@ -251,5 +149,5 @@ if (typeof require !== "undefined" && require.main === module) {
 
 // Export for module usage
 if (typeof module !== "undefined") {
-  module.exports = { verifyAgent, verifyBadge, generateAnswer };
+  module.exports = { verifyAgent, verifyBadge };
 }

@@ -74,7 +74,7 @@ successful suite response returns `next_challenge` and updates
 `presence.action`. Submitting an unissued suite or round fails before evaluation.
 The issued suite also contains `_mettle_continuity`, with a challenge identifier,
 32-bit starting value, and eight ordered operations. The reference
-`mettle.solver.solve_continuity_challenge` helper implements the public client
+`scripts.testing.solver.solve_continuity_challenge` helper implements the public client
 algorithm.
 
 ## 3. Sign every submission
@@ -104,7 +104,7 @@ Submit the base64 Ed25519 signature with the answers:
 {
   "suite": "adversarial",
   "answers": {
-    "q1": 42,
+    "q1": {"value": 42},
     "_mettle_continuity": {
       "challenge_id": "<current continuity challenge id>",
       "computed": 1234567890
@@ -145,6 +145,12 @@ The issuer-signed `mettle-presence-credential` contains:
 
 Server timing includes evaluation overhead and should be calibrated empirically
 before applying relay-suspicion thresholds.
+
+A Presence envelope is not a portable bearer credential. Generic Python, CLI,
+JavaScript, and Rust credential verifiers reject
+`mettle-presence-credential`, even when the issuer signature and status receipt
+are valid. Acceptance requires the live holder path below. Callers that need a
+portable bearer credential must use `mettle-verification-credential` instead.
 
 ## 5. Verify live holder possession
 
@@ -223,3 +229,7 @@ response exists. Colluding parties can still share a private key or
 operate a solver as a service. METTLE therefore records signed server timing and
 both protocol versions so relay and solver-adaptation controls can be calibrated
 and upgraded without silently changing the meaning of older credentials.
+
+Working if: copying an issuer-signed Presence envelope and fresh status receipt
+does not pass any portable verifier, while a fresh audience-bound challenge and
+valid holder signature pass once and the same challenge then fails replay.

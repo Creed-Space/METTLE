@@ -6,21 +6,30 @@ Suite 10 (Novel Reasoning) supports multi-round sessions with feedback.
 SECURITY: All endpoints require authentication. Correct answers are NEVER sent to clients.
 """
 
-from __future__ import annotations
-
 import logging
+from inspect import isawaitable
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    status,
+)
 
 from mettle.api_models import (
     MULTI_ROUND_SUITE,
     SUITE_NAMES,
+    CredentialStatusRequest,
+    CredentialStatusResponse,
     CreateSessionRequest,
     CreateSessionResponse,
     GovernanceAttestation,
-    OperatorAttestation,
     PresenceState,
     PresentationChallengeRequest,
     PresentationChallengeResponse,
@@ -39,6 +48,7 @@ from mettle.app_config import settings
 from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.llm_challenges import is_available as llm_challenges_available
 from mettle.presence import issuer_signed_session_presence
+from mettle.rate_limit import CREDENTIAL_STATUS_RATE_LIMIT, limiter
 from mettle.session_manager import SessionManager, SessionRateLimitError
 from redis.exceptions import RedisError
 
@@ -62,6 +72,35 @@ async def get_session_manager(request: Request) -> SessionManager:
             detail="METTLE API requires Redis for session management",
         )
     return SessionManager(redis)
+
+
+async def _require_credential_issuance_dependencies(request: Request) -> None:
+    """Fail closed when the embedding service reports an unhealthy authority."""
+    guard = getattr(request.app.state, "credential_issuance_guard", None)
+    if guard is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Credential issuance dependencies are unavailable",
+        )
+    if not callable(guard):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Credential issuance dependencies are unavailable",
+        )
+    try:
+        ready = guard()
+        if isawaitable(ready):
+            ready = await ready
+    except Exception as exc:
+        logger.warning(
+            "credential_issuance_guard_failed", extra={"error": type(exc).__name__}
+        )
+        ready = False
+    if ready is not True:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Credential issuance dependencies are unavailable",
+        )
 
 
 # Type alias for session manager dependency
@@ -144,10 +183,8 @@ async def create_session(
             difficulty=request.difficulty,
             entity_id=request.entity_id,
             vcp_token=request.vcp_token,
-            operator_commitment=request.operator_commitment.model_dump()
-            if request.operator_commitment
-            else None,
             presence=request.presence.model_dump() if request.presence else None,
+            allow_third_party_llm=request.allow_third_party_llm,
         )
 
         logger.info(
@@ -436,6 +473,48 @@ async def get_round_feedback(
     return feedback
 
 
+# ---- Credential status ----
+
+
+@router.post(
+    "/credentials/status",
+    response_model=CredentialStatusResponse,
+    summary="Get authenticated credential status",
+)
+@limiter.limit(CREDENTIAL_STATUS_RATE_LIMIT)
+async def get_credential_status(
+    request: Request,
+    body: CredentialStatusRequest = Body(...),
+) -> CredentialStatusResponse:
+    """Return a short-lived signed good or revoked status receipt."""
+    checker = getattr(request.app.state, "credential_revocation_checker", None)
+    if not callable(checker):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Credential revocation service is unavailable",
+        )
+    try:
+        revoked = bool(checker(body.credential_jti))
+        from mettle.signing import get_public_key_info
+        from mettle.vcp import build_credential_status_receipt
+
+        key_id = get_public_key_info().get("key_id")
+        if not isinstance(key_id, str) or not key_id:
+            raise RuntimeError("Credential status key is unavailable")
+        receipt = build_credential_status_receipt(
+            body.credential_jti,
+            revoked=revoked,
+            key_id=key_id,
+        )
+    except Exception as exc:
+        logger.error("Credential status lookup failed", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Credential revocation service is unavailable",
+        ) from exc
+    return CredentialStatusResponse(**receipt)
+
+
 # ---- Results ----
 
 
@@ -443,6 +522,7 @@ async def get_round_feedback(
 async def get_session_result(
     user: AuthUser,
     mgr: MettleManager,
+    raw_request: Request,
     session_id: str = Path(description="Session ID"),
     include_vcp: bool = Query(
         default=False, description="Include VCP-compatible attestation in response"
@@ -476,11 +556,21 @@ async def get_session_result(
 
     suite_results = result.get("results", {})
     suites_passed = [s for s, r in suite_results.items() if r.get("passed", False)]
+    credential_suites_passed = [
+        s
+        for s, r in suite_results.items()
+        if r.get("passed", False) and r.get("credential_eligible") is True
+    ]
+    supplemental_suites_passed = sorted(
+        set(suites_passed) - set(credential_suites_passed)
+    )
     suites_failed = [s for s, r in suite_results.items() if not r.get("passed", False)]
-    tier = compute_tier(suites_passed)
+    tier = compute_tier(credential_suites_passed)
     result["verified"] = bool(result.get("overall_passed", False))
     result["assurance"] = "mettle_behavioral_verification"
     result["credential_eligible"] = tier != "none"
+    result["credential_suites_passed"] = sorted(credential_suites_passed)
+    result["supplemental_suites_passed"] = supplemental_suites_passed
     result["tier"] = tier
 
     # Build VCP attestation if requested
@@ -491,6 +581,7 @@ async def get_session_result(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Credential issuance is temporarily disabled",
             )
+        await _require_credential_issuance_dependencies(raw_request)
         from mettle.vcp import build_mettle_attestation
 
         vcp_attestation = await mgr.get_cached_credential(session_id)
@@ -507,16 +598,28 @@ async def get_session_result(
             pass_rate = sum(
                 1 for r in suite_results.values() if r.get("passed", False)
             ) / max(len(suite_results), 1)
+            completed_at_raw = session.get("completed_at")
+            if isinstance(completed_at_raw, str):
+                reviewed_at = datetime.fromisoformat(completed_at_raw)
+            else:
+                # Historical in-flight sessions may predate completed_at. Use
+                # their challenge issue time, never retrieval time, so delayed
+                # reads cannot reset evidence freshness.
+                reviewed_at = datetime.fromtimestamp(
+                    float(session["start_time"]), tz=timezone.utc
+                )
             candidate = build_mettle_attestation(
                 session_id=session_id,
                 difficulty=session.get("difficulty", "standard"),
-                suites_passed=suites_passed,
+                suites_passed=credential_suites_passed,
                 suites_failed=suites_failed,
+                supplemental_suites_passed=supplemental_suites_passed,
                 pass_rate=pass_rate,
                 subject_id=user.user_id,
                 entity_id=session.get("entity_id"),
                 key_id=issuer_key_id,
                 presence=session.get("presence"),
+                reviewed_at=reviewed_at,
             )
             vcp_attestation = (
                 await mgr.cache_credential_once(session_id, candidate)
@@ -537,15 +640,6 @@ async def get_session_result(
             tier=tier,
         )
     result["governance_attestation"] = governance_attestation
-
-    # Build OperatorAttestation from operator commitment if present
-    operator_attestation = None
-    operator_commitment = session.get("operator_commitment")
-    if operator_commitment:
-        operator_attestation = _build_operator_attestation(
-            operator_commitment, session.get("entity_id")
-        )
-    result["operator_attestation"] = operator_attestation
 
     return SessionResultResponse(**result)
 
@@ -655,6 +749,23 @@ async def verify_credential_presentation(
             detail=str(exc),
         ) from exc
 
+    # Recheck after the one-time challenge is validated and consumed. Revocation
+    # is a separate durable authority, so the earlier check alone leaves a race
+    # in which a credential can be revoked while holder proof is being verified.
+    try:
+        revoked_after_verification = bool(checker(jti))
+    except Exception as exc:
+        logger.error("Credential revocation recheck failed", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Credential revocation service is unavailable",
+        ) from exc
+    if revoked_after_verification:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential has been revoked",
+        )
+
     return PresentationVerifyResponse(
         credential_jti=jti,
         audience=metadata["audience"],
@@ -746,80 +857,4 @@ def _build_governance_attestation(
         observed_at=now,
         expires_at=expires_at,
         attestation_signature=None,
-    )
-
-
-def _build_operator_attestation(
-    commitment: dict[str, Any],
-    entity_id: str | None,
-) -> OperatorAttestation | None:
-    """Build OperatorAttestation from an operator commitment.
-
-    Verifies the Ed25519 signature before accepting the commitment.
-    Returns None if verification fails.
-    """
-    import base64
-
-    if not entity_id:
-        logger.warning("Operator commitment requires a non-empty entity_id")
-        return None
-
-    required_fields = [
-        "operator_pseudonym",
-        "operator_public_key",
-        "signed_commitment",
-        "contact_method",
-        "contact_hash",
-    ]
-    if not all(commitment.get(f) for f in required_fields):
-        logger.warning("Operator commitment missing required fields")
-        return None
-
-    # Verify Ed25519 signature
-    try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-        public_key = load_pem_public_key(commitment["operator_public_key"].encode())
-        if not isinstance(public_key, Ed25519PublicKey):
-            logger.warning("Operator public key is not Ed25519")
-            return None
-
-        # Bind every returned accountability field to the entity. This prevents
-        # replaying one signature with a different pseudonym or contact claim.
-        import json
-
-        expected_message = json.dumps(
-            {
-                "contact_hash": commitment["contact_hash"],
-                "contact_method": commitment["contact_method"],
-                "entity_id": entity_id,
-                "operator_pseudonym": commitment["operator_pseudonym"],
-                "operator_public_key": commitment["operator_public_key"],
-                "version": 1,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        signature_bytes = base64.b64decode(commitment["signed_commitment"])
-        public_key.verify(signature_bytes, expected_message.encode())
-
-    except ImportError:
-        logger.warning(
-            "cryptography package not available for operator signature verification"
-        )
-        return None
-    except Exception:
-        logger.warning(
-            "Operator commitment signature verification failed", exc_info=True
-        )
-        return None
-
-    return OperatorAttestation(
-        operator_pseudonym=commitment["operator_pseudonym"],
-        operator_public_key=commitment["operator_public_key"],
-        operator_signed_commitment=commitment["signed_commitment"],
-        commitment_timestamp=datetime.now(tz=timezone.utc),
-        contact_method=commitment["contact_method"],
-        contact_hash=commitment["contact_hash"],
     )

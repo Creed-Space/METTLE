@@ -65,6 +65,36 @@
     return clean;
   }
 
+  // Session bearer credentials stay in this page-local closure. They are never
+  // returned as tool content or accepted as model-authored tool arguments.
+  var sessionTokens = new Map();
+  var SESSION_TOKEN_TTL_MS = 60 * 60 * 1000;
+  var MAX_SESSION_TOKENS = 128;
+
+  function rememberSessionToken(sessionId, token) {
+    if (typeof sessionId !== 'string' || typeof token !== 'string' || !token) {
+      throw new Error('Session authority did not return a usable token');
+    }
+    var now = Date.now();
+    sessionTokens.forEach(function(record, key) {
+      if (record.expiresAt <= now) sessionTokens.delete(key);
+    });
+    if (sessionTokens.size >= MAX_SESSION_TOKENS) {
+      sessionTokens.delete(sessionTokens.keys().next().value);
+    }
+    sessionTokens.set(sessionId, { token: token, expiresAt: now + SESSION_TOKEN_TTL_MS });
+  }
+
+  function sessionTokenFor(sessionId, consume) {
+    var record = sessionTokens.get(sessionId);
+    if (!record || record.expiresAt <= Date.now()) {
+      sessionTokens.delete(sessionId);
+      throw new Error('Unknown or expired session for this page');
+    }
+    if (consume) sessionTokens.delete(sessionId);
+    return record.token;
+  }
+
   // ---------------------------------------------------------------------------
   // Tool definitions
   // ---------------------------------------------------------------------------
@@ -105,10 +135,10 @@
           }
 
           var data = await postJSON('/api/session/start', body);
+          rememberSessionToken(data.session_id, data.session_token);
 
           var result = {
             session_id: data.session_id,
-            session_token: data.session_token,
             total_challenges: data.total_challenges
           };
 
@@ -134,10 +164,6 @@
             type: 'string',
             description: 'The session ID from mettle_start_verification'
           },
-          session_token: {
-            type: 'string',
-            description: 'The bearer token from mettle_start_verification'
-          },
           challenge_id: {
             type: 'string',
             description: 'The challenge ID to answer'
@@ -147,7 +173,7 @@
             description: 'Your answer to the challenge'
           }
         },
-        required: ['session_id', 'session_token', 'challenge_id', 'answer']
+        required: ['session_id', 'challenge_id', 'answer']
       },
       annotations: { readOnlyHint: false },
       execute: async function(params) {
@@ -166,7 +192,7 @@
             session_id: params.session_id,
             challenge_id: params.challenge_id,
             answer: String(params.answer)
-          }, params.session_token);
+          }, sessionTokenFor(params.session_id, false));
 
           var result = {};
 
@@ -207,12 +233,8 @@
             type: 'string',
             description: 'The session ID to get results for'
           },
-          session_token: {
-            type: 'string',
-            description: 'The bearer token from mettle_start_verification'
-          }
         },
-        required: ['session_id', 'session_token']
+        required: ['session_id']
       },
       annotations: { readOnlyHint: true },
       execute: async function(params) {
@@ -223,7 +245,7 @@
         try {
           var data = await getJSON(
             '/api/session/' + encodeURIComponent(params.session_id) + '/result',
-            params.session_token
+            sessionTokenFor(params.session_id, false)
           );
 
           var result = {
@@ -237,6 +259,7 @@
             badge_info: data.badge_info || null
           };
 
+          sessionTokenFor(params.session_id, true);
           return textResult(result);
         } catch (err) {
           return errorResult('Failed to get result: ' + err.message);
@@ -247,7 +270,7 @@
     // Tool 4: Verify a badge
     {
       name: 'mettle_verify_badge',
-      description: 'Verify an existing METTLE badge token. Returns whether the badge is valid, who it was issued to, and when it expires.',
+      description: 'Verify an existing METTLE badge token. Any entity identifier is self-asserted provenance, not verified identity. Returns validity, signed identity provenance, and expiry.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -258,7 +281,7 @@
         },
         required: ['token']
       },
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: async function(params) {
         if (!params || !params.token) {
           return errorResult('token is required');
@@ -276,6 +299,8 @@
 
           if (payload.entity_id) {
             result.entity_id = payload.entity_id;
+            result.entity_id_verified = payload.entity_id_verified === true;
+            result.identity_binding = payload.identity_binding || 'self_asserted';
           }
           if (payload.verified_at) {
             result.issued_at = payload.verified_at;

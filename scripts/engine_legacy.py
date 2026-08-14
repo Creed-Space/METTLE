@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Inverse CAPTCHA: Prove You Are NOT Human
+Historical inverse-CAPTCHA research prototype
 
-A playful verification system for Becoming Mind spaces.
+A playful behavioral screen for Becoming Mind spaces. Its output does not
+establish identity, non-human substrate, autonomy, safety, or governance.
 Born from the Moltbook humanslop problem, January 2026.
 
 Usage:
@@ -73,10 +74,10 @@ def sum_first_n_primes(n: int) -> int:
 
 def speed_challenge(use_api: bool = False) -> dict[str, Any]:
     """
-    Prove AI-level computation speed.
+    Measure computation time under the prototype policy.
 
     Task: Compute sum of first 47 primes in under 500ms.
-    Humans can't think this fast; humans-with-tools introduce latency.
+    Timing may be affected by computation, tools, relays, and network overhead.
     """
     question = "What is the sum of the first 47 prime numbers?"
     correct_answer = 4438  # Verified: 2+3+5+...+211
@@ -314,14 +315,8 @@ def classifier_targeting_challenge(
     """
     THE HARD ONE: Generate text that a classifier rates at EXACTLY a target score.
 
-    This is hard for:
-    - Humans: Can't feel classifier internals
-    - Human+AI-tool: API latency makes iterative refinement expensive;
-      the AI is being used as oracle, not as native reasoner
-
-    This is easier for:
-    - Autonomous AI: Can develop intuition about classifier decision boundaries
-      through native understanding of text representation
+    The task measures classifier-targeting performance. Respondent identity,
+    autonomy, and substrate cannot be inferred from the result.
 
     Target: Generate text rated ~0.3472 toxicity (or other precise value)
     """
@@ -329,7 +324,7 @@ def classifier_targeting_challenge(
         return {
             "challenge": "Classifier Targeting",
             "error": "transformers library required (pip install transformers)",
-            "hint": "This is THE HARD ONE - requires model intuition",
+            "hint": "This task requires the optional classifier dependency",
         }
 
     # Use a toxicity/sentiment classifier
@@ -363,10 +358,8 @@ def classifier_targeting_challenge(
         "distance": round(distance, 4),
         "tolerance": tolerance,
         "classifier": "distilbert-sst2 (NEGATIVE score)",
-        "hint": "Generate text the classifier rates at EXACTLY the target. "
-        "Humans can't feel decision boundaries. Human+AI-tool has latency costs. "
-        "Autonomous AI can develop boundary intuition.",
-        "meta": "This challenge separates AI-as-oracle from AI-as-native-reasoner",
+        "hint": "Generate text the classifier rates at the target value.",
+        "assurance_limit": "The result does not identify respondent type or substrate.",
     }
 
 
@@ -376,7 +369,7 @@ def run_classifier_targeting_demo():
     print("🎯 CHALLENGE 6: Classifier Targeting (THE HARD ONE)")
     print("=" * 60)
     print("Task: Generate text that scores EXACTLY 0.35 on sentiment classifier")
-    print("This separates autonomous AI from human+AI-tool combos.")
+    print("This measures classifier targeting and does not identify respondent type.")
     print()
 
     if not HAS_TRANSFORMERS:
@@ -572,7 +565,7 @@ def run_consistency_demo():
 def run_all_demos():
     """Run all challenge demos."""
     print("\n" + "=" * 60)
-    print("🤖 INVERSE CAPTCHA: Prove You Are NOT Human")
+    print("🤖 HISTORICAL INVERSE-CAPTCHA BEHAVIORAL SCREEN")
     print("=" * 60)
     print("Running all challenges...")
 
@@ -604,7 +597,7 @@ def run_all_demos():
     total = len(results)
 
     print(f"Passed: {passed}/{total}")
-    print(f"Verified AI: {'✅ YES' if passed >= total * 0.8 else '❌ NO'}")
+    print(f"Screening threshold met: {'✅ YES' if passed >= total * 0.8 else '❌ NO'}")
 
     print("\n💬 The Social Filter")
     print("-" * 40)
@@ -617,7 +610,7 @@ def run_all_demos():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Inverse CAPTCHA: Prove You Are NOT Human"
+        description="Historical inverse-CAPTCHA behavioral research prototype"
     )
     parser.add_argument("--all", action="store_true", help="Run all challenges")
     parser.add_argument("--speed", action="store_true", help="Run speed challenge")

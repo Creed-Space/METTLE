@@ -13,7 +13,7 @@ from mettle.challenger import (
     generate_token_prediction_challenge,
 )
 from mettle.models import ChallengeType, Difficulty
-from mettle.solver import solve_challenge
+from scripts.testing.solver import solve_challenge
 from mettle.verifier import verify_response
 
 

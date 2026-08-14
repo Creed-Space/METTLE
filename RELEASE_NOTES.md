@@ -1,5 +1,74 @@
 # METTLE release notes
 
+## [0.4.0]
+
+### Credential schema
+
+Credential schema `1.1` adds a deterministic revocable identifier, an issuer
+status endpoint descriptor, and an explicit self-asserted marker for a supplied
+entity identifier to every newly issued Ed25519 credential. Portable acceptance
+requires a fresh issuer-signed status receipt. Schema `1.0`, suite policy
+`2026-08-12`, and version-omitting envelopes are rejected as an urgent security
+exception because they were issued under the solver-exposed policy. Presence
+envelopes are rejected by generic portable verifiers and require a fresh live
+holder presentation.
+
+### Suite policy
+
+Suite policy `2026-08-14` enforces server-observed time limits in authenticated
+sessions, keeps future novel-reasoning rounds and expected answers on the
+server, requires the configured final-round accuracy, and excludes supplemental
+or self-assertion-only observations from credential tier calculation. Selecting
+Suite 12 now requires explicit per-session acknowledgement that candidate
+responses are sent to Anthropic. The retired one-step operator commitment is no
+longer accepted.
+
+### Public key changes
+
+No signing key or discovery format rotation is included. Discovery lists only
+the current schema and suite-policy versions that the verifier accepts.
+Production key identity remains a separate deployment receipt.
+
+### Compatibility
+
+This is a deliberate breaking security release. `POST /api/badge/verify` is the
+only badge verification operation; the credential-bearing GET path is removed.
+Session creation rejects the retired operator commitment field. Public HTTP MCP
+requests require a caller-owned key and enforce Host, Origin, content type,
+per-caller quota, global authentication budget, bounded principal state, and
+concurrency controls. Credential status requests are rate-limited before
+database lookup and signing. The seven reviewed MCP tool names and Python 3.10
+through 3.14 support remain unchanged. Validation-error details
+retain `type`, `loc`, and `msg`, while raw rejected `input` and validator `ctx`
+fields are removed to prevent request-content reflection.
+
+### Runtime and supply chain
+
+The API, MCP service, and holder disable mutable-branch auto-deployment. Runtime
+state, quotas, revocation, administrator authorization, and retention health use
+durable fail-closed authority. Release dependencies are hash locked, release
+evidence is rebound to final artifacts, and public PyPI bytes must match the
+independent source-built receipt before installation or execution under OIDC
+authority. Render drift covers exact secret values and holder managed secret
+files, and an in-flight promotion is rollback-bookkept before polling. The
+container base is digest pinned, and the public container runs as an
+unprivileged fixed user. Production Redis forces certificate and hostname
+verification. Database schema migration 3 preserves both current and historical
+double-digest lookup aliases, while ambiguity fails closed. Signed legacy badges
+become durable in PostgreSQL before Redis publication and cannot be erased or
+replaced by compensation.
+
+### Known limitations
+
+METTLE produces probabilistic behavioral evidence. A passing result does not
+prove identity, substrate, consciousness, freedom, agency, safety, governance,
+operator identity, or authorization suitability. Relays, source-aware solvers,
+model-assisted humans, evaluator error, and imitation remain possible. Human
+accessibility, rights-cleared fairness evaluation, independent protocol and
+cryptographic review, destructive recovery drills, provider TLS configuration,
+proxy identity, deployed source identity, and key publication require separate
+receipts before their corresponding claims may be closed.
+
 ## [0.3.2]
 
 ### Credential schema

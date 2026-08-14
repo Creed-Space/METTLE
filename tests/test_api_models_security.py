@@ -8,7 +8,6 @@ from pydantic import ValidationError
 from mettle.api_models import (
     MAX_ANSWER_BYTES,
     CreateSessionRequest,
-    OperatorCommitment,
     RoundAnswerRequest,
     VerifyRequest,
 )
@@ -47,25 +46,16 @@ def test_vcp_token_is_bounded() -> None:
         CreateSessionRequest(vcp_token="x" * 32769)
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("operator_pseudonym", "x" * 257),
-        ("operator_public_key", "x" * 8193),
-        ("signed_commitment", "x" * 1025),
-        ("contact_method", "x" * 65),
-        ("contact_hash", "x" * 129),
-    ],
-)
-def test_operator_commitment_fields_are_bounded(field: str, value: str) -> None:
-    data = {
-        "operator_pseudonym": "operator",
-        "operator_public_key": "public-key",
-        "signed_commitment": "signature",
-        "contact_method": "email_hash",
-        "contact_hash": "a" * 64,
-    }
-    data[field] = value
-
-    with pytest.raises(ValidationError):
-        OperatorCommitment(**data)
+def test_retired_operator_commitment_is_rejected_not_silently_ignored() -> None:
+    with pytest.raises(ValidationError, match="operator_commitment"):
+        CreateSessionRequest.model_validate(
+            {
+                "operator_commitment": {
+                    "operator_pseudonym": "operator",
+                    "operator_public_key": "public-key",
+                    "signed_commitment": "signature",
+                    "contact_method": "email_hash",
+                    "contact_hash": "a" * 64,
+                }
+            }
+        )

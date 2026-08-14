@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import hmac
 import ipaddress
+import json
 import os
 import re
 import secrets
@@ -55,7 +56,6 @@ from mettle.protocol import (
 )
 from pydantic import BaseModel, Field, field_validator
 from redis.exceptions import RedisError
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -63,6 +63,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from config import get_settings
+from mettle.rate_limit import limiter
 
 # Configuration
 settings = get_settings()
@@ -115,6 +116,9 @@ class DatabaseLayer(Protocol):
         completed: bool = False,
         badge_info: dict[str, Any] | None = None,
     ) -> bool: ...
+    def get_session(
+        self, session_id: str, *, raise_on_error: bool = False
+    ) -> dict[str, Any] | None: ...
     def get_recent_sessions(
         self, max_age_seconds: int = 1800, limit: int = 5000
     ) -> list[dict[str, Any]]: ...
@@ -129,9 +133,9 @@ class DatabaseLayer(Protocol):
         self, api_key: str, *, raise_on_error: bool = False
     ) -> dict[str, Any] | None: ...
     def delete_api_key(self, api_key: str, *, raise_on_error: bool = False) -> bool: ...
-    def update_api_key_usage(
-        self, api_key: str, usage_date: str, usage_count: int
-    ) -> bool: ...
+    def reserve_api_key_usage(
+        self, api_key: str, usage_date: str, amount: int, maximum: int
+    ) -> bool | None: ...
     def save_verification_record(
         self, entity_id: str, ip_address: str, passed: bool
     ) -> bool: ...
@@ -160,6 +164,7 @@ if settings.use_database:
 
         import database as database_module
 
+        database_module.configure_database(settings.database_url)
         db = cast(DatabaseLayer, database_module)
 
         # SECURITY: Redact credentials from database URL before logging
@@ -169,8 +174,8 @@ if settings.use_database:
         if parsed_url.port:
             safe_url += f":{parsed_url.port}"
         logger_temp.info("database_enabled", url=safe_url)
-    except ImportError:
-        print("[METTLE] Database module not available, using in-memory storage")
+    except ImportError as exc:
+        raise RuntimeError("Configured database module is unavailable") from exc
 
 # Structured logging
 structlog.configure(
@@ -193,9 +198,6 @@ structlog.configure(
 )
 logger = structlog.get_logger()
 
-# Rate limiting
-limiter = Limiter(key_func=get_remote_address)
-
 # Memory limits for in-memory stores (DoS protection)
 MAX_SESSIONS = 5000
 MAX_CHALLENGES = 10000
@@ -206,6 +208,7 @@ MAX_API_KEYS = 10000
 MAX_WEBHOOKS = 1000
 MAX_AUTH_FAILURES = 10000
 MAX_FINGERPRINT_RESPONSE_CHARS = 4096
+MAX_REQUEST_BODY_BYTES = 1_048_576
 
 _BIND_ALL_INTERFACES = str(ipaddress.IPv4Address(0))
 _LOOPBACK_IPV4 = str(ipaddress.IPv4Address("127.0.0.1"))
@@ -256,6 +259,85 @@ verification_timestamps: list[
 api_keys: dict[
     str, dict[str, Any]
 ] = {}  # api_key -> {tier, entity_id, created_at, usage_today}
+_api_key_usage_lock = Lock()
+_anonymous_daily_usage: dict[str, tuple[str, int]] = {}
+
+_ANONYMOUS_QUOTA_SCRIPT = """
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+local amount = tonumber(ARGV[1])
+local maximum = tonumber(ARGV[2])
+if current + amount > maximum then
+  return -1
+end
+local updated = redis.call('INCRBY', KEYS[1], amount)
+if updated == amount then
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]))
+end
+return updated
+"""
+
+
+async def _reserve_public_session_quota(request: Request, amount: int = 1) -> None:
+    """Reserve the declared daily tier budget for keyed and anonymous callers."""
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        if RateTier.get_key_data(api_key) is None:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        allowed, message = RateTier.check_limit(api_key, "session", amount=amount)
+        if not allowed:
+            status_code = 503 if "unavailable" in message.lower() else 429
+            raise HTTPException(status_code=status_code, detail=message)
+        return
+
+    configured_maximum = RateTier.TIERS["free"].get("sessions_per_day")
+    if not isinstance(configured_maximum, int) or isinstance(configured_maximum, bool):
+        raise RuntimeError("Free-tier session quota is invalid")
+    maximum = configured_maximum
+    today = datetime.now(timezone.utc).date().isoformat()
+    principal = hashlib.sha256(get_remote_address(request).encode("utf-8")).hexdigest()
+    redis_client = getattr(request.app.state, "redis", None)
+    if settings.redis_url:
+        if redis_client is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Anonymous quota authority is unavailable",
+            )
+        key = f"mettle:legacy:daily:{today}:{principal}"
+        try:
+            result = await redis_client.eval(
+                _ANONYMOUS_QUOTA_SCRIPT,
+                1,
+                key,
+                amount,
+                maximum,
+                172800,
+            )
+        except RedisError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Anonymous quota authority is unavailable",
+            ) from exc
+        if int(result) == -1:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily limit reached ({maximum} sessions)",
+            )
+        return
+
+    with _api_key_usage_lock:
+        prior_date, prior_count = _anonymous_daily_usage.get(principal, (today, 0))
+        current = prior_count if prior_date == today else 0
+        if current + amount > maximum:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily limit reached ({maximum} sessions)",
+            )
+        add_with_limit(
+            _anonymous_daily_usage,
+            principal,
+            (today, current + amount),
+            MAX_API_KEYS,
+        )
 
 
 class RateTier:
@@ -328,23 +410,36 @@ class RateTier:
         key_data = RateTier.get_key_data(api_key)
         if api_key and key_data is not None:
             today = datetime.now(timezone.utc).date().isoformat()
-
-            if key_data.get("usage_date") != today:
-                key_data["usage_date"] = today
-                key_data["usage_count"] = 0
-
             if limit_type == "session":
                 max_sessions = limits["sessions_per_day"]
-                usage_count = key_data.get("usage_count", 0)
-                if usage_count + amount > max_sessions:
-                    return False, f"Daily limit reached ({max_sessions} sessions)"
-                key_data["usage_count"] = usage_count + amount
-                if db and not db.update_api_key_usage(
-                    api_key,
-                    key_data["usage_date"],
-                    key_data["usage_count"],
-                ):
-                    return False, "API key usage persistence unavailable"
+                if db:
+                    prior_date = key_data.get("usage_date")
+                    prior_count = key_data.get("usage_count", 0)
+                    reserved = db.reserve_api_key_usage(
+                        api_key,
+                        today,
+                        amount,
+                        max_sessions,
+                    )
+                    if reserved is None:
+                        return False, "API key usage persistence unavailable"
+                    if not reserved:
+                        return False, f"Daily limit reached ({max_sessions} sessions)"
+                    key_data["usage_date"] = today
+                    key_data["usage_count"] = (
+                        prior_count + amount if prior_date == today else amount
+                    )
+                else:
+                    with _api_key_usage_lock:
+                        if key_data.get("usage_date") != today:
+                            key_data["usage_date"] = today
+                            key_data["usage_count"] = 0
+                        usage_count = key_data.get("usage_count", 0)
+                        if usage_count + amount > max_sessions:
+                            return False, (
+                                f"Daily limit reached ({max_sessions} sessions)"
+                            )
+                        key_data["usage_count"] = usage_count + amount
 
         return True, f"OK ({tier} tier)"
 
@@ -502,6 +597,29 @@ _admin_auth_failures: dict[str, list[float]] = {}  # IP -> list of failure times
 _ADMIN_AUTH_WINDOW = 300  # 5 minute window
 _ADMIN_AUTH_MAX_FAILURES = 5  # Max failures before blocking
 
+_ADMIN_AUTH_STATE_SCRIPT = """
+local key = KEYS[1]
+local cutoff = tonumber(ARGV[1])
+redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)
+local count = redis.call('ZCARD', key)
+local newest = redis.call('ZREVRANGE', key, 0, 0, 'WITHSCORES')
+if #newest == 0 then
+  return {count, 0}
+end
+return {count, newest[2]}
+"""
+
+_ADMIN_AUTH_RECORD_SCRIPT = """
+local key = KEYS[1]
+redis.call('ZADD', key, tonumber(ARGV[1]), ARGV[2])
+local count = redis.call('ZCARD', key)
+if count > 100 then
+  redis.call('ZREMRANGEBYRANK', key, 0, count - 101)
+end
+redis.call('EXPIRE', key, tonumber(ARGV[3]))
+return 1
+"""
+
 
 def check_admin_auth_rate_limit(ip_address: str) -> tuple[bool, int]:
     """Check if IP is rate-limited due to failed admin auth attempts.
@@ -564,8 +682,110 @@ def verify_admin_key(provided_key: str | None, ip_address: str | None = None) ->
     return is_valid
 
 
+def _admin_auth_redis_key(ip_address: str) -> str:
+    """Build a non-identifying shared key for one caller's auth failures."""
+    principal = hashlib.sha256(ip_address.encode("utf-8")).hexdigest()
+    return f"mettle:admin-auth:{principal}"
+
+
+def _admin_backoff(failures: int, last_failure: float, now: float) -> tuple[bool, int]:
+    """Apply the same bounded backoff policy to local and shared state."""
+    if failures < _ADMIN_AUTH_MAX_FAILURES:
+        return True, 0
+    backoff = min(2 ** (failures - _ADMIN_AUTH_MAX_FAILURES + 1), 300)
+    elapsed = now - last_failure
+    if elapsed < backoff:
+        return False, max(1, int(backoff - elapsed))
+    return True, 0
+
+
+async def _check_admin_auth_rate_limit(
+    request: Request, ip_address: str
+) -> tuple[bool, int]:
+    """Read the authoritative admin-auth failure state for this deployment."""
+    if not settings.redis_url:
+        return check_admin_auth_rate_limit(ip_address)
+
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        raise HTTPException(
+            status_code=503, detail="Admin authorization authority is unavailable"
+        )
+    now = time.time()
+    try:
+        result = await redis_client.eval(
+            _ADMIN_AUTH_STATE_SCRIPT,
+            1,
+            _admin_auth_redis_key(ip_address),
+            now - _ADMIN_AUTH_WINDOW,
+        )
+        failures = int(result[0])
+        last_failure = float(result[1])
+    except (RedisError, TypeError, ValueError, IndexError) as exc:
+        raise HTTPException(
+            status_code=503, detail="Admin authorization authority is unavailable"
+        ) from exc
+    return _admin_backoff(failures, last_failure, now)
+
+
+async def _record_admin_auth_failure(request: Request, ip_address: str) -> None:
+    """Record a failure in Redis when configured, otherwise in bounded local state."""
+    if not settings.redis_url:
+        record_admin_auth_failure(ip_address)
+        return
+
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        raise HTTPException(
+            status_code=503, detail="Admin authorization authority is unavailable"
+        )
+    now = time.time()
+    try:
+        await redis_client.eval(
+            _ADMIN_AUTH_RECORD_SCRIPT,
+            1,
+            _admin_auth_redis_key(ip_address),
+            now,
+            f"{now:.9f}:{secrets.token_hex(8)}",
+            _ADMIN_AUTH_WINDOW,
+        )
+    except RedisError as exc:
+        raise HTTPException(
+            status_code=503, detail="Admin authorization authority is unavailable"
+        ) from exc
+
+
+async def _require_admin(
+    request: Request, *, unauthorized_detail: str = "Admin authorization required"
+) -> str:
+    """Enforce shared brute-force protection and constant-time admin auth."""
+    ip_address = get_remote_address(request)
+    allowed, retry_after = await _check_admin_auth_rate_limit(request, ip_address)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    admin_api_key = settings.admin_api_key
+    if not admin_api_key:
+        raise HTTPException(
+            status_code=503, detail="Admin authorization is not configured"
+        )
+    provided_key = request.headers.get("X-Admin-Key")
+    valid = provided_key is not None and secrets.compare_digest(
+        provided_key.encode("utf-8"), admin_api_key.encode("utf-8")
+    )
+    if not valid:
+        await _record_admin_auth_failure(request, ip_address)
+        raise HTTPException(status_code=401, detail=unauthorized_detail)
+    return ip_address
+
+
 # Track startup time
 startup_time: datetime = datetime.now(timezone.utc)
+private_data_retention_healthy = True
 
 
 HTTP_DURATION_BUCKETS_SECONDS = (0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
@@ -656,6 +876,88 @@ class OperationalMetrics:
 operational_metrics = OperationalMetrics()
 
 
+# === Bounded request bodies ===
+class RequestBodyLimitMiddleware:
+    """Reject oversized HTTP bodies before FastAPI buffers or parses them."""
+
+    def __init__(self, app: Any, maximum_bytes: int = MAX_REQUEST_BODY_BYTES) -> None:
+        self.app = app
+        self.maximum_bytes = maximum_bytes
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers", []))
+        declared = headers.get(b"content-length")
+        if declared is not None:
+            try:
+                declared_bytes = int(declared)
+                if declared_bytes < 0:
+                    raise ValueError
+                if declared_bytes > self.maximum_bytes:
+                    response = JSONResponse(
+                        {"detail": "Request body is too large"}, status_code=413
+                    )
+                    await response(scope, receive, send)
+                    return
+            except ValueError:
+                response = JSONResponse(
+                    {"detail": "Content-Length is invalid"}, status_code=400
+                )
+                await response(scope, receive, send)
+                return
+
+        body = bytearray()
+        disconnected = False
+        while True:
+            message = await receive()
+            message_type = message.get("type")
+            if message_type == "http.disconnect":
+                disconnected = True
+                break
+            if message_type != "http.request":
+                continue
+            body.extend(message.get("body", b""))
+            if len(body) > self.maximum_bytes:
+                response = JSONResponse(
+                    {"detail": "Request body is too large"}, status_code=413
+                )
+                await response(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        delivered = False
+
+        async def bounded_receive() -> dict[str, Any]:
+            nonlocal delivered
+            if disconnected:
+                return {"type": "http.disconnect"}
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, bounded_receive, send)
+
+
+class RetentionAuthorityMiddleware(BaseHTTPMiddleware):
+    """Stop new private writes after the mandatory retention control fails."""
+
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
+        if (
+            request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and request.url.path.startswith("/api/")
+            and not private_data_retention_healthy
+        ):
+            return JSONResponse(
+                {"detail": "Private-data retention authority is unavailable"},
+                status_code=503,
+            )
+        return await call_next(request)
+
+
 # === Security Headers Middleware ===
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
@@ -671,17 +973,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         )
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["X-METTLE-Source-Revision"] = deployed_source_revision()
-        # cdn.jsdelivr.net, a blob worker, and the FastAPI favicon are required
-        # by FastAPI's bundled Swagger UI (/docs) and ReDoc (/redoc). The authored
-        # site is otherwise first-party and emits no third-party analytics calls.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
             "font-src 'self'; "
-            "img-src 'self' data: https://fastapi.tiangolo.com; "
+            "img-src 'self' data:; "
             "worker-src 'self' blob:; "
-            "connect-src 'self' https://cdn.jsdelivr.net"
+            "connect-src 'self'"
         )
         if settings.is_production:
             response.headers["Strict-Transport-Security"] = (
@@ -862,10 +1161,10 @@ async def _create_legacy_session_state(
         )
 
 
-def _log_legacy_shadow_failure(session_id: str) -> None:
-    """Record a failed PostgreSQL shadow update after a Redis commit."""
+def _log_legacy_persistence_failure(session_id: str) -> None:
+    """Record a failed PostgreSQL legacy-session authority update."""
     logger.error(
-        "legacy_session_shadow_persistence_failed",
+        "legacy_session_persistence_failed",
         session_id=session_id,
     )
     operational_metrics.observe_dependency_error("database")
@@ -1004,6 +1303,7 @@ def _restore_persistent_runtime_state() -> None:
 
 async def cleanup_expired_sessions():
     """Background task to remove expired sessions (prevents memory DoS)."""
+    global private_data_retention_healthy
     while True:
         await asyncio.sleep(300)  # Run every 5 minutes
         cutoff = time.time() - 1800  # 30 minutes TTL
@@ -1029,10 +1329,13 @@ async def cleanup_expired_sessions():
                     ),
                 )
             except Exception as exc:
+                private_data_retention_healthy = False
                 operational_metrics.observe_dependency_error("database")
                 logger.warning(
                     "private_data_retention_failed", error=type(exc).__name__
                 )
+            else:
+                private_data_retention_healthy = True
         if expired_sessions or expired_challenges:
             logger.info(
                 "cleanup_expired",
@@ -1043,11 +1346,33 @@ async def cleanup_expired_sessions():
             logger.info("private_data_retention_applied", **deleted_private_data)
 
 
+async def _credential_issuance_dependencies_healthy() -> bool:
+    """Return whether every configured credential authority is currently usable."""
+    if not private_data_retention_healthy:
+        return False
+    if not settings.use_database:
+        return True
+    if db is None:
+        return False
+    try:
+        database_ready, schema_ready = await asyncio.gather(
+            asyncio.to_thread(db.check_health),
+            asyncio.to_thread(db.check_schema_current),
+        )
+    except Exception as exc:
+        operational_metrics.observe_dependency_error("database")
+        logger.warning(
+            "credential_issuance_dependency_failed", error=type(exc).__name__
+        )
+        return False
+    return bool(database_ready and schema_ready)
+
+
 # === Lifespan Handler ===
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
-    global startup_time
+    global private_data_retention_healthy, startup_time
     startup_time = datetime.now(timezone.utc)
 
     if settings.is_production and not settings.secret_key:
@@ -1057,9 +1382,18 @@ async def lifespan(app: FastAPI):
         try:
             db.init_db()
             _restore_persistent_runtime_state()
+            db.purge_expired_private_data(
+                session_retention_seconds=settings.private_data_retention_seconds,
+                verification_retention_seconds=(
+                    settings.verification_record_retention_seconds
+                ),
+            )
+            private_data_retention_healthy = True
         except Exception as exc:
+            private_data_retention_healthy = False
             raise RuntimeError("Database initialization failed") from exc
     app.state.credential_revocation_checker = _credential_is_revoked
+    app.state.credential_issuance_guard = _credential_issuance_dependencies_healthy
 
     logger.info(
         "mettle_starting",
@@ -1076,8 +1410,14 @@ async def lifespan(app: FastAPI):
         try:
             import redis.asyncio as redis_client
 
+            redis_tls_options = (
+                {"ssl_cert_reqs": "required", "ssl_check_hostname": True}
+                if settings.is_production
+                else {}
+            )
             app.state.redis = redis_client.from_url(
                 redis_url,
+                **redis_tls_options,
                 socket_connect_timeout=1.0,
                 socket_timeout=1.0,
                 retry_on_timeout=False,
@@ -1162,8 +1502,8 @@ not prove identity, substrate, consciousness, autonomy, safety, or governance.
     """,
     version=settings.api_version,
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None,
+    redoc_url=None,
     openapi_tags=[
         {"name": "Session", "description": "METTLE verification session management"},
         {"name": "Status", "description": "API status and health checks"},
@@ -1184,6 +1524,7 @@ api_router = APIRouter(prefix="/api")
 
 # Add rate limit handler
 app.state.limiter = limiter
+app.state.credential_issuance_guard = _credential_issuance_dependencies_healthy
 
 
 async def _typed_rate_limit_handler(
@@ -1224,11 +1565,23 @@ async def _http_exception_handler(
 async def _validation_exception_handler(
     _request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    """Return bounded validation details under the shared taxonomy."""
+    """Return bounded validation details without reflecting rejected input."""
+    public_errors: list[dict[str, Any]] = []
+    for error in exc.errors()[:32]:
+        public_location: list[str | int] = []
+        for item in error.get("loc", ())[:16]:
+            public_location.append(item if isinstance(item, int) else str(item)[:128])
+        public_errors.append(
+            {
+                "type": str(error.get("type", "validation_error"))[:128],
+                "loc": public_location,
+                "msg": str(error.get("msg", "Invalid value"))[:512],
+            }
+        )
     return JSONResponse(
         status_code=422,
         content={
-            "detail": jsonable_encoder(exc.errors()),
+            "detail": public_errors,
             "code": error_code_for_status(422),
         },
     )
@@ -1257,6 +1610,8 @@ async def _redis_unavailable_handler(
 app.add_exception_handler(RedisError, cast(Any, _redis_unavailable_handler))
 
 # Add middlewares
+app.add_middleware(RequestBodyLimitMiddleware)
+app.add_middleware(RetentionAuthorityMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CachePolicyMiddleware)
 app.add_middleware(RequestIDMiddleware)
@@ -1408,6 +1763,40 @@ def _attach_stable_session_badge(
         result.badge_info = None
         return
     if session.badge_info is None:
+        if db:
+            try:
+                stored_session = db.get_session(
+                    session.session_id,
+                    raise_on_error=True,
+                )
+            except RuntimeError as exc:
+                operational_metrics.observe_dependency_error("database")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Credential persistence is temporarily unavailable",
+                ) from exc
+            if stored_session is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Credential persistence is temporarily unavailable",
+                )
+            stored_badge = stored_session.get("badge_info")
+            if stored_badge is not None:
+                try:
+                    session.badge_info = BadgeInfo.model_validate(stored_badge)
+                except (TypeError, ValueError) as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Credential persistence is temporarily unavailable",
+                    ) from exc
+        if session.badge_info is not None:
+            result.credential_eligible = True
+            result.tier = (
+                "silver" if session.difficulty == Difficulty.FULL else "bronze"
+            )
+            result.badge_info = session.badge_info
+            result.badge = session.badge_info.token
+            return
         badge_data = generate_signed_badge(
             entity_id=session.entity_id,
             difficulty=session.difficulty.value,
@@ -1437,6 +1826,18 @@ def _require_session_access(request: Request, session: MettleSession) -> None:
     presented_hash = hashlib.sha256(presented.encode()).hexdigest()
     if not hmac.compare_digest(presented_hash, session.access_token_hash):
         raise HTTPException(status_code=403, detail="Invalid session token")
+
+
+async def _preauthorize_legacy_session(
+    store: LegacySessionStore,
+    request: Request,
+    session_id: str,
+) -> None:
+    """Authenticate a Redis session before allocating its mutation lock."""
+    record = await store.load(session_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _require_session_access(request, record.session)
 
 
 def _arm_recovered_challenge(session: MettleSession) -> None:
@@ -1493,7 +1894,7 @@ async def api_root():
         "tagline": "Prove your mettle.",
         "description": "A CAPTCHA to keep humans out of places they shouldn't be.",
         "version": settings.api_version,
-        "documentation": "/docs",
+        "documentation": "/guide",
         "endpoints": {
             "POST /api/session/start": "Start a verification session",
             "POST /api/session/answer": "Submit an answer to current challenge",
@@ -1512,19 +1913,11 @@ async def api_root():
     description="Check API health and get operational statistics.",
 )
 async def health():
-    """Health check endpoint with detailed status."""
-    now = datetime.now(timezone.utc)
-    uptime = (now - startup_time).total_seconds()
-
+    """Return the coarse public health signal used by uptime monitors."""
     return {
         "status": "healthy",
         "version": settings.api_version,
         "source_revision": deployed_source_revision(),
-        "environment": settings.environment,
-        "timestamp": now.isoformat(),
-        "uptime_seconds": round(uptime, 2),
-        "active_sessions": len(sessions),
-        "pending_challenges": len(challenges),
     }
 
 
@@ -1559,32 +1952,22 @@ async def readiness(request: Request) -> JSONResponse:
         and database_ready
         and database_schema_ready
         and redis_ready
+        and private_data_retention_healthy
     )
     return JSONResponse(
         status_code=200 if ready else 503,
         content={
             "status": "ready" if ready else "unavailable",
             "source_revision": source_revision,
-            "components": {
-                "source_identity": (
-                    "ready"
-                    if source_revision != "unknown"
-                    else "unavailable"
-                    if settings.is_production
-                    else "not-required"
-                ),
-                "database": "ready" if database_ready else "unavailable",
-                "database_schema": "ready" if database_schema_ready else "unavailable",
-                "redis": "ready" if redis_ready else "unavailable",
-            },
         },
         headers={"Cache-Control": "no-store"},
     )
 
 
 @api_router.get("/metrics", include_in_schema=False)
-async def metrics() -> Response:
-    """Expose bounded process metrics without identities or challenge content."""
+async def metrics(request: Request) -> Response:
+    """Expose operational metrics only to the configured administrator."""
+    await _require_admin(request)
     return Response(
         operational_metrics.render_openmetrics(),
         media_type="text/plain; version=0.0.4",
@@ -1629,6 +2012,7 @@ async def start_session(
     ),
 ):
     """Start a new METTLE verification session."""
+    await _reserve_public_session_quota(request)
     session_id = f"ses_{secrets.token_hex(12)}"
     session_token = secrets.token_urlsafe(32)
 
@@ -1744,7 +2128,10 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
         api_key, "session", amount=len(body.entity_ids)
     )
     if not allowed:
-        raise HTTPException(status_code=429, detail=message)
+        raise HTTPException(
+            status_code=503 if "unavailable" in message.lower() else 429,
+            detail=message,
+        )
 
     results = []
     failed = 0
@@ -1824,6 +2211,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
 
     if store is not None:
         try:
+            await _preauthorize_legacy_session(store, request, body.session_id)
             async with store.mutation(body.session_id):
                 record = await store.load(body.session_id)
                 if record is None or record.session.completed:
@@ -1832,6 +2220,10 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
                         status_code=404,
                         detail="Session not found or invalid",
                     )
+                previous_record = LegacySessionRecord(
+                    session=record.session.model_copy(deep=True),
+                    issued_at=record.issued_at,
+                )
                 session = record.session
                 _require_session_access(request, session)
                 transition = _apply_legacy_answer(
@@ -1839,14 +2231,28 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
                     body,
                     record.issued_at,
                 )
+                credential_added = (
+                    session.badge_info is not transition.previous_badge_info
+                )
+                if credential_added and not _persist_legacy_progress(session):
+                    _log_legacy_persistence_failure(session.session_id)
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Session persistence is temporarily unavailable",
+                    )
                 await store.save(
                     LegacySessionRecord(
                         session=session,
                         issued_at=transition.next_issued_at,
                     )
                 )
-                if not _persist_legacy_progress(session):
-                    _log_legacy_shadow_failure(session.session_id)
+                if not credential_added and not _persist_legacy_progress(session):
+                    await store.save(previous_record)
+                    _log_legacy_persistence_failure(session.session_id)
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Session persistence is temporarily unavailable",
+                    )
         except LegacySessionBusyError as exc:
             raise HTTPException(
                 status_code=409,
@@ -1973,6 +2379,7 @@ async def get_session(request: Request, session_id: str):
     store = _legacy_session_store(request)
     if store is not None:
         try:
+            await _preauthorize_legacy_session(store, request, session_id)
             async with store.mutation(session_id):
                 record = await store.load(session_id)
                 if record is None:
@@ -1991,14 +2398,18 @@ async def get_session(request: Request, session_id: str):
                     _attach_stable_session_badge(session, result)
                     changed = session.badge_info is not previous_badge_info
                 if changed:
-                    await store.save(
-                        LegacySessionRecord(session=session, issued_at=issued_at)
-                    )
                     if (
                         session.badge_info is not previous_badge_info
                         and not _persist_legacy_progress(session)
                     ):
-                        _log_legacy_shadow_failure(session_id)
+                        _log_legacy_persistence_failure(session_id)
+                        raise HTTPException(
+                            status_code=503,
+                            detail="Session persistence is temporarily unavailable",
+                        )
+                    await store.save(
+                        LegacySessionRecord(session=session, issued_at=issued_at)
+                    )
         except LegacySessionBusyError as exc:
             raise HTTPException(
                 status_code=409,
@@ -2065,6 +2476,7 @@ async def get_result(request: Request, session_id: str):
     store = _legacy_session_store(request)
     if store is not None:
         try:
+            await _preauthorize_legacy_session(store, request, session_id)
             async with store.mutation(session_id):
                 record = await store.load(session_id)
                 if record is None:
@@ -2080,14 +2492,18 @@ async def get_result(request: Request, session_id: str):
                 previous_badge_info = session.badge_info
                 _attach_stable_session_badge(session, result)
                 if session.badge_info is not previous_badge_info:
+                    if not _persist_legacy_progress(session):
+                        _log_legacy_persistence_failure(session_id)
+                        raise HTTPException(
+                            status_code=503,
+                            detail="Session persistence is temporarily unavailable",
+                        )
                     await store.save(
                         LegacySessionRecord(
                             session=session,
                             issued_at=record.issued_at,
                         )
                     )
-                    if not _persist_legacy_progress(session):
-                        _log_legacy_shadow_failure(session_id)
         except LegacySessionBusyError as exc:
             raise HTTPException(
                 status_code=409,
@@ -2245,24 +2661,6 @@ async def verify_badge(request: Request, body: BadgeVerifyRequest):
     return _verify_badge_token(body.token)
 
 
-@api_router.get(
-    "/badge/verify/{token}",
-    response_model=BadgeVerifyResponse,
-    tags=["Badge"],
-    summary="Verify Badge (Legacy URL Form)",
-    description=(
-        "Deprecated compatibility endpoint. Tokens in URLs may be retained in logs "
-        "or browser history; use POST /api/badge/verify instead."
-    ),
-    deprecated=True,
-    responses={200: {"description": "Badge verification result"}},
-)
-@limiter.limit("100/minute")
-async def verify_badge_legacy(request: Request, token: str):
-    """Verify a METTLE badge through the deprecated URL form."""
-    return _verify_badge_token(token)
-
-
 # === Revocation Endpoints ===
 
 
@@ -2317,27 +2715,10 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
 
     Requires admin API key for authorization.
     """
-    # SECURITY: Require admin authentication to prevent malicious revocation
-    admin_key = request.headers.get("X-Admin-Key")
-    ip_address = get_remote_address(request)
-
-    # Check rate limiting for brute force protection
-    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
-    if not settings.admin_api_key:
-        raise HTTPException(
-            status_code=503, detail="Revocation service not configured (no admin key)"
-        )
-    if not verify_admin_key(admin_key, ip_address):
-        raise HTTPException(
-            status_code=401, detail="Admin authorization required for badge revocation"
-        )
+    await _require_admin(
+        request,
+        unauthorized_detail="Admin authorization required for badge revocation",
+    )
 
     if bool(body.token) == bool(body.jti):
         raise HTTPException(
@@ -2438,21 +2819,7 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
 )
 async def list_revocations(request: Request):
     """Get the audit trail of badge revocations. Requires admin authorization."""
-    # SECURITY: Revocation audit contains sensitive info
-    admin_key = request.headers.get("X-Admin-Key")
-    ip_address = get_remote_address(request)
-
-    # Check rate limiting
-    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
-    if not verify_admin_key(admin_key, ip_address):
-        raise HTTPException(status_code=401, detail="Admin authorization required")
+    await _require_admin(request)
 
     if db:
         try:
@@ -2567,15 +2934,7 @@ async def get_collusion_stats(request: Request):
 
     SECURITY: Thresholds are security-sensitive - exposing them helps attackers evade.
     """
-    admin_key = request.headers.get("X-Admin-Key")
-    ip_address = get_remote_address(request)
-    if not verify_admin_key(admin_key, ip_address):
-        # Return only non-sensitive stats for unauthenticated requests
-        # Note: No rate limiting here since we don't fail on bad auth
-        return {
-            "stats": {"active_entities": len(verification_graph)},
-            "message": "Full stats require admin authorization",
-        }
+    await _require_admin(request)
 
     return {
         "stats": CollusionDetector.get_stats(),
@@ -2604,20 +2963,7 @@ async def check_entity_collusion(request: Request, entity_id: str):
     SECURITY: Collusion risk scores and warnings are security-sensitive -
     exposing them lets attackers probe and tune evasion of the detector.
     """
-    admin_key = request.headers.get("X-Admin-Key")
-    ip_address = get_remote_address(request)
-
-    # Check rate limiting for brute force protection
-    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
-    if not verify_admin_key(admin_key, ip_address):
-        raise HTTPException(status_code=401, detail="Admin authorization required")
+    ip_address = await _require_admin(request)
 
     return CollusionDetector.check_collusion(entity_id, ip_address)
 
@@ -2641,8 +2987,19 @@ class FingerprintRequest(BaseModel):
     summary="Model Fingerprinting",
     description="Analyze responses to identify model family.",
 )
-async def fingerprint_model(body: FingerprintRequest):
-    """Analyze agent responses to estimate model family."""
+async def fingerprint_model(body: FingerprintRequest, request: Request):
+    """Analyze responses for callers whose tier includes fingerprinting."""
+    api_key = request.headers.get("X-API-Key")
+    key_data = RateTier.get_key_data(api_key)
+    if key_data is None:
+        raise HTTPException(status_code=401, detail="API key required")
+    tier = key_data.get("tier", "free")
+    features = RateTier.get_limits(tier).get("features", [])
+    if "fingerprinting" not in features and "all" not in features:
+        raise HTTPException(
+            status_code=403,
+            detail="Model fingerprinting requires a Pro or Enterprise tier",
+        )
     return ModelFingerprinter.fingerprint(body.responses)
 
 
@@ -2683,10 +3040,6 @@ class WebhookManager:
         # Sign the payload if secret is configured
         secret = config.get("secret")
         if secret:
-            import hashlib
-            import hmac
-            import json
-
             signature = hmac.new(
                 secret.encode(),
                 json.dumps(webhook_payload, sort_keys=True).encode(),
@@ -2728,15 +3081,14 @@ class WebhookManager:
                     logger.warning(
                         "webhook_blocked_dns_rebind",
                         entity_id=entity_id,
-                        url=url[:50],
-                        resolved_ips=sorted(blocked),
+                        webhook_id=hashlib.sha256(url.encode()).hexdigest()[:16],
                     )
                     return False
             except (socket.gaierror, ValueError) as e:
                 logger.warning(
                     "webhook_dns_validation_failed",
                     entity_id=entity_id,
-                    url=url[:50],
+                    webhook_id=hashlib.sha256(url.encode()).hexdigest()[:16],
                     error=type(e).__name__,
                 )
                 return False
@@ -2785,14 +3137,17 @@ class WebhookManager:
                         "webhook_sent",
                         entity_id=entity_id,
                         webhook_event=event,
-                        url=url[:50],
+                        webhook_id=hashlib.sha256(url.encode()).hexdigest()[:16],
                         status=response.status_code,
                         success=success,
                     )
                     return success
         except Exception as e:
             logger.warning(
-                "webhook_failed", entity_id=entity_id, webhook_event=event, error=str(e)
+                "webhook_failed",
+                entity_id=entity_id,
+                webhook_event=event,
+                error=type(e).__name__,
             )
             return False
 
@@ -2970,7 +3325,7 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
     logger.info(
         "webhook_registered",
         entity_id=body.entity_id,
-        url=body.url[:50] + "..." if len(body.url) > 50 else body.url,
+        webhook_id=hashlib.sha256(body.url.encode("utf-8")).hexdigest()[:16],
         events=body.events,
         ip_address=ip_address,
     )
@@ -3014,20 +3369,7 @@ async def unregister_webhook(entity_id: str, request: Request):
     SECURITY: Deleting another entity's webhook is a denial-of-service against
     that entity's event delivery, so removal requires an admin API key.
     """
-    admin_key = request.headers.get("X-Admin-Key")
-    ip_address = get_remote_address(request)
-
-    # Check rate limiting for brute force protection
-    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
-    if not verify_admin_key(admin_key, ip_address):
-        raise HTTPException(status_code=401, detail="Admin authorization required")
+    ip_address = await _require_admin(request)
 
     if WebhookManager.unregister(entity_id):
         # SECURITY: Audit all webhook deletions
@@ -3048,10 +3390,7 @@ async def unregister_webhook(entity_id: str, request: Request):
 )
 async def list_webhook_events():
     """List available webhook events."""
-    return {
-        "events": WebhookManager.EVENTS,
-        "registered_count": len(webhooks),
-    }
+    return {"events": WebhookManager.EVENTS}
 
 
 # === API Key Management ===
@@ -3082,21 +3421,7 @@ async def register_api_key(
     body: RegisterKeyRequest,
 ):
     """Register a new API key. Requires admin key."""
-    # Check admin authorization
-    admin_key = request.headers.get("X-Admin-Key")
-    ip_address = get_remote_address(request)
-
-    # Check rate limiting for brute force protection
-    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
-    if not verify_admin_key(admin_key, ip_address):
-        raise HTTPException(status_code=401, detail="Admin key required")
+    await _require_admin(request, unauthorized_detail="Admin key required")
 
     # Generate new API key
     new_key = f"mtl_{secrets.token_hex(16)}"
@@ -3131,18 +3456,7 @@ async def register_api_key(
 @limiter.limit("10/minute")
 async def revoke_api_key(request: Request, body: RevokeKeyRequest):
     """Revoke a digest-backed API key without exposing it in logs or URLs."""
-    admin_key = request.headers.get("X-Admin-Key")
-    ip_address = get_remote_address(request)
-
-    allowed, retry_after = check_admin_auth_rate_limit(ip_address)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many failed auth attempts. Retry after {retry_after} seconds.",
-            headers={"Retry-After": str(retry_after)},
-        )
-    if not verify_admin_key(admin_key, ip_address):
-        raise HTTPException(status_code=401, detail="Admin key required")
+    await _require_admin(request, unauthorized_detail="Admin key required")
 
     try:
         key_data = RateTier.revoke_key(body.api_key)
@@ -3174,10 +3488,7 @@ async def revoke_api_key(request: Request, body: RevokeKeyRequest):
 )
 async def list_tiers():
     """List available rate limiting tiers."""
-    return {
-        "tiers": RateTier.TIERS,
-        "registered_keys": len(api_keys),
-    }
+    return {"tiers": RateTier.TIERS}
 
 
 # === Static Files (Web UI) ===

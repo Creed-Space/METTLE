@@ -1,7 +1,7 @@
 """Tests for mettle.vcp module - VCP integration, CSM-1 parsing, attestation, tier computation."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 import pytest
@@ -10,11 +10,14 @@ from mettle.vcp import (
     TIER_RANGES,
     VCPTokenClaim,
     _canonical_bytes,
+    build_credential_status_receipt,
     build_mettle_attestation,
     compute_tier,
     format_csm1_line,
     parse_csm1_token,
+    verify_credential_status_receipt,
     verify_mettle_attestation,
+    verify_mettle_credential_with_status,
 )
 
 
@@ -219,6 +222,10 @@ class TestBuildMettleAttestation:
         assert att["metadata"]["tier"] == "platinum"
         assert att["metadata"]["assurance"] == "mettle_behavioral_verification"
         assert att["metadata"]["credential_eligible"] is True
+        assert len(att["metadata"]["jti"]) == 32
+        assert att["metadata"]["entity_id_binding"] == (
+            "self_asserted_by_authenticated_subject"
+        )
         assert att["content_hash"].startswith("sha256:")
         assert datetime.fromisoformat(att["expires_at"]) > datetime.fromisoformat(
             att["reviewed_at"]
@@ -229,6 +236,61 @@ class TestBuildMettleAttestation:
 
         att["metadata"]["pass_rate"] = 0.1
         assert not verify_mettle_attestation(att, public_key)
+
+    def test_portable_acceptance_requires_fresh_good_signed_status(self, monkeypatch):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from mettle import signing
+
+        private_key = Ed25519PrivateKey.generate()
+        monkeypatch.setattr(signing, "_private_key", private_key)
+        monkeypatch.setattr(signing, "_public_key", private_key.public_key())
+        monkeypatch.setattr(signing, "_key_id", "mettle-vcp-v1")
+        monkeypatch.setattr(signing, "_initialized", True)
+        attestation = build_mettle_attestation(
+            session_id="status-session",
+            subject_id="status-subject",
+            difficulty="standard",
+            suites_passed=list(SUITE_ORDER)[:5],
+            suites_failed=[],
+            pass_rate=1.0,
+        )
+        jti = attestation["metadata"]["jti"]
+        key = signing.get_public_key_pem()
+        assert key is not None
+        keyring = {"mettle-vcp-v1": key}
+        good = build_credential_status_receipt(jti, revoked=False)
+        assert verify_credential_status_receipt(good, keyring, credential_jti=jti)
+        assert verify_mettle_credential_with_status(attestation, keyring, good)
+
+        revoked = build_credential_status_receipt(jti, revoked=True)
+        assert not verify_mettle_credential_with_status(attestation, keyring, revoked)
+        stale = build_credential_status_receipt(
+            jti,
+            revoked=False,
+            observed_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        )
+        assert not verify_mettle_credential_with_status(attestation, keyring, stale)
+
+    def test_unhashable_suite_data_fails_closed(self, monkeypatch):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from mettle import signing
+
+        private_key = Ed25519PrivateKey.generate()
+        monkeypatch.setattr(signing, "_private_key", private_key)
+        monkeypatch.setattr(signing, "_public_key", private_key.public_key())
+        monkeypatch.setattr(signing, "_initialized", True)
+        attestation = build_mettle_attestation(
+            session_id="malformed-suite-session",
+            subject_id="status-subject",
+            difficulty="standard",
+            suites_passed=list(SUITE_ORDER)[:5],
+            suites_failed=[],
+            pass_rate=1.0,
+        )
+        attestation["metadata"]["suites_passed"] = [["unhashable"]]
+        public_key = signing.get_public_key_pem()
+        assert public_key is not None
+        assert verify_mettle_attestation(attestation, public_key) is False
 
     def test_nonqualifying_result_is_unsigned_evidence(self):
         att = build_mettle_attestation(

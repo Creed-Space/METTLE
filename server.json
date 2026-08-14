@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Creed-Space/mettle-mcp",
-  "description": "Inverse Turing test — let an AI agent verify its own substrate and earn a credential.",
-  "version": "0.3.2",
+  "description": "Experimental machine-oriented challenges and signed, time-limited behavioral results. Does not verify identity or substrate.",
+  "version": "0.4.0",
   "repository": {
     "url": "https://github.com/Creed-Space/METTLE",
     "source": "github"
@@ -11,7 +11,7 @@
     {
       "registryType": "pypi",
       "identifier": "mettle-verifier",
-      "version": "0.3.2",
+      "version": "0.4.0",
       "transport": {
         "type": "stdio"
       }

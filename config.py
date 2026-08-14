@@ -1,10 +1,27 @@
 """METTLE configuration management."""
 
 from functools import lru_cache
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
+
+
+def _validate_redis_tls_query(redis_url: str) -> None:
+    """Reject URL query values that can override certificate verification."""
+    query = parse_qs(urlparse(redis_url).query, keep_blank_values=True)
+    certificate_requirements = query.get("ssl_cert_reqs", [])
+    if certificate_requirements and (
+        len(certificate_requirements) != 1
+        or certificate_requirements[0].strip().lower()
+        not in {"required", "cert_required"}
+    ):
+        raise ValueError("METTLE_REDIS_URL must require TLS certificate verification")
+    hostname_checks = query.get("ssl_check_hostname", [])
+    if hostname_checks and (
+        len(hostname_checks) != 1 or hostname_checks[0].strip().lower() != "true"
+    ):
+        raise ValueError("METTLE_REDIS_URL must enable TLS hostname verification")
 
 
 class Settings(BaseSettings):
@@ -16,7 +33,7 @@ class Settings(BaseSettings):
 
     # API
     api_title: str = Field(default="METTLE", description="API title")
-    api_version: str = Field(default="0.3.2", description="API version")
+    api_version: str = Field(default="0.4.0", description="API version")
 
     # CORS
     allowed_origins: str = Field(
@@ -169,8 +186,14 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "METTLE_DATABASE_URL must use PostgreSQL in production"
                 )
-            if urlparse(self.redis_url).scheme not in {"redis", "rediss"}:
-                raise ValueError("METTLE_REDIS_URL must use Redis in production")
+            database_query = parse_qs(urlparse(self.database_url).query)
+            if database_query.get("sslmode", [""])[-1] != "verify-full":
+                raise ValueError(
+                    "METTLE_DATABASE_URL must set sslmode=verify-full in production"
+                )
+            if urlparse(self.redis_url).scheme != "rediss":
+                raise ValueError("METTLE_REDIS_URL must use rediss TLS in production")
+            _validate_redis_tls_query(self.redis_url)
         return self
 
 
