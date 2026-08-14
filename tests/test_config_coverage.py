@@ -309,6 +309,13 @@ def test_release_requires_reproducibility_before_publication() -> None:
     assert 'python-version: "3.13.14"' in ci
     assert "-m scripts.build_distributions" in ci
     assert "name: Reproducibility gate" in release
+    assert (
+        "validate-candidate:\n"
+        "    permissions:\n"
+        "      contents: read\n"
+        "      checks: write\n"
+        "    uses: ./.github/workflows/ci.yml"
+    ) in release
     assert 'python-version: "3.13.14"' in release
     assert "--min-linux-builders 2 --require-macos" in release
     assert "name: Prepare exact release bundle" in release

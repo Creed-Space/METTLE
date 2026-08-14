@@ -34,7 +34,7 @@ from mettle.models import Difficulty
 from mettle.vcp import compute_tier
 from mettle.verifier import compute_mettle_result, verify_response
 
-METTLE_VERSION = "0.4.0"
+METTLE_VERSION = "0.4.1"
 # Suites without a deterministic single-pass CLI path (handled via hosted API).
 _LLM_SUITE = "llm-dynamic"
 

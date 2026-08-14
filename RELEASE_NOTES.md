@@ -1,6 +1,6 @@
 # METTLE release notes
 
-## [0.4.0]
+## [0.4.1]
 
 ### Credential schema
 
@@ -43,6 +43,13 @@ retain `type`, `loc`, and `msg`, while raw rejected `input` and validator `ctx`
 fields are removed to prevent request-content reflection.
 
 ### Runtime and supply chain
+
+The `v0.4.0` tag reached GitHub, but its release workflow was rejected before
+any job started because the reusable CI caller could not grant its nested Rust
+audit job permission to publish checks. No package, registry entry, GitHub
+Release, or Render deployment was created by that attempt. This patch grants
+`checks: write` only to the reusable validation caller and preserves the failed
+tag rather than moving it.
 
 The API, MCP service, and holder disable mutable-branch auto-deployment. Runtime
 state, quotas, revocation, administrator authorization, and retention health use
