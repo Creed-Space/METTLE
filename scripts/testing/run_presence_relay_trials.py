@@ -405,9 +405,19 @@ class RelayedPresenceSessionDriver:
             or not verify_mettle_attestation(attestation, public_key_pem)
         ):
             raise TrialFailure("METTLE issuer signature verification failed")
+        credential_jti = attestation.get("metadata", {}).get("jti")
+        if not isinstance(credential_jti, str):
+            raise TrialFailure("METTLE credential omitted its status identifier")
+        status_receipt = self.request(
+            "POST",
+            "/api/mettle/credentials/status",
+            expected_status=200,
+            json={"credential_jti": credential_jti},
+        ).json()
         registered_jti = self.holder.register_credential(
             issuer=self.base_url,
             attestation=attestation,
+            status_receipt=status_receipt,
         )
         if registered_jti != attestation["metadata"]["jti"]:
             raise TrialFailure("Holder registered a different credential JTI")
@@ -802,6 +812,12 @@ def run_attack_trials(*, base_url: str, api_key: str, timeout: float) -> dict[st
         if attestation.get("credential_issued") is not True:
             raise TrialFailure("Attack trial did not earn a bound credential")
         credential_jti = attestation["metadata"]["jti"]
+        status_receipt = driver.request(
+            "POST",
+            "/api/mettle/credentials/status",
+            expected_status=200,
+            json={"credential_jti": credential_jti},
+        ).json()
         tampered_holder_attestation = copy.deepcopy(attestation)
         tampered_holder_attestation["metadata"]["tier"] = "platinum"
         expect_policy_rejection(
@@ -809,6 +825,7 @@ def run_attack_trials(*, base_url: str, api_key: str, timeout: float) -> dict[st
             lambda: holder.register_credential(
                 issuer=driver.base_url,
                 attestation=tampered_holder_attestation,
+                status_receipt=status_receipt,
             ),
             ("issuer signature or policy is invalid",),
         )

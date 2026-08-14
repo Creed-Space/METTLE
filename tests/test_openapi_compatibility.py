@@ -1,6 +1,6 @@
-"""Conservative OpenAPI break classification tests."""
+"""Conservative OpenAPI break classification and public-schema tests."""
 
-from scripts.check_openapi_compatibility import breaking_changes
+from scripts.check_openapi_compatibility import breaking_changes, current_schema
 
 
 def test_breaking_change_classifier_covers_operations_parameters_and_models() -> None:
@@ -108,3 +108,11 @@ def test_additive_optional_field_is_not_breaking() -> None:
     }
 
     assert breaking_changes(old, new) == []
+
+
+def test_validation_error_schema_omits_rejected_payload_details() -> None:
+    properties = current_schema()["components"]["schemas"]["ValidationError"][
+        "properties"
+    ]
+
+    assert set(properties) == {"loc", "msg", "type"}

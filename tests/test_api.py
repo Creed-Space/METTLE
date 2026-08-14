@@ -35,13 +35,18 @@ class TestErrorTaxonomy:
         assert response.json()["detail"] == "Not Found"
 
     def test_validation_error_has_stable_code(self, client):
+        rejected_value = "private-rejected-value"
         response = client.post(
-            "/api/session/start", json={"difficulty": "not-a-difficulty"}
+            "/api/session/start", json={"difficulty": rejected_value}
         )
 
         assert response.status_code == 422
         assert response.json()["code"] == "validation_error"
-        assert isinstance(response.json()["detail"], list)
+        details = response.json()["detail"]
+        assert isinstance(details, list)
+        assert details
+        assert all(set(error) == {"type", "loc", "msg"} for error in details)
+        assert rejected_value not in response.text
 
     def test_rate_limit_has_stable_code_and_legacy_error(self, client):
         responses = [
@@ -99,7 +104,7 @@ class TestHealthEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "healthy"
-        assert "timestamp" in data
+        assert set(data) == {"status", "version", "source_revision"}
 
 
 class TestStartSession:

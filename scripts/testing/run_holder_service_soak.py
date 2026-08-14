@@ -48,7 +48,7 @@ from mettle.presence import (
     submission_signing_bytes,
     transcript_hash_after_submission,
 )
-from mettle.vcp import build_mettle_attestation
+from mettle.vcp import build_credential_status_receipt, build_mettle_attestation
 
 
 ISSUER = "https://mettle-holder-soak.example"
@@ -257,6 +257,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 ],
             },
         )
+        status_receipt = build_credential_status_receipt(
+            str(attestation["metadata"]["jti"]),
+            revoked=False,
+            key_id="mettle-vcp-new",
+        )
     finally:
         (
             issuer_signing._private_key,
@@ -264,7 +269,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             issuer_signing._key_id,
             issuer_signing._initialized,
         ) = previous_signing_state
-    credential_jti = runtime.register_credential(issuer=ISSUER, attestation=attestation)
+    credential_jti = runtime.register_credential(
+        issuer=ISSUER,
+        attestation=attestation,
+        status_receipt=status_receipt,
+    )
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
     presentation_values = {
         "challenge_id": f"presentation-{uuid.uuid4().hex}",

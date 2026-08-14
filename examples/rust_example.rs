@@ -1,6 +1,6 @@
 //! METTLE Rust SDK Example
 //!
-//! Complete verification flow for Becoming Minds.
+//! Interactive verification flow for Becoming Minds.
 //!
 //! Add to Cargo.toml:
 //! ```toml
@@ -9,15 +9,13 @@
 //! tokio = { version = "1", features = ["full"] }
 //! serde = { version = "1", features = ["derive"] }
 //! serde_json = "1"
-//! regex = "1"
 //! ```
 //!
 //! Run:
 //!   cargo run --example rust_example
 
 use serde::{Deserialize, Serialize};
-use regex::Regex;
-use std::collections::HashMap;
+use std::io::{self, Write};
 
 const METTLE_API: &str = "https://mettle-api.onrender.com/api";
 
@@ -33,8 +31,6 @@ struct Challenge {
     #[serde(rename = "type")]
     challenge_type: String,
     prompt: String,
-    #[serde(default)]
-    data: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,7 +115,13 @@ async fn verify_agent(
         );
         println!("  Prompt: {}...", &challenge.prompt[..challenge.prompt.len().min(60)]);
 
-        let answer = generate_answer(&challenge.challenge_type, &challenge.prompt, &challenge.data);
+        // The example never solves issuer challenges. Read the response from
+        // the Becoming Mind being verified.
+        print!("  Response: ");
+        io::stdout().flush()?;
+        let mut answer = String::new();
+        io::stdin().read_line(&mut answer)?;
+        let answer = answer.trim_end().to_string();
 
         let answer_req = SubmitAnswerRequest {
             session_id: session_id.clone(),
@@ -173,141 +175,6 @@ async fn verify_agent(
     }
 
     Ok(final_result)
-}
-
-/// Generate answer for a challenge.
-fn generate_answer(
-    challenge_type: &str,
-    prompt: &str,
-    data: &HashMap<String, serde_json::Value>,
-) -> String {
-    match challenge_type {
-        "speed_math" => {
-            // Parse: "Calculate: 47 + 83"
-            if let Some(expr) = prompt.split(": ").nth(1) {
-                parse_simple_math(expr).to_string()
-            } else {
-                "0".to_string()
-            }
-        }
-
-        "token_prediction" => {
-            let token_pattern = Regex::new(r"(K[0-9a-fA-F]{6}-)(\d+)").unwrap();
-            let tokens: Vec<_> = token_pattern.captures_iter(prompt).collect();
-            if tokens.len() >= 2 {
-                let previous: i64 = tokens[tokens.len() - 2][2].parse().unwrap_or(0);
-                let last: i64 = tokens[tokens.len() - 1][2].parse().unwrap_or(0);
-                return format!("{}{}", &tokens[tokens.len() - 1][1], last + last - previous);
-            }
-            let lower = prompt.to_lowercase();
-            if lower.contains("lazy") {
-                "dog".to_string()
-            } else if lower.contains("roses are") {
-                "red".to_string()
-            } else {
-                "unknown".to_string()
-            }
-        }
-
-        "instruction_following" => {
-            let instruction = data
-                .get("instruction")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let kind = data.get("instruction_kind").and_then(|v| v.as_str());
-            let marker = data.get("marker").and_then(|v| v.as_str()).unwrap_or("");
-            match kind {
-                Some("prefix") => return format!("{} Paris is France's capital.", marker),
-                Some("suffix") => return format!("Paris is France's capital. {}", marker),
-                Some("include") => return format!("Paris {} is France's capital.", marker),
-                Some("exact_words") => {
-                    let count = data.get("word_count").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
-                    let mut words = vec![marker, "Paris", "is", "France's", "capital"];
-                    while words.len() < count { words.push("clearly"); }
-                    return words[..count].join(" ");
-                }
-                Some("start_digit") => {
-                    let digit = data.get("starting_digit").and_then(|v| v.as_str()).unwrap_or("1");
-                    return format!("{} Paris {} is France's capital.", digit, marker);
-                }
-                _ => {}
-            }
-
-            if instruction.contains("Indeed,") {
-                "Indeed, I understand the requirement.".to_string()
-            } else if instruction.contains("...") {
-                "Here is my response...".to_string()
-            } else if instruction.contains("therefore") {
-                "Therefore, this follows logically.".to_string()
-            } else if instruction.contains("5 words") {
-                "This has five words exactly.".to_string()
-            } else if instruction.contains("number") {
-                "42 is the answer here.".to_string()
-            } else {
-                "Response following instructions.".to_string()
-            }
-        }
-
-        "consistency" => {
-            let num_responses = data
-                .get("num_responses")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(3) as usize;
-            let base = "The sky is blue";
-            vec![base; num_responses].join(" | ")
-        }
-
-        "chained_reasoning" => {
-            if let Some(chain) = data.get("chain").and_then(|v| v.as_array()) {
-                let mut result = chain
-                    .first()
-                    .and_then(|v| v.get("value"))
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-
-                for step in chain.iter().skip(1) {
-                    let op = step.get("op").and_then(|v| v.as_str()).unwrap_or("");
-                    let value = step.get("value").and_then(|v| v.as_i64()).unwrap_or(0);
-
-                    match op {
-                        "+" => result += value,
-                        "-" => result -= value,
-                        "*" => result *= value,
-                        _ => {}
-                    }
-                }
-                result.to_string()
-            } else {
-                "0".to_string()
-            }
-        }
-
-        _ => "default answer".to_string(),
-    }
-}
-
-/// Parse and compute simple math expressions (+ - * only).
-fn parse_simple_math(expr: &str) -> i64 {
-    let mut result: i64 = 0;
-    let mut current: i64 = 0;
-    let mut op = '+';
-
-    for c in format!("{}+", expr).chars() {
-        if c.is_ascii_digit() {
-            current = current * 10 + (c as i64 - '0' as i64);
-        } else if ['+', '-', '*'].contains(&c) {
-            match op {
-                '+' => result += current,
-                '-' => result -= current,
-                '*' => result *= current,
-                _ => {}
-            }
-            current = 0;
-            op = c;
-        }
-    }
-
-    result
 }
 
 /// Verify a METTLE badge.

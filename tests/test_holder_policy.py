@@ -45,7 +45,7 @@ from mettle.presence import (
     submission_signing_bytes,
     transcript_hash_after_submission,
 )
-from mettle.vcp import build_mettle_attestation
+from mettle.vcp import build_credential_status_receipt, build_mettle_attestation
 
 
 ISSUER = "https://mettle.example"
@@ -1014,10 +1014,20 @@ def test_holder_registers_only_matching_signed_credential_and_bounds_presentatio
     )
     tampered = copy.deepcopy(attestation)
     tampered["metadata"]["tier"] = "platinum"
+    status_receipt = build_credential_status_receipt("c" * 32, revoked=False)
     with pytest.raises(HolderPolicyError, match="signature or policy"):
-        holder.register_credential(issuer=ISSUER, attestation=tampered)
+        holder.register_credential(
+            issuer=ISSUER,
+            attestation=tampered,
+            status_receipt=status_receipt,
+        )
     assert (
-        holder.register_credential(issuer=ISSUER, attestation=attestation) == "c" * 32
+        holder.register_credential(
+            issuer=ISSUER,
+            attestation=attestation,
+            status_receipt=status_receipt,
+        )
+        == "c" * 32
     )
 
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()

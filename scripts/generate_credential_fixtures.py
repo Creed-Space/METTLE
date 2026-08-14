@@ -28,8 +28,9 @@ from mettle.protocol import CREDENTIAL_SCHEMA_VERSION, SUITE_POLICY_VERSION  # n
 from mettle.vcp import (  # noqa: E402
     SUITE_ORDER,
     _canonical_bytes,
+    build_credential_status_receipt,
     build_mettle_attestation,
-    verify_mettle_attestation_with_keyring,
+    verify_mettle_credential_with_status,
 )
 
 FIXTURE_KEY_ID = "mettle-fixture-v1"
@@ -71,6 +72,20 @@ def _issue(
     )
 
 
+def _status(
+    attestation: dict[str, Any],
+    *,
+    observed_at: datetime,
+    revoked: bool = False,
+) -> dict[str, Any]:
+    return build_credential_status_receipt(
+        attestation["metadata"]["jti"],
+        revoked=revoked,
+        key_id=FIXTURE_KEY_ID,
+        observed_at=observed_at,
+    )
+
+
 def build_fixtures() -> dict:
     private_key = Ed25519PrivateKey.from_private_bytes(FIXTURE_KEY_SEED)
     public_der = private_key.public_key().public_bytes(
@@ -105,44 +120,112 @@ def build_fixtures() -> dict:
         + hashlib.sha256(_canonical_bytes(future_policy["metadata"])).hexdigest()
     )
     _resign(future_policy, private_key)
+    presence_bearer = copy.deepcopy(valid)
+    transcript_hash = (
+        "sha256:" + hashlib.sha256(b"fixture copied presence bearer").hexdigest()
+    )
+    presence_bearer["attestation_type"] = "mettle-presence-credential"
+    presence_bearer["metadata"]["audience"] = "https://verifier.fixture.test"
+    presence_bearer["metadata"]["proof_of_possession"] = {
+        "protocol": "mettle-presence-v1",
+        "public_key_pem": public_pem,
+        "key_fingerprint": "sha256:" + hashlib.sha256(public_der).hexdigest(),
+        "transcript_hash": transcript_hash,
+        "sequence": 1,
+        "server_timing": {
+            "total_elapsed_ms": 12,
+            "submissions": [
+                {
+                    "sequence": 1,
+                    "action": "suite:adversarial",
+                    "response_time_ms": 12,
+                    "transcript_hash": transcript_hash,
+                }
+            ],
+        },
+    }
+    presence_bearer["content_hash"] = (
+        "sha256:"
+        + hashlib.sha256(_canonical_bytes(presence_bearer["metadata"])).hexdigest()
+    )
+    _resign(presence_bearer, private_key)
 
+    ordinary_check = issued + timedelta(minutes=30)
+    expired_check = issued + timedelta(hours=2)
     cases: list[dict[str, Any]] = [
         {
             "name": "valid-bronze",
             "expected_valid": True,
-            "verification_time": (issued + timedelta(minutes=30)).isoformat(),
+            "verification_time": ordinary_check.isoformat(),
             "attestation": valid,
+            "status_receipt": _status(
+                valid, observed_at=ordinary_check - timedelta(minutes=1)
+            ),
         },
         {
             "name": "unicode-valid",
             "expected_valid": True,
-            "verification_time": (issued + timedelta(minutes=30)).isoformat(),
+            "verification_time": ordinary_check.isoformat(),
             "attestation": unicode_credential,
+            "status_receipt": _status(
+                unicode_credential, observed_at=ordinary_check - timedelta(minutes=1)
+            ),
         },
         {
             "name": "tampered-tier",
             "expected_valid": False,
-            "verification_time": (issued + timedelta(minutes=30)).isoformat(),
+            "verification_time": ordinary_check.isoformat(),
             "attestation": tampered,
+            "status_receipt": _status(
+                valid, observed_at=ordinary_check - timedelta(minutes=1)
+            ),
         },
         {
             "name": "expired",
             "expected_valid": False,
-            "verification_time": (issued + timedelta(hours=2)).isoformat(),
+            "verification_time": expired_check.isoformat(),
             "attestation": valid,
+            "status_receipt": _status(
+                valid, observed_at=expired_check - timedelta(minutes=1)
+            ),
         },
         {
             "name": "unsupported-policy",
             "expected_valid": False,
-            "verification_time": (issued + timedelta(minutes=30)).isoformat(),
+            "verification_time": ordinary_check.isoformat(),
             "attestation": future_policy,
+            "status_receipt": _status(
+                valid, observed_at=ordinary_check - timedelta(minutes=1)
+            ),
+        },
+        {
+            "name": "presence-requires-live-holder-presentation",
+            "expected_valid": False,
+            "verification_time": ordinary_check.isoformat(),
+            "attestation": presence_bearer,
+            "status_receipt": _status(
+                presence_bearer,
+                observed_at=ordinary_check - timedelta(minutes=1),
+            ),
+        },
+        {
+            "name": "revoked",
+            "expected_valid": False,
+            "verification_time": ordinary_check.isoformat(),
+            "attestation": valid,
+            "status_receipt": _status(
+                valid,
+                observed_at=ordinary_check - timedelta(minutes=1),
+                revoked=True,
+            ),
         },
     ]
     keyring = {FIXTURE_KEY_ID: public_pem}
     for case in cases:
-        observed = verify_mettle_attestation_with_keyring(
+        observed = verify_mettle_credential_with_status(
             case["attestation"],
             keyring,
+            case["status_receipt"],
             now=datetime.fromisoformat(case["verification_time"]),
         )
         if observed is not case["expected_valid"]:

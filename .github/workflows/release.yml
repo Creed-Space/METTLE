@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: mettle-production-release
+  cancel-in-progress: false
+
 jobs:
   validate-candidate:
     uses: ./.github/workflows/ci.yml
@@ -49,8 +53,8 @@ jobs:
           path: dist/
       - name: Validate release distributions and build SBOM
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          python -m pip install --require-hashes \
+            -r requirements-release-lock.txt
           twine check dist/*.whl dist/*.tar.gz
           python -m venv /tmp/mettle-production-lock
           /tmp/mettle-production-lock/bin/python -m pip install --require-hashes \
@@ -96,7 +100,8 @@ jobs:
           path: output/reproducibility/linux-2
       - name: Build independent macOS distributions
         run: |
-          python -m pip install --disable-pip-version-check build==1.5.0
+          python -m pip install --disable-pip-version-check --require-hashes \
+            -r requirements-build-lock.txt
           python -m scripts.build_distributions \
             --source-revision "$GITHUB_SHA" \
             --builder-id macos \
@@ -129,12 +134,16 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install parser
-        run: python -m pip install pyyaml==6.0.2
+        run: >-
+          python -m pip install --require-hashes
+          -r requirements-drift-lock.txt
       - name: Compare provider with reviewed contract
         env:
           RENDER_API_TOKEN: ${{ secrets.RENDER_API_TOKEN }}
+          RENDER_SECRET_FINGERPRINTS: ${{ secrets.RENDER_SECRET_FINGERPRINTS }}
         run: |
           test -n "$RENDER_API_TOKEN"
+          test -n "$RENDER_SECRET_FINGERPRINTS"
           printf '%s' "$RENDER_API_TOKEN" \
             | python scripts/check_render_drift.py --token-stdin \
                 --output output/evidence/RENDER-CONFIGURATION-DRIFT.json
@@ -184,14 +193,24 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.11"
+      - name: Download reproducibility receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: distribution-reproducibility-${{ github.sha }}
+          path: output/evidence/
       - name: Verify public PyPI artifacts
         run: |
           python scripts/verify_pypi_release.py \
             --version "${GITHUB_REF_NAME#v}" \
-            --output output/evidence/PYPI-PUBLICATION.json
+            --reproducibility output/evidence/DISTRIBUTION-REPRODUCIBILITY.json \
+            --source-sha "$GITHUB_SHA" \
+            --output output/evidence/PYPI-PUBLICATION.json \
+            --artifact-dir /tmp/mettle-public-artifacts
           python -m venv /tmp/mettle-public-mcp
-          /tmp/mettle-public-mcp/bin/python -m pip install \
-            "mettle-verifier[mcp]==${GITHUB_REF_NAME#v}"
+          /tmp/mettle-public-mcp/bin/python -m pip install --require-hashes \
+            -r requirements-mcp-lock.txt
+          public_wheel=$(printf '%s' /tmp/mettle-public-artifacts/*.whl)
+          /tmp/mettle-public-mcp/bin/python -m pip install --no-deps "$public_wheel"
           /tmp/mettle-public-mcp/bin/python - <<'PY'
           import asyncio
           import os
@@ -242,11 +261,6 @@ jobs:
             mcp-publisher login github-oidc
             mcp-publisher publish
           fi
-      - name: Download reproducibility receipt
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: distribution-reproducibility-${{ github.sha }}
-          path: output/evidence/
       - name: Verify registry readback and build distribution receipt
         run: |
           python scripts/build_distribution_receipt.py \
@@ -306,3 +320,50 @@ jobs:
             --verify-tag \
             --title "METTLE ${GITHUB_REF_NAME#v}" \
             --notes-file dist/RELEASE-NOTES.md
+
+  deploy-render-production:
+    name: Promote exact release commit to Render
+    needs: [publish-github-release, render-drift]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: https://mettle.sh
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Install the hash-verified deployment parser
+        run: >-
+          python -m pip install --require-hashes
+          -r requirements-drift-lock.txt
+      - name: Promote the immutable tag commit
+        env:
+          RENDER_API_TOKEN: ${{ secrets.RENDER_API_TOKEN }}
+        run: |
+          test -n "$RENDER_API_TOKEN"
+          printf '%s' "$RENDER_API_TOKEN" \
+            | python scripts/deploy_render_release.py --token-stdin \
+                --source-revision "$GITHUB_SHA" \
+                --tag "$GITHUB_REF_NAME" \
+                --output output/evidence/RENDER-PRODUCTION-PROMOTION.json
+      - name: Upload production promotion evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: render-production-${{ github.sha }}
+          path: output/evidence/RENDER-PRODUCTION-PROMOTION.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Attach successful promotion receipt to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "$GITHUB_REF_NAME"
+          output/evidence/RENDER-PRODUCTION-PROMOTION.json
+          --clobber

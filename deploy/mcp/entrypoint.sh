@@ -7,8 +7,8 @@ case "${METTLE_MCP_TRANSPORT:-stdio}" in
         ;;
     http)
         # A container is an isolated network namespace. The hosted gateway is
-        # responsible for authenticating ingress before traffic reaches this
-        # otherwise unauthenticated MCP transport.
+        # reachable on every interface, while the application itself enforces
+        # Host, Origin, content type, caller auth, and per-caller budgets.
         export METTLE_MCP_ALLOW_INSECURE_HTTP=true
         exec mettle-mcp --transport http --host 0.0.0.0 --port "${PORT:-8080}"
         ;;

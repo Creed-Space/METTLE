@@ -18,7 +18,7 @@ PRODUCTION_ENV = {
     "METTLE_ADMIN_API_KEY": "a" * 32,
     "METTLE_VCP_SIGNING_KEY": "test-pem",
     "METTLE_USE_DATABASE": "true",
-    "METTLE_DATABASE_URL": "postgresql://db.example/mettle",
+    "METTLE_DATABASE_URL": "postgresql://db.example/mettle?sslmode=verify-full",
     "METTLE_REDIS_URL": "rediss://redis.example/mettle",
 }
 

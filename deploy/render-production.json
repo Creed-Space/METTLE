@@ -1,12 +1,16 @@
 {
   "schema_version": "1.0",
   "repository": "https://github.com/Creed-Space/METTLE",
+  "required_blueprints": [
+    "holder/render.yaml"
+  ],
   "services": [
     {
       "blueprint_name": "mettle-api",
       "service_id": "srv-d5ujjr7pm1nc73bu5k3g",
       "workspace_id": "tea-d016ri2li9vc739s1sc0",
       "workspace_name": "METTLE",
+      "promote_on_release": true,
       "provider_secret_keys": [
         "METTLE_ANTHROPIC_API_KEY",
         "METTLE_API_KEYS"
@@ -17,7 +21,27 @@
       "service_id": "srv-d9h2p5beo5us73b4fh90",
       "workspace_id": "tea-cvs83juuk2gs739omqv0",
       "workspace_name": "Superego",
+      "promote_on_release": true,
       "provider_secret_keys": []
+    },
+    {
+      "blueprint_name": "mettle-holder-staging",
+      "blueprint_path": "holder/render.yaml",
+      "service_id": "srv-d9b36jjeo5us73drljbg",
+      "workspace_id": "tea-d016ri2li9vc739s1sc0",
+      "workspace_name": "METTLE",
+      "provider_secret_keys": [
+        "METTLE_HOLDER_DATABASE_URL",
+        "METTLE_HOLDER_VAULT_URL"
+      ],
+      "provider_secret_files": [
+        "mettle-holder-vault-ca.pem",
+        "mettle-holder-vault-public-key.pem",
+        "mettle-holder-vault-token",
+        "mettle-holder-policy.json",
+        "mettle-holder-control-token",
+        "mettle-holder-state-hmac-key"
+      ]
     }
   ]
 }

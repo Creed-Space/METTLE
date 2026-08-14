@@ -13,11 +13,12 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, TypeGuard
 
 from mettle.protocol import (
     CREDENTIAL_CLOCK_SKEW_SECONDS,
     CREDENTIAL_SCHEMA_VERSION,
+    SUPPORTED_CREDENTIAL_SCHEMA_VERSIONS,
     SUITE_POLICY_VERSION,
     credential_time_window_valid,
     credential_versions_supported,
@@ -50,6 +51,19 @@ TIER_RANGES: dict[str, tuple[int, int]] = {
     "gold": (1, 9),
     "platinum": (1, 11),
 }
+
+CREDENTIAL_STATUS_PROTOCOL = "mettle-credential-status-v1"
+CREDENTIAL_STATUS_ENDPOINT = "https://mettle.sh/api/mettle/credentials/status"
+CREDENTIAL_STATUS_TTL_SECONDS = 300
+
+
+def _suite_list_is_valid(value: Any) -> TypeGuard[list[str]]:
+    """Return whether a suite disposition is safe for set and tier operations."""
+    return (
+        isinstance(value, list)
+        and all(isinstance(item, str) and item in SUITE_ORDER for item in value)
+        and len(value) == len(set(value))
+    )
 
 
 @dataclass
@@ -162,6 +176,8 @@ def compute_tier(
     suites_passed: list[str],
 ) -> str:
     """Compute the highest contiguous METTLE challenge tier earned."""
+    if not _suite_list_is_valid(suites_passed):
+        return "none"
     passed_numbers = {SUITE_ORDER[s] for s in suites_passed if s in SUITE_ORDER}
     for tier in ("platinum", "gold", "silver", "bronze"):
         lo, hi = TIER_RANGES[tier]
@@ -181,6 +197,7 @@ def build_mettle_attestation(
     key_id: str = "mettle-vcp-v1",
     presence: dict[str, Any] | None = None,
     reviewed_at: datetime | None = None,
+    supplemental_suites_passed: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build a server-issued VCP-compatible METTLE result.
 
@@ -189,6 +206,7 @@ def build_mettle_attestation(
         difficulty: Session difficulty level.
         suites_passed: List of suite names that passed.
         suites_failed: List of suite names that failed.
+        supplemental_suites_passed: Passed observations that cannot raise a tier.
         pass_rate: Overall pass rate (0.0-1.0).
         key_id: Identifier for the server-owned Ed25519 issuer key.
 
@@ -199,8 +217,17 @@ def build_mettle_attestation(
         raise ValueError("session_id and authenticated subject_id are required")
     if not 0.0 <= pass_rate <= 1.0:
         raise ValueError("pass_rate must be between 0.0 and 1.0")
+    if not _suite_list_is_valid(suites_passed) or not _suite_list_is_valid(
+        suites_failed
+    ):
+        raise ValueError("Suite dispositions must contain unique known suite names")
     if set(suites_passed) & set(suites_failed):
         raise ValueError("A suite cannot be both passed and failed")
+    supplemental = supplemental_suites_passed or []
+    if not _suite_list_is_valid(supplemental):
+        raise ValueError("Supplemental suites must contain unique known suite names")
+    if set(supplemental) & (set(suites_passed) | set(suites_failed)):
+        raise ValueError("Supplemental suites must have one distinct disposition")
 
     tier = compute_tier(suites_passed)
     credential_eligible = tier != "none"
@@ -209,6 +236,13 @@ def build_mettle_attestation(
         raise ValueError("reviewed_at must be timezone-aware")
     reviewed_at_iso = reviewed.isoformat()
     expires_at = (reviewed + timedelta(hours=1)).isoformat()
+    credential_jti = (
+        presence["credential_jti"]
+        if presence is not None
+        else hashlib.sha256(
+            f"{key_id}\x00{session_id}\x00{subject_id}".encode("utf-8")
+        ).hexdigest()[:32]
+    )
 
     metadata: dict[str, Any] = {
         "mettle_version": "2.0",
@@ -217,6 +251,12 @@ def build_mettle_attestation(
         "session_id": session_id,
         "subject_id": subject_id,
         "entity_id": entity_id,
+        "jti": credential_jti,
+        "credential_status": {
+            "protocol": CREDENTIAL_STATUS_PROTOCOL,
+            "endpoint": CREDENTIAL_STATUS_ENDPOINT,
+            "method": "POST",
+        },
         "tier": tier,
         "verified": credential_eligible,
         "assurance": "mettle_behavioral_verification",
@@ -226,6 +266,10 @@ def build_mettle_attestation(
         "difficulty": difficulty,
         "pass_rate": round(pass_rate, 4),
     }
+    if supplemental:
+        metadata["supplemental_suites_passed"] = sorted(supplemental)
+    if entity_id is not None:
+        metadata["entity_id_binding"] = "self_asserted_by_authenticated_subject"
     if presence is not None:
         from mettle.presence import validate_credential_presence
 
@@ -247,7 +291,6 @@ def build_mettle_attestation(
             if presence.get("submissions")
             else presence["started_at_unix_ms"]
         )
-        metadata["jti"] = presence["credential_jti"]
         metadata["audience"] = presence["audience"]
         metadata["proof_of_possession"] = {
             "protocol": presence["protocol"],
@@ -315,14 +358,14 @@ def build_mettle_attestation(
     return attestation
 
 
-def verify_mettle_attestation(
+def _verify_mettle_attestation_impl(
     attestation: dict[str, Any],
     public_key_pem: str,
     *,
     now: datetime | None = None,
     clock_skew_seconds: int = CREDENTIAL_CLOCK_SKEW_SECONDS,
 ) -> bool:
-    """Verify a METTLE credential envelope and its current validity."""
+    """Verify signed envelope integrity and current credential semantics."""
     if (
         attestation.get("attestation_type")
         not in {"mettle-verification-credential", "mettle-presence-credential"}
@@ -337,9 +380,16 @@ def verify_mettle_attestation(
     tier = metadata.get("tier")
     suites_passed = metadata.get("suites_passed")
     suites_failed = metadata.get("suites_failed")
-    if not isinstance(suites_passed, list) or not isinstance(suites_failed, list):
+    supplemental = metadata.get("supplemental_suites_passed", [])
+    if not _suite_list_is_valid(suites_passed):
         return False
-    if set(suites_passed) & set(suites_failed):
+    if not _suite_list_is_valid(suites_failed):
+        return False
+    if not _suite_list_is_valid(supplemental):
+        return False
+    if set(suites_passed) & set(suites_failed) or set(supplemental) & (
+        set(suites_passed) | set(suites_failed)
+    ):
         return False
     if (
         not metadata.get("credential_eligible")
@@ -347,6 +397,22 @@ def verify_mettle_attestation(
         or compute_tier(suites_passed) != tier
         or not metadata.get("session_id")
         or not metadata.get("subject_id")
+    ):
+        return False
+    expected_status = {
+        "protocol": CREDENTIAL_STATUS_PROTOCOL,
+        "endpoint": CREDENTIAL_STATUS_ENDPOINT,
+        "method": "POST",
+    }
+    if (
+        not isinstance(metadata.get("jti"), str)
+        or re.fullmatch(r"[0-9a-f]{32}", metadata["jti"]) is None
+        or metadata.get("credential_status") != expected_status
+    ):
+        return False
+    entity_id = metadata.get("entity_id")
+    if entity_id is not None and metadata.get("entity_id_binding") != (
+        "self_asserted_by_authenticated_subject"
     ):
         return False
     if attestation.get("attestation_type") == "mettle-presence-credential":
@@ -397,9 +463,17 @@ def verify_mettle_attestation(
                     ):
                         timing_valid = False
                         break
-                if timing_submissions and (
-                    timing_submissions[-1].get("transcript_hash")
-                    != proof.get("transcript_hash")
+                if (
+                    timing_submissions
+                    and isinstance(timing_submissions[-1], dict)
+                    and (
+                        timing_submissions[-1].get("transcript_hash")
+                        != proof.get("transcript_hash")
+                    )
+                ):
+                    timing_valid = False
+                elif timing_submissions and not isinstance(
+                    timing_submissions[-1], dict
                 ):
                     timing_valid = False
             continuity_valid = continuity is None or (
@@ -470,6 +544,30 @@ def verify_mettle_attestation(
     )
 
 
+def verify_mettle_attestation(
+    attestation: dict[str, Any],
+    public_key_pem: str,
+    *,
+    now: datetime | None = None,
+    clock_skew_seconds: int = CREDENTIAL_CLOCK_SKEW_SECONDS,
+) -> bool:
+    """Fail closed while verifying a signed METTLE credential envelope.
+
+    This function validates issuer integrity and current credential semantics.
+    A presence envelope still requires a fresh holder presentation before a
+    relying party can treat its holder identity as live.
+    """
+    try:
+        return _verify_mettle_attestation_impl(
+            attestation,
+            public_key_pem,
+            now=now,
+            clock_skew_seconds=clock_skew_seconds,
+        )
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+        return False
+
+
 def verify_mettle_attestation_with_keyring(
     attestation: dict[str, Any],
     keyring: dict[str, str],
@@ -487,6 +585,135 @@ def verify_mettle_attestation_with_keyring(
     return verify_mettle_attestation(
         attestation,
         public_key_pem,
+        now=now,
+        clock_skew_seconds=clock_skew_seconds,
+    )
+
+
+def build_credential_status_receipt(
+    credential_jti: str,
+    *,
+    revoked: bool,
+    key_id: str = "mettle-vcp-v1",
+    observed_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Build a short-lived issuer-signed revocation status receipt."""
+    if re.fullmatch(r"[0-9a-f]{32}", credential_jti) is None:
+        raise ValueError("credential_jti must be a 32-character lowercase hex ID")
+    observed = observed_at or datetime.now(tz=timezone.utc)
+    if observed.tzinfo is None:
+        raise ValueError("observed_at must be timezone-aware")
+    receipt: dict[str, Any] = {
+        "protocol": CREDENTIAL_STATUS_PROTOCOL,
+        "auditor": "mettle.creed.space",
+        "auditor_key_id": key_id,
+        "credential_jti": credential_jti,
+        "status": "revoked" if revoked else "good",
+        "observed_at": observed.isoformat(),
+        "expires_at": (
+            observed + timedelta(seconds=CREDENTIAL_STATUS_TTL_SECONDS)
+        ).isoformat(),
+    }
+    from mettle.signing import is_available, sign_attestation
+
+    if not is_available():
+        raise RuntimeError("METTLE credential status signing is unavailable")
+    receipt["signature"] = f"ed25519:{sign_attestation(_canonical_bytes(receipt))}"
+    return receipt
+
+
+def verify_credential_status_receipt(
+    receipt: dict[str, Any],
+    keyring: dict[str, str],
+    *,
+    credential_jti: str,
+    now: datetime | None = None,
+    clock_skew_seconds: int = CREDENTIAL_CLOCK_SKEW_SECONDS,
+) -> bool:
+    """Verify that an authenticated, fresh issuer receipt reports good status."""
+    expected_fields = {
+        "protocol",
+        "auditor",
+        "auditor_key_id",
+        "credential_jti",
+        "status",
+        "observed_at",
+        "expires_at",
+        "signature",
+    }
+    if not isinstance(receipt, dict) or set(receipt) != expected_fields:
+        return False
+    key_id = receipt.get("auditor_key_id")
+    signature = receipt.get("signature")
+    if (
+        receipt.get("protocol") != CREDENTIAL_STATUS_PROTOCOL
+        or receipt.get("auditor") != "mettle.creed.space"
+        or receipt.get("credential_jti") != credential_jti
+        or receipt.get("status") != "good"
+        or not isinstance(key_id, str)
+        or key_id not in keyring
+        or not isinstance(signature, str)
+        or not signature.startswith("ed25519:")
+    ):
+        return False
+    try:
+        observed = datetime.fromisoformat(str(receipt["observed_at"]))
+        expires = datetime.fromisoformat(str(receipt["expires_at"]))
+        if (
+            (expires - observed).total_seconds() != CREDENTIAL_STATUS_TTL_SECONDS
+            or not credential_time_window_valid(
+                reviewed_at=observed,
+                expires_at=expires,
+                now=now,
+                clock_skew_seconds=clock_skew_seconds,
+            )
+        ):
+            return False
+    except (TypeError, ValueError):
+        return False
+    unsigned = dict(receipt)
+    unsigned.pop("signature")
+    from mettle.signing import verify_signature
+
+    return verify_signature(
+        keyring[key_id],
+        _canonical_bytes(unsigned),
+        signature.removeprefix("ed25519:"),
+    )
+
+
+def verify_mettle_credential_with_status(
+    attestation: dict[str, Any],
+    keyring: dict[str, str],
+    status_receipt: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    clock_skew_seconds: int = CREDENTIAL_CLOCK_SKEW_SECONDS,
+    allow_presence_envelope: bool = False,
+) -> bool:
+    """Perform portable credential acceptance, including live issuer status.
+
+    Presence credentials are bearer-copyable envelopes. Portable callers must
+    reject them unless a holder has separately proved fresh possession and the
+    caller explicitly opts into the holder-managed verification path.
+    """
+    if (
+        attestation.get("attestation_type") == "mettle-presence-credential"
+        and not allow_presence_envelope
+    ):
+        return False
+    if not verify_mettle_attestation_with_keyring(
+        attestation,
+        keyring,
+        now=now,
+        clock_skew_seconds=clock_skew_seconds,
+    ):
+        return False
+    metadata = attestation.get("metadata")
+    return isinstance(metadata, dict) and verify_credential_status_receipt(
+        status_receipt,
+        keyring,
+        credential_jti=str(metadata.get("jti", "")),
         now=now,
         clock_skew_seconds=clock_skew_seconds,
     )
@@ -519,9 +746,10 @@ def format_csm1_line(tier: str, session_id: str, timestamp: str | None = None) -
 def _canonical_bytes(data: dict[str, Any]) -> bytes:
     """Convert dict to canonical bytes for hashing/signing.
 
-    Schema 1.0 uses sorted UTF-8 JSON and normalizes integral floats to JSON
-    integers so JavaScript, Python, and Rust consumers reproduce the same bytes.
-    Historical unversioned envelopes retain the original ASCII-escaped encoding.
+    Versioned schemas use sorted UTF-8 JSON and normalize integral floats to
+    JSON integers so JavaScript, Python, and Rust consumers reproduce the same
+    bytes. Historical unversioned envelopes retain the original ASCII-escaped
+    encoding.
     """
     import json
 
@@ -540,7 +768,7 @@ def _canonical_bytes(data: dict[str, Any]) -> bytes:
             return int(value)
         return value
 
-    versioned = schema_version == CREDENTIAL_SCHEMA_VERSION
+    versioned = schema_version in SUPPORTED_CREDENTIAL_SCHEMA_VERSIONS
     payload = normalize(data) if versioned else data
     return json.dumps(
         payload,

@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SessionStatus(str, enum.Enum):
@@ -64,40 +64,6 @@ def _validate_answer_object(value: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---- Request Models ----
-
-
-class OperatorCommitment(BaseModel):
-    """Operator accountability commitment submitted with session creation.
-
-    The operator signs a commitment accepting accountability for the agent.
-    Ed25519 signature is verified server-side before attestation is issued.
-    """
-
-    operator_pseudonym: str = Field(
-        min_length=1,
-        max_length=256,
-        description="Operator identifier (can be pseudonymous)",
-    )
-    operator_public_key: str = Field(
-        min_length=1,
-        max_length=8192,
-        description="Ed25519 public key (PEM format)",
-    )
-    signed_commitment: str = Field(
-        min_length=1,
-        max_length=1024,
-        description="Base64 Ed25519 signature over the canonical version-1 operator commitment JSON",
-    )
-    contact_method: str = Field(
-        min_length=1,
-        max_length=64,
-        description="Contact method type: email_hash, platform_handle, legal_entity",
-    )
-    contact_hash: str = Field(
-        min_length=1,
-        max_length=128,
-        description="SHA-256 of actual contact info (verifiable without revealing)",
-    )
 
 
 class PresenceRegistration(BaseModel):
@@ -160,6 +126,12 @@ class PresenceState(BaseModel):
 class CreateSessionRequest(BaseModel):
     """Request to start a METTLE verification session."""
 
+    # Unknown request fields are rejected rather than silently discarded. In
+    # particular, this prevents the retired one-step operator commitment field
+    # from looking accepted even though a replay-safe protocol would require a
+    # server-issued nonce before the operator signs.
+    model_config = ConfigDict(extra="forbid")
+
     suites: list[str] = Field(
         default=["all"],
         min_length=1,
@@ -177,13 +149,16 @@ class CreateSessionRequest(BaseModel):
         max_length=32768,
         description="Optional CSM-1 VCP token for enhanced Suite 9 verification",
     )
-    operator_commitment: OperatorCommitment | None = Field(
-        default=None,
-        description="Optional signed operator statement; does not create a trust tier",
-    )
     presence: PresenceRegistration | None = Field(
         default=None,
         description="Opt into key-bound session submissions and credential presentation",
+    )
+    allow_third_party_llm: bool = Field(
+        default=False,
+        description=(
+            "Explicitly acknowledge that llm-dynamic candidate responses are sent "
+            "to Anthropic for evaluation during this session"
+        ),
     )
 
     @field_validator("suites")
@@ -194,12 +169,6 @@ class CreateSessionRequest(BaseModel):
         if "all" in suites and len(suites) != 1:
             raise ValueError("'all' cannot be combined with explicit suites")
         return suites
-
-    @model_validator(mode="after")
-    def validate_operator_subject(self) -> "CreateSessionRequest":
-        if self.operator_commitment is not None and not self.entity_id:
-            raise ValueError("entity_id is required with an operator commitment")
-        return self
 
 
 class RoundAnswerRequest(BaseModel):
@@ -277,6 +246,28 @@ class PresentationChallengeRequest(BaseModel):
     @classmethod
     def validate_audience(_cls, value: str) -> str:
         return PresenceRegistration.validate_audience(value)
+
+
+class CredentialStatusRequest(BaseModel):
+    """Request a fresh issuer-authenticated revocation status receipt."""
+
+    model_config = ConfigDict(extra="forbid")
+    credential_jti: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
+class CredentialStatusResponse(BaseModel):
+    """Short-lived signed status for portable credential acceptance."""
+
+    protocol: Literal["mettle-credential-status-v1"]
+    auditor: Literal["mettle.creed.space"]
+    auditor_key_id: str
+    credential_jti: str
+    status: Literal["good", "revoked"]
+    # Keep the exact signed RFC 3339 strings. Parsing and reserializing a
+    # datetime may normalize ``+00:00`` to ``Z`` and invalidate the signature.
+    observed_at: str = Field(min_length=20, max_length=64)
+    expires_at: str = Field(min_length=20, max_length=64)
+    signature: str
 
 
 class PresentationChallengeResponse(BaseModel):
@@ -375,31 +366,6 @@ class GovernanceAttestation(BaseModel):
     )
 
 
-class OperatorAttestation(BaseModel):
-    """Cryptographic link from agent to operator.
-
-    Even pseudonymous operators provide a verifiable accountability chain.
-    The contact_hash allows platforms to verify contact info exists without
-    revealing it publicly. If the agent causes harm, the platform can request
-    the operator reveal themselves by providing the preimage.
-    """
-
-    operator_pseudonym: str = Field(
-        description="Operator identifier (can be pseudonymous)"
-    )
-    operator_public_key: str = Field(description="Ed25519 public key (PEM format)")
-    operator_signed_commitment: str = Field(
-        description="Operator signs: 'I accept accountability for agent {entity_id}'"
-    )
-    commitment_timestamp: datetime = Field(description="When commitment was signed")
-    contact_method: str = Field(
-        description="Contact method type: email_hash, platform_handle, legal_entity"
-    )
-    contact_hash: str = Field(
-        description="SHA-256 of actual contact info (verifiable without revealing)"
-    )
-
-
 class SessionResultResponse(BaseModel):
     """Final results for a completed session."""
 
@@ -420,6 +386,14 @@ class SessionResultResponse(BaseModel):
         default=False,
         description="Whether a complete tier-qualifying suite range passed",
     )
+    credential_suites_passed: list[str] = Field(
+        default_factory=list,
+        description="Passed suites backed by tier-eligible server evidence",
+    )
+    supplemental_suites_passed: list[str] = Field(
+        default_factory=list,
+        description="Passed observational suites that cannot raise a tier",
+    )
     tier: str = Field(
         default="none",
         description="Highest contiguous METTLE challenge tier earned",
@@ -434,10 +408,6 @@ class SessionResultResponse(BaseModel):
     governance_attestation: GovernanceAttestation | None = Field(
         default=None,
         description="Unverified governance metadata parsed from the supplied VCP token",
-    )
-    operator_attestation: OperatorAttestation | None = Field(
-        default=None,
-        description="Operator accountability chain (cryptographic link agent -> operator)",
     )
     presence: PresenceState | None = Field(
         default=None,

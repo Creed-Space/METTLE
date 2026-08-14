@@ -35,6 +35,7 @@ from mettle.presence import (
     submission_signing_bytes,
 )
 from mettle.router import router
+from mettle.vcp import verify_mettle_credential_with_status
 
 
 TEST_USER = "presence-verifier"
@@ -143,6 +144,7 @@ def client() -> Generator[TestClient, None, None]:
     app = FastAPI()
     app.include_router(router)
     app.state.redis = fake_redis
+    app.state.credential_issuance_guard = lambda: True
     app.state.credential_revocation_checker = lambda _jti: False
 
     async def auth() -> AuthenticatedUser:
@@ -181,7 +183,12 @@ def client() -> Generator[TestClient, None, None]:
     patches.append(
         patch(
             "mettle.session_manager.ChallengeAdapter.evaluate_single_shot",
-            return_value={"passed": True, "score": 1.0, "details": {}},
+            return_value={
+                "passed": True,
+                "score": 1.0,
+                "details": {},
+                "credential_eligible": True,
+            },
         )
     )
     patches.append(
@@ -258,7 +265,7 @@ def _complete_presence_session(
     assert state["action"] == f"suite:{BRONZE_SUITES[0]}"
 
     for index, suite in enumerate(BRONZE_SUITES):
-        answers = _answers_with_continuity(issued, suite, {"q1": 42})
+        answers = _answers_with_continuity(issued, suite, {"q1": {"value": 42}})
         message = submission_signing_bytes(
             session_id=session_id,
             action=f"suite:{suite}",
@@ -391,7 +398,7 @@ def test_presence_session_rejects_unsigned_and_wrong_key_submissions(
     state = creation["presence"]
     session_id = creation["session_id"]
     answers = _answers_with_continuity(
-        creation["challenges"], "adversarial", {"q1": 42}
+        creation["challenges"], "adversarial", {"q1": {"value": 42}}
     )
 
     unsigned = client.post(
@@ -508,6 +515,34 @@ def test_key_bound_credential_requires_fresh_holder_proof_and_rejects_replay(
     assert "expired or already used" in replay.json()["detail"].lower()
 
 
+def test_copied_presence_envelope_is_not_a_portable_bearer_credential(
+    client: TestClient,
+) -> None:
+    holder_key, public_key_pem = _keypair()
+    attestation = _complete_presence_session(client, holder_key, public_key_pem)
+    jti = attestation["metadata"]["jti"]
+    receipt = client.post(
+        "/api/mettle/credentials/status",
+        json={"credential_jti": jti},
+    )
+    assert receipt.status_code == 200, receipt.text
+    issuer_key = issuer_signing.get_public_key_pem()
+    assert isinstance(issuer_key, str)
+    keyring = {attestation["auditor_key_id"]: issuer_key}
+
+    assert not verify_mettle_credential_with_status(
+        attestation,
+        keyring,
+        receipt.json(),
+    )
+    assert verify_mettle_credential_with_status(
+        attestation,
+        keyring,
+        receipt.json(),
+        allow_presence_envelope=True,
+    )
+
+
 def test_presentation_fails_closed_when_credential_is_revoked(
     client: TestClient,
 ) -> None:
@@ -543,6 +578,44 @@ def test_presentation_fails_closed_when_credential_is_revoked(
     assert "revoked" in response.json()["detail"].lower()
 
 
+def test_presentation_rechecks_revocation_after_consuming_challenge(
+    client: TestClient,
+) -> None:
+    holder_key, public_key_pem = _keypair()
+    attestation = _complete_presence_session(client, holder_key, public_key_pem)
+    metadata = attestation["metadata"]
+    revocation_states = iter((False, True))
+    cast(FastAPI, client.app).state.credential_revocation_checker = lambda _jti: next(
+        revocation_states
+    )
+    challenge = client.post(
+        "/api/mettle/presentation-challenges",
+        json={
+            "credential_jti": metadata["jti"],
+            "audience": "service.example",
+        },
+    ).json()
+    message = presentation_signing_bytes(
+        challenge_id=challenge["challenge_id"],
+        nonce=challenge["nonce"],
+        audience=challenge["audience"],
+        credential_jti=metadata["jti"],
+        expires_at=challenge["expires_at"],
+    )
+
+    response = client.post(
+        "/api/mettle/presentations/verify",
+        json={
+            "challenge_id": challenge["challenge_id"],
+            "attestation": attestation,
+            "holder_signature": _sign(holder_key, message),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "revoked" in response.json()["detail"].lower()
+
+
 def test_submission_signatures_bind_answers_and_transcript() -> None:
     private_key, _ = _keypair()
     message = submission_signing_bytes(
@@ -550,7 +623,7 @@ def test_submission_signatures_bind_answers_and_transcript() -> None:
         action="suite:adversarial",
         nonce="nonce-1",
         previous_transcript_hash="sha256:" + "a" * 64,
-        payload_hash=answer_hash({"q1": 42}),
+        payload_hash=answer_hash({"q1": {"value": 42}}),
     )
     signature = _sign(private_key, message)
     assert signature
@@ -578,7 +651,9 @@ def test_stale_nonce_and_answer_substitution_are_rejected(client: TestClient) ->
     ).json()
     session_id = created["session_id"]
     initial = created["presence"]
-    answers = _answers_with_continuity(created["challenges"], "adversarial", {"q1": 42})
+    answers = _answers_with_continuity(
+        created["challenges"], "adversarial", {"q1": {"value": 42}}
+    )
     first_message = submission_signing_bytes(
         session_id=session_id,
         action="suite:adversarial",
@@ -601,7 +676,7 @@ def test_stale_nonce_and_answer_substitution_are_rejected(client: TestClient) ->
     assert first.status_code == 200
     current = first.json()["presence"]
     current_answers = _answers_with_continuity(
-        first.json()["next_challenge"], "native", {"q1": 42}
+        first.json()["next_challenge"], "native", {"q1": {"value": 42}}
     )
 
     stale_message = submission_signing_bytes(
@@ -663,7 +738,9 @@ def test_unissued_suite_cannot_be_skipped_to(client: TestClient) -> None:
         },
     ).json()
     state = created["presence"]
-    answers = _answers_with_continuity(created["challenges"], "adversarial", {"q1": 42})
+    answers = _answers_with_continuity(
+        created["challenges"], "adversarial", {"q1": {"value": 42}}
+    )
     message = submission_signing_bytes(
         session_id=created["session_id"],
         action="suite:native",
@@ -833,7 +910,7 @@ def test_future_continuity_challenge_is_transcript_bound_and_unharvestable(
     assert "native" not in created["challenges"]
 
     first_answers = _answers_with_continuity(
-        created["challenges"], "adversarial", {"q1": 42}
+        created["challenges"], "adversarial", {"q1": {"value": 42}}
     )
     state = created["presence"]
     message = submission_signing_bytes(

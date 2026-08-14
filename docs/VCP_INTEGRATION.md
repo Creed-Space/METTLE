@@ -65,13 +65,20 @@ Example:
       "session_id": "...",
       "subject_id": "authenticated-user-id",
       "entity_id": "caller-supplied-agent-id",
+      "identity_binding": "self_asserted_by_authenticated_subject",
       "tier": "platinum",
       "verified": true,
       "assurance": "mettle_behavioral_verification",
       "credential_eligible": true,
       "suites_passed": ["adversarial", "native", "..."],
       "suites_failed": [],
-      "pass_rate": 1.0
+      "pass_rate": 1.0,
+      "credential_schema_version": "1.1",
+      "suite_policy_version": "2026-08-14",
+      "jti": "32-lowercase-hex-characters",
+      "credential_status": {
+        "endpoint": "https://mettle.sh/api/mettle/credentials/status"
+      }
     },
     "signature": "ed25519:...",
     "credential_issued": true
@@ -79,7 +86,14 @@ Example:
 }
 ```
 
-The Ed25519 signature covers the complete credential envelope. Consumers obtain the issuer public key from `/api/mettle/.well-known/vcp-keys`. A result without a complete tier range uses `mettle-evidence-receipt`, has a null signature, and sets `credential_issued=false`.
+The Ed25519 signature covers the complete credential envelope. Consumers obtain
+the issuer public key from `/api/mettle/.well-known/vcp-keys`. Portable
+acceptance requires the exact current schema and suite policy plus a fresh,
+issuer-signed good status receipt. Legacy, omitted, and unknown versions fail
+closed. A `mettle-presence-credential` also fails generic portable acceptance
+and must use the fresh holder-presentation protocol. A result without a complete
+tier range uses `mettle-evidence-receipt`, has a null signature, and sets
+`credential_issued=false`.
 
 ## Governance Metadata
 
@@ -108,11 +122,12 @@ When a VCP token is supplied, METTLE may return a parsed snapshot:
 
 `source_vcp_hash` identifies the exact supplied text. It is not a trust allowlist. Environment variables cannot turn these fields true because deployment configuration is not evidence about the subject runtime.
 
-## Operator Commitments
+## Operator Boundary
 
-An optional operator commitment is verified independently with Ed25519. The signature binds canonical JSON containing `version`, `entity_id`, `operator_pseudonym`, `operator_public_key`, `contact_method`, and `contact_hash`.
-
-Successful signature verification proves only that the private-key holder signed that commitment. It does not create or increase a METTLE tier.
+METTLE does not accept or return an operator commitment. It does not authenticate
+an operator identity, contact method, or relationship to the subject. Callers
+must not place raw or hashed operator contact details in VCP metadata because the
+metadata is self-supplied, and low-entropy digests are recoverable by guessing.
 
 ## CSM-1 Parsing
 
@@ -133,4 +148,8 @@ Only the `VCP:` header is required. An existing `MT:` line is treated as opaque 
 
 ## Future Strengthening
 
-Subject-key proof of possession, explicit audience binding, managed key rotation, provider or hardware attestation, and a published relying-party profile can strengthen later versions. Raw VCP digests, environment switches, and LLM-only scores remain outside the tier policy.
+Subject-key proof of possession, explicit audience binding, authenticated
+operator relationships, managed key rotation, provider or hardware attestation,
+and a published relying-party profile can strengthen later versions. Raw VCP
+digests, environment switches, and LLM-only scores remain outside the tier
+policy.

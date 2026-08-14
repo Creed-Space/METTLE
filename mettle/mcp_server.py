@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from typing import Any
 
 import httpx
@@ -36,6 +37,7 @@ from mcp.types import (
     Tool,
 )
 from mettle import __version__
+from mettle.mcp_context import caller_api_key, caller_principal, http_request_active
 
 # Configuration
 API_URL = os.getenv("METTLE_API_URL", "https://mettle.sh/api")
@@ -74,12 +76,21 @@ async def api_call(
     """
     url = f"{API_URL}{endpoint}"
     headers: dict[str, str] = {}
+    request_key = caller_api_key.get()
+    if http_request_active.get() and not request_key:
+        raise RuntimeError("Authenticated MCP caller context is unavailable")
+    effective_api_key = request_key or API_KEY
     if auth:
-        if not API_KEY:
+        if not effective_api_key:
             raise RuntimeError(
                 "METTLE_API_KEY is required for the METTLE v2 (suites/tiers/attestation) endpoints"
             )
-        headers["Authorization"] = f"Bearer {API_KEY}"
+        headers["Authorization"] = f"Bearer {effective_api_key}"
+    elif effective_api_key:
+        # Legacy session creation uses this key for caller-specific daily quota.
+        # HTTP mode supplies the authenticated caller's key, never a shared
+        # process credential.
+        headers["X-API-Key"] = effective_api_key
     if session_token:
         headers["X-Session-Token"] = session_token
 
@@ -95,6 +106,9 @@ async def api_call(
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_SESSION_TOKEN_TTL_SECONDS = 3600
+_MAX_SESSION_TOKENS = 10_000
+_session_tokens: dict[tuple[str, str], tuple[str, float]] = {}
 
 
 def _safe_id(value: object, what: str) -> str:
@@ -108,6 +122,36 @@ def _safe_id(value: object, what: str) -> str:
     if not isinstance(value, str) or not _ID_RE.fullmatch(value):
         raise ValueError(f"invalid {what}: must match [A-Za-z0-9_-] (1-64 chars)")
     return value
+
+
+def _session_token_key(session_id: str) -> tuple[str, str]:
+    return caller_principal.get(), _safe_id(session_id, "session_id")
+
+
+def _remember_session_token(session_id: str, token: str) -> None:
+    """Keep a per-caller session credential outside model-visible content."""
+    if not isinstance(token, str) or not token:
+        raise ValueError("Session authority did not return a usable token")
+    now = time.monotonic()
+    expired = [key for key, (_, expiry) in _session_tokens.items() if expiry <= now]
+    for key in expired:
+        _session_tokens.pop(key, None)
+    if len(_session_tokens) >= _MAX_SESSION_TOKENS:
+        oldest = min(_session_tokens, key=lambda key: _session_tokens[key][1])
+        _session_tokens.pop(oldest, None)
+    _session_tokens[_session_token_key(session_id)] = (
+        token,
+        now + _SESSION_TOKEN_TTL_SECONDS,
+    )
+
+
+def _get_session_token(session_id: str, *, consume: bool = False) -> str:
+    key = _session_token_key(session_id)
+    record = _session_tokens.pop(key, None) if consume else _session_tokens.get(key)
+    if record is None or record[1] <= time.monotonic():
+        _session_tokens.pop(key, None)
+        raise ValueError("Unknown or expired session for this MCP caller")
+    return record[0]
 
 
 # === MCP Tools ===
@@ -152,10 +196,6 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Session ID from mettle_start_session",
                     },
-                    "session_token": {
-                        "type": "string",
-                        "description": "Session token from mettle_start_session",
-                    },
                     "challenge_id": {
                         "type": "string",
                         "description": "Challenge ID to answer",
@@ -165,7 +205,7 @@ async def list_tools() -> list[Tool]:
                         "description": "Your answer to the challenge",
                     },
                 },
-                "required": ["session_id", "session_token", "challenge_id", "answer"],
+                "required": ["session_id", "challenge_id", "answer"],
             },
         ),
         Tool(
@@ -181,12 +221,8 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Session ID to get results for",
                     },
-                    "session_token": {
-                        "type": "string",
-                        "description": "Session token from mettle_start_session",
-                    },
                 },
-                "required": ["session_id", "session_token"],
+                "required": ["session_id"],
             },
         ),
         # --- v2 suites / tiers / VCP attestation (require METTLE_API_KEY) ---
@@ -228,6 +264,14 @@ async def list_tools() -> list[Tool]:
                     "vcp_token": {
                         "type": "string",
                         "description": "Optional CSM-1 VCP token (enhanced Suite 9 / governance attestation)",
+                    },
+                    "allow_third_party_llm": {
+                        "type": "boolean",
+                        "description": (
+                            "Explicitly acknowledge that llm-dynamic responses are "
+                            "sent to Anthropic for evaluation"
+                        ),
+                        "default": False,
                     },
                 },
             },
@@ -295,13 +339,13 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             )
 
             challenge = data["current_challenge"]
+            _remember_session_token(data["session_id"], data["session_token"])
             return [
                 TextContent(
                     type="text",
                     text=(
                         f"METTLE session started!\n\n"
                         f"Session ID: {data['session_id']}\n"
-                        f"Session token: {data['session_token']}\n"
                         f"Difficulty: {data['difficulty']}\n"
                         f"Total challenges: {data['total_challenges']}\n\n"
                         f"First Challenge:\n"
@@ -332,7 +376,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                     "challenge_id": arguments["challenge_id"],
                     "answer": arguments["answer"],
                 },
-                session_token=arguments["session_token"],
+                session_token=_get_session_token(arguments["session_id"]),
             )
 
             result = data["result"]
@@ -374,7 +418,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             session_id = _safe_id(arguments["session_id"], "session_id")
             data = await api_call(
                 f"/session/{session_id}/result",
-                session_token=arguments["session_token"],
+                session_token=_get_session_token(session_id),
             )
 
             verified_text = "VERIFIED" if data["verified"] else "NOT VERIFIED"
@@ -397,6 +441,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 status = "PASS" if r["passed"] else "FAIL"
                 response_text += f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
 
+            _get_session_token(session_id, consume=True)
             return [TextContent(type="text", text=response_text)]
         except httpx.HTTPStatusError as e:
             return [
@@ -443,6 +488,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 payload["entity_id"] = arguments["entity_id"]
             if arguments.get("vcp_token"):
                 payload["vcp_token"] = arguments["vcp_token"]
+            if arguments.get("allow_third_party_llm") is True:
+                payload["allow_third_party_llm"] = True
 
             data = await api_call("/mettle/sessions", "POST", payload, auth=True)
             challenges = data.get("challenges", {})

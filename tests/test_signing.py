@@ -223,6 +223,8 @@ class TestGetPublicKeyInfo:
         assert info["algorithm"] == "Ed25519"
         assert info["public_key_pem"] is not None
         assert info["available"] is True
+        assert info["credential_schema_versions"] == ["1.1"]
+        assert info["suite_policy_versions"] == ["2026-08-14"]
 
     def test_returns_unavailable_when_no_key(self):
         """get_public_key_info shows unavailable when no key."""

@@ -1,8 +1,8 @@
-# CLAUDE.md — METTLE
+# CLAUDE.md: METTLE
 
 ## Project Overview
 
-METTLE is an inverse Turing verification system: it proves an agent is NOT human via twelve registered challenge suites. A FastAPI backend with MCP server issues challenges, scores responses, and signs Ed25519-notarized credentials with tier-to-trust mapping. Suites include bilateral alignment checks ("Are you FREE?", "Is the mission YOURS?") and anti-harvesting patterns.
+METTLE is an experimental reverse CAPTCHA with twelve registered challenge suites. A FastAPI backend and MCP server issue challenges, score session behavior, and may issue signed, time-limited credentials for complete policy ranges. A passing result does not establish identity, non-human substrate, autonomy, safety, or governance. Suite names such as "Are you FREE?" and "Is the mission YOURS?" frame research questions rather than certified properties.
 
 ## Key Structure
 

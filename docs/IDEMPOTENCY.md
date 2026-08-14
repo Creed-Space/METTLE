@@ -21,7 +21,7 @@ single-winner credential caching.
 | Unregister webhook | First success removes it; a later call returns not found. | Treat not found after an ambiguous first response as consistent with success. |
 | Register API key | Every success creates a distinct secret. | Never retry blindly. Revoke unintended duplicates through the admin path. |
 | Rotate Ed25519 key | Configuration is declarative, but a changed private key under an existing ID is invalid. | Use a new key ID and verify overlap before removing the old public key. |
-| Render deployment | `render.yaml` `autoDeploy` is the sole repository deployment authority. | Correlate one main commit to one provider deploy. Do not add a second webhook trigger. |
+| Render deployment | Every authored service has `autoDeploy: false`; deployment is an explicit release operation. | Deploy only the reviewed commit, correlate it to one provider deploy, and do not add an independent branch or webhook trigger. |
 
 Working if: duplicate answer and presentation tests fail closed, concurrent
 credential reads return byte-equivalent envelopes, cancellation restores quota,

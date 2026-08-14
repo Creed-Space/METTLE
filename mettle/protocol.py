@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-CREDENTIAL_SCHEMA_VERSION = "1.0"
-SUITE_POLICY_VERSION = "2026-08-12"
+CREDENTIAL_SCHEMA_VERSION = "1.1"
+SUITE_POLICY_VERSION = "2026-08-14"
 SUPPORTED_CREDENTIAL_SCHEMA_VERSIONS = frozenset({CREDENTIAL_SCHEMA_VERSION})
 SUPPORTED_SUITE_POLICY_VERSIONS = frozenset({SUITE_POLICY_VERSION})
 
@@ -20,18 +20,15 @@ def utc_now() -> datetime:
 
 
 def credential_versions_supported(metadata: dict[str, object]) -> bool:
-    """Validate explicit versions while preserving historical credentials.
-
-    Credentials issued before the version fields were introduced omit both
-    values. Those historical envelopes retain their original signature and may
-    still be accepted until expiry. Any newly explicit, unknown value fails
-    closed so a verifier never guesses at future semantics.
-    """
+    """Accept only credentials using the verifier's exact current semantics."""
     schema_version = metadata.get("credential_schema_version")
     policy_version = metadata.get("suite_policy_version")
     return (
-        schema_version is None or schema_version in SUPPORTED_CREDENTIAL_SCHEMA_VERSIONS
-    ) and (policy_version is None or policy_version in SUPPORTED_SUITE_POLICY_VERSIONS)
+        isinstance(schema_version, str)
+        and schema_version in SUPPORTED_CREDENTIAL_SCHEMA_VERSIONS
+        and isinstance(policy_version, str)
+        and policy_version in SUPPORTED_SUITE_POLICY_VERSIONS
+    )
 
 
 def credential_time_window_valid(

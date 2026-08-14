@@ -74,7 +74,41 @@ def test_new_credentials_name_schema_and_suite_policy(monkeypatch):
     assert attestation["metadata"]["suite_policy_version"] == SUITE_POLICY_VERSION
 
 
-def test_unknown_explicit_version_fails_while_historical_omission_remains_valid(
+def test_current_schema_requires_status_and_legacy_schema_is_rejected(
+    monkeypatch,
+):
+    """Portable acceptance never guesses at retired credential semantics."""
+    key = Ed25519PrivateKey.generate()
+    reviewed_at = datetime(2030, 1, 1, tzinfo=timezone.utc)
+    attestation = _issue(monkeypatch, key, "key-current", reviewed_at)
+    public_key = _public_pem(key)
+    verify_at = reviewed_at + timedelta(minutes=30)
+
+    missing_status = copy.deepcopy(attestation)
+    missing_status["metadata"].pop("jti")
+    missing_status["metadata"].pop("credential_status")
+    missing_status["content_hash"] = (
+        "sha256:"
+        + __import__("hashlib")
+        .sha256(_canonical_bytes(missing_status["metadata"]))
+        .hexdigest()
+    )
+    _resign(missing_status, key)
+    assert not verify_mettle_attestation(missing_status, public_key, now=verify_at)
+
+    legacy = copy.deepcopy(missing_status)
+    legacy["metadata"]["credential_schema_version"] = "1.0"
+    legacy["metadata"]["suite_policy_version"] = "2026-08-12"
+    legacy["metadata"].pop("entity_id_binding", None)
+    legacy["content_hash"] = (
+        "sha256:"
+        + __import__("hashlib").sha256(_canonical_bytes(legacy["metadata"])).hexdigest()
+    )
+    _resign(legacy, key)
+    assert not verify_mettle_attestation(legacy, public_key, now=verify_at)
+
+
+def test_unknown_or_omitted_versions_fail_closed(
     monkeypatch,
 ):
     key = Ed25519PrivateKey.generate()
@@ -93,7 +127,7 @@ def test_unknown_explicit_version_fails_while_historical_omission_remains_valid(
         .hexdigest()
     )
     _resign(historical, key)
-    assert verify_mettle_attestation(historical, public_key, now=verify_at)
+    assert not verify_mettle_attestation(historical, public_key, now=verify_at)
 
     future = copy.deepcopy(attestation)
     future["metadata"]["suite_policy_version"] = "future-unknown"
@@ -103,6 +137,35 @@ def test_unknown_explicit_version_fails_while_historical_omission_remains_valid(
     )
     _resign(future, key)
     assert not verify_mettle_attestation(future, public_key, now=verify_at)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda credential: credential.update({"metadata": []}),
+        lambda credential: credential["metadata"].update(
+            {"suites_passed": [{"nested": "value"}]}
+        ),
+        lambda credential: credential["metadata"].update(
+            {
+                "proof_of_possession": {
+                    "server_timing": {"submissions": ["not-an-object"]}
+                }
+            }
+        ),
+    ],
+)
+def test_malformed_nested_credential_metadata_fails_closed(monkeypatch, mutation):
+    key = Ed25519PrivateKey.generate()
+    reviewed_at = datetime(2030, 1, 1, tzinfo=timezone.utc)
+    attestation = _issue(monkeypatch, key, "key-current", reviewed_at)
+    mutation(attestation)
+
+    assert not verify_mettle_attestation(
+        attestation,
+        _public_pem(key),
+        now=reviewed_at + timedelta(minutes=30),
+    )
 
 
 def test_expiry_and_clock_skew_boundaries_are_explicit(monkeypatch):

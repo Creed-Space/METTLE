@@ -10,7 +10,9 @@ services:
     buildCommand: pip install --require-hashes -r requirements-production.txt
     # Legacy and v2 live session authority is Redis-backed and CI alternates one
     # legacy session across two independent workers before this count may ship.
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    startCommand: >-
+      uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+      --proxy-headers --forwarded-allow-ips=$METTLE_FORWARDED_ALLOW_IPS
     healthCheckPath: /api/health/ready
     envVars:
       - key: PYTHON_VERSION
@@ -37,6 +39,12 @@ services:
         sync: false
       - key: METTLE_REDIS_URL
         sync: false
+      - key: METTLE_FORWARDED_ALLOW_IPS
+        # Render terminates public traffic at its proxy. This explicit value
+        # makes Uvicorn consume the provider's client address rather than rate
+        # limiting every caller as the shared edge. It is safe only while the
+        # service port remains behind Render's ingress boundary.
+        value: "*"
       - key: METTLE_DEV_MODE
         value: "false"
       - key: METTLE_LOG_LEVEL
@@ -45,15 +53,15 @@ services:
         value: "10/minute"
       - key: METTLE_RATE_LIMIT_ANSWERS
         value: "60/minute"
-    autoDeploy: true
+    # Production changes are promoted only by the tag-bound release workflow.
+    autoDeploy: false
 
   # METTLE MCP server as a public Streamable HTTP endpoint (register the URL
   # on Smithery after deploy: https://mettle-mcp.onrender.com/mcp).
   # The dual-mode Dockerfile serves stdio by default and flips to Streamable
-  # HTTP on METTLE_MCP_TRANSPORT=http; Render injects $PORT. The insecure-bind
-  # opt-out is intentional — the endpoint is meant to be publicly reachable.
-  # Hosted instance serves the unauthenticated screening tools; the v2 suite
-  # tools need METTLE_API_KEY, addable in the dashboard (never committed).
+  # HTTP on METTLE_MCP_TRANSPORT=http; Render injects $PORT. Every MCP request
+  # authenticates a caller-owned METTLE API key against the canonical API and
+  # forwards only that caller's identity and quota authority upstream.
   # 'starter' (always-on): the free tier's idle spin-down makes Smithery's
   # capability scan and first user calls fail on cold starts.
   - type: web
@@ -67,11 +75,23 @@ services:
     region: oregon
     numInstances: 1
     healthCheckPath: /health
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: METTLE_MCP_TRANSPORT
         value: http
       - key: METTLE_MCP_ALLOW_INSECURE_HTTP
         value: "true"
+      - key: METTLE_MCP_ALLOWED_HOSTS
+        value: mettle-mcp.onrender.com
+      - key: METTLE_MCP_REQUESTS_PER_MINUTE
+        value: "60"
+      - key: METTLE_MCP_MAX_GLOBAL_REQUESTS_PER_MINUTE
+        value: "600"
+      - key: METTLE_MCP_MAX_PRINCIPALS
+        value: "600"
+      - key: METTLE_MCP_MAX_CONCURRENT_PER_CALLER
+        value: "4"
+      - key: METTLE_MCP_MAX_GLOBAL_CONCURRENT
+        value: "64"
       - key: METTLE_API_URL
         value: https://mettle.sh/api

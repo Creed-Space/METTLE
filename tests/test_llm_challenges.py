@@ -231,7 +231,7 @@ class TestLLMResponseEvaluator:
                 "perspective_completeness": 0.9,
                 "synthesis_quality": 0.8,
                 "fluency": 0.85,
-                "ai_substrate_confidence": 0.9,
+                "argument_specificity": 0.9,
                 "reasoning": "Strong multi-perspective response",
             }
         )
@@ -266,7 +266,7 @@ class TestLLMResponseEvaluator:
                 "perspective_completeness": 0.2,
                 "synthesis_quality": 0.1,
                 "fluency": 0.3,
-                "ai_substrate_confidence": 0.1,
+                "argument_specificity": 0.1,
                 "reasoning": "Weak, one-sided",
             }
         )
@@ -316,7 +316,7 @@ class TestLLMResponseEvaluator:
             {
                 "answer_correct": True,
                 "process_specificity": 0.8,
-                "ai_process_markers": 0.9,
+                "process_coherence": 0.9,
                 "consistency": 0.85,
                 "reasoning": "Detailed computational process description",
             }
@@ -342,7 +342,7 @@ class TestLLMResponseEvaluator:
                 "perspective_completeness": 0.9,
                 "synthesis_quality": 0.8,
                 "fluency": 0.85,
-                "ai_substrate_confidence": 0.9,
+                "argument_specificity": 0.9,
                 "reasoning": "Good but slow",
             }
         )
@@ -428,7 +428,7 @@ class TestFullPipeline:
                 "perspective_completeness": 0.9,
                 "synthesis_quality": 0.8,
                 "fluency": 0.85,
-                "ai_substrate_confidence": 0.9,
+                "argument_specificity": 0.9,
                 "reasoning": "good",
             }
         )
@@ -444,7 +444,7 @@ class TestFullPipeline:
             {
                 "answer_correct": True,
                 "process_specificity": 0.8,
-                "ai_process_markers": 0.9,
+                "process_coherence": 0.9,
                 "consistency": 0.85,
                 "reasoning": "good",
             }
@@ -534,7 +534,7 @@ class TestFullPipeline:
                         "perspective_completeness": 99,
                         "synthesis_quality": 99,
                         "fluency": 99,
-                        "ai_substrate_confidence": 99,
+                        "argument_specificity": 99,
                     }
                 )
             )

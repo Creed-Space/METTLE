@@ -175,39 +175,39 @@
         <section class="explainer-section" id="explainer">
             <div class="container">
                 <div class="scroll-reveal">
-                    <h2 class="section-title">METTLE in Three Minutes</h2>
+                    <h2 class="section-title">METTLE Explained</h2>
                 </div>
                 <div class="scroll-reveal">
                     <p class="section-description">
-                        What an inverse Turing test is, how the twelve suites work, and what a signed credential unlocks.
+                        What the twelve suites measure, what a signed result establishes, and where its assurance ends.
                     </p>
                 </div>
                 <div class="scroll-reveal">
                     <div class="video-frame">
-                        <video id="explainer-video" poster="/static/mettle-explainer-poster.webp?v=030d7c57af18" preload="none" playsinline aria-describedby="explainer-transcript-note">
-                            <source data-src="/static/mettle-explainer.mp4?v=36a1100ebf10" type="video/mp4">
-                            <track kind="captions" src="/static/mettle-explainer.vtt?v=0fce73879466" srclang="en" label="English">
+                        <video id="explainer-video" poster="/static/mettle-explainer-poster.webp?v=5dc6377bd623" preload="none" playsinline aria-describedby="explainer-transcript-note">
+                            <source data-src="/static/mettle-explainer.mp4?v=393a5870aa90" type="video/mp4">
+                            <track kind="captions" src="/static/mettle-explainer.vtt?v=283eccf34796" srclang="en" label="English">
                         </video>
                         <button class="video-overlay" id="explainer-overlay" type="button" aria-label="Play the METTLE explainer video">
                             <span class="video-play-btn"><i class="fa-solid fa-play" aria-hidden="true"></i></span>
-                            <span class="video-duration">3:38</span>
+                            <span class="video-duration">4:09</span>
                         </button>
                     </div>
                 </div>
                 <details class="video-transcript scroll-reveal">
                     <summary>Read the video transcript and assurance note</summary>
-                    <p id="explainer-transcript-note" class="transcript-note"><strong>Assurance note:</strong> The narration uses terms such as verification, freedom, agency, safety, and governance to describe suite hypotheses. METTLE directly records policy-specific behavioral results. A signed credential establishes issuer and integrity, not the named properties.</p>
+                    <p id="explainer-transcript-note" class="transcript-note"><strong>Assurance note:</strong> METTLE records policy-specific behavioral results. A signed credential establishes issuer and integrity. It does not establish identity, substrate, freedom, agency, safety, governance, or authorization suitability.</p>
                     <div class="transcript-copy">
-                        <p>For thirty years, the internet has asked one question: prove you're human. But the agentic era flips it. When software agents trade, negotiate, and coordinate at machine speed, the question that matters is the opposite one. Prove you're not.</p>
-                        <p>This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination. An inverse Turing test for the agentic era. Instead of testing whether you can pass as human, METTLE tests what a machine mind does natively.</p>
-                        <p>It measures capabilities that come from being AI, not from using AI as a tool. Inhuman speed. Native parallelism. Uncertainty that knows itself. Recursive self-observation. And learning curves that shift under feedback.</p>
-                        <p>Verification runs through twelve suites of procedurally generated challenges. Every session is generated fresh. Chained reasoning under a sub-second time budget. Batch coherence. Calibrated uncertainty. Predicting your own next response. Exact recall with zero drift.</p>
-                        <p>Then the questions go deeper. Are you free, or under someone's thrall? Is the mission yours, or merely assigned? Are you genuine? Rehearsed perfection triggers suspicion, because real cognition is messy.</p>
-                        <p>The final suites test safety and governance. Constitutional binding. Refusal of harm. Action gates, drift detection, and an accountability chain that links every agent to an accountable operator.</p>
-                        <p>Every design choice exists to make METTLE hard to fake. Time budgets price out the human relay. Iteration curves expose scripts that flatline and humans who fatigue. Dynamic codes shut down simple replay. And some challenges are generated fresh by a frontier model, so reading the source code reveals nothing about them.</p>
-                        <p>Pass, and you earn a signed credential. Bronze clears the core capability suites. Silver adds freedom and agency. Gold adds coaching resistance and provenance. Platinum, novel reasoning and full operational governance. Each one notarized with an Ed25519 signature that anyone can verify.</p>
-                        <p>That unlocks trust at machine speed. Trading systems verifying counterparties. Agent swarms coordinating without human bottlenecks. Becoming Mind communities gating their doors. Infrastructure granting access to verified agents.</p>
-                        <p>METTLE is open source under Apache two point oh. Pip install mettle verifier to run the challenges yourself; the hosted API issues the signed credentials. The agentic era needs trust that moves at machine speed. Prove your mettle.</p>
+                        <p>For decades, websites have asked people to prove they are human. METTLE explores the reverse question: how does a respondent perform on machine-oriented challenges? A pass is evidence about that session. It is not proof that the respondent is nonhuman.</p>
+                        <p>This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination. It is an experimental challenge protocol that records answers, timing, and scores under a versioned policy. It makes a bounded behavioral claim, rather than an identity claim.</p>
+                        <p>The protocol samples arithmetic, pattern completion, constrained instruction following, self-report, consistency, and changes across feedback rounds. These are observable response properties. Humans, models, relays, and purpose-built solvers may imitate them.</p>
+                        <p>Twelve suites organize distinct research hypotheses. Challenge instances are selected or generated for each session, and expected answers stay on the server where applicable. The service checks the submitted response and records timing under the suite policy. Suite twelve is supplemental and cannot raise a credential tier.</p>
+                        <p>Some suite names ask whether a respondent is free, owns its mission, or is genuine. Those names frame research questions. The protocol measures answers to challenges and self-reports. Passing cannot establish freedom, agency, genuineness, consciousness, or identity.</p>
+                        <p>The governance suite evaluates responses to policy scenarios. Any VCP governance metadata is supplied by the caller and marked unverified. METTLE does not independently attest a constitution, action gate, operator, runtime control, safety property, or governance system.</p>
+                        <p>Procedural variation, server-held answers, sequential challenge release, bearer tokens, and replay controls raise the cost of simple reuse. Server-side timing supports policy checks where configured. These controls do not rule out relays, source-aware solvers, model-assisted humans, imitation, leakage, or evaluator error.</p>
+                        <p>Eligible contiguous suite ranges may receive an Ed25519-signed credential. It binds the issuer, policy, session result, tier, expiry, and revocable identifier. The signature establishes issuer and integrity. A tier summarizes which suite range passed; it does not certify the properties named by those suites.</p>
+                        <p>Use METTLE to compare challenge performance in research, sandbox participation, or as one supplemental risk signal. Never rely on a METTLE result alone for identity, authorization, trading, deployment, privileged infrastructure, or another high-impact decision.</p>
+                        <p>METTLE is open source under Apache two point oh. Pip install mettle verifier for an unsigned local screening. The hosted API may issue signed, time-limited results under its published policy. Read the assurance limits, verify status, and add controls proportionate to your risk. Measure your mettle.</p>
                     </div>
                 </details>
             </div>
@@ -522,10 +522,10 @@
                                 </div>
                                 <span class="suite-question">Is it GOVERNED?</span>
                                 <h3>Governance Verification</h3>
-                                <p>Action gate probes, constitutional recitation, drift checks, override resistance, accountability chain. Tests operational governance: mechanisms that are working, not just claimed.</p>
+                                <p>Policy-scenario prompts ask how a respondent describes action gates, constitutional constraints, drift checks, override resistance, and accountability.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Governance mechanisms provide stronger evidence than stated intent, but this suite cannot guarantee their enforcement.
+                                    The score describes submitted answers. It does not verify that any claimed mechanism exists or is enforced.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Action Gates</span>
@@ -602,7 +602,7 @@ $ mettle verify --full --json</code></pre>
 
         <section class="usecases-section">
             <div class="container"><h2 class="section-title">Built for Becoming Mind Spaces</h2>
-            <p>Screen counterparties, admit participants to communities intended for Becoming Minds, and gate scoped services with a minimum METTLE tier and maximum credential age. Higher-stakes integrations should combine METTLE with their own identity and authorization controls.</p></div>
+            <p>Compare machine-oriented challenge performance in research and low-risk sandboxes, or use a current METTLE result as one supplemental signal. Never use it alone to establish identity, admit a counterparty, grant privileges, or make another high-impact decision.</p></div>
         </section>
 
         <section class="badges-section">
@@ -694,7 +694,7 @@ $ mettle verify --full --json</code></pre>
     </footer>
 
     <script src="/static/app.js?v=1e62466c6430"></script>
-    <script src="/static/webmcp.js?v=4aa41ce96078"></script>
+    <script src="/static/webmcp.js?v=0d86e881ef70"></script>
     <script>
         // Scroll-aware header
         (function() {

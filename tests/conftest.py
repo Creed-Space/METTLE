@@ -14,7 +14,14 @@ from config import get_settings  # noqa: E402
 get_settings.cache_clear()
 
 import pytest  # noqa: E402
-from main import app, challenges, limiter, sessions  # noqa: E402
+import main as main_module  # noqa: E402
+from main import (  # noqa: E402
+    _anonymous_daily_usage,
+    app,
+    challenges,
+    limiter,
+    sessions,
+)
 from mettle.models import Challenge, ChallengeType, VerificationResult  # noqa: E402
 from tests.session_client import SessionAwareTestClient  # noqa: E402
 
@@ -79,13 +86,20 @@ def client():
 @pytest.fixture(autouse=True)
 def clear_state():
     """Clear session state and rate limiter before each test."""
+    original_redis = getattr(main_module.app.state, "redis", None)
+    main_module.private_data_retention_healthy = True
+    main_module.app.state.redis = original_redis
     sessions.clear()
     challenges.clear()
+    _anonymous_daily_usage.clear()
     # Reset rate limiter storage
     limiter.reset()
     yield
+    main_module.private_data_retention_healthy = True
+    main_module.app.state.redis = original_redis
     sessions.clear()
     challenges.clear()
+    _anonymous_daily_usage.clear()
     limiter.reset()
 
 

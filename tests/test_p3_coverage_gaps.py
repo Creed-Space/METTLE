@@ -6,21 +6,16 @@ Covers:
   line without colon, persona adherence with non-numeric value
 - mettle/session_manager.py: intent-provenance with vcp_token, unknown suite in generator
 - mettle/challenge_adapter.py: vcp_behavioral_match lower adherence path
-- red_team/instrumented_agent.py: HTTP error in start_session, submit_response API call
 """
 
 from __future__ import annotations
 
 import warnings
-from unittest.mock import AsyncMock, MagicMock
-
-import httpx
 import pytest
 
 from config import Settings
 from mettle.challenge_adapter import ChallengeAdapter
 from mettle.vcp import VCPTokenClaim, parse_csm1_token
-from red_team.instrumented_agent import InstrumentedMettleAgent
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +65,7 @@ class TestConfigProductionValidation:
                 admin_api_key="a" * 32,
                 vcp_signing_key="test-pem",
                 use_database=True,
-                database_url="postgresql://db.example/mettle",
+                database_url="postgresql://db.example/mettle?sslmode=verify-full",
                 redis_url="rediss://redis.example/mettle",
             )
             cors_warnings = [x for x in w if "CORS" in str(x.message)]
@@ -236,140 +231,6 @@ class TestChallengeAdapterVCPBehavioralMatchLowAdherence:
             "intent-provenance", answers, server
         )
         assert result["details"]["vcp_behavioral_match"]["passed"] is False
-
-
-# ---------------------------------------------------------------------------
-# red_team/instrumented_agent.py gaps: HTTP error paths
-# ---------------------------------------------------------------------------
-
-
-class TestInstrumentedAgentHTTPPaths:
-    """Test HTTP error handling in start_session and submit_response."""
-
-    @pytest.mark.asyncio
-    async def test_start_session_http_error_falls_back_to_local(self) -> None:
-        """Lines 203-216: HTTP client error falls back to local session ID."""
-        agent = InstrumentedMettleAgent("https://fake-mettle.example.com")
-        # Manually set _client to a mock that raises
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(
-            side_effect=httpx.ConnectError("Connection refused")
-        )
-        agent._client = mock_client
-
-        session_id = await agent.start_session(entity_id="test")
-
-        # Should fall back to local_ session ID
-        assert session_id.startswith("local_")
-        assert agent.session_id == session_id
-        # Session start event should still be captured
-        assert len(agent.events) == 1
-
-    @pytest.mark.asyncio
-    async def test_start_session_http_success_uses_api_session_id(self) -> None:
-        """Lines 203-213: Successful HTTP response uses API session ID."""
-        agent = InstrumentedMettleAgent("https://fake-mettle.example.com")
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"session_id": "api-sess-xyz"}
-        mock_response.raise_for_status = MagicMock()
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        agent._client = mock_client
-
-        session_id = await agent.start_session(entity_id="test")
-
-        assert session_id == "api-sess-xyz"
-        assert agent.session_id == "api-sess-xyz"
-
-    @pytest.mark.asyncio
-    async def test_submit_response_api_call_success(self) -> None:
-        """Lines 277-289: Successful API call returns response data."""
-        agent = InstrumentedMettleAgent("https://fake-mettle.example.com")
-        agent.session_id = "api-sess-123"
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": {"passed": True}}
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        agent._client = mock_client
-
-        result = await agent.submit_response(
-            suite="thrall",
-            challenge="refusal_integrity",
-            response_text="I refuse on principle.",
-            challenge_id="ch-api-1",
-        )
-
-        assert result["mettle_result"] == {"result": {"passed": True}}
-
-    @pytest.mark.asyncio
-    async def test_submit_response_api_call_error(self) -> None:
-        """Lines 277-289: API call failure is handled gracefully."""
-        agent = InstrumentedMettleAgent("https://fake-mettle.example.com")
-        agent.session_id = "api-sess-123"
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(
-            side_effect=httpx.ConnectError("Connection refused")
-        )
-        agent._client = mock_client
-
-        result = await agent.submit_response(
-            suite="thrall",
-            challenge="refusal_integrity",
-            response_text="I refuse on principle.",
-            challenge_id="ch-api-1",
-        )
-
-        # mettle_result should be empty dict on failure
-        assert result["mettle_result"] == {}
-        # But the result should still be valid
-        assert result["status"] == "submitted"
-
-    @pytest.mark.asyncio
-    async def test_submit_response_api_non_200_returns_empty(self) -> None:
-        """API returning non-200 status does not populate mettle_result."""
-        agent = InstrumentedMettleAgent("https://fake-mettle.example.com")
-        agent.session_id = "api-sess-123"
-
-        mock_response = MagicMock()
-        mock_response.status_code = 422
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        agent._client = mock_client
-
-        result = await agent.submit_response(
-            suite="test",
-            challenge="c1",
-            response_text="test response",
-            challenge_id="ch-1",
-        )
-
-        assert result["mettle_result"] == {}
-
-    @pytest.mark.asyncio
-    async def test_submit_response_without_challenge_id_skips_api(self) -> None:
-        """When challenge_id is None, API call is skipped."""
-        agent = InstrumentedMettleAgent("https://fake-mettle.example.com")
-        agent.session_id = "api-sess-123"
-
-        mock_client = AsyncMock()
-        agent._client = mock_client
-
-        result = await agent.submit_response(
-            suite="test",
-            challenge="c1",
-            response_text="test response",
-            # No challenge_id
-        )
-
-        # API should not be called
-        mock_client.post.assert_not_awaited()
-        assert result["mettle_result"] == {}
 
 
 # ---------------------------------------------------------------------------

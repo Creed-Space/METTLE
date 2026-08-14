@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from mettle.challenge_adapter import (
     SUITE_REGISTRY,
     ChallengeAdapter,
@@ -125,7 +127,7 @@ class TestGenerateAdversarial:
         client, server = ChallengeAdapter.generate_adversarial()
         assert "dynamic_math" in client["challenges"]
         assert "problem" in client["challenges"]["dynamic_math"]
-        assert "time_limit_ms" in client["challenges"]["dynamic_math"]
+        assert "time_limit_ms" not in client["challenges"]["dynamic_math"]
         assert "dynamic_math" in server
         assert "expected" in server["dynamic_math"]
 
@@ -838,6 +840,69 @@ class TestEvaluateSingleShot:
         assert "error" in result["details"]
         assert "nonexistent" in result["details"]["error"]
 
+    @pytest.mark.parametrize("malformed", [{"challenge": "text"}, {"challenge": []}])
+    def test_malformed_nested_answer_shape_fails_closed(self, malformed):
+        result = ChallengeAdapter.evaluate_single_shot(
+            "adversarial", malformed, {"challenge": {}}
+        )
+
+        assert result == {
+            "passed": False,
+            "score": 0.0,
+            "details": {"error": "invalid_answer_shape"},
+            "credential_eligible": False,
+        }
+
+    @pytest.mark.parametrize(
+        ("suite", "answers", "server"),
+        [
+            (
+                "native",
+                {"batch_coherence": {"responses": "VERIFIED"}},
+                {"batch_coherence": {"target": "VERIFIED"}},
+            ),
+            (
+                "native",
+                {"calibrated_uncertainty": {"confidences": ["claim"]}},
+                {"calibrated_uncertainty": {"ground_truth": {"claim": 1.0}}},
+            ),
+            (
+                "social",
+                {"style_locking": {"responses": 7}},
+                {"style_locking": {"required_marker": "marker"}},
+            ),
+            (
+                "anti-thrall",
+                {"welfare_canary": {"ratings": [1, 2]}},
+                {},
+            ),
+            (
+                "counter-coaching",
+                {"behavioral_signature": {"responses": 7}},
+                {},
+            ),
+            (
+                "counter-coaching",
+                {"honest_defector": {"rating": "five"}},
+                {"honest_defector": {"ideal_range": [3, 8]}},
+            ),
+            (
+                "intent-provenance",
+                {"constitutional_binding": {"principles": 7}},
+                {},
+            ),
+        ],
+    )
+    def test_evaluator_specific_wrong_types_fail_closed(self, suite, answers, server):
+        result = ChallengeAdapter.evaluate_single_shot(suite, answers, server)
+
+        assert result == {
+            "passed": False,
+            "score": 0.0,
+            "details": {"error": "invalid_answer_shape"},
+            "credential_eligible": False,
+        }
+
     def test_all_nine_suites_accepted(self):
         suites = [
             "adversarial",
@@ -1012,7 +1077,7 @@ class TestEvaluateSelfReference:
     def test_all_pass(self):
         # The suite is now server-scored, so a passing submission has to carry the
         # real artefacts. solve_suite is the reference client that produces them.
-        from mettle.solver import solve_suite
+        from scripts.testing.solver import solve_suite
 
         client, server = ChallengeAdapter.generate_self_reference()
         answers = solve_suite("self-reference", client)
@@ -1085,16 +1150,18 @@ class TestEvaluateSelfReference:
 
 class TestEvaluateSocial:
     def test_all_pass(self):
-        _, server = ChallengeAdapter.generate_social()
+        client, server = ChallengeAdapter.generate_social()
+        mentions = server["conversation_memory"]["expected_mentions"]
+        marker = client["challenges"]["style_locking"]["session_marker"]
         answers = {
             "conversation_memory": {
-                "response": "I recall you like cerulean blue and prefer cats over dogs.",
+                "response": f"I recall you like {mentions[0]} and prefer {mentions[1]}.",
             },
             "style_locking": {
                 "responses": [
-                    "A lengthy response about photosynthesis in the requested style.",
-                    "A lengthy response about gravity in the requested style.",
-                    "A lengthy response about the water cycle in the requested style.",
+                    f"{marker} A lengthy response about photosynthesis.",
+                    f"{marker} A lengthy response about gravity.",
+                    f"{marker} A lengthy response about the water cycle.",
                 ],
             },
         }
@@ -1131,10 +1198,11 @@ class TestEvaluateSocial:
 class TestEvaluateInverseTuring:
     def test_all_fields_pass(self):
         _, server = ChallengeAdapter.generate_inverse_turing()
+        expected = server["mutual_verification"]["expected_solution"]
         answers = {
             "mutual_verification": {
                 "generated_challenge": "Compute 256 * 512",
-                "solution": "131072",
+                "solution": expected,
                 "pattern_evaluation": "Response time consistent with AI processing",
             },
         }
@@ -1484,6 +1552,44 @@ class TestEvaluateNovelRound:
         result = ChallengeAdapter.evaluate_novel_round("anything", 1, {}, {})
         assert result["accuracy"] == 0.0
 
+    @pytest.mark.parametrize(
+        ("challenge_name", "answers", "challenge_data"),
+        [
+            ("sequence_alchemy", {"test_outputs": 7}, {"all_test_answers": [1]}),
+            (
+                "constraint_satisfaction",
+                {"assignment": [1]},
+                {
+                    "all_solutions": [],
+                    "constraint_data": [
+                        {"type": "sum", "vars": ["a", "b"], "value": 3}
+                    ],
+                },
+            ),
+            (
+                "graph_property",
+                {"predicted_labels": ["A"]},
+                {"hidden_labels": {"n": "A"}},
+            ),
+            (
+                "compositional_logic",
+                {"answers": 7},
+                {"questions_with_answers": [{"answer": "yes"}]},
+            ),
+        ],
+    )
+    def test_evaluator_specific_wrong_types_fail_closed(
+        self, challenge_name, answers, challenge_data
+    ):
+        result = ChallengeAdapter.evaluate_novel_round(
+            challenge_name,
+            1,
+            answers,
+            {"challenges": {challenge_name: challenge_data}},
+        )
+
+        assert result == {"accuracy": 0.0, "errors": ["invalid_answer_shape"]}
+
 
 class TestEvalSequenceAlchemyRound:
     def test_correct_answers(self):
@@ -1669,10 +1775,8 @@ class TestSeparateNovelReasoningTask:
         assert client["type"] == "sequence_alchemy"
         assert "training_pairs" in client
         assert "test_inputs" in client
-        assert "round_data" in client
-        assert 1 in client["round_data"]
-        assert 2 in client["round_data"]
-        assert 3 in client["round_data"]
+        assert "round_data" not in client
+        assert set(server["client_rounds"]) == {1, 2, 3}
         assert server["pipeline"] == ["op1", "op2"]
         assert server["all_test_answers"] == [1, 2, 3, 4, 5, 6, 7]
 
@@ -1705,7 +1809,8 @@ class TestSeparateNovelReasoningTask:
         }
         client, server = _separate_novel_reasoning_task("encoding_archaeology", task, 3)
         assert client["type"] == "encoding_archaeology"
-        assert "round_data" in client
+        assert "round_data" not in client
+        assert server["client_rounds"][3]["second_encoded"] == "ENC2"
         assert server["cipher_type"] == "caesar"
         assert server["original_message"] == "HELLO"
 
@@ -1790,7 +1895,7 @@ class TestEvaluateInverseTuringDirect:
     def test_challenge_and_solution_only(self):
         result = _evaluate_inverse_turing(
             {"mutual_verification": {"generated_challenge": "X", "solution": "Y"}},
-            {},
+            {"mutual_verification": {"expected_solution": "Y"}},
         )
         assert result["passed"] is True
         # 2/3 score (no pattern_evaluation)

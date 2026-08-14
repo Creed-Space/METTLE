@@ -57,6 +57,15 @@ def test_mcp_container_uses_hashed_lock() -> None:
     assert lock.count("--hash=sha256:") >= 10
 
 
+def test_mcp_container_pins_its_base_and_drops_root() -> None:
+    """The public container has immutable ancestry and a fixed runtime UID."""
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "FROM python:3.12.14-slim-trixie@sha256:" in dockerfile
+    assert "USER 10001:10001" in dockerfile
+    assert dockerfile.index("USER 10001:10001") < dockerfile.index("ENTRYPOINT")
+
+
 def test_mcp_container_context_is_allowlisted_and_transport_is_validated() -> None:
     """Unrelated working files cannot enter the image, and invalid modes fail."""
     dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
@@ -77,9 +86,16 @@ def test_mcp_container_context_is_allowlisted_and_transport_is_validated() -> No
     assert result.stderr == "Unsupported METTLE_MCP_TRANSPORT: invalid\n"
 
 
-def test_render_auto_deploy_is_the_only_main_deployment_authority() -> None:
-    """A main commit must not trigger both Render and a deploy-hook workflow."""
+def test_render_production_cannot_auto_deploy_mutable_main() -> None:
+    """Production services wait for the tag-bound release authority."""
     render = (ROOT / "render.yaml").read_text(encoding="utf-8")
+    release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
-    assert "autoDeploy: true" in render
+    assert render.count("autoDeploy: false") == 2
+    assert "autoDeploy: true" not in render
     assert not (ROOT / ".github/workflows/deploy.yml").exists()
+    assert "deploy-render-production:" in release
+    assert "needs: [publish-github-release, render-drift]" in release
+    assert "group: mettle-production-release" in release
+    assert '--source-revision "$GITHUB_SHA"' in release
+    assert "scripts/deploy_render_release.py --token-stdin" in release

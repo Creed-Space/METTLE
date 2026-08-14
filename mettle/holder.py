@@ -43,7 +43,7 @@ from mettle.presence import (
     validate_public_key,
 )
 from mettle.signing import verify_signature
-from mettle.vcp import verify_mettle_attestation
+from mettle.vcp import verify_mettle_credential_with_status
 
 
 HASH_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
@@ -104,7 +104,7 @@ class HolderPolicy:
 @dataclass
 class _PendingSubmission:
     message: bytes
-    signature: str
+    signature: str | None
     action: str
 
 
@@ -130,7 +130,7 @@ class _Credential:
     audience: str
     transcript_hash: str
     sequence: int
-    presentations: dict[str, tuple[bytes, str]] = field(default_factory=dict)
+    presentations: dict[str, tuple[bytes, str | None]] = field(default_factory=dict)
 
 
 def _normalize_issuer(value: str) -> str:
@@ -755,7 +755,7 @@ class PresenceHolder:
         self._policy = policy
         self._sessions: dict[str, _Session] = {}
         self._credentials: dict[str, _Credential] = {}
-        self._presentation_ids: dict[str, tuple[bytes, str]] = {}
+        self._presentation_ids: dict[str, tuple[bytes, str | None]] = {}
         self._lock = RLock()
 
     @property
@@ -855,6 +855,25 @@ class PresenceHolder:
         payload_hash: str,
     ) -> str:
         """Sign only the next action in one authorized monotonic session."""
+        message = self.reserve_submission(
+            session_id=session_id,
+            action=action,
+            nonce=nonce,
+            previous_transcript_hash=previous_transcript_hash,
+            payload_hash=payload_hash,
+        )
+        return self.sign_reserved_submission(session_id=session_id, message=message)
+
+    def reserve_submission(
+        self,
+        *,
+        session_id: str,
+        action: str,
+        nonce: str,
+        previous_transcript_hash: str,
+        payload_hash: str,
+    ) -> bytes:
+        """Reserve one exact session transition before external signing."""
         session_id = _bounded_text(session_id, "session_id")
         action = _action(action)
         nonce = _nonce(nonce)
@@ -889,20 +908,34 @@ class PresenceHolder:
             )
             if session.pending is not None:
                 if session.pending.message == message:
-                    return session.pending.signature
+                    return message
                 raise HolderPolicyError(
                     "A different submission is already pending for this session"
                 )
+            session.pending = _PendingSubmission(
+                message=message,
+                signature=None,
+                action=action,
+            )
+            return message
+
+    def sign_reserved_submission(self, *, session_id: str, message: bytes) -> str:
+        """Sign only an already-reserved exact session transition."""
+        session_id = _bounded_text(session_id, "session_id")
+        if not isinstance(message, bytes):
+            raise HolderPolicyError("Reserved submission message is invalid")
+        with self._lock:
+            session = self._sessions.get(session_id)
+            pending = session.pending if session is not None else None
+            if pending is None or pending.message != message:
+                raise HolderPolicyError("Submission was not durably reserved")
+            if pending.signature is not None:
+                return pending.signature
             signature_bytes = self._signer.sign(message)
             if not isinstance(signature_bytes, bytes) or len(signature_bytes) != 64:
                 raise HolderPolicyError("Signer did not return an Ed25519 signature")
-            signature = base64.b64encode(signature_bytes).decode("ascii")
-            session.pending = _PendingSubmission(
-                message=message,
-                signature=signature,
-                action=action,
-            )
-            return signature
+            pending.signature = base64.b64encode(signature_bytes).decode("ascii")
+            return pending.signature
 
     def commit_submission(self, *, session_id: str, presence: dict[str, Any]) -> None:
         """Advance only when returned Presence state matches the signed transition."""
@@ -916,6 +949,8 @@ class PresenceHolder:
             pending = session.pending
             if pending is None:
                 raise HolderPolicyError("Session has no pending submission")
+            if pending.signature is None:
+                raise HolderPolicyError("Session submission has not been signed")
             self._verify_presence_state_receipt(
                 issuer_keys=self._issuer_keys[session.issuer],
                 session_id=session_id,
@@ -973,7 +1008,13 @@ class PresenceHolder:
             session.completed = completed
             session.pending = None
 
-    def register_credential(self, *, issuer: str, attestation: dict[str, Any]) -> str:
+    def register_credential(
+        self,
+        *,
+        issuer: str,
+        attestation: dict[str, Any],
+        status_receipt: dict[str, Any],
+    ) -> str:
         """Register an issuer-verified credential matching a completed session."""
         normalized_issuer = _normalize_issuer(issuer)
         issuer_keys = self._issuer_keys.get(normalized_issuer)
@@ -985,7 +1026,12 @@ class PresenceHolder:
         issuer_key = issuer_keys.get(key_id) or issuer_keys.get("*")
         if issuer_key is None:
             raise HolderPolicyError("Credential issuer key is not trusted")
-        if not verify_mettle_attestation(attestation, issuer_key):
+        if not verify_mettle_credential_with_status(
+            attestation,
+            {key_id: issuer_key},
+            status_receipt,
+            allow_presence_envelope=True,
+        ):
             raise HolderPolicyError("Credential issuer signature or policy is invalid")
         metadata = attestation.get("metadata")
         if not isinstance(metadata, dict):
@@ -1054,6 +1100,29 @@ class PresenceHolder:
         expires_at: str,
     ) -> str:
         """Sign one bounded challenge for an issuer-verified registered credential."""
+        message = self.reserve_presentation(
+            challenge_id=challenge_id,
+            nonce=nonce,
+            audience=audience,
+            credential_jti=credential_jti,
+            expires_at=expires_at,
+        )
+        return self.sign_reserved_presentation(
+            challenge_id=challenge_id,
+            credential_jti=credential_jti,
+            message=message,
+        )
+
+    def reserve_presentation(
+        self,
+        *,
+        challenge_id: str,
+        nonce: str,
+        audience: str,
+        credential_jti: str,
+        expires_at: str,
+    ) -> bytes:
+        """Reserve one exact credential presentation before external signing."""
         challenge_id = _bounded_text(challenge_id, "challenge_id")
         nonce = _nonce(nonce)
         audience = _bounded_text(audience, "audience")
@@ -1089,7 +1158,7 @@ class PresenceHolder:
             previous = self._presentation_ids.get(challenge_id)
             if previous is not None:
                 if previous[0] == message:
-                    return previous[1]
+                    return message
                 raise HolderPolicyError(
                     "Presentation challenge ID was reused inconsistently"
                 )
@@ -1100,6 +1169,36 @@ class PresenceHolder:
                 raise HolderPolicyError("Credential presentation budget is exhausted")
             if len(self._presentation_ids) >= self._policy.max_presentation_records:
                 raise HolderPolicyError("Presentation record budget is exhausted")
+            credential.presentations[challenge_id] = (message, None)
+            self._presentation_ids[challenge_id] = (message, None)
+            return message
+
+    def sign_reserved_presentation(
+        self,
+        *,
+        challenge_id: str,
+        credential_jti: str,
+        message: bytes,
+    ) -> str:
+        """Sign only an already-reserved exact presentation."""
+        challenge_id = _bounded_text(challenge_id, "challenge_id")
+        credential_jti = _bounded_text(credential_jti, "credential_jti")
+        if not isinstance(message, bytes):
+            raise HolderPolicyError("Reserved presentation message is invalid")
+        with self._lock:
+            credential = self._credentials.get(credential_jti)
+            reserved = self._presentation_ids.get(challenge_id)
+            if credential is None or reserved is None:
+                raise HolderPolicyError("Presentation was not durably reserved")
+            credential_reserved = credential.presentations.get(challenge_id)
+            if (
+                credential_reserved is None
+                or reserved[0] != message
+                or credential_reserved[0] != message
+            ):
+                raise HolderPolicyError("Presentation was not durably reserved")
+            if reserved[1] is not None:
+                return reserved[1]
             signature_bytes = self._signer.sign(message)
             if not isinstance(signature_bytes, bytes) or len(signature_bytes) != 64:
                 raise HolderPolicyError("Signer did not return an Ed25519 signature")
@@ -1208,7 +1307,7 @@ class PresenceHolder:
 
         sessions: dict[str, _Session] = {}
         credentials: dict[str, _Credential] = {}
-        presentation_ids: dict[str, tuple[bytes, str]] = {}
+        presentation_ids: dict[str, tuple[bytes, str | None]] = {}
         for raw in raw_sessions:
             if not isinstance(raw, dict):
                 raise HolderPolicyError("Holder session state is invalid")
@@ -1270,13 +1369,18 @@ class PresenceHolder:
                 pending_message = _state_bytes(
                     raw_pending.get("message"), "pending message"
                 )
-                pending_signature = _bounded_text(
-                    raw_pending.get("signature"), "pending signature", maximum=128
-                )
-                if not verify_signature(
-                    self._public_key_pem, pending_message, pending_signature
-                ):
-                    raise HolderPolicyError("Pending holder signature is invalid")
+                pending_signature_value = raw_pending.get("signature")
+                pending_signature = None
+                if pending_signature_value is not None:
+                    pending_signature = _bounded_text(
+                        pending_signature_value,
+                        "pending signature",
+                        maximum=128,
+                    )
+                    if not verify_signature(
+                        self._public_key_pem, pending_message, pending_signature
+                    ):
+                        raise HolderPolicyError("Pending holder signature is invalid")
                 try:
                     pending_payload = json.loads(pending_message)
                     if (
@@ -1354,7 +1458,7 @@ class PresenceHolder:
                 > self._policy.max_presentations_per_credential
             ):
                 raise HolderPolicyError("Holder presentation state is invalid")
-            presentations: dict[str, tuple[bytes, str]] = {}
+            presentations: dict[str, tuple[bytes, str | None]] = {}
             for raw_presentation in raw_presentations:
                 if not isinstance(raw_presentation, dict):
                     raise HolderPolicyError("Holder presentation state is invalid")
@@ -1366,13 +1470,18 @@ class PresenceHolder:
                 message = _state_bytes(
                     raw_presentation.get("message"), "presentation message"
                 )
-                signature = _bounded_text(
-                    raw_presentation.get("signature"),
-                    "presentation signature",
-                    maximum=128,
-                )
-                if not verify_signature(self._public_key_pem, message, signature):
-                    raise HolderPolicyError("Holder presentation signature is invalid")
+                signature_value = raw_presentation.get("signature")
+                signature = None
+                if signature_value is not None:
+                    signature = _bounded_text(
+                        signature_value,
+                        "presentation signature",
+                        maximum=128,
+                    )
+                    if not verify_signature(self._public_key_pem, message, signature):
+                        raise HolderPolicyError(
+                            "Holder presentation signature is invalid"
+                        )
                 try:
                     presentation_payload = json.loads(message)
                     if (

@@ -22,13 +22,13 @@ This preserves the reverse-CAPTCHA product while closing credential confusion, s
 
 ## Other Remediated Boundaries
 
-The preceding remediation also established complete challenge-set enforcement, authoritative timing, independent session bearer tokens, bounded payloads and in-memory capacity, fail-closed persistence behavior, atomic Redis transitions and quota reservation, answer separation, feedback non-disclosure, LLM role separation and bounded scores, webhook destination controls, admin-key header authentication, stable historical badge identifiers, full-envelope historical signature binding, operator commitment binding, and regression coverage for those controls.
+The preceding remediation also established complete challenge-set enforcement, authoritative timing, independent session bearer tokens, bounded payloads and in-memory capacity, fail-closed persistence behavior, atomic Redis transitions and quota reservation, answer separation, feedback non-disclosure, LLM role separation and bounded scores, webhook destination controls, admin-key header authentication, stable historical badge identifiers, full-envelope historical signature binding, and regression coverage for those controls. It previously attempted to bind a one-step operator commitment; the 2026-08-14 remediation retired that field because a self-supplied signature could not establish the claimed operator identity or contact.
 
 ## Final Engineering Closure
 
 The follow-up engineering pass also closed these operational issues:
 
-* badge verification now accepts credentials through `POST /api/badge/verify`, keeping bearer tokens out of request URLs; the URL-token endpoint is deprecated and retained only for migration compatibility;
+* badge verification now accepts credentials through `POST /api/badge/verify`, keeping bearer tokens out of request URLs; the transitional URL-token endpoint described by this July record was removed on 2026-08-14;
 * dependency floors were raised above the audited vulnerable releases, including the FastAPI and Starlette stack, cryptography, PyJWT, IDNA, Click, and python-dotenv;
 * the current Python environment and declared requirement sets pass `pip-audit` with no known vulnerabilities;
 * committed local transcript backups were removed from the product tree and added to `.gitignore` after secret scanning found credential-shaped material in them;
@@ -43,6 +43,6 @@ These are residual limitations of a probabilistic gate:
 1. Behavioral heuristics can be imitated, reverse engineered, relayed, or solved by unintended respondents.
 2. LLM semantic judgment remains probabilistic and prompt-injection-sensitive.
 3. VCP governance claims are self-asserted unless an external provenance system verifies them.
-4. An operator signature proves that a key holder signed a commitment, not that an agent has a particular identity or runtime state.
+4. METTLE does not accept an operator commitment or authenticate an operator identity or contact. Operator evidence requires an external provenance system outside this protocol.
 
 The credential therefore asserts a bounded fact: a METTLE session passed at the stated tier, under the stated policy, at the stated time. Relying services decide what access that result permits and should add controls proportionate to the value behind the gate.

@@ -1,6 +1,6 @@
 # METTLE Explainer Video Pipeline
 
-Builds `static/mettle-explainer.mp4` (3:38, 1080p30) plus `mettle-explainer.vtt`
+Builds `static/mettle-explainer.mp4` (4:09, 1080p30) plus `mettle-explainer.vtt`
 captions and `mettle-explainer-poster.webp`.
 
 The SaferAgenticAI and Psychopathia explainers used the same recipe (Gemini

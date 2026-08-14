@@ -114,15 +114,11 @@ class TestCollusionEndpoints:
     """Tests for collusion detection API endpoints."""
 
     def test_get_collusion_stats_unauthenticated(self, client):
-        """Test GET /api/security/collusion without admin key returns limited info."""
+        """Operational collusion state requires administrator authentication."""
         response = client.get("/api/security/collusion")
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "stats" in data
-        # Thresholds should NOT be exposed without admin key (security)
-        assert "thresholds" not in data
-        assert "message" in data
+        assert response.status_code == 401
+        assert "stats" not in response.json()
 
     def test_get_collusion_stats_authenticated(self, client):
         """Test GET /api/security/collusion with admin key returns full info."""
@@ -225,9 +221,12 @@ class TestFingerprintEndpoint:
 
     def test_fingerprint_endpoint(self, client):
         """Test POST /api/security/fingerprint."""
+        api_key = "mtl_fingerprint-test-key-123456"  # pragma: allowlist secret
+        RateTier.register_key(api_key, "pro", "fingerprint-test")
         response = client.post(
             "/api/security/fingerprint",
             json={"responses": ["I'd be happy to help.", "I cannot do that."]},
+            headers={"X-API-Key": api_key},
         )
 
         assert response.status_code == 200

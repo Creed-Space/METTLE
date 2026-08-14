@@ -1,70 +1,9 @@
 """Security regressions for governance and operator attestations."""
 
-import base64
 import hashlib
-import json
 from unittest.mock import patch
 
-import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-from pydantic import ValidationError
-
-from mettle.api_models import CreateSessionRequest, OperatorCommitment
-from mettle.router import _build_governance_attestation, _build_operator_attestation
-
-
-def _signed_commitment(entity_id: str = "agent-1") -> dict[str, str]:
-    private_key = Ed25519PrivateKey.generate()
-    public_pem = (
-        private_key.public_key()
-        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
-        .decode()
-    )
-    commitment = {
-        "operator_pseudonym": "operator-1",
-        "operator_public_key": public_pem,
-        "contact_method": "email_hash",
-        "contact_hash": "a" * 64,
-    }
-    payload = json.dumps(
-        {
-            **commitment,
-            "entity_id": entity_id,
-            "version": 1,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode()
-    commitment["signed_commitment"] = base64.b64encode(
-        private_key.sign(payload)
-    ).decode()
-    return commitment
-
-
-def test_operator_signature_binds_all_returned_identity_fields() -> None:
-    commitment = _signed_commitment()
-
-    attestation = _build_operator_attestation(commitment, "agent-1")
-
-    assert attestation is not None
-    assert attestation.operator_pseudonym == "operator-1"
-    assert attestation.contact_hash == "a" * 64
-
-
-def test_operator_field_tampering_invalidates_signature() -> None:
-    commitment = _signed_commitment()
-    commitment["operator_pseudonym"] = "attacker-controlled"
-
-    assert _build_operator_attestation(commitment, "agent-1") is None
-
-
-def test_operator_commitment_requires_non_null_subject() -> None:
-    commitment = OperatorCommitment(**_signed_commitment())
-
-    with pytest.raises(ValidationError, match="entity_id is required"):
-        CreateSessionRequest(operator_commitment=commitment)
-    assert _build_operator_attestation(commitment.model_dump(), None) is None
+from mettle.router import _build_governance_attestation
 
 
 def test_unverified_vcp_is_not_countersigned_or_used_as_operational_proof(

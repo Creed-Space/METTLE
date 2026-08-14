@@ -2,7 +2,7 @@
 
 <!-- wiki:type = system -->
 <!-- wiki:scope = mettle -->
-<!-- wiki:updated = 2026-08-12 -->
+<!-- wiki:updated = 2026-08-14 -->
 <!-- wiki:status = active -->
 
 ## MCP Surface
@@ -35,4 +35,4 @@ Result language reports bounded behavioral evidence. It does not certify conscio
 
 ## Provenance
 
-Sources last checked on 2026-08-12: `mettle/mcp_server.py`, `mettle/_http.py`, `main.py`, `mettle/router.py`, `mettle/session_manager.py`, and `mettle/vcp.py`.
+Sources last checked on 2026-08-14: `mettle/mcp_server.py`, `mettle/_http.py`, `main.py`, `mettle/router.py`, `mettle/session_manager.py`, and `mettle/vcp.py`.

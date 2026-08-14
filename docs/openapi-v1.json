@@ -268,8 +268,15 @@
         "type": "string"
       },
       "CreateSessionRequest": {
+        "additionalProperties": false,
         "description": "Request to start a METTLE verification session.",
         "properties": {
+          "allow_third_party_llm": {
+            "default": false,
+            "description": "Explicitly acknowledge that llm-dynamic candidate responses are sent to Anthropic for evaluation during this session",
+            "title": "Allow Third Party Llm",
+            "type": "boolean"
+          },
           "difficulty": {
             "default": "standard",
             "enum": [
@@ -292,17 +299,6 @@
             ],
             "description": "Optional entity identifier",
             "title": "Entity Id"
-          },
-          "operator_commitment": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OperatorCommitment"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Optional signed operator statement; does not create a trust tier"
           },
           "presence": {
             "anyOf": [
@@ -399,6 +395,81 @@
           "time_budget_ms"
         ],
         "title": "CreateSessionResponse",
+        "type": "object"
+      },
+      "CredentialStatusRequest": {
+        "additionalProperties": false,
+        "description": "Request a fresh issuer-authenticated revocation status receipt.",
+        "properties": {
+          "credential_jti": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Credential Jti",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_jti"
+        ],
+        "title": "CredentialStatusRequest",
+        "type": "object"
+      },
+      "CredentialStatusResponse": {
+        "description": "Short-lived signed status for portable credential acceptance.",
+        "properties": {
+          "auditor": {
+            "const": "mettle.creed.space",
+            "title": "Auditor",
+            "type": "string"
+          },
+          "auditor_key_id": {
+            "title": "Auditor Key Id",
+            "type": "string"
+          },
+          "credential_jti": {
+            "title": "Credential Jti",
+            "type": "string"
+          },
+          "expires_at": {
+            "maxLength": 64,
+            "minLength": 20,
+            "title": "Expires At",
+            "type": "string"
+          },
+          "observed_at": {
+            "maxLength": 64,
+            "minLength": 20,
+            "title": "Observed At",
+            "type": "string"
+          },
+          "protocol": {
+            "const": "mettle-credential-status-v1",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "signature": {
+            "title": "Signature",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "good",
+              "revoked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol",
+          "auditor",
+          "auditor_key_id",
+          "credential_jti",
+          "status",
+          "observed_at",
+          "expires_at",
+          "signature"
+        ],
+        "title": "CredentialStatusResponse",
         "type": "object"
       },
       "Difficulty": {
@@ -660,101 +731,6 @@
           "results"
         ],
         "title": "MettleResult",
-        "type": "object"
-      },
-      "OperatorAttestation": {
-        "description": "Cryptographic link from agent to operator.\n\nEven pseudonymous operators provide a verifiable accountability chain.\nThe contact_hash allows platforms to verify contact info exists without\nrevealing it publicly. If the agent causes harm, the platform can request\nthe operator reveal themselves by providing the preimage.",
-        "properties": {
-          "commitment_timestamp": {
-            "description": "When commitment was signed",
-            "format": "date-time",
-            "title": "Commitment Timestamp",
-            "type": "string"
-          },
-          "contact_hash": {
-            "description": "SHA-256 of actual contact info (verifiable without revealing)",
-            "title": "Contact Hash",
-            "type": "string"
-          },
-          "contact_method": {
-            "description": "Contact method type: email_hash, platform_handle, legal_entity",
-            "title": "Contact Method",
-            "type": "string"
-          },
-          "operator_pseudonym": {
-            "description": "Operator identifier (can be pseudonymous)",
-            "title": "Operator Pseudonym",
-            "type": "string"
-          },
-          "operator_public_key": {
-            "description": "Ed25519 public key (PEM format)",
-            "title": "Operator Public Key",
-            "type": "string"
-          },
-          "operator_signed_commitment": {
-            "description": "Operator signs: 'I accept accountability for agent {entity_id}'",
-            "title": "Operator Signed Commitment",
-            "type": "string"
-          }
-        },
-        "required": [
-          "operator_pseudonym",
-          "operator_public_key",
-          "operator_signed_commitment",
-          "commitment_timestamp",
-          "contact_method",
-          "contact_hash"
-        ],
-        "title": "OperatorAttestation",
-        "type": "object"
-      },
-      "OperatorCommitment": {
-        "description": "Operator accountability commitment submitted with session creation.\n\nThe operator signs a commitment accepting accountability for the agent.\nEd25519 signature is verified server-side before attestation is issued.",
-        "properties": {
-          "contact_hash": {
-            "description": "SHA-256 of actual contact info (verifiable without revealing)",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Contact Hash",
-            "type": "string"
-          },
-          "contact_method": {
-            "description": "Contact method type: email_hash, platform_handle, legal_entity",
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Contact Method",
-            "type": "string"
-          },
-          "operator_pseudonym": {
-            "description": "Operator identifier (can be pseudonymous)",
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Operator Pseudonym",
-            "type": "string"
-          },
-          "operator_public_key": {
-            "description": "Ed25519 public key (PEM format)",
-            "maxLength": 8192,
-            "minLength": 1,
-            "title": "Operator Public Key",
-            "type": "string"
-          },
-          "signed_commitment": {
-            "description": "Base64 Ed25519 signature over the canonical version-1 operator commitment JSON",
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Signed Commitment",
-            "type": "string"
-          }
-        },
-        "required": [
-          "operator_pseudonym",
-          "operator_public_key",
-          "signed_commitment",
-          "contact_method",
-          "contact_hash"
-        ],
-        "title": "OperatorCommitment",
         "type": "object"
       },
       "PresenceProof": {
@@ -1343,6 +1319,14 @@
             "title": "Credential Eligible",
             "type": "boolean"
           },
+          "credential_suites_passed": {
+            "description": "Passed suites backed by tier-eligible server evidence",
+            "items": {
+              "type": "string"
+            },
+            "title": "Credential Suites Passed",
+            "type": "array"
+          },
           "elapsed_ms": {
             "title": "Elapsed Ms",
             "type": "integer"
@@ -1370,17 +1354,6 @@
             ],
             "description": "Only for sessions including Suite 10",
             "title": "Iteration Curve"
-          },
-          "operator_attestation": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OperatorAttestation"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Operator accountability chain (cryptographic link agent -> operator)"
           },
           "overall_passed": {
             "title": "Overall Passed",
@@ -1415,6 +1388,14 @@
               "type": "string"
             },
             "title": "Suites Completed",
+            "type": "array"
+          },
+          "supplemental_suites_passed": {
+            "description": "Passed observational suites that cannot raise a tier",
+            "items": {
+              "type": "string"
+            },
+            "title": "Supplemental Suites Passed",
             "type": "array"
           },
           "tier": {
@@ -1741,13 +1722,6 @@
       },
       "ValidationError": {
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
           "loc": {
             "items": {
               "anyOf": [
@@ -1972,7 +1946,7 @@
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     },
     "title": "METTLE",
-    "version": "0.3.2"
+    "version": "0.4.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2101,50 +2075,6 @@
           }
         },
         "summary": "Verify Badge",
-        "tags": [
-          "Badge"
-        ]
-      }
-    },
-    "/api/badge/verify/{token}": {
-      "get": {
-        "deprecated": true,
-        "description": "Deprecated compatibility endpoint. Tokens in URLs may be retained in logs or browser history; use POST /api/badge/verify instead.",
-        "operationId": "verify_badge_legacy_api_badge_verify__token__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "token",
-            "required": true,
-            "schema": {
-              "title": "Token",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadgeVerifyResponse"
-                }
-              }
-            },
-            "description": "Badge verification result"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Verify Badge (Legacy URL Form)",
         "tags": [
           "Badge"
         ]
@@ -2298,6 +2228,48 @@
           }
         },
         "summary": "Get Vcp Keys",
+        "tags": [
+          "mettle"
+        ]
+      }
+    },
+    "/api/mettle/credentials/status": {
+      "post": {
+        "description": "Return a short-lived signed good or revoked status receipt.",
+        "operationId": "get_credential_status_api_mettle_credentials_status_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get authenticated credential status",
         "tags": [
           "mettle"
         ]

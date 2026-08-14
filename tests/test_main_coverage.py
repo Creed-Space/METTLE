@@ -353,6 +353,14 @@ class TestStableBadgeIssuance:
 class TestBadgeVerification:
     """Tests for the badge verification endpoints."""
 
+    def test_legacy_url_token_route_is_absent(self, client):
+        """Replayable credentials cannot be supplied in a request URL."""
+        token = _make_badge_token()
+
+        response = client.get(f"/api/badge/verify/{token}")
+
+        assert response.status_code == 404
+
     def test_post_valid_badge_keeps_token_out_of_url(self, client):
         """The primary endpoint accepts credentials in the request body."""
         token = _make_badge_token()
@@ -371,9 +379,9 @@ class TestBadgeVerification:
         assert response.status_code == 422
 
     def test_valid_badge_returns_valid_true(self, client):
-        """The deprecated URL form remains compatible during migration."""
+        """The body-only credential verifier accepts a valid badge."""
         token = _make_badge_token()
-        response = client.get(f"/api/badge/verify/{token}")
+        response = client.post("/api/badge/verify", json={"token": token})
 
         assert response.status_code == 200
         data = response.json()
@@ -387,7 +395,7 @@ class TestBadgeVerification:
         token = _make_badge_token(jti="revoked-jti")
         revoked_badges["revoked-jti"] = time.time()
 
-        response = client.get(f"/api/badge/verify/{token}")
+        response = client.post("/api/badge/verify", json={"token": token})
 
         assert response.status_code == 200
         data = response.json()
@@ -401,7 +409,7 @@ class TestBadgeVerification:
         mock_db.is_badge_revoked.return_value = True
 
         with patch("main.db", mock_db):
-            response = client.get(f"/api/badge/verify/{token}")
+            response = client.post("/api/badge/verify", json={"token": token})
 
         assert response.json()["revoked"] is True
         mock_db.is_badge_revoked.assert_called_once_with(
@@ -414,7 +422,7 @@ class TestBadgeVerification:
         mock_db.is_badge_revoked.side_effect = RuntimeError("database unavailable")
 
         with patch("main.db", mock_db):
-            response = client.get(f"/api/badge/verify/{token}")
+            response = client.post("/api/badge/verify", json={"token": token})
 
         data = response.json()
         assert data["valid"] is False
@@ -424,7 +432,7 @@ class TestBadgeVerification:
         """Expired JWT should return valid=False with 'expired' error."""
         token = _make_badge_token(expired=True)
 
-        response = client.get(f"/api/badge/verify/{token}")
+        response = client.post("/api/badge/verify", json={"token": token})
 
         assert response.status_code == 200
         data = response.json()
@@ -433,7 +441,9 @@ class TestBadgeVerification:
 
     def test_invalid_token_returns_invalid(self, client):
         """Garbage token should return valid=False with 'Invalid' error."""
-        response = client.get("/api/badge/verify/not-a-real-jwt-token")
+        response = client.post(
+            "/api/badge/verify", json={"token": "not-a-real-jwt-token"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -444,7 +454,7 @@ class TestBadgeVerification:
         """Token signed with wrong secret should fail verification."""
         token = _make_badge_token(secret="wrong-secret-key-that-is-at-least-32-bytes")
 
-        response = client.get(f"/api/badge/verify/{token}")
+        response = client.post("/api/badge/verify", json={"token": token})
 
         assert response.status_code == 200
         data = response.json()
@@ -455,7 +465,7 @@ class TestBadgeVerification:
         with patch("main.settings") as mock_settings:
             mock_settings.secret_key = None
             mock_settings.admin_api_key = ADMIN_KEY
-            response = client.get("/api/badge/verify/any-token")
+            response = client.post("/api/badge/verify", json={"token": "any-token"})
 
         assert response.status_code == 200
         data = response.json()
@@ -635,6 +645,7 @@ class TestBadgeRevocationFull:
             mock_settings.secret_key = None
             mock_settings.admin_api_key = ADMIN_KEY
             mock_settings.is_production = False
+            mock_settings.redis_url = None
 
             response = client.post(
                 "/api/badge/revoke",
@@ -785,6 +796,36 @@ class TestWebhookDelivery:
         assert result is True
         captured_payload = mock_client.stream.call_args.kwargs["json"]
         assert "signature" in captured_payload
+
+    @pytest.mark.asyncio
+    async def test_delivery_logs_never_include_callback_path_or_query_secrets(self):
+        """Callback bearer material remains outside structured application logs."""
+        path_secret = "path-bearer-secret"  # pragma: allowlist secret
+        query_secret = "query-bearer-secret"  # pragma: allowlist secret
+        WebhookManager.register(
+            "entity-1",
+            f"https://example.com/hooks/{path_secret}?token={query_secret}",
+        )
+
+        with (
+            patch("httpx.AsyncClient") as mock_client_cls,
+            patch("main.logger") as mock_logger,
+        ):
+            mock_client = MagicMock()
+            mock_client.stream.return_value = self._stream_context()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            with patch("socket.getaddrinfo", return_value=_addrinfo()):
+                assert await WebhookManager.send_webhook(
+                    "entity-1", "session.completed", {}
+                )
+
+        serialized_logs = repr(mock_logger.method_calls)
+        assert path_secret not in serialized_logs
+        assert query_secret not in serialized_logs
+        assert "webhook_id" in serialized_logs
 
     @pytest.mark.asyncio
     async def test_redirect_is_not_followed_or_counted_as_success(self):
@@ -1016,6 +1057,27 @@ class TestAdminAuthRateLimiting:
         record_admin_auth_failure("99.99.99.99")
         assert "99.99.99.99" in _admin_auth_failures
 
+    @pytest.mark.asyncio
+    async def test_configured_admin_failure_state_is_shared_in_redis(self, monkeypatch):
+        ip_address = "203.0.113.42"
+        redis = AsyncMock()
+        redis.eval.return_value = [6, time.time()]
+        request = MagicMock()
+        request.app.state.redis = redis
+        monkeypatch.setattr(main_module.settings, "redis_url", "rediss://shared")
+
+        allowed, retry_after = await main_module._check_admin_auth_rate_limit(
+            request, ip_address
+        )
+
+        assert allowed is False
+        assert retry_after > 0
+        assert ip_address not in repr(redis.eval.await_args)
+
+        redis.eval.return_value = 1
+        await main_module._record_admin_auth_failure(request, ip_address)
+        assert redis.eval.await_count == 2
+
 
 # =============================================================================
 # add_with_limit (lines 104-105)
@@ -1139,6 +1201,36 @@ class TestRateTierDailyUsage:
 
         assert allowed is False
         assert api_keys[key]["usage_count"] == 9990
+
+
+class TestPublicSessionQuota:
+    def test_anonymous_daily_quota_rejects_before_session_allocation(
+        self, client, monkeypatch
+    ):
+        redis = AsyncMock()
+        redis.eval.return_value = -1
+        monkeypatch.setattr(main_module.settings, "redis_url", "rediss://shared")
+        client.app.state.redis = redis
+
+        response = client.post("/api/session/start", json={"difficulty": "basic"})
+
+        assert response.status_code == 429
+        assert "Daily limit reached" in response.json()["detail"]
+        assert not sessions
+        assert redis.set.await_count == 0
+
+    def test_anonymous_daily_quota_allows_a_reserved_session(self, client, monkeypatch):
+        redis = AsyncMock()
+        redis.eval.return_value = 1
+        redis.set.return_value = True
+        monkeypatch.setattr(main_module.settings, "redis_url", "rediss://shared")
+        client.app.state.redis = redis
+
+        response = client.post("/api/session/start", json={"difficulty": "basic"})
+
+        assert response.status_code == 200
+        assert response.json()["session_id"].startswith("ses_")
+        assert redis.eval.await_count == 1
 
 
 # =============================================================================
@@ -1399,12 +1491,6 @@ class TestOperationalHealth:
         assert ready.json() == {
             "status": "ready",
             "source_revision": "unknown",
-            "components": {
-                "source_identity": "not-required",
-                "database": "ready",
-                "database_schema": "ready",
-                "redis": "ready",
-            },
         }
 
     def test_source_revision_prefers_explicit_override(self, monkeypatch):
@@ -1435,7 +1521,7 @@ class TestOperationalHealth:
 
         assert response.status_code == 503
         assert response.json()["source_revision"] == "unknown"
-        assert response.json()["components"]["source_identity"] == "unavailable"
+        assert "components" not in response.json()
 
     def test_health_and_cors_expose_deployed_source(self, client, monkeypatch):
         revision = "d" * 40
@@ -1460,7 +1546,9 @@ class TestOperationalHealth:
         response = client.get("/api/health/ready")
 
         assert response.status_code == 503
-        assert response.json()["components"]["database"] == "unavailable"
+        assert "components" not in response.json()
+        unavailable_database.check_health.assert_called_once_with()
+        unavailable_database.check_schema_current.assert_called_once_with()
 
     def test_database_schema_readiness_fails_closed(self, client, monkeypatch):
         import main
@@ -1474,8 +1562,9 @@ class TestOperationalHealth:
         response = client.get("/api/health/ready")
 
         assert response.status_code == 503
-        assert response.json()["components"]["database"] == "ready"
-        assert response.json()["components"]["database_schema"] == "unavailable"
+        assert "components" not in response.json()
+        stale_database.check_health.assert_called_once_with()
+        stale_database.check_schema_current.assert_called_once_with()
 
     def test_redis_readiness_fails_closed(self, client, monkeypatch):
         import main
@@ -1486,12 +1575,12 @@ class TestOperationalHealth:
         response = client.get("/api/health/ready")
 
         assert response.status_code == 503
-        assert response.json()["components"]["redis"] == "unavailable"
+        assert "components" not in response.json()
 
     def test_metrics_are_bounded_and_content_free(self, client):
         client.get("/api/health/live")
 
-        response = client.get("/api/metrics")
+        response = client.get("/api/metrics", headers=ADMIN_HEADERS)
         body = response.text
         assert response.status_code == 200
         assert response.headers["cache-control"] == "no-store"

@@ -227,9 +227,18 @@ class HolderWorkerClient(JsonLineWorker):
             "commit_submission", session_id=session_id, presence=presence
         )
 
-    def register_credential(self, *, issuer: str, attestation: dict[str, Any]) -> str:
+    def register_credential(
+        self,
+        *,
+        issuer: str,
+        attestation: dict[str, Any],
+        status_receipt: dict[str, Any],
+    ) -> str:
         response = self.request(
-            "register_credential", issuer=issuer, attestation=attestation
+            "register_credential",
+            issuer=issuer,
+            attestation=attestation,
+            status_receipt=status_receipt,
         )
         credential_jti = response.get("credential_jti")
         if not isinstance(credential_jti, str):

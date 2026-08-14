@@ -30,7 +30,9 @@
 * [ ] Two clean Linux builders and one clean macOS builder produce byte-identical
   wheel and source-distribution hashes for the exact source SHA.
 * [ ] The public PyPI wheel passes a clean seven-tool MCP handshake and omits
-  `mettle_auto_verify`; public hashes match reproducibility evidence.
+  `mettle_auto_verify`; exact public names and hashes match independent
+  source-built reproducibility evidence before any public wheel is installed or
+  executed in an OIDC-authorized job.
 * [ ] Official MCP Registry readback is active, latest, and points to the same
   PyPI version and package.
 * [ ] Hashed production lock installs cleanly.
@@ -47,7 +49,11 @@
 * [ ] Holder soak, bounded load, production CORS, trusted host, proxy identity,
   security headers, and post-deploy smoke pass.
 * [ ] The read-only Render drift receipt matches both bound production services
-  and includes no secret values.
+  plus every holder managed secret file, and includes no secret values, file
+  contents, or digests.
+* [ ] Render auto-deploy remains disabled, and the tag-gated release workflow
+  promotes the exact release SHA to the API and MCP services before attaching
+  a successful provider receipt to the GitHub release.
 * [ ] The public MCP handshake exposes exactly seven tools and does not expose
   `mettle_auto_verify`; no tool invocation is needed for this release check.
 * [ ] Rollback target and signing-key incident procedure are rehearsed.
@@ -64,7 +70,8 @@
 
 ## Release receipt
 
-Record tag, source SHA, deployed SHA, workflow URLs, artifact hashes, protocol
+Record tag, source SHA, deployed SHA, Render deploy IDs and rollback targets,
+workflow URLs, artifact hashes, protocol
 versions, key fingerprints, review receipts, rollback candidate, open gates, and
 release-authority identity in one append-only receipt.
 

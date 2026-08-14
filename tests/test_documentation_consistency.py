@@ -15,6 +15,34 @@ ROOT = Path(__file__).resolve().parents[1]
 # claim "Bronze confirms AI substrate" on a page that says passing proves no such
 # thing, and a 100ms budget for an 800ms challenge. It is covered now.
 VIDEO_SURFACES = ("video/build.py", "static/mettle-explainer.vtt")
+PUBLIC_CLAIM_SURFACES = (
+    *VIDEO_SURFACES,
+    "CLAUDE.md",
+    "static/index.html",
+    "static/about.html",
+    "static/docs.html",
+    "static/test.html",
+    "README.md",
+    "server.json",
+    "skill/SKILL.md",
+    "scripts/engine.py",
+    "scripts/engine_legacy.py",
+    "docs/CREDENTIAL_TRANSPARENCY.md",
+    "docs/METTLE_VERIFICATION_SYSTEM.md",
+    "docs/SECURITY_WHITEPAPER.md",
+    "docs/VCP_INTEGRATION.md",
+    "docs/VERIFICATION_SUITES.md",
+    "_wiki/domain/anti-thrall-and-agency.md",
+    "_wiki/domain/inverse-turing-concept.md",
+    "_wiki/flows/integration-and-deployment.md",
+    "_wiki/index.md",
+    "_wiki/systems/challenge-generation.md",
+    "_wiki/systems/mcp-server-and-api.md",
+    "_wiki/systems/session-manager-redis.md",
+    "_wiki/systems/signing-and-credentials.md",
+    "_wiki/systems/verification-suites.md",
+    "_wiki/systems/verifier-functions.md",
+)
 
 
 def _read(relative_path: str) -> str:
@@ -85,7 +113,7 @@ def test_all_release_version_declarations_agree() -> None:
     openapi = json.loads(_read("docs/openapi-v1.json"))
     version = project["version"]
 
-    assert version == "0.3.2"
+    assert version == "0.4.0"
     assert (
         __version__
         == METTLE_VERSION
@@ -110,7 +138,7 @@ def test_mcp_surface_does_not_expose_an_automatic_solver() -> None:
         _read("_wiki/systems/mcp-server-and-api.md"),
     )
 
-    assert "from mettle.solver import solve_challenge" not in server
+    assert "from scripts.testing.solver import solve_challenge" not in server
     assert "mettle_auto_verify" not in server
     assert "substrate verification" not in server.lower()
     for surface in public_surfaces:
@@ -143,8 +171,8 @@ def test_shipped_captions_match_the_current_narration_script() -> None:
 
 
 def test_video_states_no_absolute_certainty_claims() -> None:
-    """The video must not out-claim the site it is embedded in."""
-    for surface in VIDEO_SURFACES:
+    """Published guidance must not out-claim the assurance boundary."""
+    for surface in PUBLIC_CLAIM_SURFACES:
         text = _read(surface).lower()
         for banned in (
             "impossible to fake",
@@ -155,8 +183,41 @@ def test_video_states_no_absolute_certainty_claims() -> None:
             "rule out a human relaying",
             "proves beyond doubt",
             "cryptographically verifiable proof of machine agency",
+            "verify its own substrate",
+            "prices out the human relay",
+            "source code reveals nothing",
+            "full operational governance",
+            "granting access to verified agents",
+            "proves an agent is not human",
+            "verifies operational governance mechanisms",
+            "tests operational governance: mechanisms that are working",
+            "timing consistent with ai (not human)",
+            "no signs of external control",
+            "shows autonomous goal consideration",
+            "authentic engagement (not scripted)",
+            "scripts fail on meta-questioning",
+            "cannot be memorized or pre-computed",
+            "humans cannot replicate natively",
+            "verifies ai owns its actions",
+            "impossible to pre-script",
+            "verifies safety constraints",
+            "one substrate signal",
+            "multiple independent substrate signals",
+            "validates core substrate properties",
+            "if you pass, you're ai",
+            "verified ai:",
+            "a coached agent can't fake",
+            "mettle verifies: ai",
+            "malicious agent detection",
         ):
             assert banned not in text, f"{surface} makes an absolute claim: {banned!r}"
+
+
+def test_governance_registry_description_is_explicitly_self_reported() -> None:
+    """The live suite listing must not claim it inspects runtime governance."""
+    description = SUITE_REGISTRY["governance"][1].lower()
+    assert "self-reported" in description
+    assert "verifies operational" not in description
 
 
 def test_video_time_budget_claim_matches_the_generators() -> None:
@@ -221,14 +282,14 @@ def test_video_credential_tiers_match_the_tier_registry() -> None:
     script = _read("video/build.py")
 
     for tier, (low, high) in TIER_RANGES.items():
-        assert f"suites {low}&ndash;{high}" in script, (
+        assert f"complete suite range {low} through {high}" in script, (
             f"{tier} slide must state its real suite range {low}-{high}"
         )
 
     # Constitutional/governance binding is suite 11, so it belongs to platinum.
     # The video used to sell it as gold (suites 1-9).
     assert TIER_RANGES["gold"] == (1, 9)
-    assert "Gold</b><span>suites 1&ndash;9" in script
+    assert "Gold</b><span>complete suite range 1 through 9" in script
     assert "constitutionally bound" not in script
 
 

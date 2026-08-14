@@ -57,6 +57,50 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _validate_distribution_evidence(dist: Path, source_sha: str) -> None:
+    """Rebind the final wheel and sdist to every earlier release receipt."""
+    reproducibility_path = dist / "DISTRIBUTION-REPRODUCIBILITY.json"
+    release_receipt_path = dist / "DISTRIBUTION-RELEASE-RECEIPT.json"
+    present = {
+        path.name
+        for path in (reproducibility_path, release_receipt_path)
+        if path.exists()
+    }
+    if not present:
+        return
+    if present != {reproducibility_path.name, release_receipt_path.name}:
+        raise ValueError("final release bundle has incomplete distribution evidence")
+
+    reproducibility = json.loads(reproducibility_path.read_text(encoding="utf-8"))
+    release_receipt = json.loads(release_receipt_path.read_text(encoding="utf-8"))
+    if (
+        reproducibility.get("source_sha") != source_sha
+        or release_receipt.get("source_sha") != source_sha
+        or release_receipt.get("reproducibility", {}).get("source_sha") != source_sha
+    ):
+        raise ValueError("distribution evidence does not bind the final source SHA")
+
+    reproducible_hashes = {
+        item["name"]: item["sha256"]
+        for item in reproducibility.get("artifacts", [])
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    public_hashes = {
+        item["filename"]: item["sha256"]
+        for item in release_receipt.get("pypi", {}).get("artifacts", [])
+        if isinstance(item, dict) and isinstance(item.get("filename"), str)
+    }
+    if len(reproducible_hashes) != 2 or public_hashes != reproducible_hashes:
+        raise ValueError("distribution receipts do not agree on exact artifacts")
+    final_hashes = {
+        name: sha256(dist / name)
+        for name in reproducible_hashes
+        if (dist / name).is_file()
+    }
+    if final_hashes != reproducible_hashes:
+        raise ValueError("final release distributions differ from reviewed receipts")
+
+
 def release_section(notes: str, version: str) -> tuple[str, dict[str, str]]:
     heading = re.compile(rf"^## \[{re.escape(version)}\]\s*$", re.MULTILINE)
     match = heading.search(notes)
@@ -95,6 +139,8 @@ def build_manifest(
         raise ValueError(f"tag {tag!r} does not match package version v{version}")
     if re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", source_sha) is None:
         raise ValueError("source SHA must be a full 40 or 64 character lowercase hash")
+
+    _validate_distribution_evidence(dist, source_sha)
 
     notes_text = notes_path.read_text(encoding="utf-8")
     rendered_notes, sections = release_section(notes_text, version)

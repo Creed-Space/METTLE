@@ -34,7 +34,7 @@ from mettle.models import Difficulty
 from mettle.vcp import compute_tier
 from mettle.verifier import compute_mettle_result, verify_response
 
-METTLE_VERSION = "0.3.2"
+METTLE_VERSION = "0.4.0"
 # Suites without a deterministic single-pass CLI path (handled via hosted API).
 _LLM_SUITE = "llm-dynamic"
 
@@ -81,22 +81,26 @@ def build_credential(
     }
 
 
-def verify_credential(credential: dict[str, Any]) -> bool:
-    """Verify a historical self-signed credential.
+def verify_credential(
+    credential: dict[str, Any],
+    *,
+    trusted_keyring: dict[str, str] | None = None,
+    status_receipt: dict[str, Any] | None = None,
+) -> bool:
+    """Accept an issuer credential only against external trust and live status.
 
-    Current experimental receipts deliberately return ``False`` because they
-    carry no signature and are not trust credentials.
+    Claimant-supplied public keys are intentionally ignored. Local unsigned
+    receipts and historical self-signed envelopes are not trust credentials.
     """
-    from mettle.signing import verify_signature
-
-    cred = dict(credential)
-    public_pem = cred.pop("public_key_pem", None)
-    signature = cred.pop("signature", None)
-    if not public_pem or not signature:
+    if trusted_keyring is None or status_receipt is None:
         return False
-    if signature.startswith("ed25519:"):
-        signature = signature[len("ed25519:") :]
-    return verify_signature(public_pem, _canonical_bytes(cred), signature)
+    from mettle.vcp import verify_mettle_credential_with_status
+
+    return verify_mettle_credential_with_status(
+        credential,
+        trusted_keyring,
+        status_receipt,
+    )
 
 
 # === Quick verification (simple challenge set) ===

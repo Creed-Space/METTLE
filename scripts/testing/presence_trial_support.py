@@ -26,7 +26,7 @@ from mettle.presence import (
     presentation_signing_bytes,
     submission_signing_bytes,
 )
-from mettle.solver import solve_suite
+from scripts.testing.solver import solve_suite
 from mettle.vcp import verify_mettle_attestation
 
 BRONZE_SUITES = [

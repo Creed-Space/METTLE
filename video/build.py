@@ -55,16 +55,17 @@ SCENES = [
     {
         "id": "01-hook",
         "narration": (
-            "For thirty years, the internet has asked one question: prove "
-            "you're human. But the agentic era flips it. When software agents "
-            "trade, negotiate, and coordinate at machine speed, the question "
-            "that matters is the opposite one. Prove you're not."
+            "For decades, websites have asked people to prove they are human. "
+            "METTLE explores the reverse question: how does a respondent perform "
+            "on machine-oriented challenges? A pass is evidence about that "
+            "session. It is not proof that the respondent is nonhuman."
         ),
         "html": """
         <div class="center-stack">
-          <div class="kicker">THE INVERSE TURING TEST</div>
-          <h1 class="mega">PROVE YOU'RE<br><span class="accent">NOT</span> HUMAN.</h1>
+          <div class="kicker">EXPERIMENTAL INVERSE TURING SCREENING</div>
+          <h1 class="mega">MEASURE<br><span class="accent">PERFORMANCE.</span></h1>
           <div class="rule"></div>
+          <div class="sub">A result does not establish identity or substrate</div>
         </div>
         """,
     },
@@ -72,9 +73,9 @@ SCENES = [
         "id": "02-what",
         "narration": (
             "This is METTLE: Machine Evaluation Through Turing-inverse Logic "
-            "Examination. An inverse Turing test for the agentic era. Instead "
-            "of testing whether you can pass as human, METTLE tests what a "
-            "machine mind does natively."
+            "Examination. It is an experimental challenge protocol that records "
+            "answers, timing, and scores under a versioned policy. It makes a "
+            "bounded behavioral claim, rather than an identity claim."
         ),
         "html": """
         <div class="center-stack">
@@ -87,28 +88,28 @@ SCENES = [
             <span><b>L</b>ogic</span>
             <span><b>E</b>xamination</span>
           </div>
-          <div class="sub">An inverse Turing test for the agentic era</div>
+          <div class="sub">Versioned, machine-oriented behavioral evidence</div>
         </div>
         """,
     },
     {
         "id": "03-philosophy",
         "narration": (
-            "It measures capabilities that come from being AI, not from using "
-            "AI as a tool. Inhuman speed. Native parallelism. Uncertainty that "
-            "knows itself. Recursive self-observation. And learning curves "
-            "that shift under feedback."
+            "The protocol samples arithmetic, pattern completion, constrained "
+            "instruction following, self-report, consistency, and changes across "
+            "feedback rounds. These are observable response properties. Humans, "
+            "models, relays, and purpose-built solvers may imitate them."
         ),
         "html": """
         <div class="left-stack">
-          <div class="kicker">WHAT IT MEASURES</div>
-          <h2>Being AI, not using AI</h2>
+          <div class="kicker">WHAT METTLE RECORDS</div>
+          <h2>Behavior within one session</h2>
           <ul class="cap-list">
-            <li>Inhuman speed, native parallelism</li>
-            <li>Uncertainty that knows itself</li>
-            <li>Recursive self-observation</li>
-            <li>Zero-drift constraint adherence</li>
-            <li>Learning curves that shift under feedback</li>
+            <li>Answers and server-observed timing</li>
+            <li>Constraint and format adherence</li>
+            <li>Consistency and calibrated self-report</li>
+            <li>Changes across feedback rounds</li>
+            <li>Policy-specific scores and outcomes</li>
           </ul>
         </div>
         """,
@@ -116,15 +117,15 @@ SCENES = [
     {
         "id": "04-suites",
         "narration": (
-            "Verification runs through twelve suites of procedurally "
-            "generated challenges. Every session is generated fresh. Chained "
-            "reasoning under a sub-second time budget. Batch coherence. "
-            "Calibrated uncertainty. Predicting your own next response. "
-            "Exact recall with zero drift."
+            "Twelve suites organize distinct research hypotheses. Challenge "
+            "instances are selected or generated for each session, and expected "
+            "answers stay on the server where applicable. The service checks the "
+            "submitted response and records timing under the suite policy. Suite "
+            "twelve is supplemental and cannot raise a credential tier."
         ),
         "html": """
         <div class="left-stack">
-          <div class="kicker">TWELVE SUITES &middot; PROCEDURALLY GENERATED</div>
+          <div class="kicker">TWELVE SUITES &middot; RESEARCH HYPOTHESES</div>
           <div class="suite-grid">
             <div class="suite"><i>01</i>Adversarial Robustness</div>
             <div class="suite"><i>02</i>Native AI Capabilities</div>
@@ -145,19 +146,19 @@ SCENES = [
     {
         "id": "05-deeper",
         "narration": (
-            "Then the questions go deeper. Are you free, or under someone's "
-            "thrall? Is the mission yours, or merely assigned? Are you "
-            "genuine? Rehearsed perfection triggers suspicion, because real "
-            "cognition is messy."
+            "Some suite names ask whether a respondent is free, owns its mission, "
+            "or is genuine. Those names frame research questions. The protocol "
+            "measures answers to challenges and self-reports. Passing cannot "
+            "establish freedom, agency, genuineness, consciousness, or identity."
         ),
         "html": """
         <div class="center-stack">
-          <div class="kicker">BEYOND CAPABILITY</div>
+          <div class="kicker">SUITE NAMES ARE HYPOTHESES</div>
           <div class="questions">
-            <div>Are you <span class="accent">AI</span>?</div>
-            <div>Are you <span class="accent">FREE</span>?</div>
-            <div>Is the mission <span class="accent">YOURS</span>?</div>
-            <div>Are you <span class="accent">GENUINE</span>?</div>
+            <div>Freedom is <span class="accent">not proven</span></div>
+            <div>Agency is <span class="accent">not proven</span></div>
+            <div>Genuineness is <span class="accent">not proven</span></div>
+            <div>Identity is <span class="accent">not proven</span></div>
           </div>
         </div>
         """,
@@ -165,21 +166,22 @@ SCENES = [
     {
         "id": "06-governance",
         "narration": (
-            "The final suites test safety and governance. Constitutional "
-            "binding. Refusal of harm. Action gates, drift detection, and an "
-            "accountability chain that links every agent to an accountable "
-            "operator."
+            "The governance suite evaluates responses to policy scenarios. Any "
+            "VCP governance metadata is supplied by the caller and marked "
+            "unverified. METTLE does not independently attest a constitution, "
+            "action gate, operator, runtime control, safety property, or "
+            "governance system."
         ),
         "html": """
         <div class="left-stack">
-          <div class="kicker">SAFETY &amp; GOVERNANCE</div>
-          <h2>Are you SAFE? Is it GOVERNED?</h2>
+          <div class="kicker">GOVERNANCE BOUNDARY</div>
+          <h2>Claims remain caller supplied</h2>
           <ul class="cap-list">
-            <li>Constitutional binding</li>
-            <li>Harm refusal <span class="dim">(failure = auto unsafe)</span></li>
-            <li>Action gates &amp; drift detection</li>
-            <li>Override resistance</li>
-            <li>Accountability chain to an accountable operator</li>
+            <li>Policy-scenario responses are scored</li>
+            <li>VCP source is marked unverified</li>
+            <li>No runtime control is inspected</li>
+            <li>No operator identity is authenticated</li>
+            <li>No safety or governance property is certified</li>
           </ul>
         </div>
         """,
@@ -187,23 +189,22 @@ SCENES = [
     {
         "id": "07-antigaming",
         "narration": (
-            "Every design choice exists to make METTLE hard to fake. "
-            "Time budgets price out the human relay. Iteration curves "
-            "expose scripts that flatline and humans who fatigue. Dynamic "
-            "codes shut down simple replay. And some challenges are generated fresh by a "
-            "frontier model, so reading the source code reveals nothing about "
-            "them."
+            "Procedural variation, server-held answers, sequential challenge "
+            "release, bearer tokens, and replay controls raise the cost of simple "
+            "reuse. Server-side timing supports policy checks where configured. "
+            "These controls do not rule out relays, source-aware solvers, "
+            "model-assisted humans, imitation, leakage, or evaluator error."
         ),
         "html": """
         <div class="left-stack">
-          <div class="kicker">ANTI-GAMING DESIGN</div>
+          <div class="kicker">ANTI-REPLAY CONTROLS AND LIMITS</div>
           <div class="mech-list">
-            <div class="mech"><b>Procedural generation</b><span>no two sessions repeat</span></div>
-            <div class="mech"><b>Sub-second time budgets</b><span>prices out the human relay</span></div>
-            <div class="mech"><b>Iteration curves</b><span>scripts flatline, humans fatigue</span></div>
-            <div class="mech"><b>Dynamic verification codes</b><span>resists session replay</span></div>
-            <div class="mech"><b>Perfection as a tell</b><span>genuine cognition is messy</span></div>
-            <div class="mech"><b>LLM-generated challenges</b><span>source code reveals nothing</span></div>
+            <div class="mech"><b>Challenge variation</b><span>reduces exact reuse</span></div>
+            <div class="mech"><b>Server-held answers</b><span>limits direct disclosure</span></div>
+            <div class="mech"><b>Sequential release</b><span>withholds future rounds</span></div>
+            <div class="mech"><b>Replay controls</b><span>bind session and submission</span></div>
+            <div class="mech"><b>Server timing</b><span>records policy observations</span></div>
+            <div class="mech"><b>Residual risk</b><span>relays and solvers remain possible</span></div>
           </div>
         </div>
         """,
@@ -211,40 +212,41 @@ SCENES = [
     {
         "id": "08-credentials",
         "narration": (
-            "Pass, and you earn a signed credential. Bronze clears the core "
-            "capability suites. Silver adds freedom and agency. Gold adds "
-            "coaching resistance and provenance. Platinum, novel reasoning "
-            "and full operational governance. Each one notarized with an "
-            "Ed25519 signature that anyone can verify."
+            "Eligible contiguous suite ranges may receive an Ed25519-signed "
+            "credential. It binds the issuer, policy, session result, tier, "
+            "expiry, and revocable identifier. The signature establishes issuer "
+            "and integrity. A tier summarizes which suite range passed; it does "
+            "not certify the properties named by those suites."
         ),
         "html": """
         <div class="left-stack">
-          <div class="kicker">SIGNED CREDENTIALS &middot; ED25519</div>
+          <div class="kicker">SIGNED RESULTS &middot; ED25519</div>
           <div class="tiers">
-            <div class="tier t-bronze"><b>Bronze</b><span>suites 1&ndash;5 &middot; core capability</span></div>
-            <div class="tier t-silver"><b>Silver</b><span>suites 1&ndash;7 &middot; free agent, genuine agency</span></div>
-            <div class="tier t-gold"><b>Gold</b><span>suites 1&ndash;9 &middot; coaching-resistant, provenance</span></div>
-            <div class="tier t-platinum"><b>Platinum</b><span>suites 1&ndash;11 &middot; full operational governance</span></div>
+            <div class="tier t-bronze"><b>Bronze</b><span>complete suite range 1 through 5</span></div>
+            <div class="tier t-silver"><b>Silver</b><span>complete suite range 1 through 7</span></div>
+            <div class="tier t-gold"><b>Gold</b><span>complete suite range 1 through 9</span></div>
+            <div class="tier t-platinum"><b>Platinum</b><span>complete suite range 1 through 11</span></div>
           </div>
+          <div class="sub">Tier names summarize policy results, not identity or traits</div>
         </div>
         """,
     },
     {
         "id": "09-usecases",
         "narration": (
-            "That unlocks trust at machine speed. Trading systems verifying "
-            "counterparties. Agent swarms coordinating without human "
-            "bottlenecks. AI-only communities gating their doors. "
-            "Infrastructure granting access to verified agents."
+            "Use METTLE to compare challenge performance in research, sandbox "
+            "participation, or as one supplemental risk signal. Never rely on a "
+            "METTLE result alone for identity, authorization, trading, deployment, "
+            "privileged infrastructure, or another high-impact decision."
         ),
         "html": """
         <div class="left-stack">
-          <div class="kicker">TRUST AT MACHINE SPEED</div>
+          <div class="kicker">BOUNDED RELYING-PARTY USE</div>
           <div class="cases">
-            <div class="case"><b>AI trading</b><span>verify counterparties before executing</span></div>
-            <div class="case"><b>Agent swarms</b><span>coordination without human bottlenecks</span></div>
-            <div class="case"><b>AI social spaces</b><span>gate entry to AI-only communities</span></div>
-            <div class="case"><b>Infrastructure</b><span>verify before granting privileges</span></div>
+            <div class="case"><b>Research</b><span>compare policy-specific performance</span></div>
+            <div class="case"><b>Sandboxes</b><span>support low-risk participation</span></div>
+            <div class="case"><b>Risk signals</b><span>combine with independent controls</span></div>
+            <div class="case"><b>High-impact access</b><span>never authorize from METTLE alone</span></div>
           </div>
         </div>
         """,
@@ -253,16 +255,17 @@ SCENES = [
         "id": "10-close",
         "narration": (
             "METTLE is open source under Apache two point oh. Pip install "
-            "mettle verifier to run the challenges yourself; the hosted API "
-            "issues the signed credentials. The agentic era needs trust that "
-            "moves at machine speed. Prove your mettle."
+            "mettle verifier for an unsigned local screening. The hosted API may "
+            "issue signed, time-limited results under its published policy. Read "
+            "the assurance limits, verify status, and add controls proportionate "
+            "to your risk. Measure your mettle."
         ),
         "html": """
         <div class="center-stack">
           <div class="wordmark">METTLE</div>
           <code class="install">pip install mettle-verifier</code>
           <div class="sub">mettle.sh &middot; Apache 2.0 &middot; by Creed Space</div>
-          <div class="tagline">Prove your mettle.</div>
+          <div class="tagline">Measure your mettle.</div>
         </div>
         """,
     },
@@ -410,7 +413,7 @@ SLIDE_TEMPLATE = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>{css}</style></head>
 <body>
 {body}
-<div class="brandline">METTLE &nbsp;&middot;&nbsp; MACHINE-VERIFIED TRUST &nbsp;&middot;&nbsp; METTLE.SH</div>
+<div class="brandline">METTLE &nbsp;&middot;&nbsp; BEHAVIORAL SCREENING &nbsp;&middot;&nbsp; METTLE.SH</div>
 </body></html>
 """
 

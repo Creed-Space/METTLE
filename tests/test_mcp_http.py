@@ -18,6 +18,7 @@ import json
 import socket
 
 import httpx
+import httpx2
 import pytest
 
 # The MCP server is an optional extra (`pip install 'mettle-verifier[mcp]'`),
@@ -30,6 +31,13 @@ pytest.importorskip("uvicorn")
 
 from mettle import _http, mcp_server  # noqa: E402
 from tests.test_mcp_server import EXPECTED_TOOLS  # noqa: E402
+
+
+TEST_BEARER = "mtl_" + "a" * 32
+
+
+async def _accept_test_bearer(token: str) -> bool:
+    return token == TEST_BEARER
 
 
 def _free_port() -> int:
@@ -46,7 +54,11 @@ async def _live_server():
 
     port = _free_port()
     config = uvicorn.Config(
-        _http.build_http_app(mcp_server.server, mcp_server.list_tools),
+        _http.build_http_app(
+            mcp_server.server,
+            mcp_server.list_tools,
+            bearer_validator=_accept_test_bearer,
+        ),
         host="127.0.0.1",
         port=port,
         log_level="warning",
@@ -60,7 +72,7 @@ async def _live_server():
                 break
             await asyncio.sleep(0.05)
         assert server.started, "uvicorn did not start"
-        yield f"http://127.0.0.1:{port}/mcp"
+        yield f"http://127.0.0.1:{port}/mcp/"
     finally:
         server.should_exit = True
         with contextlib.suppress(asyncio.TimeoutError):
@@ -75,9 +87,15 @@ def _asgi_client() -> httpx.AsyncClient:
     """
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(
-            app=_http.build_http_app(mcp_server.server, mcp_server.list_tools)
+            app=_http.build_http_app(
+                mcp_server.server,
+                mcp_server.list_tools,
+                bearer_validator=_accept_test_bearer,
+                allowed_hosts={"testserver"},
+            )
         ),
         base_url="http://testserver",
+        headers={"Authorization": f"Bearer {TEST_BEARER}"},
     )
 
 
@@ -90,10 +108,15 @@ async def test_http_handshake_lists_tools():
     from mcp.client.streamable_http import streamable_http_client
 
     async with _live_server() as url:
-        async with streamable_http_client(url) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.list_tools()
+        async with httpx2.AsyncClient(
+            headers={"Authorization": f"Bearer {TEST_BEARER}"}
+        ) as authenticated_client:
+            async with streamable_http_client(
+                url, http_client=authenticated_client
+            ) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.list_tools()
 
     names = {t.name for t in result.tools}
     assert names == EXPECTED_TOOLS
@@ -115,8 +138,9 @@ async def test_server_card_matches_canonical_tool_surface():
     assert response.status_code == 200
     assert response.headers["cache-control"] == "public, max-age=300"
     card = response.json()
-    assert card["serverInfo"] == {"name": "mettle", "version": "0.3.2"}
-    assert card["authentication"] == {"required": False, "schemes": []}
+    assert card["serverInfo"] == {"name": "mettle", "version": "0.4.0"}
+    assert card["authentication"]["required"] is True
+    assert card["authentication"]["schemes"][0]["scheme"] == "bearer"
     assert card["resources"] == []
     assert card["prompts"] == []
 
@@ -233,12 +257,124 @@ async def test_valid_json_reaches_the_session_manager():
                 headers={
                     "content-type": "application/json",
                     "accept": "application/json, text/event-stream",
+                    "authorization": f"Bearer {TEST_BEARER}",
                 },
             )
 
     # Reached the MCP layer: a protocol-level answer, not our 400/405/413 gate.
     assert response.status_code == 200
     assert "tools" in response.text
+
+
+async def test_mcp_requires_authoritative_bearer_authentication():
+    async with _asgi_client() as client:
+        missing = await client.post(
+            "/mcp/",
+            content=b"{}",
+            headers={"Authorization": "", "Content-Type": "application/json"},
+        )
+        invalid = await client.post(
+            "/mcp/",
+            content=b"{}",
+            headers={
+                "Authorization": "Bearer mtl_" + "b" * 32,
+                "Content-Type": "application/json",
+            },
+        )
+
+    assert missing.status_code == 401
+    assert missing.headers["www-authenticate"] == "Bearer"
+    assert invalid.status_code == 401
+
+
+async def test_mcp_rejects_untrusted_host_origin_and_content_type():
+    async with _asgi_client() as client:
+        bad_host = await client.post(
+            "/mcp/",
+            content=b"{}",
+            headers={"Host": "attacker.example", "Content-Type": "application/json"},
+        )
+        bad_origin = await client.post(
+            "/mcp/",
+            content=b"{}",
+            headers={
+                "Origin": "https://attacker.example",
+                "Content-Type": "application/json",
+            },
+        )
+        text_plain = await client.post(
+            "/mcp/",
+            content=b"{}",
+            headers={"Content-Type": "text/plain"},
+        )
+
+    assert bad_host.status_code == 421
+    assert bad_origin.status_code == 403
+    assert text_plain.status_code == 415
+
+
+async def test_mcp_enforces_per_caller_request_budget(monkeypatch):
+    monkeypatch.setenv(_http.REQUESTS_PER_MINUTE_ENV, "1")
+    app = _http.build_http_app(
+        mcp_server.server,
+        mcp_server.list_tools,
+        bearer_validator=_accept_test_bearer,
+        allowed_hosts={"testserver"},
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+        headers={"Authorization": f"Bearer {TEST_BEARER}"},
+    ) as client:
+        first = await client.post(
+            "/mcp/", content=b"{bad", headers={"Content-Type": "application/json"}
+        )
+        second = await client.post(
+            "/mcp/", content=b"{bad", headers={"Content-Type": "application/json"}
+        )
+
+    assert first.status_code == 400
+    assert second.status_code == 429
+
+
+async def test_rotating_invalid_bearers_share_a_global_authentication_budget(
+    monkeypatch,
+):
+    monkeypatch.setenv(_http.REQUESTS_PER_MINUTE_ENV, "100")
+    monkeypatch.setenv(_http.GLOBAL_REQUESTS_PER_MINUTE_ENV, "3")
+    monkeypatch.setenv(_http.MAX_PRINCIPALS_ENV, "3")
+    validator_calls = 0
+
+    async def reject_bearer(_token: str) -> bool:
+        nonlocal validator_calls
+        validator_calls += 1
+        return False
+
+    app = _http.build_http_app(
+        mcp_server.server,
+        mcp_server.list_tools,
+        bearer_validator=reject_bearer,
+        allowed_hosts={"testserver"},
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        responses = []
+        for index in range(5):
+            responses.append(
+                await client.post(
+                    "/mcp/",
+                    content=b"{}",
+                    headers={
+                        "Authorization": "Bearer mtl_" + str(index) * 32,
+                        "Content-Type": "application/json",
+                    },
+                )
+            )
+
+    assert [response.status_code for response in responses] == [401, 401, 401, 429, 429]
+    assert validator_calls == 3
 
 
 # === bind guard ===
@@ -264,7 +400,35 @@ def test_non_loopback_bind_refused_without_optin(host, monkeypatch):
 
 def test_non_loopback_bind_allowed_with_optin(monkeypatch):
     monkeypatch.setenv(_http.ALLOW_INSECURE_ENV, "true")
+    monkeypatch.setenv(_http.ALLOWED_HOSTS_ENV, "mcp.example")
     _http.check_bind_allowed("0.0.0.0")  # noqa: S104 — the opted-in gateway case
+
+
+def test_empty_bind_host_is_never_loopback(monkeypatch):
+    monkeypatch.setenv(_http.ALLOW_INSECURE_ENV, "true")
+    monkeypatch.setenv(_http.ALLOWED_HOSTS_ENV, "mcp.example")
+    assert _http.is_loopback_host("") is False
+    with pytest.raises(RuntimeError, match="empty MCP bind host"):
+        _http.check_bind_allowed("")
+
+
+@pytest.mark.parametrize("value", ["invalid", "0", "-1"])
+def test_request_budget_environment_requires_a_positive_integer(value, monkeypatch):
+    """Invalid budget input must stop startup rather than disable the limiter."""
+    monkeypatch.setenv(_http.REQUESTS_PER_MINUTE_ENV, value)
+    with pytest.raises(RuntimeError, match="must be a positive integer"):
+        _http._positive_int_environment(_http.REQUESTS_PER_MINUTE_ENV, 60)
+
+
+@pytest.mark.parametrize("host", ["user@example.com", "[malformed"])
+def test_request_hostname_rejects_ambiguous_authority_values(host):
+    """Credential-bearing or unparsable Host values are never normalized as trusted."""
+    assert _http._request_hostname(host) is None
+
+
+def test_host_policy_accepts_only_explicit_suffix_wildcards():
+    assert _http._host_allowed("mcp.example.com", {"*.example.com"}) is True
+    assert _http._host_allowed("example.com", {"*.example.com"}) is False
 
 
 @pytest.mark.parametrize("value", ["", "false", "1", "yes", "TRUE "])

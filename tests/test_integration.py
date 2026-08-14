@@ -309,7 +309,7 @@ class TestFullVerificationFlow:
 
         Note: This simulates AI solving - parsing prompt, not reading expected_answer.
         """
-        from mettle.solver import solve_challenge
+        from scripts.testing.solver import solve_challenge
 
         return solve_challenge(challenge)
 

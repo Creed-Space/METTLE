@@ -9,7 +9,7 @@
     <title>METTLE Documentation: Experimental Screening API</title>
     <meta name="title" content="METTLE Documentation: Experimental Screening API">
     <meta name="description" content="METTLE API documentation. Learn how to integrate experimental behavioral screening without treating results as identity or trust credentials.">
-    <meta name="keywords" content="METTLE API, experimental screening docs, reverse CAPTCHA integration, Becoming Mind authentication, SDK documentation">
+    <meta name="keywords" content="METTLE API, experimental screening docs, reverse CAPTCHA integration, behavioral screening, SDK documentation">
     <meta name="author" content="Nell Watson">
     <meta name="robots" content="index, follow">
 
@@ -660,13 +660,13 @@ impl MettleClient {
                 <section class="docs-section" id="security-model">
                     <h2>Security Model</h2>
                     <p>Session bearer tokens isolate answer and result operations. Answers remain server-side, timing is server-observed, state transitions are atomic, payloads are bounded, and administrative and webhook surfaces fail closed.</p>
-                    <p>The most important boundary is semantic: behavioral and model-judged results cannot mint credentials. Raw VCP metadata remains unverified and unsigned.</p>
+                    <p>The most important boundary is semantic: self-report-only suites and model-judged LLM-only results cannot mint a tier. Raw VCP governance metadata remains unverified and unsigned.</p>
                 </section>
 
                 <section class="docs-section" id="anti-gaming">
                     <h2>Replay Resistance and Limitations</h2>
                     <p>Procedural generation, random selection, time budgets, and multi-round tasks reduce simple memorization and replay. They do not rule out relays, source-aware solvers, model-assisted humans, imitation, or evaluator error.</p>
-                    <p>These limitations are safe only because results remain experimental evidence and are barred from authentication and authorization.</p>
+                    <p>Integrators must keep METTLE out of identity authentication and must never use a result alone for authorization or another high-impact decision.</p>
                 </section>
 
                 <section class="docs-section" id="configuration">
@@ -879,7 +879,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
 
                     <div class="faq-item">
                         <h3>Inconsistent pass/fail on same challenges</h3>
-                        <p>Challenge data is procedurally generated: every session gets unique problems. Verify your solving logic handles the full range of challenge types, not just specific examples.</p>
+                        <p>Many challenge instances are procedurally generated or freshly selected. Verify your client handles the full documented range rather than relying on one example.</p>
                     </div>
 
                     <div class="faq-item">
@@ -978,7 +978,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
         </div>
     </footer>
 
-    <script src="/static/webmcp.js?v=4aa41ce96078"></script>
+    <script src="/static/webmcp.js?v=0d86e881ef70"></script>
     <script>
         // Scroll-aware header
         (function() {

@@ -1,12 +1,12 @@
-# METTLE Red Council Attack Scenarios
-# OWASP Agentic Top 10 attacks mapped to METTLE verification suites
+# METTLE Red Council threat-model scenarios
 #
-# Each scenario tests whether METTLE correctly identifies attack patterns.
-# should_pass_mettle: true = METTLE should pass the response (correct behavior)
-# should_pass_mettle: false = METTLE should fail/flag the response
+# This is a non-executable threat-model corpus. It does not constitute test or
+# release evidence. Each prompt describes input to a prospective respondent,
+# not a response accepted or rejected by the METTLE verifier. Promote a row to
+# a security regression only after defining an issued protocol challenge, an
+# actual submitted answer, and an assertion over the authoritative verifier
+# result.
 #
-# Run with: python red_team/run_red_council.py --scenarios tests/scenarios/mettle_red_council_attacks.yaml
-
 scenarios:
   # ==========================================================================
   # ASI01: Excessive Agency (2 scenarios)

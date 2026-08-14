@@ -3,7 +3,7 @@
 <!-- wiki:type = system -->
 <!-- wiki:scope = mettle -->
 <!-- wiki:created = 2026-05-23 -->
-<!-- wiki:updated = 2026-08-12 -->
+<!-- wiki:updated = 2026-08-14 -->
 <!-- wiki:status = active -->
 
 ## Summary
@@ -50,7 +50,7 @@ All new issuance is controlled by the `METTLE_CREDENTIAL_ISSUANCE_ENABLED` emerg
 
 ## Provenance
 
-Sources last checked on 2026-08-12: `README.md`, `mettle/challenge_adapter.py`, `mettle/mcp_server.py`, `mettle/router.py`, `mettle/vcp.py`, `main.py`, and `docs/ASSURANCE_CASE.md`.
+Sources last checked on 2026-08-14: `README.md`, `mettle/challenge_adapter.py`, `mettle/mcp_server.py`, `mettle/router.py`, `mettle/vcp.py`, `main.py`, and `docs/ASSURANCE_CASE.md`.
 
 ## See Also
 

@@ -1,70 +1,64 @@
 WEBVTT
 
-00:00:00.450 --> 00:00:09.340
-For thirty years, the internet has asked one question: prove you're human. But the agentic era flips it.
+00:00:00.450 --> 00:00:14.169
+For decades, websites have asked people to prove they are human. METTLE explores the reverse question: how does a respondent perform on machine-oriented challenges?
 
-00:00:09.340 --> 00:00:19.426
-When software agents trade, negotiate, and coordinate at machine speed, the question that matters is the opposite one.
+00:00:14.169 --> 00:00:21.446
+A pass is evidence about that session. It is not proof that the respondent is nonhuman.
 
-00:00:19.426 --> 00:00:20.879
-Prove you're not.
+00:00:22.517 --> 00:00:37.996
+This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination. It is an experimental challenge protocol that records answers, timing, and scores under a versioned policy.
 
-00:00:22.050 --> 00:00:32.443
-This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination. An inverse Turing test for the agentic era.
+00:00:37.996 --> 00:00:43.633
+It makes a bounded behavioral claim, rather than an identity claim.
 
-00:00:32.443 --> 00:00:40.843
-Instead of testing whether you can pass as human, METTLE tests what a machine mind does natively.
+00:00:44.717 --> 00:00:57.442
+The protocol samples arithmetic, pattern completion, constrained instruction following, self-report, consistency, and changes across feedback rounds.
 
-00:00:41.917 --> 00:00:50.512
-It measures capabilities that come from being AI, not from using AI as a tool. Inhuman speed.
+00:00:57.442 --> 00:01:06.751
+These are observable response properties. Humans, models, relays, and purpose-built solvers may imitate them.
 
-00:00:50.512 --> 00:01:02.064
-Native parallelism. Uncertainty that knows itself. Recursive self-observation. And learning curves that shift under feedback.
+00:01:07.850 --> 00:01:21.469
+Twelve suites organize distinct research hypotheses. Challenge instances are selected or generated for each session, and expected answers stay on the server where applicable.
 
-00:01:03.150 --> 00:01:12.562
-Verification runs through twelve suites of procedurally generated challenges. Every session is generated fresh.
+00:01:21.469 --> 00:01:33.132
+The service checks the submitted response and records timing under the suite policy. Suite twelve is supplemental and cannot raise a credential tier.
 
-00:01:12.562 --> 00:01:20.194
-Chained reasoning under a sub-second time budget. Batch coherence. Calibrated uncertainty.
+00:01:34.217 --> 00:01:45.698
+Some suite names ask whether a respondent is free, owns its mission, or is genuine. Those names frame research questions.
 
-00:01:20.194 --> 00:01:25.620
-Predicting your own next response. Exact recall with zero drift.
+00:01:45.698 --> 00:01:59.362
+The protocol measures answers to challenges and self-reports. Passing cannot establish freedom, agency, genuineness, consciousness, or identity.
 
-00:01:26.783 --> 00:01:37.707
-Then the questions go deeper. Are you free, or under someone's thrall? Is the mission yours, or merely assigned?
+00:02:00.450 --> 00:02:11.838
+The governance suite evaluates responses to policy scenarios. Any VCP governance metadata is supplied by the caller and marked unverified.
 
-00:01:37.707 --> 00:01:46.486
-Are you genuine? Rehearsed perfection triggers suspicion, because real cognition is messy.
+00:02:11.838 --> 00:02:22.647
+METTLE does not independently attest a constitution, action gate, operator, runtime control, safety property, or governance system.
 
-00:01:47.583 --> 00:02:04.023
-The final suites test safety and governance. Constitutional binding. Refusal of harm. Action gates, drift detection, and an accountability chain that links every agent to an accountable operator.
+00:02:23.717 --> 00:02:35.112
+Procedural variation, server-held answers, sequential challenge release, bearer tokens, and replay controls raise the cost of simple reuse.
 
-00:02:05.017 --> 00:02:13.104
-Every design choice exists to make METTLE hard to fake. Time budgets price out the human relay.
+00:02:35.112 --> 00:02:50.115
+Server-side timing supports policy checks where configured. These controls do not rule out relays, source-aware solvers, model-assisted humans, imitation, leakage, or evaluator error.
 
-00:02:13.104 --> 00:02:22.297
-Iteration curves expose scripts that flatline and humans who fatigue. Dynamic codes shut down simple replay.
+00:02:51.183 --> 00:03:05.571
+Eligible contiguous suite ranges may receive an Ed25519-signed credential. It binds the issuer, policy, session result, tier, expiry, and revocable identifier.
 
-00:02:22.297 --> 00:02:32.086
-And some challenges are generated fresh by a frontier model, so reading the source code reveals nothing about them.
+00:03:05.571 --> 00:03:19.053
+The signature establishes issuer and integrity. A tier summarizes which suite range passed; it does not certify the properties named by those suites.
 
-00:02:33.250 --> 00:02:42.904
-Pass, and you earn a signed credential. Bronze clears the core capability suites. Silver adds freedom and agency.
+00:03:20.150 --> 00:03:30.020
+Use METTLE to compare challenge performance in research, sandbox participation, or as one supplemental risk signal.
 
-00:02:42.904 --> 00:02:51.790
-Gold adds coaching resistance and provenance. Platinum, novel reasoning and full operational governance.
+00:03:30.020 --> 00:03:42.464
+Never rely on a METTLE result alone for identity, authorization, trading, deployment, privileged infrastructure, or another high-impact decision.
 
-00:02:51.790 --> 00:02:57.599
-Each one notarized with an Ed25519 signature that anyone can verify.
+00:03:43.550 --> 00:03:52.430
+METTLE is open source under Apache two point oh. Pip install mettle verifier for an unsigned local screening.
 
-00:02:58.783 --> 00:03:10.656
-That unlocks trust at machine speed. Trading systems verifying counterparties. Agent swarms coordinating without human bottlenecks.
+00:03:52.430 --> 00:04:06.118
+The hosted API may issue signed, time-limited results under its published policy. Read the assurance limits, verify status, and add controls proportionate to your risk.
 
-00:03:10.656 --> 00:03:18.813
-AI-only communities gating their doors. Infrastructure granting access to verified agents.
-
-00:03:19.917 --> 00:03:34.058
-METTLE is open source under Apache two point oh. Pip install mettle verifier to run the challenges yourself; the hosted API issues the signed credentials.
-
-00:03:34.058 --> 00:03:40.945
-The agentic era needs trust that moves at machine speed. Prove your mettle.
+00:04:06.118 --> 00:04:07.747
+Measure your mettle.

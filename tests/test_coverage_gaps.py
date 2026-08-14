@@ -15,12 +15,17 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from main import (
     CollusionDetector,
     ModelFingerprinter,
+    RequestBodyLimitMiddleware,
     RateTier,
     WebhookManager,
+    _credential_issuance_dependencies_healthy,
     _admin_auth_failures,
+    _anonymous_daily_usage,
+    _reserve_public_session_quota,
     _redis_unavailable_handler,
     api_keys,
     challenges,
@@ -44,6 +49,7 @@ ADMIN_HEADERS = {"X-Admin-Key": ADMIN_KEY}
 def _cleanup():
     """Clean up shared state between tests."""
     _admin_auth_failures.clear()
+    _anonymous_daily_usage.clear()
     revoked_badges.clear()
     webhooks.clear()
     verification_graph.clear()
@@ -54,6 +60,7 @@ def _cleanup():
     sessions.clear()
     yield
     _admin_auth_failures.clear()
+    _anonymous_daily_usage.clear()
     revoked_badges.clear()
     webhooks.clear()
     verification_graph.clear()
@@ -115,6 +122,109 @@ class TestRateTierUsageTracking:
         allowed, msg = RateTier.check_limit("mtl_test", "answer")
         assert allowed is True
         assert api_keys["mtl_test"]["usage_count"] == 0
+
+
+class TestPublicSessionQuota:
+    """Exercise every fail-closed authority path in the public session quota."""
+
+    @staticmethod
+    def _request(api_key: str | None = None, redis_client=None):
+        request = MagicMock()
+        request.headers = {"X-API-Key": api_key} if api_key else {}
+        request.app.state.redis = redis_client
+        return request
+
+    @pytest.mark.asyncio
+    async def test_invalid_key_is_rejected_before_any_quota_reservation(self):
+        request = self._request("mtl_unknown")
+        with (
+            patch.object(RateTier, "get_key_data", return_value=None),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await _reserve_public_session_quota(request)
+
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("message", "expected_status"),
+        [
+            ("Daily limit reached (100 sessions)", 429),
+            ("API key usage persistence unavailable", 503),
+        ],
+    )
+    async def test_keyed_quota_failures_preserve_authority_semantics(
+        self, message, expected_status
+    ):
+        request = self._request("mtl_known")
+        with (
+            patch.object(RateTier, "get_key_data", return_value={"tier": "free"}),
+            patch.object(RateTier, "check_limit", return_value=(False, message)),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await _reserve_public_session_quota(request)
+
+        assert exc_info.value.status_code == expected_status
+
+    @pytest.mark.asyncio
+    async def test_invalid_free_tier_quota_configuration_fails_closed(
+        self, monkeypatch
+    ):
+        monkeypatch.setitem(RateTier.TIERS["free"], "sessions_per_day", True)
+        with pytest.raises(RuntimeError, match="quota is invalid"):
+            await _reserve_public_session_quota(self._request())
+
+    @pytest.mark.asyncio
+    async def test_configured_redis_authority_must_be_present(self):
+        with (
+            patch("main.settings") as mock_settings,
+            patch("main.get_remote_address", return_value="203.0.113.7"),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            mock_settings.redis_url = "redis://quota.example"
+            await _reserve_public_session_quota(self._request())
+
+        assert exc_info.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_redis_authority_error_and_exhaustion_fail_closed(self):
+        from redis.exceptions import RedisError
+
+        redis_client = AsyncMock()
+        request = self._request(redis_client=redis_client)
+        with (
+            patch("main.settings") as mock_settings,
+            patch("main.get_remote_address", return_value="203.0.113.7"),
+        ):
+            mock_settings.redis_url = "redis://quota.example"
+            redis_client.eval.side_effect = RedisError("unavailable")
+            with pytest.raises(HTTPException) as unavailable:
+                await _reserve_public_session_quota(request)
+            assert unavailable.value.status_code == 503
+
+            redis_client.eval.side_effect = None
+            redis_client.eval.return_value = -1
+            with pytest.raises(HTTPException) as exhausted:
+                await _reserve_public_session_quota(request)
+            assert exhausted.value.status_code == 429
+
+    @pytest.mark.asyncio
+    async def test_local_anonymous_quota_rejects_the_over_limit_charge(
+        self, monkeypatch
+    ):
+        import main
+
+        monkeypatch.setitem(RateTier.TIERS["free"], "sessions_per_day", 1)
+        monkeypatch.setattr(main.settings, "redis_url", None)
+        monkeypatch.setattr(main, "get_remote_address", lambda _request: "203.0.113.8")
+        principal = main.hashlib.sha256(b"203.0.113.8").hexdigest()
+        today = datetime.now(timezone.utc).date().isoformat()
+        main._anonymous_daily_usage[principal] = (today, 1)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _reserve_public_session_quota(self._request())
+
+        assert exc_info.value.status_code == 429
 
 
 # ============================================================
@@ -407,7 +517,8 @@ class TestLifespan:
 
     @pytest.mark.asyncio
     async def test_cleanup_records_database_retention_failure(self, monkeypatch):
-        """A purge failure is observable but cannot stop future cleanup cycles."""
+        """A purge failure is observable and disables new private writes."""
+        import main
 
         class StopCleanup(Exception):
             pass
@@ -423,6 +534,7 @@ class TestLifespan:
                 raise StopCleanup
 
         monkeypatch.setattr("main.asyncio.sleep", one_cycle)
+        monkeypatch.setattr(main, "private_data_retention_healthy", True)
         with (
             patch("main.db", mock_db),
             patch("main.operational_metrics") as metrics,
@@ -431,6 +543,7 @@ class TestLifespan:
             await cleanup_expired_sessions()
 
         metrics.observe_dependency_error.assert_called_once_with("database")
+        assert main.private_data_retention_healthy is False
 
     @pytest.mark.asyncio
     async def test_redis_error_handler_returns_stable_service_error(self):
@@ -444,6 +557,114 @@ class TestLifespan:
         assert response.status_code == 503
         assert b"METTLE session storage temporarily unavailable" in response.body
         assert b"credential-bearing" not in response.body
+
+    @pytest.mark.asyncio
+    async def test_credential_issuance_guard_checks_every_configured_authority(
+        self, monkeypatch
+    ):
+        """Issuance is allowed only when retention, database, and schema are healthy."""
+        import main
+
+        monkeypatch.setattr(main, "private_data_retention_healthy", False)
+        assert await _credential_issuance_dependencies_healthy() is False
+
+        monkeypatch.setattr(main, "private_data_retention_healthy", True)
+        with patch("main.settings") as mock_settings:
+            mock_settings.use_database = False
+            assert await _credential_issuance_dependencies_healthy() is True
+
+            mock_settings.use_database = True
+            monkeypatch.setattr(main, "db", None)
+            assert await _credential_issuance_dependencies_healthy() is False
+
+            healthy_db = MagicMock()
+            healthy_db.check_health.return_value = True
+            healthy_db.check_schema_current.return_value = True
+            monkeypatch.setattr(main, "db", healthy_db)
+            assert await _credential_issuance_dependencies_healthy() is True
+
+            healthy_db.check_schema_current.return_value = False
+            assert await _credential_issuance_dependencies_healthy() is False
+
+            healthy_db.check_health.side_effect = RuntimeError("database lost")
+            with patch("main.operational_metrics") as metrics:
+                assert await _credential_issuance_dependencies_healthy() is False
+            metrics.observe_dependency_error.assert_called_once_with("database")
+
+
+class TestRequestBodyLimitMiddleware:
+    """Unit-test ASGI edge states that ordinary HTTP clients cannot emit."""
+
+    @pytest.mark.asyncio
+    async def test_non_http_scopes_pass_through_unchanged(self):
+        observed = []
+
+        async def app(scope, _receive, _send):
+            observed.append(scope)
+
+        middleware = RequestBodyLimitMiddleware(app, maximum_bytes=4)
+        scope = {"type": "websocket"}
+        await middleware(scope, AsyncMock(), AsyncMock())
+
+        assert observed == [scope]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("declared", [b"-1", b"invalid"])
+    async def test_invalid_content_length_is_rejected(self, declared):
+        events = []
+
+        async def send(message):
+            events.append(message)
+
+        middleware = RequestBodyLimitMiddleware(AsyncMock(), maximum_bytes=4)
+        await middleware(
+            {"type": "http", "headers": [(b"content-length", declared)]},
+            AsyncMock(),
+            send,
+        )
+
+        assert events[0]["status"] == 400
+        assert b"Content-Length is invalid" in events[1]["body"]
+
+    @pytest.mark.asyncio
+    async def test_disconnect_is_replayed_to_the_application(self):
+        observed = []
+
+        async def receive():
+            return {"type": "http.disconnect"}
+
+        async def app(_scope, bounded_receive, _send):
+            observed.append(await bounded_receive())
+
+        middleware = RequestBodyLimitMiddleware(app, maximum_bytes=4)
+        await middleware({"type": "http", "headers": []}, receive, AsyncMock())
+
+        assert observed == [{"type": "http.disconnect"}]
+
+    @pytest.mark.asyncio
+    async def test_bounded_body_ignores_unrelated_events_and_replays_once(self):
+        messages = iter(
+            [
+                {"type": "http.response.start"},
+                {"type": "http.request", "body": b"data", "more_body": False},
+            ]
+        )
+        observed = []
+
+        async def receive():
+            return next(messages)
+
+        async def app(_scope, bounded_receive, _send):
+            observed.append(await bounded_receive())
+            observed.append(await bounded_receive())
+
+        middleware = RequestBodyLimitMiddleware(app, maximum_bytes=4)
+        await middleware({"type": "http", "headers": []}, receive, AsyncMock())
+
+        assert observed == [
+            {"type": "http.request", "body": b"data", "more_body": False},
+            {"type": "http.request", "body": b"", "more_body": False},
+        ]
 
 
 # ============================================================
@@ -525,11 +746,12 @@ class TestBadgeRevokeSigningNotConfigured:
     """Test revoke endpoint when secret_key is missing."""
 
     def test_revoke_no_secret_key(self, client):
-        """Revoke returns 400 when badge signing not configured."""
+        """Revoke fails closed when badge signing is not configured."""
         with patch("main.settings") as mock_settings:
             mock_settings.admin_api_key = ADMIN_KEY
             mock_settings.secret_key = ""
             mock_settings.is_production = False
+            mock_settings.redis_url = None
             response = client.post(
                 "/api/badge/revoke",
                 json={
@@ -911,7 +1133,7 @@ class TestRouterSigningImportErrorPath:
             session_id="ses_test123",
             subject_id="test-user",
             difficulty="basic",
-            suites_passed=["speed_math"],
+            suites_passed=["adversarial"],
             suites_failed=[],
             pass_rate=1.0,
         )

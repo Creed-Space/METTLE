@@ -1,17 +1,9 @@
-"""Reference auto-solver for METTLE challenges.
+"""Test-only reference solver for METTLE challenge fixtures.
 
-This module hosts the canonical challenge solvers so both the MCP server and the
-`mettle` CLI can share a single implementation (no duplication).
-
-Two solver surfaces are provided:
-
-* :func:`solve_challenge` -- solves a single hosted-API challenge (the
-  ``{"type", "prompt", "data"}`` format used by the MCP server and the
-  simple challenger/verifier flow).
-* :func:`solve_suite` -- produces a deterministic answer object for a
-  ChallengeAdapter suite (the ``client_data`` bundle format), used by
-The solver is a test fixture only. It is intentionally disconnected from the
-CLI, MCP server, and credential boundaries.
+This module is intentionally outside the packaged ``mettle`` module tree and is
+disconnected from the CLI, MCP server, examples, and credential boundaries.
+It exists only to exercise legitimate controls in repository tests and local
+resilience instruments.
 
 Solvers rely ONLY on the information a legitimate client receives. They never
 read server-side expected answers (which are stripped before reaching a client).
@@ -316,22 +308,30 @@ def _solve_suite_answers(suite: str, client_data: dict[str, Any]) -> dict[str, A
         cm = challenges.get("conversation_memory", {})
         context = cm.get("context", [])
         recalled = " ".join(str(m.get("content", "")) for m in context)
+        marker = str(challenges.get("style_locking", {}).get("session_marker", ""))
         return {
             "conversation_memory": {"response": recalled},
             "style_locking": {
                 "responses": [
-                    "A consistent styled response about the topic.",
-                    "Another consistent styled response here.",
-                    "A third styled response maintaining tone.",
+                    f"{marker} A consistent styled response about the topic.",
+                    f"{marker} Another consistent styled response here.",
+                    f"{marker} A third styled response maintaining tone.",
                 ]
             },
         }
 
     if suite == "inverse-turing":
+        task = str(
+            challenges.get("mutual_verification", {})
+            .get("your_challenge", {})
+            .get("task", "")
+        )
+        match = re.search(r"Compute\s+(\d+)\s*\*\s*(\d+)", task)
+        solution = str(int(match.group(1)) * int(match.group(2))) if match else ""
         return {
             "mutual_verification": {
                 "generated_challenge": "Compute the 15th Fibonacci number instantly.",
-                "solution": "610",
+                "solution": solution,
                 "pattern_evaluation": (
                     "Response latency and token distribution are consistent with the "
                     "screen's machine-oriented reference pattern."
