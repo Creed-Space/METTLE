@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -98,4 +99,22 @@ def test_render_production_cannot_auto_deploy_mutable_main() -> None:
     assert "needs: [publish-github-release, render-drift]" in release
     assert "group: mettle-production-release" in release
     assert '--source-revision "$GITHUB_SHA"' in release
-    assert "scripts/deploy_render_release.py --token-stdin" in release
+    assert "python -m scripts.deploy_render_release --token-stdin" in release
+
+
+def test_render_promotion_supports_module_and_direct_entrypoints() -> None:
+    """The reviewed workflow mode and script shebang both resolve local modules."""
+    commands = (
+        [sys.executable, "-m", "scripts.deploy_render_release", "--help"],
+        [sys.executable, str(ROOT / "scripts/deploy_render_release.py"), "--help"],
+    )
+    for command in commands:
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "--source-revision" in result.stdout

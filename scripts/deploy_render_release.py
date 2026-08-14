@@ -16,6 +16,9 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from scripts.check_render_drift import RENDER_API, _HTTPS_OPENER, load_contract
 
 
