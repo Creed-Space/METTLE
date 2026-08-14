@@ -1467,7 +1467,25 @@ async def lifespan(app: FastAPI):
 
 
 # === FastAPI App ===
-app = FastAPI(
+class _MettleFastAPI(FastAPI):
+    """Keep framework-generated validation docs aligned with safe responses."""
+
+    def openapi(self) -> dict[str, Any]:
+        schema = super().openapi()
+        components = schema.get("components")
+        if isinstance(components, dict):
+            schemas = components.get("schemas")
+            if isinstance(schemas, dict):
+                validation_error = schemas.get("ValidationError")
+                if isinstance(validation_error, dict):
+                    properties = validation_error.get("properties")
+                    if isinstance(properties, dict):
+                        properties.pop("input", None)
+                        properties.pop("ctx", None)
+        return schema
+
+
+app = _MettleFastAPI(
     title=settings.api_title,
     description="""
 **Machine Evaluation Through Turing-inverse Logic Examination**
