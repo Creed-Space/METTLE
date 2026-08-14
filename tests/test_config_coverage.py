@@ -320,6 +320,9 @@ def test_release_requires_reproducibility_before_publication() -> None:
     assert "--min-linux-builders 2 --require-macos" in release
     assert "name: Prepare exact release bundle" in release
     assert "needs: [validate-candidate, reproducibility, render-drift]" in release
+    assert "Validate Official MCP Registry manifest before publication" in release
+    assert "/tmp/mcp-publisher validate" in release
+    assert release.index("/tmp/mcp-publisher validate") < release.index("publish-pypi:")
     assert "environment:\n      name: pypi" in release
     sha_prefix = "dc37677b2e1c63e2034f"  # pragma: allowlist secret
     sha_suffix = "94d8a5b11f265b73ba33"  # pragma: allowlist secret

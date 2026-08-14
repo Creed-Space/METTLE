@@ -1,6 +1,6 @@
 # METTLE release notes
 
-## [0.4.1]
+## [0.4.2]
 
 ### Credential schema
 
@@ -44,8 +44,16 @@ fields are removed to prevent request-content reflection.
 
 ### Runtime and supply chain
 
+The `v0.4.1` workflow passed validation, provider drift, reproducibility, and
+published source-bound artifacts to PyPI. Public artifact verification and the
+installed MCP smoke then passed, but the Official MCP Registry rejected the
+124-character discovery description against its 100-character limit. GitHub
+Release publication and Render promotion were consequently skipped. This patch
+uses a validated 99-character description and runs the pinned Official MCP
+publisher's authoritative validation before any future PyPI publication.
+
 The `v0.4.0` tag reached GitHub, but its release workflow was rejected before
-any job started because the reusable CI caller could not grant its nested Rust
+any job started because the reusable CI caller did not grant its nested Rust
 audit job permission to publish checks. No package, registry entry, GitHub
 Release, or Render deployment was created by that attempt. This patch grants
 `checks: write` only to the reusable validation caller and preserves the failed
