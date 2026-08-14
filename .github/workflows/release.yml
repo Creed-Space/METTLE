@@ -360,7 +360,7 @@ jobs:
         run: |
           test -n "$RENDER_API_TOKEN"
           printf '%s' "$RENDER_API_TOKEN" \
-            | python scripts/deploy_render_release.py --token-stdin \
+            | python -m scripts.deploy_render_release --token-stdin \
                 --source-revision "$GITHUB_SHA" \
                 --tag "$GITHUB_REF_NAME" \
                 --output output/evidence/RENDER-PRODUCTION-PROMOTION.json
