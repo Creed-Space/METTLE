@@ -44,10 +44,11 @@ from mettle import __version__
 from mettle.mcp_context import caller_api_key, caller_principal, http_request_active
 from starlette.applications import Starlette
 from starlette.datastructures import Headers
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
-from starlette.types import Receive, Scope, Send
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 # JSON-RPC 2.0 error codes (mcp.types mirrors these; inlined to keep this
 # module importable without pulling the type module in for two constants).
@@ -76,6 +77,28 @@ _BEARER_RE = re.compile(r"[^\s\x00-\x1f\x7f]{16,512}")
 
 ToolProvider = Callable[[], Awaitable[list[Tool]]]
 BearerValidator = Callable[[str], Awaitable[bool]]
+
+
+class _CanonicalMCPPathMiddleware:
+    """Serve the documented bare MCP path without an external redirect.
+
+    Starlette otherwise redirects ``/mcp`` to ``/mcp/`` using the scheme in
+    the ASGI scope. A TLS-terminating proxy can leave that scheme as ``http``,
+    producing a downgrade redirect that security-conscious MCP clients reject.
+    Normalizing the internal path keeps the request on the authenticated
+    connection and never constructs an absolute URL.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope.get("path") == "/mcp":
+            scope = dict(scope)
+            scope["path"] = "/mcp/"
+            if scope.get("raw_path") == b"/mcp":
+                scope["raw_path"] = b"/mcp/"
+        await self.app(scope, receive, send)
 
 
 def _jsonrpc_error(code: int, message: str, status_code: int, **kwargs) -> JSONResponse:
@@ -484,10 +507,12 @@ def build_http_app(
         async with manager.run():
             yield
 
-    # Mount at /mcp. A bare `/mcp` request 307-redirects to `/mcp/`; this is the
-    # reference MCP behaviour and SDK/httpx clients follow it transparently.
+    # Mount at /mcp. The middleware maps the documented bare path internally
+    # so a TLS-terminating proxy cannot turn Starlette's slash redirect into an
+    # absolute HTTP downgrade.
     return Starlette(
         debug=False,
+        middleware=[Middleware(_CanonicalMCPPathMiddleware)],
         routes=[
             Route("/health", health, methods=["GET"]),
             Route(

@@ -1,5 +1,54 @@
 # METTLE release notes
 
+## [0.4.5]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged. This
+patch does not rotate signing keys or alter credential acceptance semantics.
+
+### Suite policy
+
+Challenge generation, scoring, tier eligibility, and the seven reviewed MCP
+tools remain unchanged from `0.4.4`.
+
+### Public key changes
+
+No signing key or discovery format rotation is included. Production key
+identity remains independently verifiable through the published discovery
+surface and deployment receipts.
+
+### Compatibility
+
+The package remains compatible with Python 3.10 through 3.14. The public MCP
+transport now handles both the documented `/mcp` path and `/mcp/` on the
+existing TLS connection, without requiring clients to follow a redirect. The
+server card and package version advance together to `0.4.5`.
+
+### Security
+
+* Normalize the bare MCP path inside the ASGI application. Starlette previously
+  constructed a slash-canonicalization redirect from the proxy-facing HTTP
+  scheme, which produced an `http://` downgrade location at the live Render
+  endpoint. Clients that correctly refused the downgrade could not initialize.
+* Add a real-socket MCP initialize and `tools/list` regression test using the
+  bare path, plus an authentication-boundary assertion that the path never
+  redirects before bearer validation.
+* Retain the successful `v0.4.4` proxy-identity proof: 60 credential-status
+  requests returned HTTP 200 and request 61 returned HTTP 429 despite 61
+  distinct caller-supplied `X-Forwarded-For` values. This patch does not change
+  that API boundary.
+
+### Known limitations
+
+METTLE produces probabilistic behavioral evidence. A passing result does not
+prove identity, substrate, consciousness, freedom, agency, safety, governance,
+operator identity, or authorization suitability. Relays, source-aware solvers,
+model-assisted humans, evaluator error, and imitation remain possible. Human
+accessibility, rights-cleared fairness evaluation, independent protocol and
+cryptographic review, and destructive recovery drills retain their separate
+evidence and authority requirements.
+
 ## [0.4.4]
 
 ### Credential schema
