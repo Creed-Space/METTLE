@@ -201,8 +201,44 @@ def test_render_blueprint_declares_fail_closed_production_dependencies():
     env = {item["key"]: item for item in parsed["services"][0]["envVars"]}
     assert env["METTLE_FORWARDED_ALLOW_IPS"] == {
         "key": "METTLE_FORWARDED_ALLOW_IPS",
-        "value": "*",
+        "value": "10.0.0.0/8",
     }
+
+
+def test_render_proxy_trust_ignores_caller_prepended_forwarded_identity() -> None:
+    """Only the Render ingress peer may contribute a forwarded client chain."""
+    from fastapi import FastAPI, Request
+    from fastapi.testclient import TestClient
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    blueprint = yaml.safe_load(
+        (Path(__file__).parent.parent / "render.yaml").read_text()
+    )
+    env = {
+        item["key"]: item["value"]
+        for item in blueprint["services"][0]["envVars"]
+        if "value" in item
+    }
+    app = FastAPI()
+
+    @app.get("/")
+    async def remote_address(request: Request) -> dict[str, str]:
+        assert request.client is not None
+        return {"client": request.client.host}
+
+    protected = ProxyHeadersMiddleware(
+        cast(Any, app),
+        trusted_hosts=env["METTLE_FORWARDED_ALLOW_IPS"],
+    )
+    forwarded = "198.51.100.44, 203.0.113.9"
+    with TestClient(cast(Any, protected), client=("10.233.22.235", 50000)) as ingress:
+        assert ingress.get("/", headers={"X-Forwarded-For": forwarded}).json() == {
+            "client": "203.0.113.9"
+        }
+    with TestClient(cast(Any, protected), client=("192.0.2.5", 50000)) as direct:
+        assert direct.get("/", headers={"X-Forwarded-For": forwarded}).json() == {
+            "client": "192.0.2.5"
+        }
 
 
 def test_configured_database_import_failure_stops_application_startup() -> None:

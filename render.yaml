@@ -40,11 +40,11 @@ services:
       - key: METTLE_REDIS_URL
         sync: false
       - key: METTLE_FORWARDED_ALLOW_IPS
-        # Render terminates public traffic at its proxy. This explicit value
-        # makes Uvicorn consume the provider's client address rather than rate
-        # limiting every caller as the shared edge. It is safe only while the
-        # service port remains behind Render's ingress boundary.
-        value: "*"
+        # Render's ingress reaches the service from its private 10/8 network.
+        # Trust only that peer network so Uvicorn walks X-Forwarded-For from
+        # right to left and ignores caller-prepended spoof values. The service
+        # port remains inaccessible directly from the public internet.
+        value: 10.0.0.0/8
       - key: METTLE_DEV_MODE
         value: "false"
       - key: METTLE_LOG_LEVEL

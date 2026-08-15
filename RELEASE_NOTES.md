@@ -1,5 +1,54 @@
 # METTLE release notes
 
+## [0.4.3]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged. This
+patch does not rotate signing keys or alter credential acceptance semantics.
+
+### Suite policy
+
+Challenge generation, scoring, tier eligibility, and the seven reviewed MCP
+tools remain unchanged from `0.4.2`.
+
+### Public key changes
+
+No signing key or discovery format rotation is included. Production key
+identity remains independently verifiable through the published discovery
+surface and deployment receipts.
+
+### Compatibility
+
+The package remains compatible with Python 3.10 through 3.14. API and MCP
+clients require no changes. The server card and package version advance
+together to `0.4.3`.
+
+### Runtime and supply chain
+
+Render proxy trust is restricted to the provider ingress peer network. Uvicorn
+now walks forwarded address chains from right to left and rejects
+caller-prepended identities instead of trusting every forwarded hop. A live
+`0.4.2` probe demonstrated that the wildcard allowed spoofed values to evade
+the credential-status limiter, and this release adds a provider-shaped
+regression test for both trusted-ingress and untrusted-direct peers.
+
+The exact `0.4.2` API, MCP service, and holder candidate reached Render after
+database and Redis URLs were moved to verified TLS with provider-egress-only
+datastore ingress. The promotion and post-deploy drift receipts are attached to
+the `0.4.2` GitHub Release. This patch preserves those controls and changes only
+the proxy trust boundary plus synchronized version metadata.
+
+### Known limitations
+
+METTLE produces probabilistic behavioral evidence. A passing result does not
+prove identity, substrate, consciousness, freedom, agency, safety, governance,
+operator identity, or authorization suitability. Relays, source-aware solvers,
+model-assisted humans, evaluator error, and imitation remain possible. Human
+accessibility, rights-cleared fairness evaluation, independent protocol and
+cryptographic review, and destructive recovery drills retain their separate
+evidence and authority requirements.
+
 ## [0.4.2]
 
 ### Credential schema

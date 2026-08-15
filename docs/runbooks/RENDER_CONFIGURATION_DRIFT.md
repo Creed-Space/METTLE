@@ -34,12 +34,15 @@ does not pass.
 ## Proxy identity boundary
 
 The API start command enables Uvicorn proxy handling and explicitly sets
-`METTLE_FORWARDED_ALLOW_IPS=*`. Render terminates public HTTP traffic at its
-ingress proxy, so this configuration allows the service to recover the client
-address used by quotas and abuse controls. The wildcard is part of the Render
-deployment contract, not a portable application default. If the service port is
-ever exposed directly or moved to another provider, replace it with that
-provider's authenticated proxy allowlist before accepting traffic.
+`METTLE_FORWARDED_ALLOW_IPS=10.0.0.0/8`. Render's ingress reaches the service
+from its private `10/8` network and appends the provider-observed client address
+to `X-Forwarded-For`. Restricting trust to the ingress peer network makes Uvicorn
+walk the chain from right to left and select the first untrusted address, so a
+caller-prepended spoof value cannot choose its quota identity. Never restore the
+wildcard: a deployed probe demonstrated that it lets callers rotate
+`X-Forwarded-For` values around the credential-status limiter. If the service is
+moved to another provider, replace `10/8` with that provider's authenticated
+proxy network before accepting traffic.
 
 ## Reconciliation
 
