@@ -1,5 +1,6 @@
 """Tests for config.py allowed-origin parsing and production validation."""
 
+import ipaddress
 import os
 import subprocess
 import sys
@@ -206,10 +207,15 @@ def test_render_blueprint_declares_fail_closed_production_dependencies():
 
 
 def test_render_proxy_trust_ignores_caller_prepended_forwarded_identity() -> None:
-    """Only the Render ingress peer may contribute a forwarded client chain."""
+    """Render and Cloudflare resolve one visitor without trusting caller input."""
     from fastapi import FastAPI, Request
     from fastapi.testclient import TestClient
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    from mettle.proxy_identity import (
+        CLOUDFLARE_NETWORKS,
+        CloudflareClientIPMiddleware,
+    )
 
     blueprint = yaml.safe_load(
         (Path(__file__).parent.parent / "render.yaml").read_text()
@@ -226,19 +232,52 @@ def test_render_proxy_trust_ignores_caller_prepended_forwarded_identity() -> Non
         assert request.client is not None
         return {"client": request.client.host}
 
+    cloudflare_aware = CloudflareClientIPMiddleware(cast(Any, app))
     protected = ProxyHeadersMiddleware(
-        cast(Any, app),
+        cast(Any, cloudflare_aware),
         trusted_hosts=env["METTLE_FORWARDED_ALLOW_IPS"],
     )
-    forwarded = "198.51.100.44, 203.0.113.9"
+    # Caller spoof, actual visitor, Cloudflare edge. Render appends the edge
+    # before Uvicorn receives the request from its private ingress peer.
+    forwarded = "198.51.100.44, 203.0.113.9, 172.71.241.14"
+    headers = {
+        "X-Forwarded-For": forwarded,
+        "CF-Connecting-IP": "203.0.113.9",
+    }
     with TestClient(cast(Any, protected), client=("10.233.22.235", 50000)) as ingress:
-        assert ingress.get("/", headers={"X-Forwarded-For": forwarded}).json() == {
-            "client": "203.0.113.9"
-        }
+        assert ingress.get("/", headers=headers).json() == {"client": "203.0.113.9"}
     with TestClient(cast(Any, protected), client=("192.0.2.5", 50000)) as direct:
-        assert direct.get("/", headers={"X-Forwarded-For": forwarded}).json() == {
-            "client": "192.0.2.5"
-        }
+        assert direct.get("/", headers=headers).json() == {"client": "192.0.2.5"}
+    assert any(
+        ipaddress.ip_address("172.71.241.14") in network
+        for network in CLOUDFLARE_NETWORKS
+    )
+    assert any(
+        ipaddress.ip_address("172.71.146.104") in network
+        for network in CLOUDFLARE_NETWORKS
+    )
+
+
+def test_cloudflare_connecting_ip_must_be_one_canonical_address() -> None:
+    from mettle.proxy_identity import _is_cloudflare_address, _single_connecting_ip
+
+    assert _is_cloudflare_address("172.71.241.14") is True
+    assert _is_cloudflare_address("not-an-address") is False
+    assert _single_connecting_ip([(b"CF-Connecting-IP", b"2001:0db8::1")]) == (
+        "2001:db8::1"
+    )
+    assert _single_connecting_ip([]) is None
+    assert (
+        _single_connecting_ip(
+            [
+                (b"cf-connecting-ip", b"203.0.113.4"),
+                (b"cf-connecting-ip", b"203.0.113.5"),
+            ]
+        )
+        is None
+    )
+    assert _single_connecting_ip([(b"cf-connecting-ip", b"host:443")]) is None
+    assert _single_connecting_ip([(b"cf-connecting-ip", b"\xff")]) is None
 
 
 def test_configured_database_import_failure_stops_application_startup() -> None:

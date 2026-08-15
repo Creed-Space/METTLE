@@ -80,7 +80,7 @@ The scan ended at its configured 40-run cap before semantic saturation. It valid
 |---:|---|---|---|---|---|---|
 | 59 | `candidate-e5c0141bab12da47` | Datastore transport | Production configuration permits plaintext Redis and PostgreSQL transport for security critical state. | `config.py:138` | Fixed | `config.py` rejects plaintext Redis and PostgreSQL without `sslmode=verify-full`, and `check_render_drift.py` rejects semantically insecure provider URLs without disclosing them. Production and holder PostgreSQL use the provider external endpoint with `sslmode=verify-full` and the runtime CA bundle; Redis uses `rediss` with certificate and hostname verification. An in-service `SELECT 1` proved the PostgreSQL CA path, exact `v0.4.2` API, MCP, and holder deploys reached `live`, and the post-promotion drift receipt reports all three services `pass`. `RENDER-PRODUCTION-PROMOTION.json`, `RENDER-HOLDER-STAGING-PROMOTION.json`, and `RENDER-CONFIGURATION-DRIFT.json` are attached to the `v0.4.2` release. |
 | 60 | `candidate-0b68dfa49a465c5b` | Redirect integrity | Allowlisted download and provider requests do not revalidate the final redirect origin. | `scripts/verify_pypi_release.py:26` | Fixed | PyPI and Render clients reject redirects before forwarding authorization and verify the final fixed origin; `test_publication_verifier_rejects_redirects_before_following` and `test_render_checker_rejects_redirects_before_forwarding_bearer`. |
-| 61 | `candidate-7a4142a8e10e1b9c` | Proxy identity | Client IP controls depend on an unverified proxy trust configuration. | `main.py:1635` | External | A deployed `v0.4.2` probe sent 61 credential-status requests with 61 caller-supplied `X-Forwarded-For` values and received 61 successful responses, proving the wildcard trust boundary unsafe. `render.yaml` now trusts only Render's private `10.0.0.0/8` ingress peer network, and `test_render_proxy_trust_ignores_caller_prepended_forwarded_identity` covers both trusted-ingress chain selection and untrusted-direct rejection. Exact `v0.4.3` deployment and a repeated live probe remain before closure. |
+| 61 | `candidate-7a4142a8e10e1b9c` | Proxy identity | Client IP controls depend on an unverified proxy trust configuration. | `main.py:1635` | External | `v0.4.2` wildcard trust let 61 caller-supplied `X-Forwarded-For` values receive 61 successes. Exact `v0.4.3` restricted trust removed that direct spoof but its live probe again received 61 successes: access logs showed the selected identity rotating across Cloudflare edge addresses. `CloudflareClientIPMiddleware` now accepts the single `CF-Connecting-IP` value only when Uvicorn has already resolved the public hop to an authoritative Cloudflare network; direct callers cannot select that identity. `test_render_proxy_trust_ignores_caller_prepended_forwarded_identity` covers the Render, Cloudflare, spoofed-chain, and direct-caller boundaries. Exact `v0.4.4` deployment and a repeated live probe remain before closure. |
 
 ## Residual security diff review
 
@@ -100,8 +100,9 @@ review. Its report SHA-256 is
 and its snapshot digest is
 `codex-security-snapshot/v1:sha256:52bf2dfb4a14a51afd1438b371aba54bebe6358a7115c545a4ee190cb55e4812`.
 That review reported one medium and two low findings. R15 and R16 record their
-remediation below. Its only deferred question is now the exact `v0.4.3` live
-proxy proof in row 61.
+remediation below. Its only deferred question is now the exact `v0.4.4` live
+proxy proof in row 61; the intervening `v0.4.3` probe is retained as failed
+evidence rather than closure.
 
 * **R1, PyPI bytes execute before independent source binding, Fixed.**
   `verify_pypi_release.py` now requires an exact source-bound reproducibility

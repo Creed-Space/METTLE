@@ -35,14 +35,21 @@ does not pass.
 
 The API start command enables Uvicorn proxy handling and explicitly sets
 `METTLE_FORWARDED_ALLOW_IPS=10.0.0.0/8`. Render's ingress reaches the service
-from its private `10/8` network and appends the provider-observed client address
-to `X-Forwarded-For`. Restricting trust to the ingress peer network makes Uvicorn
-walk the chain from right to left and select the first untrusted address, so a
-caller-prepended spoof value cannot choose its quota identity. Never restore the
-wildcard: a deployed probe demonstrated that it lets callers rotate
-`X-Forwarded-For` values around the credential-status limiter. If the service is
-moved to another provider, replace `10/8` with that provider's authenticated
-proxy network before accepting traffic.
+from its private `10/8` network. Uvicorn therefore reduces the forwarded chain
+to the rightmost untrusted public hop. For `mettle.sh`, that hop is Cloudflare,
+so `CloudflareClientIPMiddleware` restores the single `CF-Connecting-IP` value
+only when the public hop belongs to Cloudflare's authoritative IPv4 or IPv6
+networks. A direct non-Cloudflare caller cannot make the application trust that
+header. Review the pinned networks against `https://www.cloudflare.com/ips-v4`
+and `/ips-v6` whenever Cloudflare announces a range change.
+
+Never restore wildcard proxy trust. A deployed `v0.4.2` probe demonstrated that
+it lets callers rotate `X-Forwarded-For` values. A `v0.4.3` probe then showed
+that stopping at the Cloudflare hop makes one caller appear as rotating edge
+addresses and still defeats a per-caller budget. The two-stage Render plus
+Cloudflare resolution is required. If either provider changes, replace its
+trust boundary and repeat the 61-request live spoof-resistance probe before
+acceptance.
 
 ## Reconciliation
 
