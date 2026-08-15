@@ -72,7 +72,9 @@ async def _live_server():
                 break
             await asyncio.sleep(0.05)
         assert server.started, "uvicorn did not start"
-        yield f"http://127.0.0.1:{port}/mcp/"
+        # Exercise the documented bare path over a real socket. The app must
+        # handle it directly rather than relying on a scheme-sensitive 307.
+        yield f"http://127.0.0.1:{port}/mcp"
     finally:
         server.should_exit = True
         with contextlib.suppress(asyncio.TimeoutError):
@@ -138,7 +140,7 @@ async def test_server_card_matches_canonical_tool_surface():
     assert response.status_code == 200
     assert response.headers["cache-control"] == "public, max-age=300"
     card = response.json()
-    assert card["serverInfo"] == {"name": "mettle", "version": "0.4.4"}
+    assert card["serverInfo"] == {"name": "mettle", "version": "0.4.5"}
     assert card["authentication"]["required"] is True
     assert card["authentication"]["schemes"][0]["scheme"] == "bearer"
     assert card["resources"] == []
@@ -285,6 +287,20 @@ async def test_mcp_requires_authoritative_bearer_authentication():
     assert missing.status_code == 401
     assert missing.headers["www-authenticate"] == "Bearer"
     assert invalid.status_code == 401
+
+
+async def test_bare_mcp_path_never_redirects_before_authentication():
+    """A reverse proxy cannot turn slash canonicalization into a downgrade."""
+    async with _asgi_client() as client:
+        response = await client.post(
+            "/mcp",
+            content=b"{}",
+            headers={"Authorization": "", "Content-Type": "application/json"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 401
+    assert "location" not in response.headers
 
 
 async def test_mcp_rejects_untrusted_host_origin_and_content_type():
