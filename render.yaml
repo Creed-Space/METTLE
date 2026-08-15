@@ -41,9 +41,10 @@ services:
         sync: false
       - key: METTLE_FORWARDED_ALLOW_IPS
         # Render's ingress reaches the service from its private 10/8 network.
-        # Trust only that peer network so Uvicorn walks X-Forwarded-For from
-        # right to left and ignores caller-prepended spoof values. The service
-        # port remains inaccessible directly from the public internet.
+        # Uvicorn trusts only that peer network. The application then restores
+        # CF-Connecting-IP only when the resulting public hop belongs to an
+        # authoritative Cloudflare range. Caller-supplied forwarded values do
+        # not choose the rate-limit identity.
         value: 10.0.0.0/8
       - key: METTLE_DEV_MODE
         value: "false"

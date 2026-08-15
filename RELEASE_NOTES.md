@@ -1,5 +1,51 @@
 # METTLE release notes
 
+## [0.4.4]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged. This
+patch does not rotate signing keys or alter credential acceptance semantics.
+
+### Suite policy
+
+Challenge generation, scoring, tier eligibility, and the seven reviewed MCP
+tools remain unchanged from `0.4.3`.
+
+### Public key changes
+
+No signing key or discovery format rotation is included. Production key
+identity remains independently verifiable through the published discovery
+surface and deployment receipts.
+
+### Compatibility
+
+The package remains compatible with Python 3.10 through 3.14. API and MCP
+clients require no changes. The server card and package version advance
+together to `0.4.4`.
+
+### Security
+
+* Resolve the Cloudflare visitor identity only after Uvicorn has authenticated
+  the Render ingress hop and reduced the forwarded chain to a published
+  Cloudflare address. This keeps caller-supplied forwarding headers from
+  selecting a quota identity while preventing rotating Cloudflare edges from
+  bypassing per-caller budgets.
+* Record the failed `v0.4.3` live proxy proof explicitly. The release received
+  61 successful credential-status requests because access logs identified
+  rotating Cloudflare edges as the caller. Closure therefore moves to the exact
+  `v0.4.4` deployment and repeated 61-request proof.
+
+### Known limitations
+
+METTLE produces probabilistic behavioral evidence. A passing result does not
+prove identity, substrate, consciousness, freedom, agency, safety, governance,
+operator identity, or authorization suitability. Relays, source-aware solvers,
+model-assisted humans, evaluator error, and imitation remain possible. Human
+accessibility, rights-cleared fairness evaluation, independent protocol and
+cryptographic review, and destructive recovery drills retain their separate
+evidence and authority requirements.
+
 ## [0.4.3]
 
 ### Credential schema

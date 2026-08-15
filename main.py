@@ -54,6 +54,7 @@ from mettle.protocol import (
     CREDENTIAL_SCHEMA_VERSION,
     SUITE_POLICY_VERSION,
 )
+from mettle.proxy_identity import CloudflareClientIPMiddleware
 from pydantic import BaseModel, Field, field_validator
 from redis.exceptions import RedisError
 from slowapi.errors import RateLimitExceeded
@@ -1642,6 +1643,7 @@ app.add_middleware(
     expose_headers=["X-Request-ID", "X-METTLE-Source-Revision"],
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts_list)
+app.add_middleware(CloudflareClientIPMiddleware)
 
 
 # === Request/Response Models ===
