@@ -80,7 +80,7 @@ The scan ended at its configured 40-run cap before semantic saturation. It valid
 |---:|---|---|---|---|---|---|
 | 59 | `candidate-e5c0141bab12da47` | Datastore transport | Production configuration permits plaintext Redis and PostgreSQL transport for security critical state. | `config.py:138` | Fixed | `config.py` rejects plaintext Redis and PostgreSQL without `sslmode=verify-full`, and `check_render_drift.py` rejects semantically insecure provider URLs without disclosing them. Production and holder PostgreSQL use the provider external endpoint with `sslmode=verify-full` and the runtime CA bundle; Redis uses `rediss` with certificate and hostname verification. An in-service `SELECT 1` proved the PostgreSQL CA path, exact `v0.4.2` API, MCP, and holder deploys reached `live`, and the post-promotion drift receipt reports all three services `pass`. `RENDER-PRODUCTION-PROMOTION.json`, `RENDER-HOLDER-STAGING-PROMOTION.json`, and `RENDER-CONFIGURATION-DRIFT.json` are attached to the `v0.4.2` release. |
 | 60 | `candidate-0b68dfa49a465c5b` | Redirect integrity | Allowlisted download and provider requests do not revalidate the final redirect origin. | `scripts/verify_pypi_release.py:26` | Fixed | PyPI and Render clients reject redirects before forwarding authorization and verify the final fixed origin; `test_publication_verifier_rejects_redirects_before_following` and `test_render_checker_rejects_redirects_before_forwarding_bearer`. |
-| 61 | `candidate-7a4142a8e10e1b9c` | Proxy identity | Client IP controls depend on an unverified proxy trust configuration. | `main.py:1635` | External | `v0.4.2` wildcard trust let 61 caller-supplied `X-Forwarded-For` values receive 61 successes. Exact `v0.4.3` restricted trust removed that direct spoof but its live probe again received 61 successes: access logs showed the selected identity rotating across Cloudflare edge addresses. `CloudflareClientIPMiddleware` now accepts the single `CF-Connecting-IP` value only when Uvicorn has already resolved the public hop to an authoritative Cloudflare network; direct callers cannot select that identity. `test_render_proxy_trust_ignores_caller_prepended_forwarded_identity` covers the Render, Cloudflare, spoofed-chain, and direct-caller boundaries. Exact `v0.4.4` deployment and a repeated live probe remain before closure. |
+| 61 | `candidate-7a4142a8e10e1b9c` | Proxy identity | Client IP controls depend on an unverified proxy trust configuration. | `main.py:1635` | Fixed | `v0.4.2` wildcard trust let 61 caller-supplied `X-Forwarded-For` values receive 61 successes. Exact `v0.4.3` restricted trust removed that direct spoof but its live probe again received 61 successes because access logs showed the selected identity rotating across Cloudflare edge addresses. `CloudflareClientIPMiddleware` accepts the single `CF-Connecting-IP` value only when Uvicorn has already resolved the public hop to an authoritative Cloudflare network; direct callers cannot select that identity. `test_render_proxy_trust_ignores_caller_prepended_forwarded_identity` covers the Render, Cloudflare, spoofed-chain, and direct-caller boundaries. Exact `v0.4.5` commit `4b9f70c94db495b7e9163796535c7483f2146225` is live as API deploy `dep-d9vsa4dg1s2s73bpc5kg`, MCP deploy `dep-d9vsamflk1mc73ehkl3g`, and holder deploy `dep-d9vsbs61egvs73fa2v70`. The canonical live probe sent 61 requests with 61 distinct caller-supplied forwarding values: requests 1 through 60 returned HTTP 200, request 61 returned HTTP 429, and every response carried the exact source revision. `RENDER-PROXY-SPOOF-RESISTANCE.json`, `METTLE-LIVE-ACCEPTANCE.json`, and the production and holder promotion receipts are attached to the `v0.4.5` release. |
 
 ## Residual security diff review
 
@@ -90,9 +90,9 @@ review. Its report SHA-256 is
 and its snapshot digest is
 `codex-security-snapshot/v1:sha256:ffc51baf3397d9e2c7429d387904c8175197b7319fd06a0ad13a825e0b064a7c`.
 All 14 reportable residual findings have candidate fixes and focused regression
-evidence. Datastore transport is now closed by exact-candidate live proof in row
-59. The proxy question remains row 61 until the restricted trust boundary is
-deployed and independently reprobed.
+evidence. Datastore transport is closed by exact-candidate live proof in row 59,
+and proxy identity is closed by the exact-source live rate-limit proof in row
+61.
 
 The resulting pre-release candidate received a third sealed security diff
 review. Its report SHA-256 is
@@ -100,9 +100,16 @@ review. Its report SHA-256 is
 and its snapshot digest is
 `codex-security-snapshot/v1:sha256:52bf2dfb4a14a51afd1438b371aba54bebe6358a7115c545a4ee190cb55e4812`.
 That review reported one medium and two low findings. R15 and R16 record their
-remediation below. Its only deferred question is now the exact `v0.4.4` live
-proxy proof in row 61; the intervening `v0.4.3` probe is retained as failed
-evidence rather than closure.
+remediation below. The previously deferred proxy question is closed by the
+exact `v0.4.5` proof in row 61. The intervening `v0.4.3` probe remains attached
+to that release as failed evidence rather than being rewritten as closure.
+
+Post-release acceptance of `v0.4.4` also found that the documented bare MCP
+path returned an absolute HTTP slash redirect behind Render's TLS terminator.
+`v0.4.5` normalizes that path inside the ASGI application. A real-socket test
+now initializes and lists the seven reviewed tools through bare `/mcp`, and the
+live acceptance receipt repeats that handshake with redirects disabled. Missing
+and invalid bearers both return HTTP 401 with no `Location` header.
 
 * **R1, PyPI bytes execute before independent source binding, Fixed.**
   `verify_pypi_release.py` now requires an exact source-bound reproducibility
@@ -203,5 +210,9 @@ evidence rather than closure.
 * The final candidate passes Ruff lint and format, mypy, Vulture, the complete pytest coverage gate, Bandit, secret scanning, all dependency audits, the security mutation gate, package and clean install checks, static and OpenAPI checks, cross language fixtures, browser tests, and Impeccable design detection.
 * The final diff is reviewed against the sealed report after all substantive edits.
 * Hosted and production claims identify the immutable commit and are kept separate from local source proof.
+* No machine-verifiable row remains `Open` or `External`. Human accessibility,
+  rights-cleared fairness evaluation, independent protocol and cryptographic
+  review, and destructive recovery drills retain their separate authorities and
+  are not converted into repository test claims.
 
 Working if: the table has exactly 61 rows, no row remains `Open`, every `Fixed` or `No change` row names repeatable evidence, and external rows state precisely what repository proof exists and what nonlocal fact remains.
