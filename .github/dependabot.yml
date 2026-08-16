@@ -1,5 +1,13 @@
 version: 2
 updates:
+  # Only the packages this project declares. `requirements-production.txt` and
+  # the `*-lock.txt` files are pip-compile output, so every transitive entry in
+  # them is an exact pin chosen to satisfy a parent. Left unrestricted,
+  # Dependabot treats those pins as manifest entries and raises one to its own
+  # latest release: it pinned pydantic-core==2.48.0 (which belongs to the
+  # unreleased pydantic 2.14) next to pydantic==2.13.4, which pins
+  # pydantic-core==2.46.4 exactly, and the lock stopped resolving at all.
+  # Transitive advisories stay covered because CI pip-audits every lock file.
   - package-ecosystem: pip
     directory: /
     schedule:
@@ -7,6 +15,8 @@ updates:
       day: monday
       time: "06:00"
       timezone: Europe/London
+    allow:
+      - dependency-type: direct
     groups:
       python-runtime:
         patterns: ["*"]
