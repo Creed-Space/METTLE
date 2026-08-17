@@ -56,6 +56,14 @@ packages = ["mettle"]
 [tool.setuptools.package-dir]
 "" = "."
 
+[tool.ruff.format]
+# Ruff 0.16 began formatting Python inside Markdown fences by default, which
+# silently pulled all 59 documents, including the archived prompt records under
+# `_contprompts/`, into the formatter's scope. Keep the formatter on source for
+# the same reason the lint contract above is pinned: a new formatting surface is
+# adopted deliberately, not by upgrade.
+exclude = ["*.md"]
+
 [tool.ruff.lint]
 # Keep the established correctness-focused lint contract explicit. Ruff's
 # default rule set changes between releases, so new stylistic families are
