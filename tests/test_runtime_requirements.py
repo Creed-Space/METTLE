@@ -39,7 +39,7 @@ def test_production_deploy_uses_hashed_lock() -> None:
 def test_distribution_backend_is_exactly_pinned() -> None:
     """Independent builders must resolve the same packaging backend."""
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'requires = ["setuptools==81.0.0"]' in pyproject
+    assert 'requires = ["setuptools==84.0.0"]' in pyproject
 
 
 def test_mcp_container_uses_hashed_lock() -> None:
