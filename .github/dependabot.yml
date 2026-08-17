@@ -1,13 +1,5 @@
 version: 2
 updates:
-  # Only the packages this project declares. `requirements-production.txt` and
-  # the `*-lock.txt` files are pip-compile output, so every transitive entry in
-  # them is an exact pin chosen to satisfy a parent. Left unrestricted,
-  # Dependabot treats those pins as manifest entries and raises one to its own
-  # latest release: it pinned pydantic-core==2.48.0 (which belongs to the
-  # unreleased pydantic 2.14) next to pydantic==2.13.4, which pins
-  # pydantic-core==2.46.4 exactly, and the lock stopped resolving at all.
-  # Transitive advisories stay covered because CI pip-audits every lock file.
   - package-ecosystem: pip
     directory: /
     schedule:
@@ -15,8 +7,22 @@ updates:
       day: monday
       time: "06:00"
       timezone: Europe/London
-    allow:
-      - dependency-type: direct
+    # `requirements-production.txt` and the `*-lock.txt` files are pip-compile
+    # output, so Dependabot reads every pin in them as a manifest entry it may
+    # raise on its own. That is wrong for any package a parent pins with `==`,
+    # because the two have to move together or the lock stops resolving.
+    #
+    # pydantic pins pydantic-core exactly. Dependabot raised pydantic-core to
+    # 2.48.0, which belongs to the unreleased pydantic 2.14, while pydantic
+    # stayed at 2.13.4 pinning 2.46.4, and four jobs failed at dependency
+    # install. Filtering by `dependency-type: direct` does not help: the pin is
+    # written into a file Dependabot parses as a manifest, so it classifies
+    # pydantic-core as direct and proposes it anyway.
+    #
+    # pydantic itself stays eligible. When it moves, regenerate the locks with
+    # pip-compile so the matching pydantic-core lands in the same commit.
+    ignore:
+      - dependency-name: pydantic-core
     groups:
       python-runtime:
         patterns: ["*"]
