@@ -1,5 +1,56 @@
 # METTLE release notes
 
+## [0.4.6]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged. This
+patch does not rotate signing keys or alter credential acceptance semantics.
+
+### Suite policy
+
+Challenge generation, scoring, tier eligibility, and the seven reviewed MCP
+tools remain unchanged from `0.4.5`.
+
+### Public key changes
+
+No signing key or discovery format rotation is included. Production key
+identity remains independently verifiable through the published discovery
+surface and deployment receipts.
+
+### Compatibility
+
+The package remains compatible with Python 3.10 through 3.14. No API, CLI, or
+MCP surface changes. The server card and package version advance together to
+`0.4.6`.
+
+### Maintenance
+
+* Restrict Dependabot's pip ecosystem to declared dependencies. The compiled
+  locks were being read as manifests, and the transitive `pydantic-core` pin
+  was raised to a release belonging to an unpublished pydantic, which left the
+  production lock unresolvable and failed four jobs at dependency install.
+  pip-compile owns the closure; CI continues to pip-audit every lock file, so
+  transitive advisory coverage is unchanged.
+* Read either Font Awesome stylesheet dialect when vendoring the subset fonts.
+  Version 7 declares a glyph as the `--fa` custom property rather than
+  `content`, and ships the outlines as WOFF2 without TrueType. Both readings
+  resolve every icon the site uses to identical codepoints, and the 6.5.1
+  output is unchanged byte for byte.
+* Advance the vendored browser assets to Font Awesome Free 7.3.1. The
+  stylesheet and all four subset fonts are smaller than the 6.5.1 assets they
+  replace, and no icon changes identity.
+
+### Known limitations
+
+METTLE produces probabilistic behavioral evidence. A passing result does not
+prove identity, substrate, consciousness, freedom, agency, safety, governance,
+operator identity, or authorization suitability. Relays, source-aware solvers,
+model-assisted humans, evaluator error, and imitation remain possible. Human
+accessibility, rights-cleared fairness evaluation, independent protocol and
+cryptographic review, and destructive recovery drills retain their separate
+evidence and authority requirements.
+
 ## [0.4.5]
 
 ### Credential schema

@@ -140,7 +140,7 @@ async def test_server_card_matches_canonical_tool_surface():
     assert response.status_code == 200
     assert response.headers["cache-control"] == "public, max-age=300"
     card = response.json()
-    assert card["serverInfo"] == {"name": "mettle", "version": "0.4.5"}
+    assert card["serverInfo"] == {"name": "mettle", "version": "0.4.6"}
     assert card["authentication"]["required"] is True
     assert card["authentication"]["schemes"][0]["scheme"] == "bearer"
     assert card["resources"] == []
