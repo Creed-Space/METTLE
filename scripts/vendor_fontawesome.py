@@ -22,7 +22,26 @@ FONT_FILES = {
     "solid": "fa-solid-900",
 }
 PASSTHROUGH_FONTS = ("fa-regular-400.woff2", "fa-v4compatibility.woff2")
+# Font Awesome ships the subsettable outlines as TrueType up to 6.x and as
+# WOFF2 only from 7.x. TrueType stays first so a release carrying both keeps
+# producing the bytes already committed here rather than moving every
+# fingerprint for no reason.
+FONT_SOURCE_SUFFIXES = (".ttf", ".woff2")
 ICON_CLASS = re.compile(r"fa-(solid|brands)\s+fa-([a-z0-9-]+)")
+# One CSS rule: everything up to the opening brace, then the declarations.
+CSS_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+# 6.x declares the glyph as `content:"\f09b"`; 7.x as the `--fa` custom
+# property. Both spell the codepoint the same way, and `--fa--fa` (the duotone
+# pair) is excluded by requiring the closing quote right after one codepoint.
+CSS_CODEPOINT = re.compile(
+    r'(?:^|;)\s*(?:content|--fa)\s*:\s*"\\([0-9a-f]+)"\s*(?:;|$)'
+)
+# A whole selector in the rule's comma-separated list: `.fa-github` in 7.x,
+# `.fa-github:before` in 6.x. Anything compound (`.fa-stack .fa-github`) is a
+# layout rule and does not match. A family or utility class such as `.fa-solid`
+# does match this shape, but only rules carrying a glyph declaration are read
+# at all, and Font Awesome never declares a glyph on one of those.
+CSS_ICON_SELECTOR = re.compile(r"\.fa-([a-z0-9-]+?)(?::{1,2}before)?")
 
 
 def _digest(path: Path) -> str:
@@ -39,26 +58,43 @@ def _used_icons() -> dict[str, set[str]]:
     return used
 
 
+def _glyph_table(css: str) -> dict[str, int]:
+    """Map every icon name the stylesheet defines to its codepoint.
+
+    Building the whole table once keeps the two stylesheet dialects in one
+    place, and it resolves aliases (`fa-shield-alt` beside `fa-shield-halved`)
+    without a second pass, because a rule names every alias it defines.
+    """
+    table: dict[str, int] = {}
+    for selectors, declarations in CSS_RULE.findall(css):
+        codepoint = CSS_CODEPOINT.search(declarations)
+        if codepoint is None:
+            continue
+        value = int(codepoint.group(1), 16)
+        for selector in selectors.split(","):
+            name = CSS_ICON_SELECTOR.fullmatch(selector.strip())
+            if name is not None:
+                table[name.group(1)] = value
+    return table
+
+
 def _codepoints(css: str, icons: dict[str, set[str]]) -> dict[str, set[int]]:
+    table = _glyph_table(css)
     result: dict[str, set[int]] = {family: set() for family in FONT_FILES}
     for family, names in icons.items():
         for name in sorted(names):
-            match = re.search(
-                rf"\.fa-{re.escape(name)}:before(?:,[^{{}}]*)?"
-                rf'\{{content:"\\([0-9a-f]+)"\}}',
-                css,
-            )
-            if match is None:
-                # Some aliases put the requested class after another selector.
-                match = re.search(
-                    rf"(?:^|,)[^{{}}]*\.fa-{re.escape(name)}:before[^{{}}]*"
-                    rf'\{{content:"\\([0-9a-f]+)"\}}',
-                    css,
-                )
-            if match is None:
+            if name not in table:
                 raise RuntimeError(f"cannot map Font Awesome icon fa-{name}")
-            result[family].add(int(match.group(1), 16))
+            result[family].add(table[name])
     return result
+
+
+def _font_source(basename: str) -> Path:
+    for suffix in FONT_SOURCE_SUFFIXES:
+        candidate = PACKAGE / "webfonts" / f"{basename}{suffix}"
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(f"Font Awesome package has no outline font for {basename}")
 
 
 def _subset(source: Path, destination: Path, codepoints: set[int]) -> None:
@@ -105,7 +141,7 @@ def _build(destination: Path) -> None:
 
     for family, basename in FONT_FILES.items():
         _subset(
-            PACKAGE / "webfonts" / f"{basename}.ttf",
+            _font_source(basename),
             webfonts / f"{basename}.woff2",
             codepoints[family],
         )

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import check_static_site
+from scripts import check_static_site, vendor_fontawesome
 from scripts.update_footer_year import copyright_label, update_file
 
 
@@ -59,6 +59,54 @@ def test_checked_in_asset_fingerprints_are_current() -> None:
         cwd=ROOT,
         check=True,
     )
+
+
+# Font Awesome 6 spells a glyph as `content`, 7 as the `--fa` custom property.
+# Both dialects are kept alive here because the vendoring script only ever sees
+# whichever one npm happens to have installed, so a major bump would otherwise
+# fail first in CI rather than in this suite.
+FONTAWESOME_6_CSS = (
+    ".fa-fw{text-align:center;width:1.25em}"
+    '.fa-github:before{content:"\\f09b"}'
+    '.fa-shield-alt:before,.fa-shield-halved:before{content:"\\f3ed"}'
+    '.fa-square-check:before,.fa-check-square:before{content:"\\f14a"}'
+)
+FONTAWESOME_7_CSS = (
+    ".fa-fw{text-align:center;width:1.25em}"
+    '.fa-github{--fa:"\\f09b"}'
+    '.fa-shield-alt,.fa-shield-halved{--fa:"\\f3ed"}'
+    '.fa-square-check,.fa-check-square{--fa:"\\f14a";--fa--fa:"\\f14a\\f14a"}'
+)
+
+
+@pytest.mark.parametrize("css", [FONTAWESOME_6_CSS, FONTAWESOME_7_CSS])
+def test_glyph_table_reads_both_fontawesome_dialects(css: str) -> None:
+    table = vendor_fontawesome._glyph_table(css)
+
+    assert table["github"] == 0xF09B
+    # An alias resolves to the same glyph as the name it is declared beside.
+    assert table["shield-alt"] == table["shield-halved"] == 0xF3ED
+    assert table["check-square"] == table["square-check"] == 0xF14A
+    # A layout-only rule declares no glyph and must not enter the table.
+    assert "fw" not in table
+
+
+@pytest.mark.parametrize("css", [FONTAWESOME_6_CSS, FONTAWESOME_7_CSS])
+def test_codepoints_group_icons_by_font_family(css: str) -> None:
+    codepoints = vendor_fontawesome._codepoints(
+        css, {"brands": {"github"}, "solid": {"shield-halved", "square-check"}}
+    )
+
+    assert codepoints == {"brands": {0xF09B}, "solid": {0xF3ED, 0xF14A}}
+
+
+@pytest.mark.parametrize("css", [FONTAWESOME_6_CSS, FONTAWESOME_7_CSS])
+def test_codepoints_reject_an_icon_the_release_no_longer_ships(css: str) -> None:
+    """A renamed icon fails the build instead of vendoring a blank glyph."""
+    with pytest.raises(RuntimeError, match="fa-retired-icon"):
+        vendor_fontawesome._codepoints(
+            css, {"brands": {"github"}, "solid": {"retired-icon"}}
+        )
 
 
 def test_static_site_contract() -> None:
