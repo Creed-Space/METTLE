@@ -1,5 +1,50 @@
 # METTLE release notes
 
+## [0.4.7]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged. This
+patch does not rotate signing keys or alter credential acceptance semantics.
+
+### Suite policy
+
+Challenge generation, scoring, tier eligibility, and the seven reviewed MCP
+tools remain unchanged from `0.4.6`.
+
+### Public key changes
+
+No signing key or discovery format rotation is included. Production key
+identity remains independently verifiable through the published discovery
+surface and deployment receipts.
+
+### Compatibility
+
+The package remains compatible with Python 3.10 through 3.14. No API, CLI, or
+MCP surface changes. The server card and package version advance together to
+`0.4.7`.
+
+### Dependencies
+
+* Advance the production resolution to anthropic `0.122.0` and
+  typing-inspection `0.4.4`, and the development toolchain to ruff `0.16.3`.
+  The reproducibility gate rebuilt byte-identical artifacts on both runners.
+* Pin the packaging backend at setuptools `84.0.0`. The exact-pin assertion in
+  `test_distribution_backend_is_exactly_pinned` moved in the same commit, so
+  the backend still cannot advance without review.
+* Advance the pinned GitHub Actions across all five workflows, and the design
+  linter to impeccable `3.6.0`.
+
+### Known limitations
+
+METTLE produces probabilistic behavioral evidence. A passing result does not
+prove identity, substrate, consciousness, freedom, agency, safety, governance,
+operator identity, or authorization suitability. Relays, source-aware solvers,
+model-assisted humans, evaluator error, and imitation remain possible. Human
+accessibility, rights-cleared fairness evaluation, independent protocol and
+cryptographic review, and destructive recovery drills retain their separate
+evidence and authority requirements.
+
 ## [0.4.6]
 
 ### Credential schema
