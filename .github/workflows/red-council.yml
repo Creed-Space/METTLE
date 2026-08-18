@@ -26,9 +26,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
-  issues: write
 
 env:
   RED_COUNCIL_TIMEOUT: 300
@@ -190,6 +187,10 @@ jobs:
     needs: mettle-red-council-tests
     runs-on: ubuntu-latest
     if: failure() && github.event_name != 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      issues: write
 
     steps:
       - name: Checkout code

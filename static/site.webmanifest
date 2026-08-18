@@ -1,7 +1,7 @@
 {
   "name": "METTLE",
   "short_name": "METTLE",
-  "description": "Machine Entity Trustbuilding through Turing-inverse Logic Examination",
+  "description": "Machine Evaluation Through Turing-inverse Logic Examination",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",

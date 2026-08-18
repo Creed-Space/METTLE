@@ -6,13 +6,17 @@ Sessions follow the state machine: CREATED -> CHALLENGES_GENERATED -> IN_PROGRES
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import math
 import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
+
+from redis.exceptions import RedisError
 
 from mettle.api_models import (
     GOVERNANCE_SUITE,
@@ -50,6 +54,7 @@ RATE_LIMIT_WINDOW = 3600  # 1 hour
 MAX_ACTIVE_SESSIONS_PER_USER = 5
 MAX_SESSIONS_PER_HOUR = 100
 SESSION_LOCK_TTL = 30
+SESSION_LOCK_RENEW_INTERVAL = SESSION_LOCK_TTL / 3
 PRESENTATION_CHALLENGE_TTL = 60
 MAX_PRESENTATION_CHALLENGES_PER_MINUTE = 60
 
@@ -60,6 +65,14 @@ class SessionRateLimitError(ValueError):
     def __init__(self, message: str, retry_after: int) -> None:
         super().__init__(message)
         self.retry_after = retry_after
+
+
+class SessionStateError(RedisError):
+    """Stored session state is corrupt or violates a lifecycle invariant."""
+
+
+class SessionLockLostError(RedisError):
+    """A worker lost its Redis lease while changing session state."""
 
 
 _RATE_RESERVATION_SCRIPT = """
@@ -81,6 +94,20 @@ if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('DEL', KEYS[1])
 end
 return 0
+"""
+
+_LOCK_RENEW_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
+end
+return 0
+"""
+
+_TERMINAL_PERSIST_SCRIPT = """
+redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[2]))
+redis.call('SREM', KEYS[2], ARGV[3])
+redis.call('DEL', KEYS[3])
+return 1
 """
 
 _RATE_RESERVATION_RELEASE_SCRIPT = """
@@ -149,12 +176,19 @@ class SessionManager:
                 "llm-dynamic suite requires ANTHROPIC_API_KEY and anthropic package"
             )
 
+        time_budget_ms = self._session_time_budget_ms(resolved_suites, difficulty)
+        storage_ttl = max(1, math.ceil(time_budget_ms / 1000))
+
         # Reserve both active and hourly quota atomically before doing expensive
         # challenge generation. Concurrent requests cannot all pass a separate
         # check and increment later. Any generation/storage failure releases the
         # reservation below.
         session_id = secrets.token_urlsafe(32)
-        await self._reserve_rate_limits(user_id, session_id)
+        await self._reserve_rate_limits(
+            user_id,
+            session_id,
+            active_ttl=max(ACTIVE_SESSION_TTL, storage_ttl),
+        )
 
         try:
             return await self._create_reserved_session(
@@ -166,6 +200,8 @@ class SessionManager:
                 vcp_token=vcp_token,
                 operator_commitment=operator_commitment,
                 presence_registration=presence,
+                time_budget_ms=time_budget_ms,
+                storage_ttl=storage_ttl,
             )
         except Exception:
             await self._release_rate_reservation(user_id, session_id)
@@ -182,13 +218,10 @@ class SessionManager:
         vcp_token: str | None,
         operator_commitment: dict[str, Any] | None,
         presence_registration: dict[str, Any] | None,
+        time_budget_ms: int,
+        storage_ttl: int,
     ) -> tuple[str, dict[str, Any], dict[str, Any]]:
         """Generate and persist a session after its Redis quota reservation."""
-        now = datetime.now(tz=timezone.utc)
-        expires_at = datetime.fromtimestamp(
-            now.timestamp() + ACTIVE_SESSION_TTL, tz=timezone.utc
-        )
-
         # Generate challenges for each suite
         client_challenges: dict[str, Any] = {}
         server_answers: dict[str, Any] = {}
@@ -236,18 +269,6 @@ class SessionManager:
             client_challenges[LLM_DYNAMIC_SUITE] = client
             server_answers[LLM_DYNAMIC_SUITE] = server
 
-        # Calculate time budget
-        has_novel = MULTI_ROUND_SUITE in resolved_suites
-        from scripts.engine import NovelReasoningChallenges
-
-        if has_novel:
-            params = NovelReasoningChallenges.DIFFICULTY_PARAMS[difficulty]
-            time_budget_ms = (
-                params["time_budget_s"] * 1000 + len(resolved_suites) * 30000
-            )
-        else:
-            time_budget_ms = len(resolved_suites) * 30000  # 30s per single-shot suite
-
         presence_state = None
         issued_client_challenges = client_challenges
         if presence_registration is not None:
@@ -277,6 +298,18 @@ class SessionManager:
                 session_id=session_id,
             )
 
+        # Respondent time begins only once every challenge to be returned is
+        # ready. In particular, upstream LLM generation is never charged to the
+        # respondent's advertised budget.
+        issued_at = time.time()
+        now = datetime.fromtimestamp(issued_at, tz=timezone.utc)
+        expires_at = datetime.fromtimestamp(
+            issued_at + (time_budget_ms / 1000), tz=timezone.utc
+        )
+        novel_is_issued = MULTI_ROUND_SUITE in resolved_suites and (
+            presence_state is None or resolved_suites[0] == MULTI_ROUND_SUITE
+        )
+
         # Store session metadata
         session_meta = {
             "session_id": session_id,
@@ -292,12 +325,13 @@ class SessionManager:
             "time_budget_ms": time_budget_ms,
             # The wall-clock budget begins when the server issues challenges,
             # not when the caller chooses to submit its first answer.
-            "start_time": now.timestamp(),
+            "start_time": issued_at,
             # Each novel-reasoning response is timed from the previous round
             # boundary. Using cumulative session age here would force later
             # rounds to look slower and make an AI acceleration signature
             # impossible through the real API.
-            "round_started_at": now.timestamp(),
+            "novel_started_at": issued_at if novel_is_issued else None,
+            "round_started_at": issued_at if novel_is_issued else None,
             "current_round": 0,
             "suites_completed": [],
             "suite_results": {},
@@ -307,9 +341,9 @@ class SessionManager:
 
         # Store in Redis
         pipe = self.redis.pipeline()
-        pipe.setex(_key(session_id), ACTIVE_SESSION_TTL, json.dumps(session_meta))
+        pipe.setex(_key(session_id), storage_ttl, json.dumps(session_meta))
         pipe.setex(
-            _key(session_id, "answers"), ACTIVE_SESSION_TTL, json.dumps(server_answers)
+            _key(session_id, "answers"), storage_ttl, json.dumps(server_answers)
         )
         await pipe.execute()
 
@@ -320,14 +354,14 @@ class SessionManager:
         raw = await self.redis.get(_key(session_id))
         if raw is None:
             return None
-        return json.loads(raw)
+        return self._decode_redis_object(raw, "session metadata")
 
     async def get_session_answers(self, session_id: str) -> dict[str, Any] | None:
         """Get server-side answers for a session."""
         raw = await self.redis.get(_key(session_id, "answers"))
         if raw is None:
             return None
-        return json.loads(raw)
+        return self._decode_redis_object(raw, "session answers")
 
     async def cancel_session(self, session_id: str, user_id: str) -> bool:
         """Cancel a session. Returns False if not found or wrong user."""
@@ -347,10 +381,8 @@ class SessionManager:
             return False
 
         session["status"] = SessionStatus.CANCELLED.value
-        await self.redis.setex(
-            _key(session_id), COMPLETED_SESSION_TTL, json.dumps(session)
-        )
-        await self.redis.srem(_rate_key(user_id, "active"), session_id)
+        session["terminated_at"] = time.time()
+        await self._persist_terminal_session(session)
         return True
 
     # ---- Single-Shot Verification ----
@@ -441,9 +473,8 @@ class SessionManager:
         # Check if all suites completed
         if set(session["suites_completed"]) == set(session["suites"]):
             session["status"] = SessionStatus.COMPLETED.value
+            session["completed_at"] = time.time()
             ttl = COMPLETED_SESSION_TTL
-            # Clean up active session tracking for rate limiting
-            await self.redis.srem(_rate_key(session["user_id"], "active"), session_id)
         else:
             ttl = self._remaining_active_ttl(session)
 
@@ -466,7 +497,10 @@ class SessionManager:
             session_id=session_id,
             completed=session["status"] == SessionStatus.COMPLETED.value,
         )
-        await self.redis.setex(_key(session_id), ttl, json.dumps(session))
+        if session["status"] == SessionStatus.COMPLETED.value:
+            await self._persist_terminal_session(session)
+        else:
+            await self.redis.setex(_key(session_id), ttl, json.dumps(session))
         response = dict(result)
         response["presence"] = response_presence
         response["next_challenge"] = next_challenge
@@ -528,12 +562,17 @@ class SessionManager:
         evaluation_answers = dict(answers)
         evaluation_answers.pop(CONTINUITY_ANSWER_KEY, None)
 
-        # Server-side timing enforcement. Keep total elapsed time for the
-        # authoritative budget, but record this round's duration for curve
-        # analysis rather than cumulative session age.
+        # The session-wide budget was enforced above. Novel reasoning has its
+        # own clock beginning when that suite is actually issued, while curve
+        # analysis records each individual round's duration.
         answered_at = time.time()
-        elapsed_ms = (answered_at - session["start_time"]) * 1000
-        round_started_at = float(session.get("round_started_at", session["start_time"]))
+        novel_started_at = float(
+            session.get("novel_started_at") or session["start_time"]
+        )
+        elapsed_ms = (answered_at - novel_started_at) * 1000
+        round_started_at = float(
+            session.get("round_started_at") or novel_started_at
+        )
         round_response_ms = max(0.0, (answered_at - round_started_at) * 1000)
 
         server_answers = await self.get_session_answers(session_id)
@@ -544,7 +583,7 @@ class SessionManager:
         time_budget_ms = novel_server.get("time_budget_s", 30) * 1000
         num_rounds = novel_server.get("num_rounds", 3)
 
-        time_exceeded = elapsed_ms > time_budget_ms
+        time_exceeded = elapsed_ms >= time_budget_ms
         time_remaining_ms = max(0, int(time_budget_ms - elapsed_ms))
 
         # Evaluate each challenge for this round
@@ -614,10 +653,7 @@ class SessionManager:
             # Check if all suites completed
             if set(session["suites_completed"]) == set(session["suites"]):
                 session["status"] = SessionStatus.COMPLETED.value
-                # Clean up active session tracking for rate limiting
-                await self.redis.srem(
-                    _rate_key(session["user_id"], "active"), session_id
-                )
+                session["completed_at"] = time.time()
 
         ttl = (
             COMPLETED_SESSION_TTL
@@ -651,7 +687,10 @@ class SessionManager:
             session_id=session_id,
             completed=session["status"] == SessionStatus.COMPLETED.value,
         )
-        await self.redis.setex(_key(session_id), ttl, json.dumps(session))
+        if session["status"] == SessionStatus.COMPLETED.value:
+            await self._persist_terminal_session(session)
+        else:
+            await self.redis.setex(_key(session_id), ttl, json.dumps(session))
 
         return {
             "round_num": round_num,
@@ -688,16 +727,13 @@ class SessionManager:
         if session["status"] != SessionStatus.COMPLETED.value:
             return None
 
-        elapsed_ms = 0
-        if session["start_time"]:
-            now = time.time()
-            elapsed_ms = int((now - session["start_time"]) * 1000)
+        results, start_time, completed_at = self._validate_completed_session(
+            session, session_id
+        )
+        elapsed_ms = max(0, int((completed_at - start_time) * 1000))
 
         # Check overall pass
-        results = session.get("suite_results", {})
-        all_passed = (
-            all(r.get("passed", False) for r in results.values()) if results else False
-        )
+        all_passed = all(result["passed"] for result in results.values())
 
         # Extract iteration curve if novel reasoning was run
         iteration_curve = None
@@ -737,6 +773,13 @@ class SessionManager:
                 if suite == MULTI_ROUND_SUITE
                 else f"suite:{suite}"
             )
+            if (
+                suite == MULTI_ROUND_SUITE
+                and session.get("novel_started_at") is None
+            ):
+                issued_at = time.time()
+                session["novel_started_at"] = issued_at
+                session["round_started_at"] = issued_at
             return {
                 suite: attach_continuity_challenge(
                     presence,
@@ -801,7 +844,9 @@ class SessionManager:
             raw = await self.redis.get(_presentation_key(challenge_id))
             if raw is None:
                 raise ValueError("Presentation challenge expired or already used")
-            challenge = json.loads(raw)
+            challenge = self._decode_redis_object(
+                raw, "presentation challenge"
+            )
             if challenge.get("verifier_user_id") != verifier_user_id:
                 raise ValueError("Presentation challenge belongs to another verifier")
             if challenge.get("credential_jti") != credential_jti:
@@ -820,7 +865,9 @@ class SessionManager:
                 raise RuntimeError(
                     "Redis client cannot consume presentation challenges"
                 )
-            await delete(_presentation_key(challenge_id))
+            deleted = await delete(_presentation_key(challenge_id))
+            if deleted != 1:
+                raise ValueError("Presentation challenge expired or already used")
             return challenge
 
     # ---- Iteration Curve Analysis ----
@@ -890,7 +937,13 @@ class SessionManager:
                 RATE_LIMIT_WINDOW,
             )
 
-    async def _reserve_rate_limits(self, user_id: str, session_id: str) -> None:
+    async def _reserve_rate_limits(
+        self,
+        user_id: str,
+        session_id: str,
+        *,
+        active_ttl: int = ACTIVE_SESSION_TTL,
+    ) -> None:
         """Atomically reserve active-session and hourly quota in Redis."""
         eval_fn = getattr(self.redis, "eval", None)
         if not callable(eval_fn):
@@ -900,7 +953,7 @@ class SessionManager:
             await self._check_rate_limits(user_id)
             pipe = self.redis.pipeline()
             pipe.sadd(_rate_key(user_id, "active"), session_id)
-            pipe.expire(_rate_key(user_id, "active"), ACTIVE_SESSION_TTL)
+            pipe.expire(_rate_key(user_id, "active"), active_ttl)
             pipe.incr(_rate_key(user_id, "hourly"))
             pipe.expire(_rate_key(user_id, "hourly"), RATE_LIMIT_WINDOW)
             await pipe.execute()
@@ -914,7 +967,7 @@ class SessionManager:
             session_id,
             MAX_ACTIVE_SESSIONS_PER_USER,
             MAX_SESSIONS_PER_HOUR,
-            ACTIVE_SESSION_TTL,
+            active_ttl,
             RATE_LIMIT_WINDOW,
         )
         if result == -1:

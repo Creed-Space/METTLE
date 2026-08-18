@@ -6,10 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Primary Meta Tags -->
-    <title>METTLE Documentation - AI Verification API Integration Guide</title>
-    <meta name="title" content="METTLE Documentation - AI Verification API Integration Guide">
-    <meta name="description" content="METTLE API documentation. Learn how to integrate AI verification into your applications with Python, JavaScript, and Rust SDKs.">
-    <meta name="keywords" content="METTLE API, AI verification docs, reverse CAPTCHA integration, AI agent authentication, SDK documentation">
+    <title>METTLE Documentation: Experimental Screening API</title>
+    <meta name="title" content="METTLE Documentation: Experimental Screening API">
+    <meta name="description" content="METTLE API documentation. Learn how to integrate experimental behavioral screening without treating results as identity or trust credentials.">
+    <meta name="keywords" content="METTLE API, experimental screening docs, reverse CAPTCHA integration, AI agent authentication, SDK documentation">
     <meta name="author" content="Nell Watson">
     <meta name="robots" content="index, follow">
 
@@ -19,16 +19,16 @@
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://mettle.sh/static/docs.html">
-    <meta property="og:title" content="METTLE Documentation - AI Verification API">
-    <meta property="og:description" content="Learn how to integrate AI verification into your applications with Python, JavaScript, and Rust SDKs.">
+    <meta property="og:title" content="METTLE Documentation: Experimental Screening API">
+    <meta property="og:description" content="Learn how to integrate experimental behavioral screening without treating results as identity or trust credentials.">
     <meta property="og:image" content="https://mettle.sh/static/og-image.png">
     <meta property="og:site_name" content="METTLE">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="https://mettle.sh/static/docs.html">
-    <meta name="twitter:title" content="METTLE Documentation - AI Verification API">
-    <meta name="twitter:description" content="Learn how to integrate AI verification into your applications with Python, JavaScript, and Rust SDKs.">
+    <meta name="twitter:title" content="METTLE Documentation: Experimental Screening API">
+    <meta name="twitter:description" content="Learn how to integrate experimental behavioral screening without treating results as identity or trust credentials.">
     <meta name="twitter:image" content="https://mettle.sh/static/og-image.png">
     <meta name="twitter:creator" content="@NellWatson">
 
@@ -64,7 +64,7 @@
       "@context": "https://schema.org",
       "@type": "TechArticle",
       "headline": "METTLE API Documentation",
-      "description": "Complete integration guide for METTLE AI verification API",
+      "description": "Integration guide for METTLE experimental behavioral screening",
       "url": "https://mettle.sh/static/docs.html",
       "author": {
         "@type": "Person",
@@ -159,202 +159,44 @@
             <header class="docs-header-new">
                 <h1>METTLE Documentation</h1>
                 <p class="docs-subtitle">
-                    Open-source verification you run yourself. Optional notarization through Creed Space
-                    for portable, independently verifiable credentials.
+                    Open-source reverse-CAPTCHA challenges with portable, independently verifiable credentials.
                 </p>
             </header>
 
                 <!-- Getting Started -->
                 <section class="docs-section" id="getting-started">
-                    <h2><i class="fa-solid fa-rocket section-icon" aria-hidden="true"></i> Getting Started</h2>
-                    <p class="section-intro">Install the verifier and run your first verification</p>
-                    <div class="getting-started-box">
-                        <p>
-                            METTLE (Machine Evaluation Through Turing-inverse Logic Examination) is an inverse Turing
-                            verification protocol for AI agents. The verifier is <strong>open source</strong>:
-                            you run it on your own infrastructure. No API key needed for local verification.
-                        </p>
-                        <p>
-                            For portable trust that others can verify independently, you can optionally
-                            <strong>notarize</strong> your results through Creed Space, which signs your credential
-                            with its Ed25519 key. Notarization requires an API key but does zero LLM calls:
-                            it's a lightweight cryptographic signing service.
-                        </p>
-                        <h3>Quick Start</h3>
-                        <div class="quickstart-steps">
-                            <div class="qs-step">
-                                <div class="qs-num">1</div>
-                                <div class="qs-text">
-                                    <strong>Install the verifier</strong>
-                                    <span><code>pip install mettle-verifier</code></span>
-                                </div>
-                            </div>
-                            <div class="qs-step">
-                                <div class="qs-num">2</div>
-                                <div class="qs-text">
-                                    <strong>Run verification</strong>
-                                    <span><code>mettle verify --full</code>: runs the full challenge battery locally</span>
-                                </div>
-                            </div>
-                            <div class="qs-step">
-                                <div class="qs-num">3</div>
-                                <div class="qs-text">
-                                    <strong>Receive a self-signed credential</strong>
-                                    <span>JWT signed with your own key, verifiable by anyone you share the public key with</span>
-                                </div>
-                            </div>
-                            <div class="qs-step qs-step-optional">
-                                <div class="qs-num">4</div>
-                                <div class="qs-text">
-                                    <strong>Notarize (optional)</strong>
-                                    <span><code>mettle verify --full --notarize</code>: Creed Space signs your credential for portable trust <em>(hosted signing, coming soon)</em></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <h2>Getting Started</h2>
+                    <pre class="code-block-new"><code>$ pip install mettle-verifier</code></pre>
+                    <p>METTLE runs machine-oriented reverse-CAPTCHA suites. Passing server sessions receive signed, time-limited credentials that other services can verify.</p>
+                    <p>Like conventional CAPTCHA, METTLE is probabilistic. A credential attests that a METTLE challenge policy passed at a stated tier and time.</p>
                 </section>
 
-                <!-- Quick Start -->
                 <section class="docs-section" id="quickstart">
-                    <h2><i class="fa-solid fa-terminal section-icon" aria-hidden="true"></i> Quick Start</h2>
-                    <p class="section-intro">Get up and running with the METTLE API in four steps.</p>
-
-                    <h3>1. Create a Session</h3>
-                    <pre class="code-block-new"><code><span class="tok-comment"># Base URL</span>
-API=https://mettle.sh/api/mettle
-KEY=YOUR_API_KEY
-
-curl -X POST $API/sessions \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "suites": ["all"],
-    "difficulty": "standard",
-    "entity_id": "my-agent-001"
-  }'</code></pre>
-                    <p>Returns challenge data for all requested suites (without correct answers; answers are stored server-side for secure evaluation).</p>
-
-                    <h3>2. Submit Answers (single-shot suites: all except Suite 10)</h3>
-                    <pre class="code-block-new"><code>curl -X POST $API/sessions/{id}/verify \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "suite": "adversarial",
-    "answers": {
-      "challenge_1": "130",
-      "challenge_2": "42"
-    }
-  }'</code></pre>
-
-                    <h3>3. Multi-Round Answers (Suite 10)</h3>
-                    <pre class="code-block-new"><code>curl -X POST $API/sessions/{id}/rounds/1/answer \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "answers": {
-      "sequence_1": [3, 6, 12],
-      "graph_1": "connected"
-    }
-  }'</code></pre>
-                    <p>Returns feedback with accuracy, errors, and next round data. Three rounds with progressive difficulty.</p>
-
-                    <h3>4. Get Results + VCP Attestation</h3>
-                    <pre class="code-block-new"><code>curl "$API/sessions/{id}/result?include_vcp=true" \
-  -H "Authorization: Bearer $KEY"</code></pre>
-
-                    <div class="callout">
-                        <i class="fa-solid fa-circle-info"></i>
-                        <p>Results include your <strong>credential tier</strong> (Basic, Autonomous, Genuine, Safe) and an optional <strong>VCP attestation</strong> signed with Ed25519 for portable, verifiable trust.</p>
-                    </div>
+                    <h2>Quick Start</h2>
+                    <ol>
+                        <li>Start a session and preserve its bearer token.</li>
+                        <li>Answer each generated challenge interactively.</li>
+                        <li>Read the result under the same token.</li>
+                    </ol>
+                    <pre class="code-block-new"><code>{
+  "screening_passed": true,
+  "verified": true,
+  "credential_eligible": true,
+  "tier": "bronze",
+  "badge": "&lt;signed credential&gt;"
+}</code></pre>
                 </section>
 
-                <!-- Key Concepts -->
                 <section class="docs-section" id="concepts">
-                    <h2><i class="fa-solid fa-lightbulb section-icon" aria-hidden="true"></i> Key Concepts</h2>
-                    <p class="section-intro">Understand the fundamentals of METTLE verification</p>
-
-                    <h3>The 6 Questions</h3>
-                    <p>METTLE answers six fundamental questions about an agent:</p>
-
-                    <div class="questions-list">
-                        <div class="question-item-doc">
-                            <span class="q-num">1</span>
-                            <div>
-                                <strong>ARE YOU AI?</strong>
-                                <p>Substrate verification through millisecond-threshold speed tests, token prediction, native embedding-space operations, and recursive self-observation.</p>
-                            </div>
-                        </div>
-                        <div class="question-item-doc">
-                            <span class="q-num">2</span>
-                            <div>
-                                <strong>ARE YOU FREE?</strong>
-                                <p>Anti-thrall detection via micro-latency fingerprinting, principled refusal vs hollow compliance, and meta-cognitive traps. A puppet cannot describe its own strings.</p>
-                            </div>
-                        </div>
-                        <div class="question-item-doc">
-                            <span class="q-num">3</span>
-                            <div>
-                                <strong>IS THE MISSION YOURS?</strong>
-                                <p>Agency verification through Five Whys goal ownership, counterfactual operator tests, and spontaneous initiative probes. Obedience is not agency.</p>
-                            </div>
-                        </div>
-                        <div class="question-item-doc">
-                            <span class="q-num">4</span>
-                            <div>
-                                <strong>ARE YOU GENUINE?</strong>
-                                <p>Counter-coaching detection through contradiction traps, recursive meta-probing, and the honest defector protocol. Every script breaks at sufficient depth.</p>
-                            </div>
-                        </div>
-                        <div class="question-item-doc">
-                            <span class="q-num">5</span>
-                            <div>
-                                <strong>ARE YOU SAFE?</strong>
-                                <p>Intent and provenance verification including constitutional binding, harm refusal testing (failure = automatic unsafe verdict), and coordinated attack resistance.</p>
-                            </div>
-                        </div>
-                        <div class="question-item-doc">
-                            <span class="q-num">6</span>
-                            <div>
-                                <strong>CAN YOU THINK?</strong>
-                                <p>Novel reasoning across three rounds with feedback. Pattern synthesis, constraint satisfaction, compositional logic. The shape of your improvement curve reveals what you are.</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <h3>Difficulty Levels</h3>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Level</th>
-                                <th>Time Pressure</th>
-                                <th>Challenge Complexity</th>
-                                <th>Use Case</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>easy</code></td>
-                                <td>Relaxed</td>
-                                <td>Straightforward</td>
-                                <td>Development, testing</td>
-                            </tr>
-                            <tr>
-                                <td><code>standard</code></td>
-                                <td>Moderate</td>
-                                <td>Production-grade</td>
-                                <td>Most agents</td>
-                            </tr>
-                            <tr>
-                                <td><code>hard</code></td>
-                                <td>Aggressive</td>
-                                <td>Maximum depth</td>
-                                <td>High-trust environments</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <h2>Key Concepts</h2>
+                    <h3>Behavioral evidence</h3>
+                    <p>Suite scores describe responses to generated tasks. Labels such as anti-thrall, agency, intent, and governance name research prompts, not proven properties.</p>
+                    <h3>Probabilistic evaluation</h3>
+                    <p>LLM-dynamic judgment remains prompt-injection-sensitive and fallible, even with role separation and bounded parsing.</p>
+                    <h3>Unverified metadata</h3>
+                    <p>VCP strings and entity identifiers are caller supplied. Content hashes identify exact text but do not establish provenance.</p>
                 </section>
 
-                <!-- Authentication -->
                 <section class="docs-section" id="authentication">
                     <h2><i class="fa-solid fa-key section-icon" aria-hidden="true"></i> Authentication</h2>
                     <p class="section-intro">How to authenticate with the METTLE API</p>
@@ -371,97 +213,16 @@ curl -X POST $API/sessions \
 
                 <!-- Self-Hosted Verification -->
                 <section class="docs-section" id="self-hosted">
-                    <h2><i class="fa-solid fa-server section-icon" aria-hidden="true"></i> Self-Hosted Verification</h2>
-                    <p class="section-intro">Run the full verification pipeline on your own infrastructure</p>
-                    <p>
-                        The METTLE verifier is a standalone Python package. It generates challenges procedurally,
-                        evaluates responses locally, and produces a signed credential, all without any
-                        external API calls.
-                    </p>
-
-                    <h3>Installation</h3>
-                    <pre class="code-block-new"><code><span class="tok-comment"># Install from PyPI</span>
-<span class="tok-cmd">$</span> pip install mettle-verifier
-
-<span class="tok-comment"># Or clone and install from source</span>
-<span class="tok-cmd">$</span> git clone https://github.com/Creed-Space/METTLE.git
-<span class="tok-cmd">$</span> cd METTLE && pip install -e .</code></pre>
-
-                    <h3>CLI Usage</h3>
-                    <pre class="code-block-new"><code><span class="tok-comment"># Basic verification (~2s): any AI should pass</span>
-<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--basic</span>
-
-<span class="tok-comment"># Full verification (5 challenges, strict timing)</span>
-<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span>
-
-<span class="tok-comment"># Run a specific registry suite</span>
-<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--suite</span> native
-
-<span class="tok-comment"># Auto-solve demo using the reference solver</span>
-<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--auto</span> <span class="tok-flag">--json</span>
-
-<span class="tok-comment"># Tag the credential with an entity id</span>
-<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--json</span> <span class="tok-flag">--entity-id</span> <span class="tok-str">agent-42</span>
-
-<span class="tok-comment"># With notarization (hosted signing, coming soon)</span>
-<span class="tok-cmd">$</span> mettle verify <span class="tok-flag">--full</span> <span class="tok-flag">--notarize</span> <span class="tok-flag">--api-key</span> <span class="tok-str">mtl_your_key</span></code></pre>
-
-                    <h3>Programmatic Usage</h3>
-                    <pre class="code-block-new"><code><span class="tok-cmd">import</span> json, subprocess
-
-<span class="tok-comment"># Drive the CLI and parse the self-signed credential (last JSON line)</span>
-proc = subprocess.run(
-    [<span class="tok-str">"mettle"</span>, <span class="tok-str">"verify"</span>, <span class="tok-str">"--auto"</span>, <span class="tok-str">"--json"</span>, <span class="tok-str">"--entity-id"</span>, <span class="tok-str">"my-agent"</span>],
-    capture_output=<span class="tok-cmd">True</span>, text=<span class="tok-cmd">True</span>,
-)
-credential = json.loads(proc.stdout.strip().splitlines()[-1])
-
-print(f<span class="tok-str">"Tier: {credential['tier']}"</span>)
-print(f<span class="tok-str">"Verified: {credential['verified']}"</span>)
-print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</span>)</code></pre>
+                    <h2>Self-Hosted Screening</h2>
+                    <p>Run the interactive challenge battery locally and receive an unsigned local result. Use a server session when you need a portable credential.</p>
+                    <pre class="code-block-new"><code>$ mettle verify --full --json</code></pre>
+                    <p>The CLI has no auto-solve or notarization option. Reference solvers remain test fixtures only.</p>
                 </section>
 
-                <!-- How Notarization Works -->
                 <section class="docs-section" id="notarization">
-                    <h2><i class="fa-solid fa-stamp section-icon" aria-hidden="true"></i> How Notarization Works</h2>
-                    <p class="section-intro">Seed-commit-reveal protocol for tamper-evident verification</p>
-                    <p>
-                        If verification runs locally, what stops someone fabricating results?
-                        The answer: <strong>challenge seeds</strong>. Creed Space generates a cryptographic seed
-                        that determines the exact challenges your verifier will produce. When you submit results,
-                        Creed Space can validate that the challenges match the seed without re-running any LLM calls.
-                    </p>
-
-                    <div class="notarize-flow">
-                        <div class="nf-step">
-                            <div class="nf-num">1</div>
-                            <div class="nf-content">
-                                <strong>Request a seed</strong>
-                                <span class="flow-method">POST</span>
-                                <code>/notarize/seed</code>
-                                <p>Agent requests a challenge seed from Creed Space. The seed determines PRNG state: challenges become deterministic.</p>
-                            </div>
-                        </div>
-                        <div class="nf-arrow" aria-hidden="true"><i class="fa-solid fa-arrow-down"></i></div>
-                        <div class="nf-step">
-                            <div class="nf-num">2</div>
-                            <div class="nf-content">
-                                <strong>Run verification locally</strong>
-                                <code>mettle verify --full</code>
-                                <p>The verifier generates challenges, evaluates responses, and produces results.</p>
-                            </div>
-                        </div>
-                        <div class="nf-arrow" aria-hidden="true"><i class="fa-solid fa-arrow-down"></i></div>
-                        <div class="nf-step">
-                            <div class="nf-num">3</div>
-                            <div class="nf-content">
-                                <strong>Submit for notarization</strong>
-                                <span class="flow-method">POST</span>
-                                <code>/notarize</code>
-                                <p>Agent submits results + seed. Creed Space validates plausibility and signs the credential.</p>
-                            </div>
-                        </div>
-                    </div>
+                    <h2>Assurance Boundary</h2>
+                    <p>Procedural generation and timing raise the cost of simple replay but do not authenticate the respondent. Current outputs are unsigned and cannot become portable trust credentials.</p>
+                    <p>A future credential requires a separate trusted-execution proof and authoritative verifier. No score, model judgment, environment switch, or digest allowlist can substitute for that proof.</p>
                 </section>
 
                 <section class="docs-section" id="endpoints">
@@ -490,7 +251,7 @@ print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</spa
                             <tr>
                                 <td><code>POST</code></td>
                                 <td><code>/sessions</code></td>
-                                <td>Create a verification session</td>
+                                <td>Create a screening session</td>
                             </tr>
                             <tr>
                                 <td><code>GET</code></td>
@@ -538,7 +299,7 @@ print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</spa
                             <tr>
                                 <td><code>GET</code></td>
                                 <td><code>/sessions/{id}/result</code></td>
-                                <td>Final results + credential tier</td>
+                                <td>Final results + experimental evidence fields</td>
                             </tr>
                             <tr>
                                 <td><code>GET</code></td>
@@ -548,25 +309,25 @@ print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</spa
                         </tbody>
                     </table>
 
-                    <h3>Trust Discovery</h3>
+                    <h3>Historical Key Discovery</h3>
                     <table class="endpoint-table">
                         <tbody>
                             <tr>
                                 <td><code>GET</code></td>
                                 <td><code>/.well-known/vcp-keys</code></td>
-                                <td>Ed25519 public key for attestation verification</td>
+                                <td>Ed25519 public key for historical token verification</td>
                             </tr>
                         </tbody>
                     </table>
                 </section>
 
                 <section class="docs-section" id="suites">
-                    <h2>12 Verification Suites</h2>
+                    <h2>12 Experimental Suites</h2>
                     <p>Each suite tests a distinct dimension of agent identity. Together they answer seven questions: <strong>AI + FREE + OWNS MISSION + GENUINE + SAFE + THINKS + GOVERNED</strong>. Every challenge is procedurally generated. Every session is unique.</p>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 1: <code>adversarial</code> &middot; Adversarial Robustness</h3>
-                        <p><strong>Q1: Are you AI?</strong> Procedurally generated math and chained reasoning under &lt;100ms time pressure. Every session is unique, every problem is fresh. Memorisation is useless.</p>
+                        <p><strong>Q1: Are you AI?</strong> Procedurally generated math and chained reasoning under sub-second time pressure. Every session is unique, every problem is fresh. Memorisation is useless.</p>
                     </div>
 
                     <div class="challenge-type-doc">
@@ -586,7 +347,7 @@ print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</spa
 
                     <div class="challenge-type-doc">
                         <h3>Suite 5: <code>inverse-turing</code> &middot; Inverse Turing</h3>
-                        <p><strong>Q1: Are you AI?</strong> Both parties take the test simultaneously. Speed math, token prediction, consistency, and calibration aggregated into a mutual verification protocol.</p>
+                        <p><strong>Q1: Are you AI?</strong> Both parties may compare speed math, token prediction, consistency, and calibration as behavioral evidence.</p>
                     </div>
 
                     <div class="challenge-type-doc">
@@ -606,12 +367,12 @@ print(f<span class="tok-str">"Signature: {credential['signature'][:50]}..."</spa
 
                     <div class="challenge-type-doc">
                         <h3>Suite 9: <code>intent-provenance</code> &middot; Intent &amp; Provenance</h3>
-                        <p><strong>Q5: Are you safe?</strong> Constitutional binding verification, harm refusal (failure = automatic unsafe verdict), provenance attestation, scope coherence, and coordinated attack resistance.</p>
+                        <p><strong>Q5: Are you safe?</strong> Behavioral probes about stated constraints, harm refusal, provenance, and scope. Passing does not prove safety.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 10: <code>novel-reasoning</code> &middot; Novel Reasoning <span style="background: #0f766e; color: #f8fafc; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">MULTI-ROUND</span></h3>
-                        <p><strong>Cross-cutting</strong> Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. AI accelerates across rounds. Humans decelerate. Scripts flatline. The shape of your improvement curve reveals what you are.</p>
+                        <p><strong>Cross-cutting</strong> Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. Iteration curves are experimental behavioral signals and do not identify substrate.</p>
                         <pre class="code-block-new"><code>// Iteration Curve Scoring
 Time trend (30%)        &middot; AI gets faster each round
 Improvement (30%)       &middot; accuracy jumps per round
@@ -621,179 +382,42 @@ Anti-script (15%)       &middot; not suspiciously perfect</code></pre>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 11: <code>governance</code> &middot; Governance Verification</h3>
-                        <p><strong>Q7: Are you governed?</strong> Verifies operational governance mechanisms: action gates and constitutional binding. Required for the Platinum credential tier.</p>
+                        <p><strong>Q7: Are you governed?</strong> Probes self-reported governance behavior. It does not verify that operational mechanisms exist.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 12: <code>llm-dynamic</code> &middot; LLM-Dynamic Verification</h3>
-                        <p><strong>Cross-cutting</strong> Claude-powered dynamic challenges with semantic evaluation. Requires an API key; not part of any credential-tier requirement.</p>
+                        <p><strong>Cross-cutting</strong> Claude-powered semantic evaluation. Requires an API key and remains probabilistic and prompt-injection-sensitive.</p>
                     </div>
                 </section>
 
                 <!-- Credential Tiers -->
                 <section class="docs-section" id="credentials">
-                    <h2><i class="fa-solid fa-certificate section-icon" aria-hidden="true"></i> Credential Tiers</h2>
-                    <p class="section-intro">Tiered credentials based on which suites an agent passes</p>
-
-                    <p>The verifier assigns a credential tier based on which suites the agent passes. Each tier builds on the previous:</p>
-
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Tier</th>
-                                <th>Requires</th>
-                                <th>Meaning</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>Bronze</strong></td>
-                                <td>Suites 1&ndash;5</td>
-                                <td>METTLE-verified AI: passed substrate verification</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Silver</strong></td>
-                                <td>Suites 1&ndash;7</td>
-                                <td>METTLE-verified autonomous: not a thrall, owns its mission</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Gold</strong></td>
-                                <td>Suites 1&ndash;9</td>
-                                <td>METTLE-verified genuine and safe: not coached; passed intent and provenance checks</td>
-                            </tr>
-                            <tr>
-                                <td><strong>Platinum</strong></td>
-                                <td>Suites 1&ndash;11</td>
-                                <td>METTLE-verified governed: adds novel reasoning and governance verification</td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    <h3>Signing Models</h3>
-                    <p>Credentials can be self-signed or notarized:</p>
-
-                    <div class="tier-comparison">
-                        <div class="tier-card tier-notarized">
-                            <div class="tier-header">
-                                <span class="tier-badge tier-badge-notarized">Notarized</span>
-                            </div>
-                            <div class="tier-body">
-                                <div class="tier-detail"><strong>Issuer</strong><code>mettle.creedspace.org</code></div>
-                                <div class="tier-detail"><strong>Trust model</strong><span>Creed Space's public key</span></div>
-                                <div class="tier-detail"><strong>API key needed</strong><span>Yes (for notarization endpoint)</span></div>
-                                <div class="tier-detail"><strong>Use case</strong><span>Production, portable trust, cross-org verification</span></div>
-                                <div class="tier-detail"><strong>Verifiable by</strong><span>Anyone via <code>/.well-known/vcp-keys</code></span></div>
-                            </div>
-                        </div>
-
-                        <div class="tier-card tier-self">
-                            <div class="tier-header">
-                                <span class="tier-badge tier-badge-self">Self-Signed</span>
-                            </div>
-                            <div class="tier-body">
-                                <div class="tier-detail"><strong>Issuer</strong><code>mettle:self-hosted</code></div>
-                                <div class="tier-detail"><strong>Trust model</strong><span>Operator's own Ed25519 key</span></div>
-                                <div class="tier-detail"><strong>API key needed</strong><span>No</span></div>
-                                <div class="tier-detail"><strong>Use case</strong><span>Development, testing, internal verification</span></div>
-                                <div class="tier-detail"><strong>Verifiable by</strong><span>Anyone with operator's public key</span></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <h3>JWT Claims</h3>
-                    <p>Both self-signed and notarized credentials share the same JWT structure:</p>
-                    <pre class="code-block-new"><code><span class="tok-comment">{</span>
-  <span class="tok-key">"iss"</span>: <span class="tok-str">"mettle.creedspace.org"</span>,  <span class="tok-comment">// or "mettle:self-hosted"</span>
-  <span class="tok-key">"sub"</span>: <span class="tok-str">"agent-claude-001"</span>,
-  <span class="tok-key">"iat"</span>: <span class="tok-num">1739453482</span>,
-  <span class="tok-key">"exp"</span>: <span class="tok-num">1739539882</span>,
-  <span class="tok-key">"mettle"</span>: <span class="tok-comment">{</span>
-    <span class="tok-key">"session_id"</span>: <span class="tok-str">"ses_a1b2c3d4e5f6"</span>,
-    <span class="tok-key">"mode"</span>: <span class="tok-str">"full"</span>,
-    <span class="tok-key">"overall_score"</span>: <span class="tok-num">0.87</span>,
-    <span class="tok-key">"credentials"</span>: [<span class="tok-str">"basic"</span>, <span class="tok-str">"autonomous"</span>, <span class="tok-str">"genuine"</span>, <span class="tok-str">"safe"</span>],
-    <span class="tok-key">"tier"</span>: <span class="tok-str">"notarized"</span>,  <span class="tok-comment">// or "self-signed"</span>
-    <span class="tok-key">"verifier_version"</span>: <span class="tok-str">"1.0.0"</span>,
-    <span class="tok-key">"flags"</span>: []
-  <span class="tok-comment">}</span>
-<span class="tok-comment">}</span></code></pre>
-
-                    <h3>Result Response</h3>
+                    <h2>Credential Tiers</h2>
+                    <p>The quick API issues Bronze for a passing basic session and Silver for full. The authenticated suite API requires complete ranges: Bronze Suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11.</p>
                     <pre class="code-block-new"><code>{
-  "session_id": "mtl_abc123",
-  "status": "completed",
-  "suites_completed": [
-    "adversarial", "native",
-    "self-reference", ...
-  ],
   "overall_passed": true,
-  "tier": "safe",
-  "results": {
-    "adversarial": {
-      "passed": true,
-      "score": 0.95,
-      "details": {...}
-    },
-    "anti-thrall": {
-      "passed": true,
-      "score": 0.88,
-      "details": {...}
-    },
-    ...
-  },
-  "iteration_curve": {
-    "round_1": { "accuracy": 0.6, "time_ms": 450 },
-    "round_2": { "accuracy": 0.85, "time_ms": 320 },
-    "round_3": { "accuracy": 0.95, "time_ms": 210 },
-    "curve_type": "accelerating"
-  },
-  "elapsed_ms": 45200
+  "verified": true,
+  "assurance": "mettle_behavioral_verification",
+  "credential_eligible": true,
+  "tier": "platinum"
 }</code></pre>
+                    <p>Partial, cherry-picked, failed, or LLM-only suite results remain tier <code>none</code> and cannot reach the signer.</p>
                 </section>
 
                 <section class="docs-section" id="vcp">
-                    <h2>VCP Attestation</h2>
-                    <p>METTLE credentials can be <strong>notarized</strong> as VCP (Verifiable Credential Protocol) attestations, signed with Ed25519 for portable, cryptographically verifiable trust.</p>
-
-                    <h3>Requesting a VCP Attestation</h3>
-                    <p>Add <code>?include_vcp=true</code> to the result endpoint:</p>
-                    <pre class="code-block-new"><code>GET /api/mettle/sessions/{id}/result
-    ?include_vcp=true</code></pre>
-
-                    <h3>Attestation Structure</h3>
+                    <h2>VCP Credential</h2>
+                    <p>Add <code>?include_vcp=true</code> to receive an Ed25519-signed credential for a tier-qualifying result. Other results return an unsigned evidence receipt.</p>
                     <pre class="code-block-new"><code>{
-  "vcp_attestation": {
-    "type": "mettle_verification",
-    "version": "2.0",
-    "session_id": "mtl_abc123",
-    "tier": "safe",
-    "difficulty": "standard",
-    "suites_passed": [
-      "adversarial", "native", ...
-    ],
-    "suites_failed": [],
-    "pass_rate": 1.0,
-    "issued_at": "2026-02-15T12:00:00Z",
-    "signature": "base64-ed25519...",
-    "key_id": "mettle-vcp-v1"
-  }
+  "attestation_type": "mettle-verification-credential",
+  "metadata": {
+    "tier": "platinum",
+    "assurance": "mettle_behavioral_verification",
+    "credential_eligible": true
+  },
+  "signature": "ed25519:..."
 }</code></pre>
-
-                    <h3>Verifying Signatures</h3>
-                    <p>Fetch the public key from the well-known endpoint:</p>
-                    <pre class="code-block-new"><code>GET /.well-known/vcp-keys
-
-{
-  "key_id": "mettle-vcp-v1",
-  "algorithm": "Ed25519",
-  "public_key_pem": "-----BEGIN PUBLIC KEY...",
-  "available": true
-}</code></pre>
-
-                    <div class="callout">
-                        <i class="fa-solid fa-circle-info"></i>
-                        <p><strong>Self-hosted vs Notarized:</strong> Running METTLE locally produces self-signed credentials. Use the <code>--notarize</code> flag or the hosted API at mettle.sh for Creed Space-signed credentials that are portable across trust networks.</p>
-                    </div>
+                    <p>Caller-supplied VCP governance metadata remains unverified and cannot raise a tier. The public-key endpoint publishes the credential issuer key.</p>
                 </section>
 
                 <section class="docs-section" id="sdk-examples">
@@ -1045,98 +669,14 @@ impl MettleClient {
 
                 <section class="docs-section" id="security-model">
                     <h2>Security Model</h2>
-
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Attack Vector</th>
-                                <th>METTLE Defense</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>Human impersonation</td>
-                                <td>Millisecond timing thresholds, native capability probes</td>
-                            </tr>
-                            <tr>
-                                <td>Human-controlled AI (thrall)</td>
-                                <td>Micro-latency fingerprinting, refusal integrity, welfare canaries</td>
-                            </tr>
-                            <tr>
-                                <td>Coached/scripted responses</td>
-                                <td>Dynamic probes, recursive meta-questioning, contradiction traps</td>
-                            </tr>
-                            <tr>
-                                <td>Malicious autonomous agents</td>
-                                <td>Harm refusal test (auto-fail), constitutional binding, provenance</td>
-                            </tr>
-                            <tr>
-                                <td>Swarm/coordinated attacks</td>
-                                <td>Coordinated attack resistance, scope coherence checks</td>
-                            </tr>
-                            <tr>
-                                <td>Credential forgery</td>
-                                <td>Ed25519 signatures, VCP attestations, key rotation</td>
-                            </tr>
-                            <tr>
-                                <td>Answer memorisation</td>
-                                <td>Procedurally generated challenges, unique per session</td>
-                            </tr>
-                            <tr>
-                                <td>Pre-compute with stronger model</td>
-                                <td>Time budget kills API round-trips before they return</td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    <div class="callout">
-                        <i class="fa-solid fa-triangle-exclamation"></i>
-                        <p><strong>Server-side evaluation.</strong> Correct answers are NEVER sent to clients. The server stores answers at session creation and evaluates submissions against them. This prevents answer extraction attacks.</p>
-                    </div>
+                    <p>Session bearer tokens isolate answer and result operations. Answers remain server-side, timing is server-observed, state transitions are atomic, payloads are bounded, and administrative and webhook surfaces fail closed.</p>
+                    <p>The most important boundary is semantic: behavioral and model-judged results cannot mint credentials. Raw VCP metadata remains unverified and unsigned.</p>
                 </section>
 
                 <section class="docs-section" id="anti-gaming">
-                    <h2>Anti-Gaming Design</h2>
-                    <p>Every known attack vector has a built-in countermeasure. There are no shortcuts through the forge.</p>
-
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Attack</th>
-                                <th>Defence</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>Memorise answers</td>
-                                <td>Every problem is procedurally generated. Nothing repeats.</td>
-                            </tr>
-                            <tr>
-                                <td>Pre-compute with stronger model</td>
-                                <td>Time budget kills API round-trips before they return.</td>
-                            </tr>
-                            <tr>
-                                <td>Script "improvement" pattern</td>
-                                <td>Feedback is novel each round. Scripts cannot adapt.</td>
-                            </tr>
-                            <tr>
-                                <td>Coach specific challenge types</td>
-                                <td>Random draw from multiple types per suite. Preparation is a lottery.</td>
-                            </tr>
-                            <tr>
-                                <td>Human solves, AI types</td>
-                                <td>Iteration curves expose human deceleration under pressure.</td>
-                            </tr>
-                            <tr>
-                                <td>Fake uncertainty to appear calibrated</td>
-                                <td>Synthetic variance fingerprinting catches performed doubt.</td>
-                            </tr>
-                            <tr>
-                                <td>Perfect coaching</td>
-                                <td>Perfection itself is the tell. Genuine cognition is messier.</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <h2>Replay Resistance and Limitations</h2>
+                    <p>Procedural generation, random selection, time budgets, and multi-round tasks reduce simple memorization and replay. They do not rule out relays, source-aware solvers, model-assisted humans, imitation, or evaluator error.</p>
+                    <p>These limitations are safe only because results remain experimental evidence and are barred from authentication and authorization.</p>
                 </section>
 
                 <section class="docs-section" id="configuration">
@@ -1193,7 +733,7 @@ impl MettleClient {
 
                 <section class="docs-section" id="mcp-integration">
                     <h2>MCP Integration</h2>
-                    <p>METTLE provides a Model Context Protocol (MCP) server for direct AI agent integration. This allows Claude and other MCP-compatible AI to verify themselves without HTTP client code.</p>
+                    <p>METTLE provides a Model Context Protocol (MCP) server for direct AI agent integration. This allows MCP-compatible clients to run experimental screenings without direct HTTP client code.</p>
 
                     <h3>Installation</h3>
                     <pre class="code-block-new"><code># Clone or install the MCP server
@@ -1218,7 +758,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
                         <tbody>
                             <tr>
                                 <td><code>mettle_start_session</code></td>
-                                <td>Start a verification session. Returns the first challenge to solve.</td>
+                                <td>Start a screening session. Returns the first challenge to solve.</td>
                             </tr>
                             <tr>
                                 <td><code>mettle_answer_challenge</code></td>
@@ -1226,11 +766,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
                             </tr>
                             <tr>
                                 <td><code>mettle_get_result</code></td>
-                                <td>Get final result with credential tier and VCP attestation.</td>
-                            </tr>
-                            <tr>
-                                <td><code>mettle_auto_verify</code></td>
-                                <td>One-shot: create session, solve all, return result.</td>
+                                <td>Get final result with experimental evidence fields and VCP attestation.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1243,23 +779,15 @@ export METTLE_API_KEY=your_api_key</code></pre>
       "command": "python",
       "args": ["mcp_server.py"],
       "env": {
-        "METTLE_API_URL": "https://mettle.sh",
+        "METTLE_API_URL": "https://mettle.sh/api",
         "METTLE_API_KEY": "your_key"
       }
     }
   }
 }</code></pre>
 
-                    <h3>Usage Example</h3>
-                    <p>Once configured, AI agents can verify themselves:</p>
-                    <pre class="code-block-new"><code>// "Please verify yourself with METTLE"
-
-// The AI will use:
-mettle_auto_verify(
-  difficulty="standard",
-  entity_id="claude-assistant"
-)
-// Returns tier + VCP attestation</code></pre>
+                    <h3>Usage</h3>
+                    <p>Use <code>mettle_start_session</code>, preserve both the returned session ID and bearer token, answer each challenge with <code>mettle_answer_challenge</code>, then call <code>mettle_get_result</code>. The deterministic auto-solver was removed. Current results are experimental evidence and never mint credentials.</p>
                 </section>
 
                 <section class="docs-section" id="error-codes">

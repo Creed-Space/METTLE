@@ -1,4 +1,6 @@
-# METTLE Docs Page Audit — Recommendations & Code Locations
+# Historical METTLE Docs Page Audit: Recommendations and Code Locations
+
+> **Status:** Archived input from an earlier design phase. Examples that describe verification badges or trust claims are not current product behavior. See `README.md` for the implemented experimental-evidence contract.
 
 > Historical note (2026-07-13): `frontend/` was removed after this audit. `static/` is the canonical production frontend; Svelte path references below describe the original audit state only.
 

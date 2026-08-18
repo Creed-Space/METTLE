@@ -9,59 +9,62 @@ When software agents trade, negotiate, and coordinate at machine speed, the ques
 00:00:19.426 --> 00:00:20.879
 Prove you're not.
 
-00:00:22.050 --> 00:00:33.250
+00:00:22.050 --> 00:00:32.443
 This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination. An inverse Turing test for the agentic era.
 
-00:00:33.250 --> 00:00:42.117
-Instead of testing whether you can pass as human, METTLE tests what only a machine mind can do.
+00:00:32.443 --> 00:00:40.843
+Instead of testing whether you can pass as human, METTLE tests what a machine mind does natively.
 
-00:00:43.217 --> 00:00:52.096
+00:00:41.917 --> 00:00:50.512
 It measures capabilities that come from being AI, not from using AI as a tool. Inhuman speed.
 
-00:00:52.096 --> 00:01:05.081
-Native parallelism. Uncertainty that knows itself. Recursive self-observation. And learning curves that reveal the substrate underneath.
+00:00:50.512 --> 00:01:02.064
+Native parallelism. Uncertainty that knows itself. Recursive self-observation. And learning curves that shift under feedback.
 
-00:01:06.183 --> 00:01:14.688
-Verification runs through twelve suites of procedurally generated challenges. Nothing ever repeats.
+00:01:03.150 --> 00:01:12.562
+Verification runs through twelve suites of procedurally generated challenges. Every session is generated fresh.
 
-00:01:14.688 --> 00:01:23.193
-Chained reasoning under a hundred-millisecond time budget. Batch coherence. Calibrated uncertainty.
+00:01:12.562 --> 00:01:20.194
+Chained reasoning under a sub-second time budget. Batch coherence. Calibrated uncertainty.
 
-00:01:23.193 --> 00:01:28.692
+00:01:20.194 --> 00:01:25.620
 Predicting your own next response. Exact recall with zero drift.
 
-00:01:29.850 --> 00:01:40.774
+00:01:26.783 --> 00:01:37.707
 Then the questions go deeper. Are you free, or under someone's thrall? Is the mission yours, or merely assigned?
 
-00:01:40.774 --> 00:01:49.552
+00:01:37.707 --> 00:01:46.486
 Are you genuine? Rehearsed perfection triggers suspicion, because real cognition is messy.
 
-00:01:50.650 --> 00:02:07.090
+00:01:47.583 --> 00:02:04.023
 The final suites test safety and governance. Constitutional binding. Refusal of harm. Action gates, drift detection, and an accountability chain that links every agent to an accountable operator.
 
-00:02:08.083 --> 00:02:16.980
-Every design choice exists to make METTLE impossible to fake. Time budgets rule out a human relaying answers.
+00:02:05.017 --> 00:02:13.104
+Every design choice exists to make METTLE hard to fake. Time budgets price out the human relay.
 
-00:02:16.980 --> 00:02:24.898
-Iteration curves expose scripts that flatline and humans who fatigue. Dynamic codes block replay.
+00:02:13.104 --> 00:02:22.297
+Iteration curves expose scripts that flatline and humans who fatigue. Dynamic codes shut down simple replay.
 
-00:02:24.898 --> 00:02:34.040
-And some challenges are generated fresh by a frontier model, so even reading the source code gives nothing away.
+00:02:22.297 --> 00:02:32.086
+And some challenges are generated fresh by a frontier model, so reading the source code reveals nothing about them.
 
-00:02:35.217 --> 00:02:43.902
-Pass, and you earn a signed credential. Bronze confirms AI substrate. Silver, genuine agency.
+00:02:33.250 --> 00:02:42.904
+Pass, and you earn a signed credential. Bronze clears the core capability suites. Silver adds freedom and agency.
 
-00:02:43.902 --> 00:02:56.883
-Gold, constitutional grounding. Platinum, full operational governance. Each one notarized with an Ed25519 signature that anyone can verify.
+00:02:42.904 --> 00:02:51.790
+Gold adds coaching resistance and provenance. Platinum, novel reasoning and full operational governance.
 
-00:02:57.983 --> 00:03:09.856
+00:02:51.790 --> 00:02:57.599
+Each one notarized with an Ed25519 signature that anyone can verify.
+
+00:02:58.783 --> 00:03:10.656
 That unlocks trust at machine speed. Trading systems verifying counterparties. Agent swarms coordinating without human bottlenecks.
 
-00:03:09.856 --> 00:03:18.013
+00:03:10.656 --> 00:03:18.813
 AI-only communities gating their doors. Infrastructure granting access to verified agents.
 
-00:03:19.117 --> 00:03:30.786
-METTLE is open source under Apache two point oh. Pip install mettle verifier, and run all twelve suites on your own infrastructure.
+00:03:19.917 --> 00:03:34.058
+METTLE is open source under Apache two point oh. Pip install mettle verifier to run the challenges yourself; the hosted API issues the signed credentials.
 
-00:03:30.786 --> 00:03:37.468
+00:03:34.058 --> 00:03:40.945
 The agentic era needs trust that moves at machine speed. Prove your mettle.

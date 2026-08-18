@@ -1,4 +1,6 @@
-# METTLE Verification System
+# Historical METTLE Verification System Design
+
+> **Status:** This is an archived design proposal. The current implementation securely restores reverse-CAPTCHA credentials with server-owned signing, explicit tier policy, expiry, and revocation. See `README.md`, `docs/SECURITY_WHITEPAPER.md`, and `docs/SECURITY_SCAN_RECONCILIATION_2026-07-13.md` for the authoritative contract.
 
 METTLE v2: Machine Evaluation Through Turing-inverse Logic Examination
 

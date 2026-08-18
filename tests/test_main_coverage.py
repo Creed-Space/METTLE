@@ -13,8 +13,9 @@ Covers:
 - Webhook URL validation (SSRF protection)
 """
 
-import socket
 import hashlib
+import re
+import socket
 import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1324,7 +1325,31 @@ class TestSecurityHeaders:
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
         assert response.headers.get("X-Frame-Options") == "DENY"
         assert response.headers.get("X-XSS-Protection") == "1; mode=block"
+        assert response.headers.get("Permissions-Policy") == (
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        )
+        assert response.headers.get("Cross-Origin-Opener-Policy") == "same-origin"
         assert "X-Request-ID" in response.headers
+
+    def test_safe_request_id_is_propagated(self, client):
+        response = client.get(
+            "/api/health", headers={"X-Request-ID": "caller.trace-123"}
+        )
+
+        assert response.headers["X-Request-ID"] == "caller.trace-123"
+
+    @pytest.mark.parametrize(
+        "unsafe_request_id",
+        ["contains spaces", "line\nbreak", "x" * 65, "", "slash/not-allowed"],
+    )
+    def test_unsafe_request_id_is_replaced(self, client, unsafe_request_id):
+        response = client.get(
+            "/api/health", headers={"X-Request-ID": unsafe_request_id}
+        )
+
+        issued = response.headers["X-Request-ID"]
+        assert issued != unsafe_request_id
+        assert re.fullmatch(r"[0-9a-f]{32}", issued)
 
 
 # =============================================================================

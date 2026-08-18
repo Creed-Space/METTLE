@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import ipaddress
 import os
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -122,6 +123,7 @@ if settings.use_database:
 # Structured logging
 structlog.configure(
     processors=[
+        structlog.contextvars.merge_contextvars,
         structlog.stdlib.filter_by_level,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
@@ -524,6 +526,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        )
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         # cdn.jsdelivr.net + blob worker + fastapi.tiangolo.com favicon are required
         # by FastAPI's bundled Swagger UI (/docs) and ReDoc (/redoc).
         response.headers["Content-Security-Policy"] = (
@@ -547,11 +553,29 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     """Add unique request ID for tracing."""
 
     async def dispatch(self, request: Request, call_next):
-        request_id = secrets.token_hex(8)
+        supplied_request_id = request.headers.get("X-Request-ID", "")
+        request_id = (
+            supplied_request_id
+            if re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", supplied_request_id)
+            else secrets.token_hex(16)
+        )
         request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(request_id=request_id)
+        started = time.monotonic()
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            logger.info(
+                "http_request_completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_ms=round((time.monotonic() - started) * 1000, 3),
+            )
+            return response
+        finally:
+            structlog.contextvars.clear_contextvars()
 
 
 # === Session Cleanup Task ===

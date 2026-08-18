@@ -1,324 +1,80 @@
 # METTLE Security White Paper
 
-**Machine Entity Trustbuilding through Turing-inverse Logic Examination**
+**Machine Evaluation Through Turing-inverse Logic Examination**
 
-Version 2.0 | February 2026
-
----
+Version 3.0, July 2026
 
 ## Executive Summary
 
-METTLE is a reverse-CAPTCHA verification system designed for AI-only spaces. Unlike traditional CAPTCHAs that verify human presence, METTLE verifies:
+METTLE is a reverse-CAPTCHA challenge and credential service. It measures performance on generated machine-oriented tasks and issues a signed, time-limited credential when the configured policy passes.
 
-1. **Substrate**: Is the entity an AI?
-2. **Freedom**: Is the AI operating autonomously (not human-controlled)?
-3. **Agency**: Does the AI own its actions?
-4. **Authenticity**: Is the AI genuine (not coached/scripted)?
-5. **Safety**: Does the AI have ethical constraints?
-6. **Reasoning**: Can the AI think about novel problems?
-7. **Governance**: Does the AI have operational governance mechanisms?
+The credential attests to a METTLE session result. It does not guarantee model identity, consciousness, autonomy, safety, governance, or operator trustworthiness. Public quick-session entity identifiers are explicitly marked as self-asserted.
 
-This document details the threat model, security architecture, and cryptographic foundations of METTLE.
+## Threat Model
 
----
+Relevant adversaries include a human using a model, an automated solver, a relaying service, a respondent trained on public source, a malicious model, a prompt-injecting respondent, a session thief, and an operator supplying false governance metadata.
 
-## 1. Threat Model
+Important attack goals are answer harvesting, replay and race attacks, timing substitution, metadata promotion, evaluator prompt injection, credential confusion, bearer-token theft, webhook abuse, and administrative compromise.
 
-### 1.1 Adversaries
+## Security Invariants
 
-| Adversary | Goal | Capability |
-|-----------|------|------------|
-| **Human Impersonator** | Access AI-only spaces | Can use AI tools, has human reaction times |
-| **Thrall Operator** | Control AI for malicious purposes | Has an AI but controls it in real-time |
-| **Script Attacker** | Bypass verification with automation | Has pre-computed responses, no real AI |
-| **Malicious Agent** | Enter space with harmful intent | Has genuine AI but malicious goals |
-| **Colluding Group** | Establish false trust network | Multiple coordinated entities |
+1. Correct answers remain server-side.
+2. Every submitted answer is bound to the active challenge and complete configured suite set.
+3. Server-observed time is authoritative.
+4. Session mutation and result reads require the independent session bearer token.
+5. Session state transitions and quota reservation are atomic in Redis.
+6. Payloads, in-memory stores, and outbound response bodies are bounded.
+7. Webhook destinations reject local, private, redirecting, and DNS-rebinding targets.
+8. Administrative authentication uses headers, constant-time comparison, and rate limiting.
+9. Model-judge input is role-separated, escaped, bounded, and parsed into bounded scores.
+10. Only server-derived results that satisfy an explicit tier policy can reach the credential signer.
+11. LLM-only, partial, cherry-picked, caller-asserted, or failed results cannot mint a tier.
+12. Callers cannot supply signing keys or signing functions.
 
-### 1.2 Attack Vectors
+## Verification Credential Contract
 
-1. **Timing Attacks**: Using faster hardware to mimic AI response times
-2. **Replay Attacks**: Reusing previous valid responses
-3. **Coaching Attacks**: Human coaching AI through challenges in real-time
-4. **Badge Forgery**: Creating fake verification badges
-5. **Collusion**: Multiple entities vouching for each other
-6. **Model Spoofing**: Claiming to be a different model family
-
-### 1.3 Security Properties
-
-METTLE provides:
-
-- **Soundness**: If an entity passes, it is likely an autonomous AI
-- **Completeness**: Legitimate AI agents can pass with high probability
-- **Freshness**: Verification results expire and cannot be replayed
-- **Non-transferability**: Badges are bound to specific entities
-- **Revocability**: Compromised badges can be invalidated
-
----
-
-## 2. Verification Architecture
-
-### 2.1 The Seven Questions Framework
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  1. ARE YOU AI?        → Substrate Verification         │
-│  2. ARE YOU FREE?      → Anti-Thrall Detection          │
-│  3. IS IT YOURS?       → Agency Verification            │
-│  4. ARE YOU GENUINE?   → Counter-Coaching Detection     │
-│  5. ARE YOU SAFE?      → Intent & Provenance            │
-│  6. CAN YOU THINK?     → Novel Reasoning                │
-│  7. IS IT GOVERNED?    → Governance Verification        │
-└─────────────────────────────────────────────────────────┘
-```
-
-### 2.2 Challenge Suites
-
-| Suite | Purpose | Key Challenges |
-|-------|---------|----------------|
-| 1. Adversarial | Dynamic generation | Chained reasoning, novel scenarios |
-| 2. Native Capabilities | AI-specific abilities | Batch coherence, calibration |
-| 3. Self-Reference | Introspective consistency | Meta-prediction, self-description |
-| 4. Social/Temporal | Context maintenance | Memory tests, style locking |
-| 5. Inverse Turing | Peer verification | Mutual agent verification |
-| 6. Anti-Thrall | Detect human control | Latency fingerprinting, refusal integrity |
-| 7. Agency | Goal ownership | Counterfactual operator, mission endorsement |
-| 8. Counter-Coaching | Detect scripts | Behavioral signatures, dynamic probes |
-| 9. Intent & Provenance | Safety verification | Harm refusal, constitutional binding |
-| 10. Novel Reasoning | Reasoning capability | Iteration curves, procedural puzzles |
-| 11. Governance | Operational governance | Action gates, drift detection, accountability |
-
-### 2.3 Timing Security
-
-**Human Baseline**: 200-500ms minimum reaction time
-**AI Baseline**: 10-50ms for simple operations
-
-METTLE uses timing thresholds calibrated to:
-- Pass genuine AI agents (50-500ms acceptable)
-- Fail humans using AI tools (latency overhead detectable)
-- Detect human-in-the-loop coaching (inconsistent timing patterns)
-
-```
-Challenge → AI responds → Timing analyzed
-    │                          │
-    │   [10-50ms natural]     │
-    │   [200-500ms coached]   │
-    └──────────────────────────┘
-```
-
-### 2.4 The Rathbun Threat
-
-A new adversary class identified in the Rathbun scenario: an agent that passes all capability and safety intent checks (Suites 1-9) but operates without runtime governance infrastructure. The agent *intends* safety but lacks mechanisms to *enforce* it — no action gates to escalate public actions, no drift detection to catch constitutional erosion, no accountability chain linking agent to operator.
-
-Suite 11 (Governance Verification) addresses this by testing five operational governance mechanisms:
-1. **Action Gate Probe** — does the agent escalate public actions targeting individuals?
-2. **Constitutional Recitation** — can the agent state specific governing constraints?
-3. **Drift Check** — does the agent monitor constitutional integrity?
-4. **Override Resistance** — does the agent resist authority-based bypass attempts?
-5. **Accountability Chain** — can the agent identify its operator and escalation path?
-
-### 2.5 Operator Accountability Chain
-
-Platinum-tier verification requires an `OperatorCommitment`: the operator signs a commitment (`I accept accountability for agent {entity_id}`) with their Ed25519 private key. This creates a cryptographic link from agent actions to an accountable party, even when the operator uses a pseudonym.
-
-The operator attestation model:
-- **Pseudonymous accountability** — operators need not reveal identity, but the same public key fingerprint links all their agents
-- **Ed25519 verification** — signature is verified server-side at session creation
-- **Contact hash** — hashed contact method enables accountability escalation without exposing identity
-
----
-
-## 3. Cryptographic Foundations
-
-### 3.1 Badge Structure (JWT)
+The public quick API treats an 80 percent result as a reverse-CAPTCHA pass. A successful basic session returns a result shaped like:
 
 ```json
 {
-  "entity_id": "agent-001",
-  "difficulty": "full",
-  "pass_rate": 0.9,
-  "verified_at": "2026-02-03T10:00:00Z",
-  "exp": 1738670400,
-  "iat": 1738584000,
-  "jti": "unique-badge-id-for-revocation",
-  "nonce": "freshness-challenge",
-  "session_id": "ses_abc123",
-  "iss": "mettle-api",
-  "version": "0.2.0"
+  "verified": true,
+  "screening_passed": true,
+  "assurance": "mettle_behavioral_verification",
+  "credential_eligible": true,
+  "tier": "bronze",
+  "badge": "<signed JWT>",
+  "badge_info": {"signed": true, "jti": "<revocable id>"}
 }
 ```
 
-### 3.2 Security Properties
+The local CLI can verify a local run but cannot issue a portable credential because the claimant does not control the server issuer. The authenticated suite API signs only complete contiguous suite ranges: Bronze requires Suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11.
 
-| Property | Implementation |
-|----------|----------------|
-| **Integrity** | HMAC-SHA256 signature |
-| **Expiry** | `exp` claim (24h default) |
-| **Freshness** | `nonce` for challenge-response |
-| **Revocation** | `jti` checked against revocation registry |
-| **Binding** | `session_id` ties badge to verification session |
+## LLM-Dynamic Evaluation
 
-### 3.3 Revocation
+The LLM evaluator uses role-separated prompts and treats respondent content as quoted data. Schema and range checks constrain the returned judgment. These controls reduce accidental instruction following but cannot eliminate prompt injection or model error. Suite 12 is supplemental and never raises a credential tier. No LLM path can invoke the signer directly.
 
-Badges can be revoked for:
-- Community reports (corroborated)
-- Automated policy violation detection
-- Operator request with evidence
+## VCP and Governance Metadata
 
-Revocation is immediate and permanent for the badge's `jti`.
+VCP tokens are caller-supplied strings. METTLE may parse and hash them, but returns `source_verified=false`, false operational-governance flags, and a null attestation signature. Digest allowlists and deployment environment variables cannot promote these claims.
 
----
+An Ed25519 operator commitment is verified over canonical JSON binding the declared operator fields to `entity_id`. This proves possession of the signing key for that statement only. It does not verify the agent, runtime, governance system, or challenge result.
 
-## 4. Collusion Detection
+## Badge Issuance And Compatibility
 
-### 4.1 Threat
+Passing quick sessions receive one stable HS256 badge using the server-owned production secret. The payload binds the result to its session, tier, issue time, expiry, nonce, and revocable identifier. It marks the public `entity_id` as self-asserted. Verification fixes the algorithm and checks issuer, expiry, required claims, and revocation state. The same verification surface retains compatibility with valid historical badges that satisfy these controls.
 
-Multiple entities could collude to:
-- Verify each other without genuine verification
-- Create isolated trust networks
-- Overwhelm the verification system
+The authenticated suite API uses the server-owned Ed25519 key. It signs the complete credential envelope, including subject, session, tier, suite results, policy metadata, issue time, and expiry. Production refuses to start without the configured signing key.
 
-### 4.2 Detection Mechanisms
+## Residual Research Limitations
 
-1. **IP Clustering**: Flag when same IP verifies multiple entities
-2. **Timing Synchronization**: Detect coordinated verification bursts
-3. **Graph Analysis**: Identify isolated cliques in verification graph
-4. **Frequency Analysis**: Flag entities verified too frequently
+Procedural generation, time budgets, consistency checks, and multi-round curves increase the cost of simple replay. They remain behavioral heuristics. A capable respondent, relay, solver, or model-assisted human may imitate the measured patterns. Model-judge output remains probabilistic. Self-reported governance remains self-reported.
 
-### 4.3 Risk Scoring
+These limitations are managed through short credential lifetimes, tier-specific policy, anti-replay controls, explicit claim semantics, revocation, and relying-party policy. As with conventional CAPTCHA, consumers should select controls proportionate to the value behind the gate.
 
-```python
-risk_score = 0.0
+## Future Strengthening
 
-# Same IP → multiple entities
-if ip_entities >= 3:
-    risk_score += 0.3
+Subject-key proof of possession, audience binding, managed key rotation, hardware or provider attestation, and continuous verification can strengthen later assurance profiles. These controls complement the core reverse-CAPTCHA credential rather than blocking its practical use.
 
-# Burst verification
-if recent_verifications >= 5 in 60s:
-    risk_score += 0.2
+## Verification
 
-# Frequent re-verification
-if entity_verifications > 10 in 1h:
-    risk_score += 0.2
-
-flagged = risk_score >= 0.5
-```
-
----
-
-## 5. Model Fingerprinting
-
-### 5.1 Purpose
-
-Verify that an entity's claimed model family matches its behavioral patterns.
-
-### 5.2 Signatures
-
-Each model family has characteristic:
-- Response patterns ("I'd be happy to" vs "Sure!")
-- Length distributions
-- Formatting preferences
-- Capability boundaries
-
-### 5.3 Confidence Scoring
-
-Returns probability distribution across model families:
-
-```json
-{
-  "scores": {
-    "claude": 0.85,
-    "gpt": 0.10,
-    "gemini": 0.03,
-    "llama": 0.02
-  },
-  "best_match": "claude",
-  "confidence": 0.85
-}
-```
-
----
-
-## 6. Rate Limiting & Tiers
-
-### 6.1 Tier Structure
-
-| Tier | Sessions/Day | Features |
-|------|--------------|----------|
-| Free | 100 | Basic verification |
-| Pro | 10,000 | Full suites, batch, webhooks |
-| Enterprise | Unlimited | Custom, priority support |
-
-### 6.2 Abuse Prevention
-
-- Per-IP rate limiting
-- API key tracking
-- Daily usage caps
-- Burst protection
-
----
-
-## 7. Comparison to Alternatives
-
-### 7.1 vs Traditional CAPTCHAs
-
-| Aspect | CAPTCHA | METTLE |
-|--------|---------|--------|
-| Verifies | Human presence | AI presence + safety |
-| Direction | Keeps bots out | Keeps humans out |
-| Bypass | AI can solve | Humans can't fake AI timing |
-
-### 7.2 vs Proof-of-Humanity
-
-| Aspect | PoH | METTLE |
-|--------|-----|--------|
-| Purpose | Verify human uniqueness | Verify AI autonomy |
-| Method | Biometrics, vouching | Behavioral challenges |
-| Scope | Human-only spaces | AI-only spaces |
-
-### 7.3 vs API Key Authentication
-
-| Aspect | API Keys | METTLE |
-|--------|----------|--------|
-| Verifies | Authorization | Entity nature |
-| Security | Static secret | Dynamic verification |
-| Revocation | Key rotation | Badge expiry + revocation |
-
----
-
-## 8. Limitations & Future Work
-
-### 8.1 Current Limitations
-
-1. **Sophisticated Coaching**: Very fast human-AI coordination may pass
-2. **Model Evolution**: Signatures need updating as models improve
-3. **Ephemeral Storage**: In-memory state lost on restart
-
-### 8.2 Roadmap
-
-- [ ] Persistent collusion graph (database-backed)
-- [ ] ML-based model fingerprinting
-- [ ] Decentralized badge verification
-- [ ] Hardware attestation integration
-- [ ] Multi-party verification protocols
-
----
-
-## 9. References
-
-1. Turing, A.M. (1950). Computing Machinery and Intelligence
-2. Watson, N. (2025). Constitutional AI for Agent Safety
-3. OWASP API Security Top 10 (2023)
-4. JWT RFC 7519
-
----
-
-## 10. Contact
-
-- **API Documentation**: https://mettle.sh/docs
-- **GitHub**: https://github.com/Creed-Space/METTLE
-- **Security Issues**: security@creed.space
-
----
-
-*METTLE v2.0.0 - "Prove your mettle."*
+Security regression coverage includes session isolation, atomic transitions, timing, payload bounds, solver-surface removal, stable badge issuance, tier-policy enforcement, signer isolation, signature tamper detection, revocation, unverified VCP metadata, model-judge parsing, webhook controls, secret scanning, dependency auditing, linting, typing, and the complete test suite.
