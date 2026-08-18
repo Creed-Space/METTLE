@@ -126,7 +126,10 @@ Four properties prevent gaming:
 3. **Anti-harvest**: `mettle/verifier.py` withholds expected answers on failure — failed attempts provide no information
 4. **Multi-modal evidence**: Behavioral patterns (timing, consistency) complement verbal answers
 
-The MCP server (`mcp_server.py`) exposes these same flows as MCP tools for Claude Code integration: `mettle_start_session`, `mettle_answer_challenge`, `mettle_auto_verify`, `mettle_get_result` (`systems/mcp-server-and-api.md`).
+The MCP server (`mettle/mcp_server.py`) exposes interactive and authenticated
+suite flows as seven MCP tools. Clients must answer challenges themselves; the
+server does not import the reference solver or expose an automatic verification
+tool (`systems/mcp-server-and-api.md`).
 
 ## Audit and Red Team Materials
 

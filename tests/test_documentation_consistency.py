@@ -49,3 +49,20 @@ def test_static_site_advertises_published_package() -> None:
     assert "pip install mettle-verifier" in static_docs
     assert "PyPI: mettle-verifier, coming soon" not in static_homepage
     assert "PyPI: mettle-verifier, coming soon" not in static_docs
+
+
+def test_public_mcp_surface_excludes_the_reference_solver() -> None:
+    server = _read("mettle/mcp_server.py")
+    public_surfaces = (
+        _read("README.md"),
+        _read("smithery.yaml"),
+        _read("skill/SKILL.md"),
+        _read("_wiki/flows/integration-and-deployment.md"),
+        _read("_wiki/systems/mcp-server-and-api.md"),
+    )
+
+    assert "from mettle.solver import solve_challenge" not in server
+    assert "mettle_auto_verify" not in server
+    assert "substrate verification" not in server.lower()
+    for surface in public_surfaces:
+        assert "mettle_auto_verify" not in surface

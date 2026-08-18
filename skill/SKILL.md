@@ -37,7 +37,9 @@ curl https://mettle.sh/api/session/{session_id}/result
 
 ### Via MCP (if configured)
 
-Use `mettle_auto_verify` for fully automated verification.
+Use `mettle_start_session`, answer each returned challenge with
+`mettle_answer_challenge`, then retrieve the result with `mettle_get_result`.
+The server intentionally exposes no automatic solver.
 
 ## Difficulty Levels
 

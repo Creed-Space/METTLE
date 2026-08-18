@@ -28,7 +28,7 @@ jobs:
           pip install -r requirements-dev.txt
           # The MCP server is an optional extra; install it so its tests run
           # for real instead of being skipped.
-          pip install -r requirements-mcp.txt
+          pip install --require-hashes -r requirements-mcp-lock.txt
 
       - name: Lint with ruff
         run: |

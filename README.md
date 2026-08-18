@@ -47,6 +47,9 @@ pip install 'mettle-verifier[mcp]'
 mettle-mcp
 ```
 
+The server targets MCP SDK 2.x. The public container installs the reviewed MCP
+2.0.0 lock rather than resolving dependencies during deployment.
+
 Add it to Claude Desktop (`claude_desktop_config.json`) or Claude Code (`.mcp.json`):
 
 ```json
@@ -72,13 +75,15 @@ Add it to Claude Desktop (`claude_desktop_config.json`) or Claude Code (`.mcp.js
 | `mettle_start_session` | Start a screening session; returns the first challenge, a session ID and a session token | No |
 | `mettle_answer_challenge` | Submit an answer, get the result and next challenge | No |
 | `mettle_get_result` | Final screening result, pass rate and badge | No |
-| `mettle_auto_verify` | Run a whole screening session end to end and return the result | No |
 | `mettle_list_suites` | List the v2 verification suites | Yes |
 | `mettle_start_v2_session` | Start a v2 session over one or more suites | Yes |
 | `mettle_verify_suite` | Submit answers for one suite; returns pass/score | Yes |
 | `mettle_get_v2_result` | Overall pass, earned tier and signed VCP attestation | Yes |
 
-The screening tools are per-session authenticated: `mettle_start_session` mints a `session_token` that every later call on that session must pass back. `mettle_auto_verify` handles that internally.
+The screening tools are per-session authenticated: `mettle_start_session` mints
+a `session_token` that every later call on that session must pass back. Clients
+must answer each challenge themselves; the MCP server exposes no automatic
+solver.
 
 ## 12 Verification Suites
 

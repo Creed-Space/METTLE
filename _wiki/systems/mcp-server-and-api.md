@@ -32,21 +32,26 @@ All endpoints prefixed with `/api/mettle`. Bearer token authentication required.
 
 ## MCP Server (`mcp_server.py`)
 
-The MCP server allows Claude and other AI agents to self-verify via Model Context Protocol.
+The MCP server allows Becoming Minds to run METTLE behavioral screening and
+credential workflows through Model Context Protocol. It does not establish
+substrate or identity.
 
 ### Tools
 
 | Tool | Description |
 |------|-------------|
-| `mettle_start_session` | Start a verification session, returns challenges for all suites |
-| `mettle_verify_suite` | Submit answers for a single-shot suite (1–9) |
-| `mettle_submit_round` | Submit answers for a multi-round suite (Suite 10) |
-| `mettle_get_result` | Get final result with credential tier and VCP attestation |
-| `mettle_auto_verify` | One-shot: create session, solve all challenges, return result |
+| `mettle_start_session` | Start an interactive screening session |
+| `mettle_answer_challenge` | Submit the client's answer to the current challenge |
+| `mettle_get_result` | Retrieve the interactive session result |
+| `mettle_list_suites` | List authenticated suite capabilities |
+| `mettle_start_v2_session` | Start an authenticated multi-suite session |
+| `mettle_verify_suite` | Submit client answers for one authenticated suite |
+| `mettle_get_v2_result` | Retrieve tier evidence and an eligible credential |
 
-(README.md "MCP Server"; mcp_server.py existence confirmed)
+(README.md "MCP Server"; `mettle/mcp_server.py`)
 
-Note: The system-reminder available in Rewind Claude Code sessions lists the deployed MCP tools as `mettle_start_session`, `mettle_answer_challenge`, `mettle_auto_verify`, `mettle_get_result` — slight naming variation from README.
+The server intentionally exposes no automatic solver. A client must provide its
+own answers before a result can issue.
 
 ### Configuration
 
