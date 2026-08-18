@@ -372,6 +372,11 @@ jobs:
           path: output/evidence/RENDER-PRODUCTION-PROMOTION.json
           if-no-files-found: error
           retention-days: 90
+          # Promotion is the one job that is expected to be re-run after an
+          # infrastructure fault. Without this, the retry uploads into a name
+          # the failed attempt already claimed and dies after the deploy has
+          # already gone live, stranding the release without its receipt.
+          overwrite: true
       - name: Attach successful promotion receipt to the release
         env:
           GH_TOKEN: ${{ github.token }}

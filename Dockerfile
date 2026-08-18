@@ -18,8 +18,27 @@ COPY --chown=10001:10001 pyproject.toml README.md LICENSE requirements-mcp-lock.
 COPY --chown=10001:10001 mettle ./mettle
 COPY --chmod=755 deploy/mcp/entrypoint.sh /usr/local/bin/mettle-mcp-entrypoint
 
-RUN pip install --no-cache-dir --require-hashes -r requirements-mcp-lock.txt && \
-    pip install --no-cache-dir --no-deps .
+# A release must not be lost to a transient package-mirror fault. The v0.4.7
+# promotion died here on sustained 502s from files.pythonhosted.org, and pip
+# burns its own retry budget in seconds, so wrap each install in a bounded
+# outer retry with a widening backoff. PIP_RETRIES/PIP_TIMEOUT harden the
+# inner attempts, including the isolated build that resolves the pinned
+# setuptools backend. The final attempt's exit status still fails the build,
+# so a genuine dependency or hash error is never masked by the retries.
+RUN set -eu; \
+    export PIP_RETRIES=10 PIP_TIMEOUT=30; \
+    retry() { \
+        attempt=1; \
+        while :; do \
+            "$@" && return 0; \
+            [ "$attempt" -ge 5 ] && return 1; \
+            echo "attempt $attempt failed; retrying in $((attempt * 15))s" >&2; \
+            sleep "$((attempt * 15))"; \
+            attempt=$((attempt + 1)); \
+        done; \
+    }; \
+    retry pip install --no-cache-dir --require-hashes -r requirements-mcp-lock.txt; \
+    retry pip install --no-cache-dir --no-deps .
 
 # The server has no reason to retain root authority at runtime. Use a fixed
 # numeric identity so the invariant is independent of mutable base-image users.
