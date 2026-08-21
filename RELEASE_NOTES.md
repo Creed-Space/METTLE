@@ -1,5 +1,51 @@
 # METTLE release notes
 
+## [0.4.8]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged.
+Credential verification now fails closed for cyclic, non-finite, mistyped, and
+internally inconsistent signed timing data. Valid credentials remain compatible.
+
+### Suite policy
+
+Challenge generation, scoring, tier eligibility, and the seven reviewed MCP
+tools remain unchanged from `0.4.7`. Public answer objects now have explicit
+byte, depth, node-count, type, finiteness, and acyclic-structure bounds.
+
+### Public key changes
+
+No signing key or discovery format rotation is included. Key loading now rejects
+non-Ed25519 private keys before startup succeeds, and verification rejects
+malformed encodings and non-Ed25519 public keys without raising.
+
+### Compatibility
+
+The package remains compatible with Python 3.10 through 3.14. API, CLI, MCP,
+and valid credential formats are unchanged. Presence receipts now require
+strict integer fields, monotonic coherent timing, and supported action shapes.
+
+### Security
+
+* Bound nested answer JSON against cycles, aliasing, excessive depth and node
+  count, oversized scalars, non-string keys, unsupported values, and NaN or
+  infinity.
+* Reject implicit object stringification, boolean-as-integer answers, negative
+  response times, extra consistency answers, and oversized verifier responses.
+* Make credential canonicalization and signature verification total over hostile
+  values, with permanent regressions and mutation-gate coverage.
+
+### Known limitations
+
+METTLE produces probabilistic behavioral evidence. A passing result does not
+prove identity, substrate, consciousness, freedom, agency, safety, governance,
+operator identity, or authorization suitability. Relays, source-aware solvers,
+model-assisted humans, evaluator error, and imitation remain possible. Human
+accessibility, rights-cleared fairness evaluation, independent protocol and
+cryptographic review, and destructive recovery drills retain their separate
+evidence and authority requirements.
+
 ## [0.4.7]
 
 ### Credential schema
