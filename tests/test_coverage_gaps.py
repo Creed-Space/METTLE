@@ -9,9 +9,12 @@ gaierror, webhook db branches, static fallbacks, and router signing ImportError.
 
 import asyncio
 import socket
+import sys
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,6 +23,8 @@ from main import (
     ModelFingerprinter,
     RateTier,
     WebhookManager,
+    _resolve_webhook_addresses,
+    _restore_persistent_runtime_state,
     _admin_auth_failures,
     api_keys,
     lifespan,
@@ -108,6 +113,102 @@ class TestRateTierUsageTracking:
         assert allowed is True
         assert api_keys["mtl_test"]["usage_count"] == 0
 
+    def test_database_quota_is_reserved_atomically(self):
+        today = datetime.now(timezone.utc).date().isoformat()
+        key_data = {
+            "tier": "pro",
+            "entity_id": "owner",
+            "usage_date": today,
+            "usage_count": 40,
+        }
+        mock_db = MagicMock()
+        mock_db.get_api_key.return_value = key_data
+        mock_db.reserve_api_key_usage.return_value = (True, 42)
+
+        with patch("main.db", mock_db):
+            allowed, message = RateTier.check_limit("durable-key", "session", amount=2)
+
+        assert allowed is True
+        assert "pro tier" in message
+        assert key_data["usage_count"] == 42
+        mock_db.reserve_api_key_usage.assert_called_once_with(
+            "durable-key", today, 2, 10000, raise_on_error=True
+        )
+        mock_db.update_api_key_usage.assert_not_called()
+
+    def test_database_quota_denial_does_not_claim_a_reservation(self):
+        today = datetime.now(timezone.utc).date().isoformat()
+        key_data = {
+            "tier": "free",
+            "usage_date": today,
+            "usage_count": 100,
+        }
+        mock_db = MagicMock()
+        mock_db.get_api_key.return_value = key_data
+        mock_db.reserve_api_key_usage.return_value = (False, 100)
+
+        with patch("main.db", mock_db):
+            allowed, message = RateTier.check_limit("durable-key", "session")
+
+        assert allowed is False
+        assert "Daily limit reached" in message
+        assert key_data["usage_count"] == 100
+
+    def test_database_quota_failure_is_not_converted_to_free_access(self):
+        key_data = {
+            "tier": "pro",
+            "usage_date": "2026-08-19",
+            "usage_count": 7,
+        }
+        mock_db = MagicMock()
+        mock_db.get_api_key.return_value = key_data
+        mock_db.reserve_api_key_usage.side_effect = RuntimeError("database offline")
+
+        with (
+            patch("main.db", mock_db),
+            pytest.raises(RuntimeError, match="database offline"),
+        ):
+            RateTier.check_limit("durable-key", "session")
+
+        assert key_data["usage_date"] == "2026-08-19"
+        assert key_data["usage_count"] == 7
+
+    def test_database_key_lookup_failure_cannot_skip_quota_reservation(self):
+        mock_db = MagicMock()
+        mock_db.get_api_key.side_effect = RuntimeError("database offline")
+
+        with (
+            patch("main.db", mock_db),
+            pytest.raises(RuntimeError, match="database offline"),
+        ):
+            RateTier.check_limit("durable-key", "session")
+
+        mock_db.reserve_api_key_usage.assert_not_called()
+
+    def test_batch_returns_503_before_generation_when_quota_store_fails(self, client):
+        mock_db = MagicMock()
+        mock_db.get_api_key.return_value = {
+            "tier": "pro",
+            "entity_id": "owner",
+            "usage_date": None,
+            "usage_count": 0,
+        }
+        mock_db.reserve_api_key_usage.side_effect = RuntimeError("database offline")
+
+        with (
+            patch("main.db", mock_db),
+            patch("main.generate_challenge_set") as generate,
+        ):
+            response = client.post(
+                "/api/session/batch",
+                json={"entity_ids": ["entity-1"], "difficulty": "basic"},
+                headers={"X-API-Key": "durable-key"},
+            )
+
+        assert response.status_code == 503
+        assert "persistence" in response.json()["detail"].lower()
+        generate.assert_not_called()
+
 
 # ============================================================
 # CollusionDetector edge cases (lines 233-234, 239, 244, 248)
@@ -164,6 +265,70 @@ class TestCollusionDetectorEdgeCases:
             "entity-1", "1.1.1.1", True
         )
 
+    def test_restart_recovers_authoritative_collusion_history(self):
+        now = datetime.now(timezone.utc)
+        mock_db = MagicMock()
+        mock_db.get_recent_sessions.return_value = []
+        mock_db.get_webhooks.return_value = []
+        mock_db.get_recent_verifications.return_value = [
+            {
+                "entity_id": f"entity-{index}",
+                "ip_address": "203.0.113.10",
+                "passed": True,
+                "created_at": (now - timedelta(seconds=index)).isoformat(),
+            }
+            for index in range(3)
+        ] + [
+            {
+                "entity_id": "future-corrupt",
+                "ip_address": "203.0.113.10",
+                "passed": True,
+                "created_at": (now + timedelta(hours=1)).isoformat(),
+            },
+            {
+                "entity_id": None,
+                "ip_address": "203.0.113.10",
+                "passed": True,
+                "created_at": now.isoformat(),
+            },
+        ]
+        verification_graph["stale-process-only"] = [
+            {"timestamp": 1.0, "ip_address": "198.51.100.1", "passed": True}
+        ]
+
+        with patch("main.db", mock_db):
+            _restore_persistent_runtime_state()
+
+        assert "stale-process-only" not in verification_graph
+        assert set(verification_graph) == {"entity-0", "entity-1", "entity-2"}
+        assert len(verification_timestamps) == 3
+        result = CollusionDetector.check_collusion("entity-2", "203.0.113.10")
+        assert any("3 different entities" in warning for warning in result["warnings"])
+        mock_db.get_recent_verifications.assert_called_once_with(
+            hours=1, raise_on_error=True
+        )
+
+    def test_history_recovery_failure_does_not_erase_existing_evidence(self):
+        existing = {
+            "timestamp": 1.0,
+            "ip_address": "198.51.100.1",
+            "passed": True,
+        }
+        verification_graph["existing"] = [existing]
+        mock_db = MagicMock()
+        mock_db.get_recent_sessions.return_value = []
+        mock_db.get_recent_verifications.side_effect = RuntimeError(
+            "Verification history recovery unavailable"
+        )
+
+        with (
+            patch("main.db", mock_db),
+            pytest.raises(RuntimeError, match="history recovery unavailable"),
+        ):
+            _restore_persistent_runtime_state()
+
+        assert verification_graph == {"existing": [existing]}
+
 
 # ============================================================
 # Database persistence branch (line 205)
@@ -215,30 +380,6 @@ class TestLifespan:
     """Test the async lifespan handler."""
 
     @pytest.mark.asyncio
-    async def test_lifespan_basic_startup_shutdown(self):
-        """Lifespan starts and shuts down cleanly."""
-        mock_app = MagicMock()
-        mock_app.state = MagicMock()
-
-        async def fake_cleanup():
-            """Fake cleanup that blocks until cancelled."""
-            try:
-                await asyncio.sleep(3600)
-            except asyncio.CancelledError:
-                pass
-
-        with patch("main.settings") as mock_settings:
-            mock_settings.is_production = False
-            mock_settings.secret_key = SECRET_KEY
-            mock_settings.environment = "test"
-            mock_settings.api_version = "0.2.0"
-
-            with patch("os.environ.get", return_value=None):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    async with lifespan(mock_app):
-                        pass  # Startup succeeded
-
-    @pytest.mark.asyncio
     async def test_lifespan_production_no_secret_raises(self):
         """Lifespan raises RuntimeError in production without SECRET_KEY."""
         mock_app = MagicMock()
@@ -249,6 +390,7 @@ class TestLifespan:
             mock_settings.secret_key = ""
             mock_settings.environment = "production"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = "redis://redis.internal:6379/0"
 
             with pytest.raises(RuntimeError, match="SECRET_KEY"):
                 async with lifespan(mock_app):
@@ -259,20 +401,30 @@ class TestLifespan:
         """Production cannot start while VCP attestations would be unsigned."""
         mock_app = MagicMock()
         mock_app.state = MagicMock()
+        mock_db = MagicMock()
+        mock_db.get_recent_sessions.return_value = []
+        mock_db.get_webhooks.return_value = []
+        mock_redis = MagicMock()
+        mock_redis.ping = AsyncMock(return_value=True)
+        mock_redis.aclose = AsyncMock()
 
         with patch("main.settings") as mock_settings:
             mock_settings.is_production = True
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "production"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = "redis://redis.internal:6379/0"
 
             with (
-                patch("main.db", None),
+                patch("main.db", mock_db),
+                patch("redis.asyncio.from_url", return_value=mock_redis),
                 patch("mettle.signing.init_signing", return_value=False),
                 pytest.raises(RuntimeError, match="signing is unavailable"),
             ):
                 async with lifespan(mock_app):
                     pass
+        mock_redis.aclose.assert_awaited_once()
+        assert mock_app.state.redis is None
 
     @pytest.mark.asyncio
     async def test_lifespan_database_initialization_failure_raises(self):
@@ -287,6 +439,7 @@ class TestLifespan:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = ""
 
             with (
                 patch("main.db", mock_db),
@@ -312,13 +465,80 @@ class TestLifespan:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = "redis://bad-host:6379/0"
 
-            # Provide Redis URL but make it fail
-            with patch("os.environ.get", return_value="redis://bad-host:6379"):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    async with lifespan(mock_app):
-                        # Redis should be None after connection failure
-                        assert mock_app.state.redis is None
+            failing_redis = MagicMock()
+            failing_redis.ping = AsyncMock(side_effect=ConnectionError("offline"))
+            failing_redis.aclose = AsyncMock()
+            with (
+                patch("redis.asyncio.from_url", return_value=failing_redis),
+                patch("main.cleanup_expired_sessions", side_effect=fake_cleanup),
+            ):
+                async with lifespan(mock_app):
+                    assert mock_app.state.redis is None
+            failing_redis.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_production_redis_failure_is_fatal(self):
+        mock_app = MagicMock()
+        mock_app.state = MagicMock()
+        mock_db = MagicMock()
+        mock_db.get_recent_sessions.return_value = []
+        mock_db.get_webhooks.return_value = []
+        failing_redis = MagicMock()
+        failing_redis.ping = AsyncMock(side_effect=ConnectionError("offline"))
+        failing_redis.aclose = AsyncMock()
+
+        with patch("main.settings") as mock_settings:
+            mock_settings.is_production = True
+            mock_settings.secret_key = SECRET_KEY
+            mock_settings.environment = "production"
+            mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = "redis://redis.internal:6379/0"
+
+            with (
+                patch("main.db", mock_db),
+                patch("redis.asyncio.from_url", return_value=failing_redis),
+                pytest.raises(RuntimeError, match="Redis persistence"),
+            ):
+                async with lifespan(mock_app):
+                    pass
+
+        failing_redis.aclose.assert_awaited_once()
+        assert mock_app.state.redis is None
+
+    @pytest.mark.asyncio
+    async def test_redis_closes_even_if_cleanup_task_fails(self):
+        mock_app = MagicMock()
+        mock_app.state = MagicMock()
+        mock_redis = MagicMock()
+        mock_redis.ping = AsyncMock(return_value=True)
+        mock_redis.aclose = AsyncMock()
+
+        async def failing_cleanup():
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError as exc:
+                raise RuntimeError("cleanup shutdown failed") from exc
+
+        with patch("main.settings") as mock_settings:
+            mock_settings.is_production = False
+            mock_settings.secret_key = SECRET_KEY
+            mock_settings.environment = "test"
+            mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = "redis://redis.internal:6379/0"
+
+            with (
+                patch("redis.asyncio.from_url", return_value=mock_redis),
+                patch("main.cleanup_expired_sessions", side_effect=failing_cleanup),
+                pytest.raises(RuntimeError, match="cleanup shutdown failed"),
+            ):
+                async with lifespan(mock_app):
+                    # Let the task enter its cancellation handler before shutdown.
+                    await asyncio.sleep(0)
+
+        mock_redis.aclose.assert_awaited_once()
+        assert mock_app.state.redis is None
 
     @pytest.mark.asyncio
     async def test_lifespan_redis_failure_graceful(self):
@@ -337,12 +557,11 @@ class TestLifespan:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = ""
 
-            with patch("os.environ.get", return_value=None):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    async with lifespan(mock_app):
-                        # Redis should be None (no URL provided)
-                        assert mock_app.state.redis is None
+            with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
+                async with lifespan(mock_app):
+                    assert mock_app.state.redis is None
 
 
 # ============================================================
@@ -534,7 +753,12 @@ class TestModelFingerprintEqualDistribution:
 
 
 class TestWebhookDNSErrors:
-    """Test webhook send when DNS resolution fails."""
+    """Compatibility-only DNS failures for inactive delivery code."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_compatibility_delivery(self):
+        with patch("main.WEBHOOK_DELIVERY_ENABLED", True):
+            yield
 
     @pytest.mark.asyncio
     async def test_dns_gaierror_blocks_send(self):
@@ -556,6 +780,73 @@ class TestWebhookDNSErrors:
                 )
         assert result is False
         mock_client.post.assert_not_awaited()
+
+
+class TestWebhookDeliveryBounds:
+    @staticmethod
+    def _record(address: str):
+        return (
+            socket.AF_INET,
+            socket.SOCK_STREAM,
+            socket.IPPROTO_TCP,
+            "",
+            (address, 443),
+        )
+
+    @pytest.mark.asyncio
+    async def test_disabled_delivery_never_resolves_or_dispatches(self):
+        WebhookManager.register("test-entity", "https://example.com/webhook")
+
+        with patch("main._resolve_webhook_addresses", new_callable=AsyncMock) as dns:
+            result = await WebhookManager.send_webhook(
+                "test-entity", "session.completed", {"test": True}
+            )
+
+        assert result is False
+        dns.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dns_resolution_does_not_block_event_loop(self):
+        release = threading.Event()
+
+        def blocking_resolution(*_args, **_kwargs):
+            release.wait(timeout=0.5)
+            return [self._record("93.184.216.34")]
+
+        loop = asyncio.get_running_loop()
+        with patch("socket.getaddrinfo", side_effect=blocking_resolution):
+            started = loop.time()
+            task = asyncio.create_task(_resolve_webhook_addresses("example.com", 443))
+            await asyncio.sleep(0.01)
+            elapsed = loop.time() - started
+            release.set()
+            resolved = await task
+
+        assert elapsed < 0.2
+        assert set(resolved) == {"93.184.216.34"}
+
+    @pytest.mark.asyncio
+    async def test_dns_resolution_rejects_excessive_address_fanout(self):
+        records = [self._record(f"8.8.4.{index}") for index in range(1, 18)]
+
+        with (
+            patch("socket.getaddrinfo", return_value=records),
+            pytest.raises(ValueError, match="too many addresses"),
+        ):
+            await _resolve_webhook_addresses("example.com", 443)
+
+    @pytest.mark.asyncio
+    async def test_dns_resolution_has_a_hard_timeout(self):
+        def slow_resolution(*_args, **_kwargs):
+            time.sleep(0.05)
+            return [self._record("93.184.216.34")]
+
+        with (
+            patch("socket.getaddrinfo", side_effect=slow_resolution),
+            patch("main.WEBHOOK_DNS_TIMEOUT_SECONDS", 0.005),
+            pytest.raises(TimeoutError),
+        ):
+            await _resolve_webhook_addresses("example.com", 443)
 
     @pytest.mark.asyncio
     async def test_dns_value_error_blocks_send(self):
@@ -579,12 +870,15 @@ class TestWebhookDNSErrors:
                 ("not-an-ip", 443),
             )
         ]
-        with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
-            with patch("ipaddress.ip_address", side_effect=ValueError("Invalid IP")):
-                with patch("httpx.AsyncClient", return_value=mock_client):
-                    result = await WebhookManager.send_webhook(
-                        "test-entity", "session.completed", {"test": True}
-                    )
+        with (
+            patch("main.WEBHOOK_DELIVERY_ENABLED", True),
+            patch("socket.getaddrinfo", return_value=invalid_addrinfo),
+            patch("ipaddress.ip_address", side_effect=ValueError("Invalid IP")),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            result = await WebhookManager.send_webhook(
+                "test-entity", "session.completed", {"test": True}
+            )
         assert result is False
         mock_client.post.assert_not_awaited()
 
@@ -603,6 +897,24 @@ class TestWebhookDBBranches:
         with patch("main.db", mock_db):
             WebhookManager.register("entity-1", "https://example.com/hook")
         mock_db.save_webhook.assert_called_once()
+
+    def test_register_persistence_failure_preserves_existing_configuration(self):
+        existing = {
+            "url": "https://old.example/hook",
+            "events": ["session.completed"],
+            "secret": "old-secret",  # pragma: allowlist secret
+        }
+        webhooks["entity-1"] = existing
+        mock_db = MagicMock()
+        mock_db.save_webhook.return_value = False
+
+        with (
+            patch("main.db", mock_db),
+            pytest.raises(RuntimeError, match="persistence unavailable"),
+        ):
+            WebhookManager.register("entity-1", "https://new.example/hook")
+
+        assert webhooks["entity-1"] is existing
 
     def test_unregister_deletes_from_db(self):
         """WebhookManager.unregister calls db.delete_webhook when db is available."""
@@ -687,14 +999,13 @@ class TestLifespanRedisSuccess:
 
     @pytest.mark.asyncio
     async def test_lifespan_redis_shutdown_closes_connection(self):
-        """When app.state.redis is set, aclose is called on shutdown."""
+        """A connection created at startup is always closed on shutdown."""
         mock_app = MagicMock()
         mock_app.state = MagicMock()
 
-        # Simulate Redis being available on app.state
-        mock_redis = AsyncMock()
+        mock_redis = MagicMock()
+        mock_redis.ping = AsyncMock(return_value=True)
         mock_redis.aclose = AsyncMock()
-        mock_app.state.redis = mock_redis
 
         async def fake_cleanup():
             try:
@@ -707,16 +1018,18 @@ class TestLifespanRedisSuccess:
             mock_settings.secret_key = SECRET_KEY
             mock_settings.environment = "test"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = "redis://redis.internal:6379/0"
 
-            with patch("os.environ.get", return_value=None):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    # Set redis on state BEFORE entering context (simulates startup)
-                    async with lifespan(mock_app):
-                        # Override app.state.redis after startup sets it to None
-                        mock_app.state.redis = mock_redis
+            with (
+                patch("redis.asyncio.from_url", return_value=mock_redis),
+                patch("main.cleanup_expired_sessions", side_effect=fake_cleanup),
+            ):
+                async with lifespan(mock_app):
+                    assert mock_app.state.redis is mock_redis
 
-                    # aclose called during shutdown (line 478)
-                    mock_redis.aclose.assert_called_once()
+        mock_redis.ping.assert_awaited_once()
+        mock_redis.aclose.assert_awaited_once()
+        assert mock_app.state.redis is None
 
 
 # ============================================================
@@ -729,69 +1042,36 @@ class TestLifespanSigningInit:
 
     @pytest.mark.asyncio
     async def test_lifespan_signing_import_error(self):
-        """Lifespan handles ImportError from signing module gracefully."""
+        """Production startup fails closed if the signing symbol is unavailable."""
         mock_app = MagicMock()
         mock_app.state = MagicMock()
-
-        async def fake_cleanup():
-            try:
-                await asyncio.sleep(3600)
-            except asyncio.CancelledError:
-                pass
+        mock_db = MagicMock()
+        mock_db.get_recent_sessions.return_value = []
+        mock_db.get_recent_verifications.return_value = []
+        mock_db.get_webhooks.return_value = []
+        mock_redis = MagicMock()
+        mock_redis.ping = AsyncMock(return_value=True)
+        mock_redis.aclose = AsyncMock()
+        signing_without_init = ModuleType("mettle.signing")
 
         with patch("main.settings") as mock_settings:
-            mock_settings.is_production = False
+            mock_settings.is_production = True
             mock_settings.secret_key = SECRET_KEY
-            mock_settings.environment = "test"
+            mock_settings.environment = "production"
             mock_settings.api_version = "0.2.0"
+            mock_settings.redis_url = "redis://redis.internal:6379/0"
 
-            with patch("os.environ.get", return_value=None):
-                with patch("main.cleanup_expired_sessions", side_effect=fake_cleanup):
-                    # Make the signing import raise ImportError
-                    original_import = __import__
+            with (
+                patch("main.db", mock_db),
+                patch("redis.asyncio.from_url", return_value=mock_redis),
+                patch.dict(sys.modules, {"mettle.signing": signing_without_init}),
+                pytest.raises(RuntimeError, match="signing dependencies"),
+            ):
+                async with lifespan(mock_app):
+                    pass
 
-                    def patched_import(name, *args, **kwargs):
-                        if name == "mettle.signing" and "init_signing" in str(
-                            kwargs.get("fromlist", [])
-                        ):
-                            raise ImportError("No signing module")
-                        return original_import(name, *args, **kwargs)
-
-                    with patch("builtins.__import__", side_effect=patched_import):
-                        async with lifespan(mock_app):
-                            pass  # Should not raise
-
-
-# ============================================================
-# Database initialization (lines 49-62)
-# ============================================================
-
-
-class TestDatabaseInitialization:
-    """Test database module initialization branch."""
-
-    def test_database_import_logging(self):
-        """When use_database is True but module not available, falls back gracefully."""
-        # The database init block (lines 49-62) runs at module load time.
-        # We test the code path by directly invoking the logging/parsing logic.
-        from urllib.parse import urlparse
-
-        parsed_url = urlparse("postgresql://user:pass@host:5432/db")
-        safe_url = f"{parsed_url.scheme}://{parsed_url.hostname}"
-        if parsed_url.port:
-            safe_url += f":{parsed_url.port}"
-        assert safe_url == "postgresql://host:5432"
-        assert "pass" not in safe_url
-
-    def test_database_url_without_port(self):
-        """Database URL without port omits port from safe URL."""
-        from urllib.parse import urlparse
-
-        parsed_url = urlparse("postgresql://user:pass@host/db")
-        safe_url = f"{parsed_url.scheme}://{parsed_url.hostname}"
-        if parsed_url.port:
-            safe_url += f":{parsed_url.port}"
-        assert safe_url == "postgresql://host"
+        mock_redis.aclose.assert_awaited_once()
+        assert mock_app.state.redis is None
 
 
 # ============================================================
@@ -799,18 +1079,17 @@ class TestDatabaseInitialization:
 # ============================================================
 
 
-class TestRouterSigningImportErrorPath:
-    """Test the signing ImportError branch in session finalization."""
+class TestUnsignedAttestationFallback:
+    """Test unsigned local receipts when no signing key is initialized."""
 
-    def test_finalize_without_signing_available(self):
-        """Finalization works when signing module raises ImportError."""
+    def test_build_without_signing_returns_unsigned_receipt(self):
         from mettle.vcp import build_mettle_attestation
 
         attestation = build_mettle_attestation(
             session_id="ses_test123",
             subject_id="test-user",
             difficulty="basic",
-            suites_passed=["speed_math"],
+            suites_passed=["adversarial"],
             suites_failed=[],
             pass_rate=1.0,
         )

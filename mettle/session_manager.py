@@ -13,6 +13,8 @@ import math
 import secrets
 import time
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -57,6 +59,7 @@ SESSION_LOCK_TTL = 30
 SESSION_LOCK_RENEW_INTERVAL = SESSION_LOCK_TTL / 3
 PRESENTATION_CHALLENGE_TTL = 60
 MAX_PRESENTATION_CHALLENGES_PER_MINUTE = 60
+PRESENTATION_RATE_WINDOW_MS = 60_000
 
 
 class SessionRateLimitError(ValueError):
@@ -75,13 +78,40 @@ class SessionLockLostError(RedisError):
     """A worker lost its Redis lease while changing session state."""
 
 
+@dataclass
+class _SessionLease:
+    """Token-owned lease held by the current session transition."""
+
+    lock_key: str
+    token: str | None
+    lost: asyncio.Event = field(default_factory=asyncio.Event)
+    renewal_error: BaseException | None = None
+
+
+_CURRENT_SESSION_LEASE: ContextVar[_SessionLease | None] = ContextVar(
+    "mettle_current_session_lease", default=None
+)
+
+
 _RATE_RESERVATION_SCRIPT = """
+local members = redis.call('SMEMBERS', KEYS[1])
+for _, session_id in ipairs(members) do
+  local session_key = ARGV[6] .. session_id
+  local reservation_key = session_key .. ':reservation'
+  if redis.call('EXISTS', session_key) == 0 and redis.call('EXISTS', reservation_key) == 0 then
+    redis.call('SREM', KEYS[1], session_id)
+  end
+end
 local active_count = redis.call('SCARD', KEYS[1])
 if active_count >= tonumber(ARGV[2]) then return -1 end
 local hourly_count = tonumber(redis.call('GET', KEYS[2]) or '0')
 if hourly_count >= tonumber(ARGV[3]) then return -2 end
+redis.call('SET', KEYS[3], '1', 'EX', tonumber(ARGV[4]))
 redis.call('SADD', KEYS[1], ARGV[1])
-redis.call('EXPIRE', KEYS[1], tonumber(ARGV[4]))
+local active_ttl = redis.call('TTL', KEYS[1])
+if active_ttl < tonumber(ARGV[4]) then
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[4]))
+end
 hourly_count = redis.call('INCR', KEYS[2])
 if hourly_count == 1 then
   redis.call('EXPIRE', KEYS[2], tonumber(ARGV[5]))
@@ -103,15 +133,31 @@ end
 return 0
 """
 
+_LOCK_CHECK_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then return 1 end
+return 0
+"""
+
+_ACTIVE_PERSIST_SCRIPT = """
+if redis.call('GET', KEYS[2]) ~= ARGV[3] then return -1 end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[2]))
+return 1
+"""
+
 _TERMINAL_PERSIST_SCRIPT = """
+if redis.call('GET', KEYS[4]) ~= ARGV[4] then return -1 end
+local active_type = redis.call('TYPE', KEYS[2]).ok
+if active_type ~= 'none' and active_type ~= 'set' then return -2 end
 redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[2]))
 redis.call('SREM', KEYS[2], ARGV[3])
 redis.call('DEL', KEYS[3])
+redis.call('DEL', KEYS[5])
 return 1
 """
 
 _RATE_RESERVATION_RELEASE_SCRIPT = """
 local removed = redis.call('SREM', KEYS[1], ARGV[1])
+redis.call('DEL', KEYS[3])
 if removed == 1 then
   local hourly_count = tonumber(redis.call('GET', KEYS[2]) or '0')
   if hourly_count > 0 then redis.call('DECR', KEYS[2]) end
@@ -120,9 +166,27 @@ return removed
 """
 
 _PRESENTATION_RATE_SCRIPT = """
-local count = redis.call('INCR', KEYS[1])
-if count == 1 then redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1])) end
-return count
+local now_ms = tonumber(ARGV[1])
+local window_ms = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now_ms - window_ms)
+local count = redis.call('ZCARD', KEYS[1])
+if count >= limit then
+  local oldest = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+  local retry_ms = window_ms
+  if oldest[2] then retry_ms = math.max(1, tonumber(oldest[2]) + window_ms - now_ms) end
+  return {-1, retry_ms}
+end
+redis.call('ZADD', KEYS[1], now_ms, ARGV[4])
+redis.call('PEXPIRE', KEYS[1], window_ms)
+return {count + 1, 0}
+"""
+
+_PRESENTATION_CONSUME_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
 """
 
 
@@ -141,8 +205,7 @@ def _presentation_key(challenge_id: str) -> str:
 
 
 def _presentation_rate_key(user_id: str) -> str:
-    minute = int(time.time() // 60)
-    return f"{settings.redis_namespace}:presentation-rate:{user_id}:{minute}"
+    return f"{settings.redis_namespace}:presentation-rate:{user_id}"
 
 
 class SessionManager:
@@ -150,6 +213,14 @@ class SessionManager:
 
     def __init__(self, redis_client: Any) -> None:
         self.redis = redis_client
+        locks = getattr(redis_client, "_mettle_local_locks", None)
+        if not isinstance(locks, dict):
+            locks = {}
+            try:
+                setattr(redis_client, "_mettle_local_locks", locks)
+            except (AttributeError, TypeError):
+                pass
+        self._local_locks: dict[str, asyncio.Lock] = locks
 
     # ---- Session Lifecycle ----
 
@@ -178,6 +249,12 @@ class SessionManager:
 
         time_budget_ms = self._session_time_budget_ms(resolved_suites, difficulty)
         storage_ttl = max(1, math.ceil(time_budget_ms / 1000))
+        # A short respondent budget must not also become a shorter construction
+        # lease. The LLM generator alone may legitimately consume its entire
+        # 30-second call timeout before the session keys exist. Keep the
+        # reservation alive for the established construction window, then
+        # delete it immediately after successful persistence below.
+        construction_ttl = max(storage_ttl, ACTIVE_SESSION_TTL)
 
         # Reserve both active and hourly quota atomically before doing expensive
         # challenge generation. Concurrent requests cannot all pass a separate
@@ -187,7 +264,7 @@ class SessionManager:
         await self._reserve_rate_limits(
             user_id,
             session_id,
-            active_ttl=max(ACTIVE_SESSION_TTL, storage_ttl),
+            active_ttl=construction_ttl,
         )
 
         try:
@@ -342,10 +419,13 @@ class SessionManager:
         # Store in Redis
         pipe = self.redis.pipeline()
         pipe.setex(_key(session_id), storage_ttl, json.dumps(session_meta))
-        pipe.setex(
-            _key(session_id, "answers"), storage_ttl, json.dumps(server_answers)
-        )
+        pipe.setex(_key(session_id, "answers"), storage_ttl, json.dumps(server_answers))
         await pipe.execute()
+        # The metadata key now proves that this member is live, so the short
+        # construction reservation is no longer needed for stale-set pruning.
+        delete_fn = getattr(self.redis, "delete", None)
+        if callable(delete_fn):
+            await delete_fn(_key(session_id, "reservation"))
 
         return session_id, issued_client_challenges, session_meta
 
@@ -354,7 +434,9 @@ class SessionManager:
         raw = await self.redis.get(_key(session_id))
         if raw is None:
             return None
-        return self._decode_redis_object(raw, "session metadata")
+        session = self._decode_redis_object(raw, "session metadata")
+        self._validate_session_envelope(session, session_id)
+        return session
 
     async def get_session_answers(self, session_id: str) -> dict[str, Any] | None:
         """Get server-side answers for a session."""
@@ -447,8 +529,13 @@ class SessionManager:
         server_answers = await self.get_session_answers(session_id)
         if server_answers is None:
             raise ValueError("Session answers expired")
-
-        suite_server = server_answers.get(suite, {})
+        if set(server_answers) != set(session["suites"]):
+            raise SessionStateError(
+                "Corrupt session answers: suite set does not match session"
+            )
+        suite_server = server_answers.get(suite)
+        if not isinstance(suite_server, dict):
+            raise SessionStateError(f"Corrupt session answers for suite {suite}")
 
         # LLM-dynamic suite requires async evaluation
         if suite == LLM_DYNAMIC_SUITE:
@@ -500,7 +587,7 @@ class SessionManager:
         if session["status"] == SessionStatus.COMPLETED.value:
             await self._persist_terminal_session(session)
         else:
-            await self.redis.setex(_key(session_id), ttl, json.dumps(session))
+            await self._persist_active_session(session, ttl)
         response = dict(result)
         response["presence"] = response_presence
         response["next_challenge"] = next_challenge
@@ -570,18 +657,39 @@ class SessionManager:
             session.get("novel_started_at") or session["start_time"]
         )
         elapsed_ms = (answered_at - novel_started_at) * 1000
-        round_started_at = float(
-            session.get("round_started_at") or novel_started_at
-        )
+        round_started_at = float(session.get("round_started_at") or novel_started_at)
         round_response_ms = max(0.0, (answered_at - round_started_at) * 1000)
 
         server_answers = await self.get_session_answers(session_id)
         if server_answers is None:
             raise ValueError("Session answers expired")
-
-        novel_server = server_answers.get(MULTI_ROUND_SUITE, {})
-        time_budget_ms = novel_server.get("time_budget_s", 30) * 1000
-        num_rounds = novel_server.get("num_rounds", 3)
+        if set(server_answers) != set(session["suites"]):
+            raise SessionStateError(
+                "Corrupt session answers: suite set does not match session"
+            )
+        novel_server = server_answers.get(MULTI_ROUND_SUITE)
+        if not isinstance(novel_server, dict):
+            raise SessionStateError("Corrupt novel-reasoning answers")
+        raw_time_budget = novel_server.get("time_budget_s")
+        num_rounds = novel_server.get("num_rounds")
+        novel_challenges = novel_server.get("challenges")
+        if (
+            isinstance(raw_time_budget, bool)
+            or not isinstance(raw_time_budget, int | float)
+            or not math.isfinite(float(raw_time_budget))
+            or float(raw_time_budget) <= 0
+            or isinstance(num_rounds, bool)
+            or not isinstance(num_rounds, int)
+            or num_rounds not in {2, 3}
+            or not isinstance(novel_challenges, dict)
+            or not novel_challenges
+            or any(
+                not isinstance(name, str) or not name or not isinstance(challenge, dict)
+                for name, challenge in novel_challenges.items()
+            )
+        ):
+            raise SessionStateError("Corrupt novel-reasoning answers")
+        time_budget_ms = float(raw_time_budget) * 1000
 
         time_exceeded = elapsed_ms >= time_budget_ms
         time_remaining_ms = max(0, int(time_budget_ms - elapsed_ms))
@@ -593,7 +701,16 @@ class SessionManager:
         num_challenges = 0
 
         challenge_answers = evaluation_answers.get("challenges", evaluation_answers)
-        expected_challenges = set(novel_server.get("challenges", {}))
+        if not isinstance(challenge_answers, dict) or any(
+            not isinstance(name, str)
+            or not name
+            or not isinstance(challenge_answer, dict)
+            for name, challenge_answer in challenge_answers.items()
+        ):
+            raise ValueError(
+                "Round answers must be an object mapping challenge names to objects"
+            )
+        expected_challenges = set(novel_challenges)
         if set(challenge_answers) != expected_challenges:
             missing = sorted(expected_challenges - set(challenge_answers))
             unexpected = sorted(set(challenge_answers) - expected_challenges)
@@ -634,10 +751,7 @@ class SessionManager:
         # Determine next round data
         next_round_data = None
         if not is_final_round:
-            next_round_data = {
-                "round": round_num + 1,
-                "note": "Continue with updated challenge data",
-            }
+            next_round_data = self._next_novel_round_data(round_num + 1, novel_server)
 
         if is_final_round:
             # Analyze iteration curve
@@ -690,7 +804,7 @@ class SessionManager:
         if session["status"] == SessionStatus.COMPLETED.value:
             await self._persist_terminal_session(session)
         else:
-            await self.redis.setex(_key(session_id), ttl, json.dumps(session))
+            await self._persist_active_session(session, ttl)
 
         return {
             "round_num": round_num,
@@ -773,10 +887,7 @@ class SessionManager:
                 if suite == MULTI_ROUND_SUITE
                 else f"suite:{suite}"
             )
-            if (
-                suite == MULTI_ROUND_SUITE
-                and session.get("novel_started_at") is None
-            ):
+            if suite == MULTI_ROUND_SUITE and session.get("novel_started_at") is None:
                 issued_at = time.time()
                 session["novel_started_at"] = issued_at
                 session["round_started_at"] = issued_at
@@ -799,15 +910,28 @@ class SessionManager:
         """Persist a fresh verifier-owned proof-of-possession challenge."""
         rate_key = _presentation_rate_key(verifier_user_id)
         eval_fn = getattr(self.redis, "eval", None)
+        now_ms = int(time.time() * 1000)
         if callable(eval_fn):
-            count = int(await eval_fn(_PRESENTATION_RATE_SCRIPT, 1, rate_key, 60))
+            rate_result = await eval_fn(
+                _PRESENTATION_RATE_SCRIPT,
+                1,
+                rate_key,
+                now_ms,
+                PRESENTATION_RATE_WINDOW_MS,
+                MAX_PRESENTATION_CHALLENGES_PER_MINUTE,
+                secrets.token_urlsafe(18),
+            )
+            if not isinstance(rate_result, (list, tuple)) or len(rate_result) != 2:
+                raise RedisError("Invalid presentation rate-limit result")
+            count, retry_ms = (int(rate_result[0]), int(rate_result[1]))
         else:
-            count = int(await self.redis.incr(rate_key))
-            if count == 1:
-                await self.redis.expire(rate_key, 60)
-        if count > MAX_PRESENTATION_CHALLENGES_PER_MINUTE:
+            count, retry_ms = await self._reserve_presentation_rate_fallback(
+                rate_key, now_ms
+            )
+        if count < 0:
             raise SessionRateLimitError(
-                "Presentation challenge rate limit exceeded", 60
+                "Presentation challenge rate limit exceeded",
+                max(1, math.ceil(retry_ms / 1000)),
             )
 
         challenge_id = secrets.token_urlsafe(32)
@@ -844,9 +968,7 @@ class SessionManager:
             raw = await self.redis.get(_presentation_key(challenge_id))
             if raw is None:
                 raise ValueError("Presentation challenge expired or already used")
-            challenge = self._decode_redis_object(
-                raw, "presentation challenge"
-            )
+            challenge = self._decode_redis_object(raw, "presentation challenge")
             if challenge.get("verifier_user_id") != verifier_user_id:
                 raise ValueError("Presentation challenge belongs to another verifier")
             if challenge.get("credential_jti") != credential_jti:
@@ -860,12 +982,21 @@ class SessionManager:
                 signature=holder_signature,
                 challenge=challenge,
             )
-            delete = getattr(self.redis, "delete", None)
-            if not callable(delete):
-                raise RuntimeError(
-                    "Redis client cannot consume presentation challenges"
+            eval_fn = getattr(self.redis, "eval", None)
+            if callable(eval_fn):
+                deleted = await eval_fn(
+                    _PRESENTATION_CONSUME_SCRIPT,
+                    1,
+                    _presentation_key(challenge_id),
+                    raw,
                 )
-            deleted = await delete(_presentation_key(challenge_id))
+            else:
+                delete = getattr(self.redis, "delete", None)
+                if not callable(delete):
+                    raise RuntimeError(
+                        "Redis client cannot consume presentation challenges"
+                    )
+                deleted = await delete(_presentation_key(challenge_id))
             if deleted != 1:
                 raise ValueError("Presentation challenge expired or already used")
             return challenge
@@ -919,6 +1050,7 @@ class SessionManager:
 
     async def _check_rate_limits(self, user_id: str) -> None:
         """Check rate limits for session creation. Raises ValueError if exceeded."""
+        await self._prune_stale_active_sessions(user_id)
         # Check active sessions
         active_count = await self.redis.scard(_rate_key(user_id, "active"))
         if active_count is not None and active_count >= MAX_ACTIVE_SESSIONS_PER_USER:
@@ -950,25 +1082,29 @@ class SessionManager:
             # Lightweight repository fakes do not implement Lua. Production
             # redis.asyncio clients always do. Keep the fallback behavior
             # semantically equivalent for unit tests.
-            await self._check_rate_limits(user_id)
-            pipe = self.redis.pipeline()
-            pipe.sadd(_rate_key(user_id, "active"), session_id)
-            pipe.expire(_rate_key(user_id, "active"), active_ttl)
-            pipe.incr(_rate_key(user_id, "hourly"))
-            pipe.expire(_rate_key(user_id, "hourly"), RATE_LIMIT_WINDOW)
-            await pipe.execute()
+            async with self._local_lock(f"rate:{user_id}"):
+                await self._check_rate_limits(user_id)
+                await self.redis.setex(_key(session_id, "reservation"), active_ttl, "1")
+                pipe = self.redis.pipeline()
+                pipe.sadd(_rate_key(user_id, "active"), session_id)
+                pipe.expire(_rate_key(user_id, "active"), active_ttl)
+                pipe.incr(_rate_key(user_id, "hourly"))
+                pipe.expire(_rate_key(user_id, "hourly"), RATE_LIMIT_WINDOW)
+                await pipe.execute()
             return
 
         result = await eval_fn(
             _RATE_RESERVATION_SCRIPT,
-            2,
+            3,
             _rate_key(user_id, "active"),
             _rate_key(user_id, "hourly"),
+            _key(session_id, "reservation"),
             session_id,
             MAX_ACTIVE_SESSIONS_PER_USER,
             MAX_SESSIONS_PER_HOUR,
             active_ttl,
             RATE_LIMIT_WINDOW,
+            f"{settings.redis_namespace}:session:",
         )
         if result == -1:
             raise SessionRateLimitError(
@@ -988,14 +1124,18 @@ class SessionManager:
         if callable(eval_fn):
             await eval_fn(
                 _RATE_RESERVATION_RELEASE_SCRIPT,
-                2,
+                3,
                 _rate_key(user_id, "active"),
                 _rate_key(user_id, "hourly"),
+                _key(session_id, "reservation"),
                 session_id,
             )
             return
 
         await self.redis.srem(_rate_key(user_id, "active"), session_id)
+        delete_fn = getattr(self.redis, "delete", None)
+        if callable(delete_fn):
+            await delete_fn(_key(session_id, "reservation"))
         decr_fn = getattr(self.redis, "decr", None)
         hourly_raw = await self.redis.get(_rate_key(user_id, "hourly"))
         if callable(decr_fn) and hourly_raw and int(hourly_raw) > 0:
@@ -1003,12 +1143,20 @@ class SessionManager:
 
     @asynccontextmanager
     async def _session_lock(self, session_id: str):
-        """Serialize state transitions for one session across workers."""
+        """Serialize transitions with a renewable, token-owned Redis lease."""
         set_fn = getattr(self.redis, "set", None)
         eval_fn = getattr(self.redis, "eval", None)
         if not callable(set_fn) or not callable(eval_fn):
-            # Compatibility for small in-memory test fakes only.
-            yield
+            # Repository fakes share this lock through the Redis object. This
+            # preserves the serialization contract without pretending to be a
+            # distributed lease.
+            async with self._local_lock(f"session:{session_id}"):
+                lease = _SessionLease(_key(session_id, "lock"), None)
+                context_token = _CURRENT_SESSION_LEASE.set(lease)
+                try:
+                    yield lease
+                finally:
+                    _CURRENT_SESSION_LEASE.reset(context_token)
             return
 
         lock_key = _key(session_id, "lock")
@@ -1016,12 +1164,331 @@ class SessionManager:
         acquired = await set_fn(lock_key, token, nx=True, ex=SESSION_LOCK_TTL)
         if not acquired:
             raise ValueError("Session operation already in progress")
+        lease = _SessionLease(lock_key, token)
+        renewal = asyncio.create_task(self._renew_session_lock(lease))
+        context_token = _CURRENT_SESSION_LEASE.set(lease)
         try:
-            yield
+            yield lease
+            await self._assert_lease_owned(lease)
         finally:
-            await eval_fn(_LOCK_RELEASE_SCRIPT, 1, lock_key, token)
+            _CURRENT_SESSION_LEASE.reset(context_token)
+            renewal.cancel()
+            try:
+                await renewal
+            except asyncio.CancelledError:
+                pass
+            try:
+                await eval_fn(_LOCK_RELEASE_SCRIPT, 1, lock_key, token)
+            except RedisError:
+                logger.warning("Unable to release session lock %s", lock_key)
+
+    async def _renew_session_lock(self, lease: _SessionLease) -> None:
+        """Renew a lease until its owner exits or ownership is lost."""
+        if lease.token is None:
+            return
+        try:
+            while True:
+                await asyncio.sleep(SESSION_LOCK_RENEW_INTERVAL)
+                renewed = await self.redis.eval(
+                    _LOCK_RENEW_SCRIPT,
+                    1,
+                    lease.lock_key,
+                    lease.token,
+                    SESSION_LOCK_TTL,
+                )
+                if int(renewed) != 1:
+                    lease.lost.set()
+                    return
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:
+            lease.renewal_error = exc
+            lease.lost.set()
+
+    async def _assert_lease_owned(self, lease: _SessionLease | None = None) -> None:
+        """Fail closed unless the current worker still owns its lease."""
+        current = lease or _CURRENT_SESSION_LEASE.get()
+        if current is None:
+            raise SessionLockLostError("Session state commit attempted without a lock")
+        if current.lost.is_set():
+            detail = " after renewal failure" if current.renewal_error else ""
+            raise SessionLockLostError(f"Session lock ownership was lost{detail}")
+        if current.token is None:
+            return
+        owned = await self.redis.eval(
+            _LOCK_CHECK_SCRIPT, 1, current.lock_key, current.token
+        )
+        if int(owned) != 1:
+            current.lost.set()
+            raise SessionLockLostError("Session lock ownership was lost")
+
+    @asynccontextmanager
+    async def _local_lock(self, name: str):
+        """Share a bounded in-process lock among managers using one fake client."""
+        lock = self._local_locks.setdefault(name, asyncio.Lock())
+        async with lock:
+            yield
 
     # ---- Helpers ----
+
+    @staticmethod
+    def _session_time_budget_ms(suites: list[str], difficulty: str) -> int:
+        """Return the exact respondent budget without counting novel twice."""
+        from scripts.engine import NovelReasoningChallenges
+
+        params = NovelReasoningChallenges.DIFFICULTY_PARAMS.get(difficulty)
+        if params is None:
+            raise ValueError(f"Unknown difficulty: {difficulty}")
+        single_shot_count = len(suites) - int(MULTI_ROUND_SUITE in suites)
+        budget_ms = single_shot_count * 30_000
+        if MULTI_ROUND_SUITE in suites:
+            budget_ms += int(params["time_budget_s"]) * 1000
+        if budget_ms <= 0:
+            raise ValueError("At least one suite is required")
+        return budget_ms
+
+    @staticmethod
+    def _decode_redis_object(raw: Any, label: str) -> dict[str, Any]:
+        """Decode an untrusted Redis value as a JSON object or fail closed."""
+        try:
+            value = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as exc:
+            raise SessionStateError(f"Corrupt {label}: invalid JSON") from exc
+        if not isinstance(value, dict):
+            raise SessionStateError(f"Corrupt {label}: expected a JSON object")
+        return value
+
+    @staticmethod
+    def _validate_session_envelope(
+        session: dict[str, Any], expected_session_id: str
+    ) -> None:
+        """Validate lifecycle fields required by every session operation."""
+        if session.get("session_id") != expected_session_id:
+            raise SessionStateError("Corrupt session metadata: session_id mismatch")
+        if not isinstance(session.get("user_id"), str) or not session["user_id"]:
+            raise SessionStateError("Corrupt session metadata: invalid user_id")
+        suites = session.get("suites")
+        if (
+            not isinstance(suites, list)
+            or not suites
+            or any(not isinstance(suite, str) for suite in suites)
+            or len(suites) != len(set(suites))
+            or any(suite not in SUITE_NAMES for suite in suites)
+        ):
+            raise SessionStateError("Corrupt session metadata: invalid suites")
+        valid_statuses = {status.value for status in SessionStatus}
+        if session.get("status") not in valid_statuses:
+            raise SessionStateError("Corrupt session metadata: invalid status")
+        completed = session.get("suites_completed")
+        if (
+            not isinstance(completed, list)
+            or any(not isinstance(suite, str) for suite in completed)
+            or len(completed) != len(set(completed))
+            or not set(completed).issubset(set(suites))
+        ):
+            raise SessionStateError(
+                "Corrupt session metadata: invalid suites_completed"
+            )
+        if not isinstance(session.get("suite_results"), dict):
+            raise SessionStateError("Corrupt session metadata: invalid suite_results")
+        if not isinstance(session.get("round_data"), list):
+            raise SessionStateError("Corrupt session metadata: invalid round_data")
+        current_round = session.get("current_round")
+        if (
+            isinstance(current_round, bool)
+            or not isinstance(current_round, int)
+            or current_round < 0
+        ):
+            raise SessionStateError("Corrupt session metadata: invalid current_round")
+
+    @staticmethod
+    def _finite_timestamp(value: Any, label: str) -> float:
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise SessionStateError(f"Corrupt completed session: invalid {label}")
+        timestamp = float(value)
+        if not math.isfinite(timestamp) or timestamp < 0:
+            raise SessionStateError(f"Corrupt completed session: invalid {label}")
+        return timestamp
+
+    @classmethod
+    def _validate_completed_session(
+        cls, session: dict[str, Any], expected_session_id: str
+    ) -> tuple[dict[str, dict[str, Any]], float, float]:
+        """Validate a completed result record before deriving credentials."""
+        cls._validate_session_envelope(session, expected_session_id)
+        if session["status"] != SessionStatus.COMPLETED.value:
+            raise SessionStateError("Session is not completed")
+        suites = session["suites"]
+        if set(session["suites_completed"]) != set(suites):
+            raise SessionStateError(
+                "Corrupt completed session: suites are not fully completed"
+            )
+        results = session["suite_results"]
+        if set(results) != set(suites):
+            raise SessionStateError(
+                "Corrupt completed session: result set does not match suites"
+            )
+        for suite, result in results.items():
+            if not isinstance(result, dict) or not isinstance(
+                result.get("passed"), bool
+            ):
+                raise SessionStateError(
+                    f"Corrupt completed session: invalid result for {suite}"
+                )
+        start_time = cls._finite_timestamp(session.get("start_time"), "start_time")
+        completed_at = cls._finite_timestamp(
+            session.get("completed_at"), "completed_at"
+        )
+        if completed_at < start_time:
+            raise SessionStateError(
+                "Corrupt completed session: completed_at predates start_time"
+            )
+        return results, start_time, completed_at
+
+    async def _persist_active_session(self, session: dict[str, Any], ttl: int) -> None:
+        """Persist a nonterminal transition only while its lock is owned."""
+        lease = _CURRENT_SESSION_LEASE.get()
+        await self._assert_lease_owned(lease)
+        payload = json.dumps(session)
+        if lease is not None and lease.token is not None:
+            result = await self.redis.eval(
+                _ACTIVE_PERSIST_SCRIPT,
+                2,
+                _key(session["session_id"]),
+                lease.lock_key,
+                payload,
+                ttl,
+                lease.token,
+            )
+            if int(result) != 1:
+                lease.lost.set()
+                raise SessionLockLostError("Session lock ownership was lost")
+            return
+        await self.redis.setex(_key(session["session_id"]), ttl, payload)
+
+    async def _persist_terminal_session(self, session: dict[str, Any]) -> None:
+        """Atomically persist terminal state and remove all active secrets."""
+        status = session.get("status")
+        if status not in {
+            SessionStatus.COMPLETED.value,
+            SessionStatus.EXPIRED.value,
+            SessionStatus.CANCELLED.value,
+        }:
+            raise SessionStateError("Refusing to persist a nonterminal session")
+        session_id = session.get("session_id")
+        user_id = session.get("user_id")
+        if not isinstance(session_id, str) or not isinstance(user_id, str):
+            raise SessionStateError("Corrupt terminal session identity")
+        lease = _CURRENT_SESSION_LEASE.get()
+        await self._assert_lease_owned(lease)
+        payload = json.dumps(session)
+        if lease is not None and lease.token is not None:
+            result = await self.redis.eval(
+                _TERMINAL_PERSIST_SCRIPT,
+                5,
+                _key(session_id),
+                _rate_key(user_id, "active"),
+                _key(session_id, "answers"),
+                lease.lock_key,
+                _key(session_id, "reservation"),
+                payload,
+                COMPLETED_SESSION_TTL,
+                session_id,
+                lease.token,
+            )
+            if int(result) != 1:
+                if int(result) == -2:
+                    raise SessionStateError(
+                        "Corrupt active-session index prevents terminal commit"
+                    )
+                lease.lost.set()
+                raise SessionLockLostError("Session lock ownership was lost")
+            return
+
+        # Lightweight fakes have no Lua. Their pipeline is the explicit atomic
+        # boundary for the same three state changes.
+        try:
+            pipe = self.redis.pipeline(transaction=True)
+        except TypeError:
+            pipe = self.redis.pipeline()
+        pipe.setex(_key(session_id), COMPLETED_SESSION_TTL, payload)
+        pipe.srem(_rate_key(user_id, "active"), session_id)
+        delete_in_pipeline = callable(getattr(pipe, "delete", None))
+        if delete_in_pipeline:
+            pipe.delete(_key(session_id, "answers"))
+            pipe.delete(_key(session_id, "reservation"))
+        await pipe.execute()
+        if not delete_in_pipeline:
+            delete_fn = getattr(self.redis, "delete", None)
+            if not callable(delete_fn):
+                raise RedisError("Redis client cannot delete terminal session secrets")
+            await delete_fn(_key(session_id, "answers"))
+            await delete_fn(_key(session_id, "reservation"))
+
+    async def _prune_stale_active_sessions(self, user_id: str) -> None:
+        """Remove active-set members with neither metadata nor a reservation."""
+        smembers = getattr(self.redis, "smembers", None)
+        if not callable(smembers):
+            return
+        active_key = _rate_key(user_id, "active")
+        members = await smembers(active_key)
+        for raw_member in members or ():
+            member = (
+                raw_member.decode("utf-8")
+                if isinstance(raw_member, bytes)
+                else str(raw_member)
+            )
+            if await self.redis.get(_key(member)) is not None:
+                continue
+            if await self.redis.get(_key(member, "reservation")) is not None:
+                continue
+            await self.redis.srem(active_key, member)
+
+    async def _reserve_presentation_rate_fallback(
+        self, rate_key: str, now_ms: int
+    ) -> tuple[int, int]:
+        """Sliding-window limiter for bounded in-memory Redis test doubles."""
+        async with self._local_lock(f"presentation-rate:{rate_key}"):
+            raw = await self.redis.get(rate_key)
+            if raw is None:
+                timestamps: list[int] = []
+            else:
+                value = self._decode_redis_object(raw, "presentation rate state")
+                candidate = value.get("timestamps")
+                if not isinstance(candidate, list) or any(
+                    isinstance(item, bool) or not isinstance(item, int)
+                    for item in candidate
+                ):
+                    raise SessionStateError("Corrupt presentation rate state")
+                timestamps = candidate
+            cutoff = now_ms - PRESENTATION_RATE_WINDOW_MS
+            timestamps = [stamp for stamp in timestamps if stamp > cutoff]
+            if len(timestamps) >= MAX_PRESENTATION_CHALLENGES_PER_MINUTE:
+                retry_ms = max(1, timestamps[0] + PRESENTATION_RATE_WINDOW_MS - now_ms)
+                return -1, retry_ms
+            timestamps.append(now_ms)
+            await self.redis.setex(
+                rate_key,
+                math.ceil(PRESENTATION_RATE_WINDOW_MS / 1000),
+                json.dumps({"timestamps": timestamps}),
+            )
+            return len(timestamps), 0
+
+    @staticmethod
+    def _next_novel_round_data(
+        next_round: int, novel_server: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Project the next round through the adapter's disclosure boundary."""
+        builder = getattr(ChallengeAdapter, "build_novel_round_client_data", None)
+        if not callable(builder):
+            raise SessionStateError("Novel round projection is unavailable")
+        try:
+            data = builder(next_round, novel_server)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SessionStateError("Corrupt novel-reasoning round state") from exc
+        if not isinstance(data, dict):
+            raise SessionStateError("Novel round builder returned invalid data")
+        return data
 
     @staticmethod
     def _resolve_suites(suites: list[str]) -> list[str]:
@@ -1046,27 +1513,42 @@ class SessionManager:
     @staticmethod
     def _remaining_active_ttl(session: dict[str, Any]) -> int:
         """Return a TTL that cannot extend the server-issued absolute expiry."""
-        expires_at = datetime.fromisoformat(session["expires_at"])
-        remaining = int(expires_at.timestamp() - time.time())
-        return max(1, min(ACTIVE_SESSION_TTL, remaining))
+        try:
+            expires_at = datetime.fromisoformat(session["expires_at"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SessionStateError(
+                "Corrupt session metadata: invalid expires_at"
+            ) from exc
+        if expires_at.tzinfo is None:
+            raise SessionStateError(
+                "Corrupt session metadata: expires_at lacks timezone"
+            )
+        # Redis must retain the session for its entire advertised budget.  A
+        # fixed ACTIVE_SESSION_TTL cap silently shortened large, multi-suite
+        # sessions after their first state transition.  Ceiling also avoids
+        # expiring a key fractionally before the authoritative deadline.
+        remaining = math.ceil(expires_at.timestamp() - time.time())
+        return max(1, remaining)
 
     async def _enforce_time_budget(self, session: dict[str, Any]) -> None:
         """Expire sessions whose authoritative wall-clock budget has elapsed."""
         start_time = session.get("start_time")
-        if start_time is None:
-            start_time = datetime.fromisoformat(session["created_at"]).timestamp()
-            session["start_time"] = start_time
-        elapsed_ms = (time.time() - float(start_time)) * 1000
-        if elapsed_ms <= float(session["time_budget_ms"]):
+        budget = session.get("time_budget_ms")
+        if (
+            isinstance(start_time, bool)
+            or not isinstance(start_time, int | float)
+            or not math.isfinite(float(start_time))
+            or isinstance(budget, bool)
+            or not isinstance(budget, int | float)
+            or not math.isfinite(float(budget))
+            or float(budget) <= 0
+        ):
+            raise SessionStateError("Corrupt session metadata: invalid time budget")
+        elapsed_ms = max(0.0, (time.time() - float(start_time)) * 1000)
+        if elapsed_ms < float(budget):
             return
 
         session["status"] = SessionStatus.EXPIRED.value
-        await self.redis.setex(
-            _key(session["session_id"]),
-            COMPLETED_SESSION_TTL,
-            json.dumps(session),
-        )
-        await self.redis.srem(
-            _rate_key(session["user_id"], "active"), session["session_id"]
-        )
+        session["terminated_at"] = time.time()
+        await self._persist_terminal_session(session)
         raise ValueError("Session time budget exceeded")

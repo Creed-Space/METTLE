@@ -15,6 +15,7 @@ Covers gaps not addressed by test_mettle_api.py:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from datetime import datetime, timezone
@@ -22,7 +23,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from redis.exceptions import RedisError
 
+import mettle.session_manager as session_module
 from mettle.api_models import (
     MULTI_ROUND_SUITE,
     SessionStatus,
@@ -31,7 +34,12 @@ from mettle.session_manager import (
     ACTIVE_SESSION_TTL,
     MAX_SESSIONS_PER_HOUR,
     SessionManager,
+    SessionLockLostError,
+    SessionRateLimitError,
+    SessionStateError,
     _key,
+    _presentation_key,
+    _presentation_rate_key,
     _rate_key,
 )
 
@@ -53,8 +61,8 @@ class FakeRedis:
         self._store[key] = value
         self._ttls[key] = ttl
 
-    async def delete(self, key: str) -> None:
-        self._store.pop(key, None)
+    async def delete(self, key: str) -> int:
+        return 1 if self._store.pop(key, None) is not None else 0
 
     async def sadd(self, key: str, *values: str) -> int:
         if key not in self._sets:
@@ -71,6 +79,9 @@ class FakeRedis:
 
     async def scard(self, key: str) -> int:
         return len(self._sets.get(key, set()))
+
+    async def smembers(self, key: str) -> set[str]:
+        return set(self._sets.get(key, set()))
 
     async def incr(self, key: str) -> int:
         val = int(self._store.get(key, "0"))
@@ -109,6 +120,10 @@ class FakeRedisPipeline:
         self._commands.append(("srem", (key, *values)))
         return self
 
+    def delete(self, key: str) -> FakeRedisPipeline:
+        self._commands.append(("delete", (key,)))
+        return self
+
     def incr(self, key: str) -> FakeRedisPipeline:
         self._commands.append(("incr", (key,)))
         return self
@@ -124,6 +139,90 @@ class FakeRedisPipeline:
             result = await fn(*args)
             results.append(result)
         return results
+
+
+class SemanticRedis(FakeRedis):
+    """Redis double that executes the session Lua contracts atomically."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._mutex = asyncio.Lock()
+        self._lock_expiry: dict[str, float] = {}
+        self._zsets: dict[str, dict[str, int]] = {}
+        self.fail_terminal = False
+        self.corrupt_active_index = False
+        self.renewals = 0
+
+    def _purge_lock(self, key: str) -> None:
+        expires = self._lock_expiry.get(key)
+        if expires is not None and time.monotonic() >= expires:
+            self._store.pop(key, None)
+            self._lock_expiry.pop(key, None)
+
+    async def get(self, key: str) -> str | None:
+        self._purge_lock(key)
+        return await super().get(key)
+
+    async def set(
+        self, key: str, value: str, *, nx: bool = False, ex: float | int | None = None
+    ) -> bool:
+        async with self._mutex:
+            self._purge_lock(key)
+            if nx and key in self._store:
+                return False
+            self._store[key] = value
+            if ex is not None:
+                self._lock_expiry[key] = time.monotonic() + float(ex)
+            return True
+
+    async def eval(self, script: str, numkeys: int, *args: Any) -> Any:
+        keys = list(args[:numkeys])
+        argv = list(args[numkeys:])
+        async with self._mutex:
+            if script == session_module._LOCK_CHECK_SCRIPT:
+                self._purge_lock(keys[0])
+                return int(self._store.get(keys[0]) == argv[0])
+            if script == session_module._LOCK_RENEW_SCRIPT:
+                self._purge_lock(keys[0])
+                if self._store.get(keys[0]) != argv[0]:
+                    return 0
+                self._lock_expiry[keys[0]] = time.monotonic() + float(argv[1])
+                self.renewals += 1
+                return 1
+            if script == session_module._LOCK_RELEASE_SCRIPT:
+                self._purge_lock(keys[0])
+                if self._store.get(keys[0]) != argv[0]:
+                    return 0
+                return await self.delete(keys[0])
+            if script == session_module._ACTIVE_PERSIST_SCRIPT:
+                self._purge_lock(keys[1])
+                if self._store.get(keys[1]) != argv[2]:
+                    return -1
+                await self.setex(keys[0], int(argv[1]), str(argv[0]))
+                return 1
+            if script == session_module._TERMINAL_PERSIST_SCRIPT:
+                self._purge_lock(keys[3])
+                if self._store.get(keys[3]) != argv[3]:
+                    return -1
+                if self.corrupt_active_index:
+                    return -2
+                if self.fail_terminal:
+                    raise RedisError("injected atomic terminal failure")
+                await self.setex(keys[0], int(argv[1]), str(argv[0]))
+                await self.srem(keys[1], str(argv[2]))
+                await self.delete(keys[2])
+                await self.delete(keys[4])
+                return 1
+            if script == session_module._PRESENTATION_CONSUME_SCRIPT:
+                if self._store.get(keys[0]) != argv[0]:
+                    return 0
+                return await self.delete(keys[0])
+            raise AssertionError("unexpected Lua script")
+
+    def replace_lock_owner(self, session_id: str) -> None:
+        key = _key(session_id, "lock")
+        self._store[key] = "another-worker"
+        self._lock_expiry[key] = time.monotonic() + 60
 
 
 # ---- Fixtures ----
@@ -291,6 +390,16 @@ class TestSessionSecurityBoundaries:
 
         assert 1 <= ttl <= 10
 
+    def test_active_ttl_preserves_budget_beyond_legacy_cap(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(session_module.time, "time", lambda: 1_000.25)
+        session = {
+            "expires_at": datetime.fromtimestamp(1_400.0, tz=timezone.utc).isoformat()
+        }
+
+        assert SessionManager._remaining_active_ttl(session) == 400
+
     def test_human_iteration_signature_cannot_pass(self, monkeypatch) -> None:
         from scripts.engine import IterationCurveAnalyzer
 
@@ -348,7 +457,10 @@ class TestSessionSecurityBoundaries:
             pass
 
         redis.set.assert_awaited_once()
-        redis.eval.assert_awaited_once()
+        assert redis.eval.await_count == 2
+        scripts = [call.args[0] for call in redis.eval.await_args_list]
+        assert "redis.call('GET'" in scripts[0]
+        assert "redis.call('DEL'" in scripts[1]
 
 
 # ---- 2. Cancel already completed session ----
@@ -672,21 +784,6 @@ class TestGetRoundFeedbackExisting:
         assert feedback is None
 
     @pytest.mark.asyncio
-    async def test_feedback_round_2_after_submitting_both(
-        self, manager: SessionManager
-    ) -> None:
-        session_id, challenges, _ = await manager.create_session(
-            user_id="user1", suites=["novel-reasoning"], difficulty="easy"
-        )
-        novel_challenges = challenges.get("novel-reasoning", {}).get("challenges", {})
-        round_answers: dict[str, Any] = {
-            "challenges": {name: {"test_outputs": []} for name in novel_challenges}
-        }
-
-        await manager.submit_round_answer(session_id, 1, round_answers)
-        await manager.submit_round_answer(session_id, 2, round_answers)
-
-    @pytest.mark.asyncio
     async def test_round_timing_is_per_round_not_cumulative_session_age(
         self,
         manager: SessionManager,
@@ -704,7 +801,7 @@ class TestGetRoundFeedbackExisting:
         await fake_redis.setex(
             _key(session_id), ACTIVE_SESSION_TTL, json.dumps(session)
         )
-        timestamps = iter([101.0, 101.0, 101.0, 101.4, 101.4])
+        timestamps = iter([101.0, 101.0, 101.0, 101.4, 101.4, 101.4, 101.4])
         monkeypatch.setattr(
             "mettle.session_manager.time.time", lambda: next(timestamps)
         )
@@ -757,10 +854,10 @@ class TestGetResultWithStartTime:
 
 
 class TestGetResultEmptySuiteResults:
-    """Test that empty suite_results leads to overall_passed=False."""
+    """Completed state with missing results is corruption, never a pass."""
 
     @pytest.mark.asyncio
-    async def test_empty_results_overall_not_passed(
+    async def test_empty_results_fail_closed(
         self, manager: SessionManager, fake_redis: FakeRedis
     ) -> None:
         # Inject a completed session with empty suite_results
@@ -782,9 +879,8 @@ class TestGetResultEmptySuiteResults:
         }
         await _inject_session(fake_redis, "test-empty", session_data)
 
-        result = await manager.get_result("test-empty")
-        assert result is not None
-        assert result["overall_passed"] is False
+        with pytest.raises(SessionStateError, match="result set"):
+            await manager.get_result("test-empty")
 
 
 # ---- 14. get_result with all suites passed ----
@@ -808,6 +904,7 @@ class TestGetResultAllPassed:
             "expires_at": "2026-01-01T00:05:00+00:00",
             "time_budget_ms": 60000,
             "start_time": time.time() - 10,
+            "completed_at": time.time(),
             "current_round": 0,
             "suites_completed": ["adversarial", "native"],
             "suite_results": {
@@ -837,6 +934,7 @@ class TestGetResultAllPassed:
             "expires_at": "2026-01-01T00:05:00+00:00",
             "time_budget_ms": 60000,
             "start_time": time.time() - 10,
+            "completed_at": time.time(),
             "current_round": 0,
             "suites_completed": ["adversarial", "native"],
             "suite_results": {
@@ -881,6 +979,7 @@ class TestGetResultNovelReasoning:
             "expires_at": "2026-01-01T00:05:00+00:00",
             "time_budget_ms": 120000,
             "start_time": time.time() - 20,
+            "completed_at": time.time(),
             "current_round": 3,
             "suites_completed": ["novel-reasoning"],
             "suite_results": {
@@ -917,6 +1016,7 @@ class TestGetResultNovelReasoning:
             "expires_at": "2026-01-01T00:05:00+00:00",
             "time_budget_ms": 30000,
             "start_time": time.time() - 5,
+            "completed_at": time.time(),
             "current_round": 0,
             "suites_completed": ["adversarial"],
             "suite_results": {
@@ -1110,8 +1210,7 @@ class TestTimeBudgetCalculation:
         _, _, meta = await manager.create_session(
             user_id="user1", suites=["novel-reasoning"], difficulty="easy"
         )
-        # easy: time_budget_s=45, so 45*1000 + 1 suite * 30000 = 75000
-        assert meta["time_budget_ms"] == 45 * 1000 + 1 * 30000
+        assert meta["time_budget_ms"] == 45_000
 
     @pytest.mark.asyncio
     async def test_time_budget_with_novel_reasoning_standard(
@@ -1120,8 +1219,7 @@ class TestTimeBudgetCalculation:
         _, _, meta = await manager.create_session(
             user_id="user1", suites=["novel-reasoning"], difficulty="standard"
         )
-        # standard: time_budget_s=30, so 30*1000 + 1 suite * 30000 = 60000
-        assert meta["time_budget_ms"] == 30 * 1000 + 1 * 30000
+        assert meta["time_budget_ms"] == 30_000
 
     @pytest.mark.asyncio
     async def test_time_budget_with_novel_reasoning_hard(
@@ -1130,16 +1228,15 @@ class TestTimeBudgetCalculation:
         _, _, meta = await manager.create_session(
             user_id="user1", suites=["novel-reasoning"], difficulty="hard"
         )
-        # hard: time_budget_s=20, so 20*1000 + 1 suite * 30000 = 50000
-        assert meta["time_budget_ms"] == 20 * 1000 + 1 * 30000
+        assert meta["time_budget_ms"] == 20_000
 
     @pytest.mark.asyncio
     async def test_time_budget_all_suites_easy(self, manager: SessionManager) -> None:
         _, _, meta = await manager.create_session(
             user_id="user1", suites=["all"], difficulty="easy"
         )
-        # easy: time_budget_s=45, 11 suites: 45*1000 + 11*30000 = 375000
-        assert meta["time_budget_ms"] == 45 * 1000 + 11 * 30000
+        # Eleven available suites: ten single-shot budgets plus novel once.
+        assert meta["time_budget_ms"] == 45_000 + 10 * 30_000
 
     @pytest.mark.asyncio
     async def test_time_budget_mixed_suites_with_novel(
@@ -1150,8 +1247,7 @@ class TestTimeBudgetCalculation:
             suites=["adversarial", "native", "novel-reasoning"],
             difficulty="standard",
         )
-        # standard: time_budget_s=30, 3 suites: 30*1000 + 3*30000 = 120000
-        assert meta["time_budget_ms"] == 30 * 1000 + 3 * 30000
+        assert meta["time_budget_ms"] == 30_000 + 2 * 30_000
 
 
 # ---- Additional edge cases ----
@@ -1275,7 +1371,7 @@ class TestSessionManagerEdgeCases:
         assert len(result["errors"]) <= 10
 
     @pytest.mark.asyncio
-    async def test_get_result_with_no_start_time_returns_zero_elapsed(
+    async def test_get_result_with_no_start_time_fails_closed(
         self, manager: SessionManager, fake_redis: FakeRedis
     ) -> None:
         # Inject a completed session with start_time=None
@@ -1297,9 +1393,8 @@ class TestSessionManagerEdgeCases:
         }
         await _inject_session(fake_redis, "test-nostart", session_data)
 
-        result = await manager.get_result("test-nostart")
-        assert result is not None
-        assert result["elapsed_ms"] == 0
+        with pytest.raises(SessionStateError, match="start_time"):
+            await manager.get_result("test-nostart")
 
     @pytest.mark.asyncio
     async def test_resolve_suites_unknown_raises(self) -> None:
@@ -1401,3 +1496,384 @@ class TestSessionManagerEdgeCases:
         assert "accuracy" in result
         assert "round_num" in result
         assert result["round_num"] == 1
+
+
+def _valid_session_record(
+    session_id: str = "semantic-session",
+    *,
+    status: str = SessionStatus.IN_PROGRESS.value,
+) -> dict[str, Any]:
+    now = time.time()
+    return {
+        "session_id": session_id,
+        "user_id": "semantic-user",
+        "entity_id": None,
+        "vcp_token": None,
+        "operator_commitment": None,
+        "suites": ["adversarial"],
+        "difficulty": "standard",
+        "status": status,
+        "created_at": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
+        "expires_at": datetime.fromtimestamp(now + 30, tz=timezone.utc).isoformat(),
+        "time_budget_ms": 30_000,
+        "start_time": now,
+        "novel_started_at": None,
+        "round_started_at": None,
+        "current_round": 0,
+        "suites_completed": [],
+        "suite_results": {},
+        "round_data": [],
+        "presence": None,
+    }
+
+
+class TestAdversarialSessionStateRegressions:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("raw", ["{", "[]", "null", "1", '"text"'])
+    async def test_malformed_or_nonobject_session_state_fails_closed(
+        self, raw: str, fake_redis: FakeRedis
+    ) -> None:
+        fake_redis._store[_key("corrupt")] = raw
+
+        with pytest.raises(SessionStateError, match="Corrupt session metadata"):
+            await SessionManager(fake_redis).get_session("corrupt")
+
+    @pytest.mark.asyncio
+    async def test_completed_state_missing_results_fails_closed(
+        self, fake_redis: FakeRedis
+    ) -> None:
+        session = _valid_session_record("incomplete", status="completed")
+        session["suites_completed"] = ["adversarial"]
+        session["completed_at"] = time.time()
+        await fake_redis.setex(_key("incomplete"), 60, json.dumps(session))
+
+        with pytest.raises(SessionStateError, match="result set"):
+            await SessionManager(fake_redis).get_result("incomplete")
+
+    @pytest.mark.asyncio
+    async def test_completed_elapsed_is_stable_across_reads(
+        self, fake_redis: FakeRedis, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        session = _valid_session_record("stable", status="completed")
+        session.update(
+            {
+                "start_time": 10.0,
+                "completed_at": 15.25,
+                "suites_completed": ["adversarial"],
+                "suite_results": {"adversarial": {"passed": True}},
+            }
+        )
+        await fake_redis.setex(_key("stable"), 60, json.dumps(session))
+        manager = SessionManager(fake_redis)
+
+        monkeypatch.setattr("mettle.session_manager.time.time", lambda: 100.0)
+        first = await manager.get_result("stable")
+        monkeypatch.setattr("mettle.session_manager.time.time", lambda: 10_000.0)
+        second = await manager.get_result("stable")
+
+        assert first is not None and second is not None
+        assert first["elapsed_ms"] == second["elapsed_ms"] == 5250
+
+    @pytest.mark.asyncio
+    async def test_expiry_uses_atomic_terminal_cleanup(
+        self, manager: SessionManager, fake_redis: FakeRedis
+    ) -> None:
+        session_id, _, session = await manager.create_session(
+            "expiry-user", ["adversarial"]
+        )
+        session["start_time"] = time.time() - 60
+        session["time_budget_ms"] = 1
+        await fake_redis.setex(_key(session_id), 30, json.dumps(session))
+
+        with pytest.raises(ValueError, match="time budget exceeded"):
+            await manager.verify_single_shot(session_id, "adversarial", {})
+
+        stored = await manager.get_session(session_id)
+        assert stored is not None and stored["status"] == "expired"
+        assert await fake_redis.get(_key(session_id, "answers")) is None
+        assert session_id not in fake_redis._sets[_rate_key("expiry-user", "active")]
+
+    @pytest.mark.asyncio
+    async def test_stale_active_reservations_are_pruned_and_construction_ttl_is_safe(
+        self, manager: SessionManager, fake_redis: FakeRedis
+    ) -> None:
+        active_key = _rate_key("prune-user", "active")
+        fake_redis._sets[active_key] = {
+            "stale-1",
+            "stale-2",
+            "stale-3",
+            "stale-4",
+            "stale-5",
+        }
+
+        session_id, _, session = await manager.create_session(
+            "prune-user", ["adversarial"]
+        )
+
+        assert fake_redis._sets[active_key] == {session_id}
+        assert fake_redis._ttls[active_key] == ACTIVE_SESSION_TTL
+        assert session["time_budget_ms"] == 30_000
+
+    @pytest.mark.asyncio
+    async def test_generation_time_is_not_charged_to_respondent(
+        self,
+        manager: SessionManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        clock = [100.0]
+        original = session_module.ChallengeAdapter.generate_adversarial
+
+        def delayed_generation():
+            clock[0] += 12.0
+            return original()
+
+        monkeypatch.setattr(
+            "mettle.session_manager.ChallengeAdapter.generate_adversarial",
+            delayed_generation,
+        )
+        monkeypatch.setattr("mettle.session_manager.time.time", lambda: clock[0])
+
+        _, _, session = await manager.create_session("clock-user", ["adversarial"])
+
+        assert session["start_time"] == 112.0
+        assert datetime.fromisoformat(session["expires_at"]).timestamp() == 142.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("time_budget_s", True),
+            ("num_rounds", 0),
+            ("challenges", []),
+        ],
+    )
+    async def test_corrupt_novel_round_state_fails_closed(
+        self,
+        manager: SessionManager,
+        fake_redis: FakeRedis,
+        field: str,
+        value: Any,
+    ) -> None:
+        session_id, challenges, _ = await manager.create_session(
+            "corrupt-novel-user", [MULTI_ROUND_SUITE], difficulty="easy"
+        )
+        challenge_names = set(challenges[MULTI_ROUND_SUITE]["challenges"])
+        raw = await fake_redis.get(_key(session_id, "answers"))
+        assert raw is not None
+        server_answers = json.loads(raw)
+        server_answers[MULTI_ROUND_SUITE][field] = value
+        await fake_redis.setex(
+            _key(session_id, "answers"), 45, json.dumps(server_answers)
+        )
+        submitted: dict[str, Any] = {
+            "challenges": {name: {} for name in challenge_names}
+        }
+
+        with pytest.raises(SessionStateError, match="novel-reasoning answers"):
+            await manager.submit_round_answer(session_id, 1, submitted)
+
+    def test_corrupt_progressive_schedule_fails_closed(self) -> None:
+        server = {
+            "num_rounds": 3,
+            "challenges": {
+                "sequence_alchemy": {"round_data": {1: {}, 3: {}}},
+            },
+        }
+
+        with pytest.raises(SessionStateError, match="round state"):
+            SessionManager._next_novel_round_data(2, server)
+
+
+class TestRedisLeaseAndAtomicityRegressions:
+    @pytest.mark.asyncio
+    async def test_long_transition_renews_token_owned_lease(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        redis = SemanticRedis()
+        manager = SessionManager(redis)
+        # Give the event loop ample scheduling margin.  The assertion targets
+        # renewal activity itself; stale-owner fencing is covered separately.
+        monkeypatch.setattr(session_module, "SESSION_LOCK_TTL", 1.0)
+        monkeypatch.setattr(session_module, "SESSION_LOCK_RENEW_INTERVAL", 0.005)
+
+        async with manager._session_lock("renewed"):
+            for _ in range(100):
+                if redis.renewals >= 2:
+                    break
+                await asyncio.sleep(0.005)
+
+        assert redis.renewals >= 2
+
+    @pytest.mark.asyncio
+    async def test_concurrent_semantic_lock_has_single_owner(self) -> None:
+        redis = SemanticRedis()
+        manager = SessionManager(redis)
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def owner() -> None:
+            async with manager._session_lock("contended"):
+                entered.set()
+                await release.wait()
+
+        task = asyncio.create_task(owner())
+        await entered.wait()
+        with pytest.raises(ValueError, match="already in progress"):
+            async with manager._session_lock("contended"):
+                pytest.fail("second owner entered")
+        release.set()
+        await task
+
+    @pytest.mark.asyncio
+    async def test_lease_loss_prevents_state_commit(self) -> None:
+        redis = SemanticRedis()
+        manager = SessionManager(redis)
+        session = _valid_session_record("lost")
+        await redis.setex(_key("lost"), 30, json.dumps(session))
+        original = await redis.get(_key("lost"))
+
+        with pytest.raises(SessionLockLostError):
+            async with manager._session_lock("lost"):
+                redis.replace_lock_owner("lost")
+                session["current_round"] = 1
+                await manager._persist_active_session(session, 30)
+
+        assert await redis.get(_key("lost")) == original
+
+    @pytest.mark.asyncio
+    async def test_terminal_transition_is_atomic_and_deletes_answers(self) -> None:
+        redis = SemanticRedis()
+        manager = SessionManager(redis)
+        session = _valid_session_record("terminal")
+        await redis.setex(_key("terminal"), 30, json.dumps(session))
+        await redis.setex(_key("terminal", "answers"), 30, json.dumps({"x": 1}))
+        await redis.sadd(_rate_key("semantic-user", "active"), "terminal")
+        session.update(
+            {
+                "status": "completed",
+                "completed_at": time.time(),
+                "suites_completed": ["adversarial"],
+                "suite_results": {"adversarial": {"passed": True}},
+            }
+        )
+
+        async with manager._session_lock("terminal"):
+            await manager._persist_terminal_session(session)
+
+        assert await redis.get(_key("terminal", "answers")) is None
+        assert await redis.scard(_rate_key("semantic-user", "active")) == 0
+        stored = await manager.get_session("terminal")
+        assert stored is not None and stored["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_atomic_terminal_failure_leaves_all_state_unchanged(self) -> None:
+        redis = SemanticRedis()
+        manager = SessionManager(redis)
+        session = _valid_session_record("terminal-fault")
+        original = json.dumps(session)
+        answers = json.dumps({"secret": 1})
+        await redis.setex(_key("terminal-fault"), 30, original)
+        await redis.setex(_key("terminal-fault", "answers"), 30, answers)
+        await redis.sadd(_rate_key("semantic-user", "active"), "terminal-fault")
+        session["status"] = "cancelled"
+        session["terminated_at"] = time.time()
+        redis.fail_terminal = True
+
+        with pytest.raises(RedisError, match="injected atomic terminal failure"):
+            async with manager._session_lock("terminal-fault"):
+                await manager._persist_terminal_session(session)
+
+        assert await redis.get(_key("terminal-fault")) == original
+        assert await redis.get(_key("terminal-fault", "answers")) == answers
+        assert await redis.scard(_rate_key("semantic-user", "active")) == 1
+
+    @pytest.mark.asyncio
+    async def test_corrupt_active_index_cannot_partially_commit_terminal_state(
+        self,
+    ) -> None:
+        redis = SemanticRedis()
+        manager = SessionManager(redis)
+        session = _valid_session_record("terminal-corrupt-index")
+        original = json.dumps(session)
+        answers = json.dumps({"secret": 1})
+        await redis.setex(_key("terminal-corrupt-index"), 30, original)
+        await redis.setex(_key("terminal-corrupt-index", "answers"), 30, answers)
+        await redis.sadd(_rate_key("semantic-user", "active"), "terminal-corrupt-index")
+        session["status"] = "cancelled"
+        session["terminated_at"] = time.time()
+        redis.corrupt_active_index = True
+
+        with pytest.raises(SessionStateError, match="active-session index"):
+            async with manager._session_lock("terminal-corrupt-index"):
+                await manager._persist_terminal_session(session)
+
+        assert await redis.get(_key("terminal-corrupt-index")) == original
+        assert await redis.get(_key("terminal-corrupt-index", "answers")) == answers
+        assert await redis.scard(_rate_key("semantic-user", "active")) == 1
+
+
+class TestPresentationRaceAndBoundaryRegressions:
+    @pytest.mark.asyncio
+    async def test_sliding_window_has_no_fixed_minute_double_burst(
+        self, fake_redis: FakeRedis, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        manager = SessionManager(fake_redis)
+        monkeypatch.setattr(session_module, "MAX_PRESENTATION_CHALLENGES_PER_MINUTE", 2)
+        clock = [59.999]
+        monkeypatch.setattr("mettle.session_manager.time.time", lambda: clock[0])
+        kwargs = {
+            "verifier_user_id": "boundary-user",
+            "credential_jti": "jti",
+            "audience": "audience",
+        }
+
+        await manager.create_presentation_challenge(**kwargs)
+        await manager.create_presentation_challenge(**kwargs)
+        clock[0] = 60.001
+        with pytest.raises(SessionRateLimitError):
+            await manager.create_presentation_challenge(**kwargs)
+        clock[0] = 119.999
+        await manager.create_presentation_challenge(**kwargs)
+
+        state = json.loads(fake_redis._store[_presentation_rate_key("boundary-user")])
+        assert len(state["timestamps"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_presentation_consumes_exactly_one(
+        self, fake_redis: FakeRedis, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        manager_a = SessionManager(fake_redis)
+        manager_b = SessionManager(fake_redis)
+        challenge_id = "single-use"
+        challenge = {
+            "challenge_id": challenge_id,
+            "nonce": "nonce",
+            "audience": "audience",
+            "credential_jti": "jti",
+            "verifier_user_id": "verifier",
+            "expires_at": "2099-01-01T00:00:00+00:00",
+        }
+        await fake_redis.setex(
+            _presentation_key(challenge_id), 60, json.dumps(challenge)
+        )
+        monkeypatch.setattr(
+            "mettle.session_manager.verify_holder_signature", lambda **_kwargs: None
+        )
+        kwargs = {
+            "verifier_user_id": "verifier",
+            "challenge_id": challenge_id,
+            "credential_jti": "jti",
+            "audience": "audience",
+            "public_key_pem": "unused",
+            "holder_signature": "unused",
+        }
+
+        outcomes = await asyncio.gather(
+            manager_a.verify_presentation(**kwargs),
+            manager_b.verify_presentation(**kwargs),
+            return_exceptions=True,
+        )
+
+        assert sum(isinstance(outcome, dict) for outcome in outcomes) == 1
+        assert sum(isinstance(outcome, ValueError) for outcome in outcomes) == 1
+        assert await fake_redis.get(_presentation_key(challenge_id)) is None

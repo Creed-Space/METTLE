@@ -50,7 +50,7 @@ HASH_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
 ACTION_PATTERN = re.compile(r"(?:suite|round):[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 JTI_PATTERN = re.compile(r"[0-9a-f]{32}")
 ISSUER_KEY_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
-HOLDER_STATE_SCHEMA = "mettle-holder-state-v1"
+HOLDER_STATE_SCHEMA = "mettle-holder-state-v2"
 
 
 class HolderPolicyError(ValueError):
@@ -130,7 +130,15 @@ class _Credential:
     audience: str
     transcript_hash: str
     sequence: int
-    presentations: dict[str, tuple[bytes, str]] = field(default_factory=dict)
+    expires_at: datetime
+    presentations: dict[str, _Presentation] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _Presentation:
+    message: bytes
+    signature: str
+    expires_at: datetime
 
 
 def _normalize_issuer(value: str) -> str:
@@ -202,6 +210,17 @@ def _action(value: Any) -> str:
     if ACTION_PATTERN.fullmatch(text) is None:
         raise HolderPolicyError("Action is not a supported Presence action")
     return text
+
+
+def _utc_expiry(value: Any, name: str) -> datetime:
+    text = _bounded_text(value, name)
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HolderPolicyError(f"{name} is invalid") from exc
+    if parsed.tzinfo is None:
+        raise HolderPolicyError(f"{name} must include a timezone")
+    return parsed.astimezone(timezone.utc)
 
 
 class MacOSKeychainEd25519Signer:
@@ -689,32 +708,64 @@ class PresenceHolder:
     """Stateful signing boundary for autonomous distributed Presence clients."""
 
     def __init__(self, signer: HolderSigner, policy: HolderPolicy) -> None:
-        if policy.max_active_sessions < 1 or policy.max_active_sessions > 1024:
+        if not isinstance(policy.issuer_public_keys, dict) or not isinstance(
+            policy.issuer_public_keyrings, dict
+        ):
+            raise HolderPolicyError("Issuer trust policy must use key mappings")
+        if not isinstance(policy.allowed_audiences, frozenset):
+            raise HolderPolicyError("Allowed audiences must be a frozen string set")
+        if (
+            isinstance(policy.max_active_sessions, bool)
+            or not isinstance(policy.max_active_sessions, int)
+            or policy.max_active_sessions < 1
+            or policy.max_active_sessions > 1024
+        ):
             raise HolderPolicyError("Active-session budget must be between 1 and 1024")
-        if policy.max_actions_per_session < 1 or policy.max_actions_per_session > 1024:
+        if (
+            isinstance(policy.max_actions_per_session, bool)
+            or not isinstance(policy.max_actions_per_session, int)
+            or policy.max_actions_per_session < 1
+            or policy.max_actions_per_session > 1024
+        ):
             raise HolderPolicyError(
                 "Per-session action budget must be between 1 and 1024"
             )
         if (
-            policy.max_presentations_per_credential < 1
+            isinstance(policy.max_presentations_per_credential, bool)
+            or not isinstance(policy.max_presentations_per_credential, int)
+            or policy.max_presentations_per_credential < 1
             or policy.max_presentations_per_credential > 10000
         ):
             raise HolderPolicyError("Presentation budget must be between 1 and 10000")
         if (
-            policy.max_presentation_ttl_seconds < 1
+            isinstance(policy.max_presentation_ttl_seconds, bool)
+            or not isinstance(policy.max_presentation_ttl_seconds, int)
+            or policy.max_presentation_ttl_seconds < 1
             or policy.max_presentation_ttl_seconds > 3600
         ):
             raise HolderPolicyError(
                 "Presentation TTL must be between 1 and 3600 seconds"
             )
-        if policy.max_session_records < 1 or policy.max_session_records > 100000:
+        if (
+            isinstance(policy.max_session_records, bool)
+            or not isinstance(policy.max_session_records, int)
+            or policy.max_session_records < 1
+            or policy.max_session_records > 100000
+        ):
             raise HolderPolicyError(
                 "Session record budget must be between 1 and 100000"
             )
-        if policy.max_credentials < 1 or policy.max_credentials > 100000:
+        if (
+            isinstance(policy.max_credentials, bool)
+            or not isinstance(policy.max_credentials, int)
+            or policy.max_credentials < 1
+            or policy.max_credentials > 100000
+        ):
             raise HolderPolicyError("Credential budget must be between 1 and 100000")
         if (
-            policy.max_presentation_records < 1
+            isinstance(policy.max_presentation_records, bool)
+            or not isinstance(policy.max_presentation_records, int)
+            or policy.max_presentation_records < 1
             or policy.max_presentation_records > 1000000
         ):
             raise HolderPolicyError(
@@ -755,7 +806,7 @@ class PresenceHolder:
         self._policy = policy
         self._sessions: dict[str, _Session] = {}
         self._credentials: dict[str, _Credential] = {}
-        self._presentation_ids: dict[str, tuple[bytes, str]] = {}
+        self._presentation_ids: dict[str, _Presentation] = {}
         self._lock = RLock()
 
     @property
@@ -765,6 +816,21 @@ class PresenceHolder:
     @property
     def key_fingerprint(self) -> str:
         return self._key_fingerprint
+
+    def _prune_expired_locked(self, now: datetime) -> set[str]:
+        """Remove only records whose signed validity boundary has elapsed."""
+        expired_credentials: set[str] = set()
+        for credential_jti, credential in list(self._credentials.items()):
+            for challenge_id, presentation in list(credential.presentations.items()):
+                if presentation.expires_at <= now:
+                    credential.presentations.pop(challenge_id, None)
+                    self._presentation_ids.pop(challenge_id, None)
+            if credential.expires_at <= now:
+                expired_credentials.add(credential_jti)
+                for challenge_id in credential.presentations:
+                    self._presentation_ids.pop(challenge_id, None)
+                del self._credentials[credential_jti]
+        return expired_credentials
 
     @staticmethod
     def _verify_presence_state_receipt(
@@ -985,8 +1051,16 @@ class PresenceHolder:
         issuer_key = issuer_keys.get(key_id) or issuer_keys.get("*")
         if issuer_key is None:
             raise HolderPolicyError("Credential issuer key is not trusted")
-        if not verify_mettle_attestation(attestation, issuer_key):
+        if not verify_mettle_attestation(
+            attestation,
+            issuer_key,
+            expected_key_id=key_id,
+            expected_assurance="mettle_behavioral_verification",
+        ):
             raise HolderPolicyError("Credential issuer signature or policy is invalid")
+        credential_expiry = _utc_expiry(
+            attestation.get("expires_at"), "Credential expiry"
+        )
         metadata = attestation.get("metadata")
         if not isinstance(metadata, dict):
             raise HolderPolicyError("Credential metadata is missing")
@@ -998,6 +1072,10 @@ class PresenceHolder:
         if JTI_PATTERN.fullmatch(credential_jti) is None:
             raise HolderPolicyError("Credential JTI is invalid")
         with self._lock:
+            now = datetime.now(timezone.utc)
+            self._prune_expired_locked(now)
+            if credential_expiry <= now:
+                raise HolderPolicyError("Credential has expired")
             session = self._sessions.get(session_id)
             if session is None or not session.completed:
                 raise HolderPolicyError(
@@ -1022,9 +1100,16 @@ class PresenceHolder:
                     "Credential sequence does not match holder state"
                 )
             existing = self._credentials.get(credential_jti)
-            if existing is not None and existing.session_id != session_id:
+            if existing is not None and (
+                existing.session_id != session_id
+                or existing.issuer != normalized_issuer
+                or existing.audience != session.audience
+                or existing.transcript_hash != session.transcript_hash
+                or existing.sequence != session.sequence
+                or existing.expires_at != credential_expiry
+            ):
                 raise HolderPolicyError(
-                    "Credential JTI is already bound to another session"
+                    "Credential JTI is already bound inconsistently"
                 )
             if (
                 existing is None
@@ -1040,6 +1125,7 @@ class PresenceHolder:
                     audience=session.audience,
                     transcript_hash=session.transcript_hash,
                     sequence=session.sequence,
+                    expires_at=credential_expiry,
                 ),
             )
             return credential_jti
@@ -1059,21 +1145,27 @@ class PresenceHolder:
         audience = _bounded_text(audience, "audience")
         credential_jti = _bounded_text(credential_jti, "credential_jti")
         expires_at = _bounded_text(expires_at, "expires_at")
-        try:
-            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise HolderPolicyError("Presentation expiry is invalid") from exc
-        now = datetime.now(timezone.utc)
-        if expiry.tzinfo is None or expiry <= now:
-            raise HolderPolicyError("Presentation challenge has expired")
-        if (
-            expiry.astimezone(timezone.utc) - now
-        ).total_seconds() > self._policy.max_presentation_ttl_seconds:
-            raise HolderPolicyError("Presentation challenge lifetime exceeds policy")
+        expiry = _utc_expiry(expires_at, "Presentation expiry")
         with self._lock:
+            now = datetime.now(timezone.utc)
+            expired_credentials = self._prune_expired_locked(now)
+            if expiry <= now:
+                raise HolderPolicyError("Presentation challenge has expired")
+            if (
+                expiry - now
+            ).total_seconds() > self._policy.max_presentation_ttl_seconds:
+                raise HolderPolicyError(
+                    "Presentation challenge lifetime exceeds policy"
+                )
             credential = self._credentials.get(credential_jti)
             if credential is None:
+                if credential_jti in expired_credentials:
+                    raise HolderPolicyError("Credential has expired")
                 raise HolderPolicyError("Credential is not registered with this holder")
+            if credential.expires_at <= now:
+                raise HolderPolicyError("Credential has expired")
+            if expiry > credential.expires_at:
+                raise HolderPolicyError("Presentation challenge outlives credential")
             if (
                 audience != credential.audience
                 or audience not in self._allowed_audiences
@@ -1088,8 +1180,8 @@ class PresenceHolder:
             )
             previous = self._presentation_ids.get(challenge_id)
             if previous is not None:
-                if previous[0] == message:
-                    return previous[1]
+                if previous.message == message:
+                    return previous.signature
                 raise HolderPolicyError(
                     "Presentation challenge ID was reused inconsistently"
                 )
@@ -1103,14 +1195,25 @@ class PresenceHolder:
             signature_bytes = self._signer.sign(message)
             if not isinstance(signature_bytes, bytes) or len(signature_bytes) != 64:
                 raise HolderPolicyError("Signer did not return an Ed25519 signature")
+            completed_at = datetime.now(timezone.utc)
+            if credential.expires_at <= completed_at:
+                raise HolderPolicyError("Credential expired while signing")
+            if expiry <= completed_at:
+                raise HolderPolicyError("Presentation challenge expired while signing")
             signature = base64.b64encode(signature_bytes).decode("ascii")
-            credential.presentations[challenge_id] = (message, signature)
-            self._presentation_ids[challenge_id] = (message, signature)
+            presentation = _Presentation(
+                message=message,
+                signature=signature,
+                expires_at=expiry,
+            )
+            credential.presentations[challenge_id] = presentation
+            self._presentation_ids[challenge_id] = presentation
             return signature
 
     def status(self) -> dict[str, Any]:
         """Return non-secret policy and lifecycle counters for operations."""
         with self._lock:
+            self._prune_expired_locked(datetime.now(timezone.utc))
             return {
                 "key_fingerprint": self._key_fingerprint,
                 "trusted_issuers": sorted(self._issuer_keys),
@@ -1130,6 +1233,7 @@ class PresenceHolder:
         Callers must authenticate the serialized snapshot before storing it.
         """
         with self._lock:
+            self._prune_expired_locked(datetime.now(timezone.utc))
             sessions = []
             for session_id in sorted(self._sessions):
                 session = self._sessions[session_id]
@@ -1163,10 +1267,12 @@ class PresenceHolder:
                 presentations = [
                     {
                         "challenge_id": challenge_id,
-                        "message": base64.b64encode(message).decode("ascii"),
-                        "signature": signature,
+                        "message": base64.b64encode(presentation.message).decode(
+                            "ascii"
+                        ),
+                        "signature": presentation.signature,
                     }
-                    for challenge_id, (message, signature) in sorted(
+                    for challenge_id, presentation in sorted(
                         credential.presentations.items()
                     )
                 ]
@@ -1178,6 +1284,7 @@ class PresenceHolder:
                         "audience": credential.audience,
                         "transcript_hash": credential.transcript_hash,
                         "sequence": credential.sequence,
+                        "expires_at": credential.expires_at.isoformat(),
                         "presentations": presentations,
                     }
                 )
@@ -1206,9 +1313,31 @@ class PresenceHolder:
         if len(raw_credentials) > self._policy.max_credentials:
             raise HolderPolicyError("Holder state exceeds the credential budget")
 
+        # Reject collection sizes before parsing, signature verification, or
+        # allocation. Otherwise a state blob already beyond policy can force the
+        # holder to process up to 100,000 credentials and 1,000,000
+        # presentations merely to discover the same limit at the end.
+        raw_presentation_count = 0
+        for raw in raw_credentials:
+            if not isinstance(raw, dict):
+                raise HolderPolicyError("Holder credential state is invalid")
+            raw_presentations = raw.get("presentations")
+            if not isinstance(raw_presentations, list):
+                raise HolderPolicyError("Holder presentation state is invalid")
+            if len(raw_presentations) > self._policy.max_presentations_per_credential:
+                raise HolderPolicyError("Holder presentation state exceeds its budget")
+            raw_presentation_count += len(raw_presentations)
+            if raw_presentation_count > self._policy.max_presentation_records:
+                raise HolderPolicyError(
+                    "Holder state exceeds the presentation record budget"
+                )
+
         sessions: dict[str, _Session] = {}
         credentials: dict[str, _Credential] = {}
-        presentation_ids: dict[str, tuple[bytes, str]] = {}
+        presentation_ids: dict[str, _Presentation] = {}
+        credential_jtis: set[str] = set()
+        seen_presentation_ids: set[str] = set()
+        now = datetime.now(timezone.utc)
         for raw in raw_sessions:
             if not isinstance(raw, dict):
                 raise HolderPolicyError("Holder session state is invalid")
@@ -1328,8 +1457,9 @@ class PresenceHolder:
             credential_jti = _bounded_text(raw.get("credential_jti"), "credential_jti")
             if JTI_PATTERN.fullmatch(credential_jti) is None:
                 raise HolderPolicyError("Holder credential JTI is invalid")
-            if credential_jti in credentials:
+            if credential_jti in credential_jtis:
                 raise HolderPolicyError("Holder state repeats a credential")
+            credential_jtis.add(credential_jti)
             session_id = _bounded_text(raw.get("session_id"), "session_id")
             session = sessions.get(session_id)
             if session is None or not session.completed:
@@ -1341,28 +1471,28 @@ class PresenceHolder:
             transcript_hash = _hash(raw.get("transcript_hash"), "transcript_hash")
             sequence = raw.get("sequence")
             if (
-                issuer != session.issuer
+                isinstance(sequence, bool)
+                or not isinstance(sequence, int)
+                or issuer != session.issuer
                 or audience != session.audience
                 or transcript_hash != session.transcript_hash
                 or sequence != session.sequence
             ):
                 raise HolderPolicyError("Holder credential binding is invalid")
+            credential_expiry = _utc_expiry(raw.get("expires_at"), "Credential expiry")
             raw_presentations = raw.get("presentations")
-            if (
-                not isinstance(raw_presentations, list)
-                or len(raw_presentations)
-                > self._policy.max_presentations_per_credential
-            ):
+            if not isinstance(raw_presentations, list):
                 raise HolderPolicyError("Holder presentation state is invalid")
-            presentations: dict[str, tuple[bytes, str]] = {}
+            presentations: dict[str, _Presentation] = {}
             for raw_presentation in raw_presentations:
                 if not isinstance(raw_presentation, dict):
                     raise HolderPolicyError("Holder presentation state is invalid")
                 challenge_id = _bounded_text(
                     raw_presentation.get("challenge_id"), "challenge_id"
                 )
-                if challenge_id in presentation_ids:
+                if challenge_id in seen_presentation_ids:
                     raise HolderPolicyError("Holder state repeats a presentation")
+                seen_presentation_ids.add(challenge_id)
                 message = _state_bytes(
                     raw_presentation.get("message"), "presentation message"
                 )
@@ -1375,9 +1505,16 @@ class PresenceHolder:
                     raise HolderPolicyError("Holder presentation signature is invalid")
                 try:
                     presentation_payload = json.loads(message)
+                    if not isinstance(presentation_payload, dict):
+                        raise HolderPolicyError(
+                            "Holder presentation message is invalid"
+                        )
+                    presentation_expiry = _utc_expiry(
+                        presentation_payload.get("expires_at"),
+                        "Presentation expiry",
+                    )
                     if (
-                        not isinstance(presentation_payload, dict)
-                        or presentation_payload.get("protocol") != PRESENCE_PROTOCOL
+                        presentation_payload.get("protocol") != PRESENCE_PROTOCOL
                         or presentation_payload.get("purpose")
                         != "mettle-credential-presentation"
                         or presentation_payload.get("challenge_id") != challenge_id
@@ -1393,6 +1530,7 @@ class PresenceHolder:
                             ),
                         )
                         != message
+                        or presentation_expiry > credential_expiry
                     ):
                         raise HolderPolicyError(
                             "Holder presentation message is invalid"
@@ -1401,17 +1539,29 @@ class PresenceHolder:
                     raise HolderPolicyError(
                         "Holder presentation message is invalid"
                     ) from None
-                presentations[challenge_id] = (message, signature)
-                presentation_ids[challenge_id] = (message, signature)
-            credentials[credential_jti] = _Credential(
-                issuer=issuer,
-                session_id=session_id,
-                credential_jti=credential_jti,
-                audience=audience,
-                transcript_hash=transcript_hash,
-                sequence=sequence,
-                presentations=presentations,
-            )
+                if presentation_expiry > now and credential_expiry > now:
+                    presentation = _Presentation(
+                        message=message,
+                        signature=signature,
+                        expires_at=presentation_expiry,
+                    )
+                    presentations[challenge_id] = presentation
+                    presentation_ids[challenge_id] = presentation
+            if credential_expiry > now:
+                if len(presentations) > self._policy.max_presentations_per_credential:
+                    raise HolderPolicyError("Holder presentation state is invalid")
+                credentials[credential_jti] = _Credential(
+                    issuer=issuer,
+                    session_id=session_id,
+                    credential_jti=credential_jti,
+                    audience=audience,
+                    transcript_hash=transcript_hash,
+                    sequence=sequence,
+                    expires_at=credential_expiry,
+                    presentations=presentations,
+                )
+        if len(credentials) > self._policy.max_credentials:
+            raise HolderPolicyError("Holder state exceeds the credential budget")
         if len(presentation_ids) > self._policy.max_presentation_records:
             raise HolderPolicyError(
                 "Holder state exceeds the presentation record budget"

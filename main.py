@@ -10,18 +10,19 @@ import asyncio
 import hashlib
 import hmac
 import ipaddress
-import os
+import math
 import re
 import secrets
+import socket
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Any, Protocol, TypedDict, cast
+from typing import Annotated, Any, Literal, Protocol, TypedDict, cast
 
 import jwt
 import structlog
-from fastapi import APIRouter, Body, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Path as ApiPath, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -36,12 +37,14 @@ from mettle import (
     generate_challenge_set,
     verify_response,
 )
-from pydantic import BaseModel, Field, field_validator
+from mettle.api_models import validate_bounded_json
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from redis.exceptions import RedisError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from config import get_settings
 
@@ -80,9 +83,21 @@ class DatabaseLayer(Protocol):
     def update_api_key_usage(
         self, api_key: str, usage_date: str, usage_count: int
     ) -> bool: ...
+    def reserve_api_key_usage(
+        self,
+        api_key: str,
+        usage_date: str,
+        amount: int,
+        daily_limit: int,
+        *,
+        raise_on_error: bool = False,
+    ) -> tuple[bool, int]: ...
     def save_verification_record(
         self, entity_id: str, ip_address: str, passed: bool
     ) -> bool: ...
+    def get_recent_verifications(
+        self, hours: int = 1, *, raise_on_error: bool = False
+    ) -> list[dict[str, Any]]: ...
     def is_badge_revoked(self, jti: str, *, raise_on_error: bool = False) -> bool: ...
     def add_revoked_badge(
         self, jti: str, entity_id: str | None, reason: str, evidence: dict | None
@@ -154,6 +169,13 @@ MAX_API_KEYS = 10000
 MAX_WEBHOOKS = 1000
 MAX_AUTH_FAILURES = 10000
 MAX_FINGERPRINT_RESPONSE_CHARS = 4096
+MAX_API_KEY_CHARS = 512
+MAX_REQUEST_BODY_BYTES = 256 * 1024
+MAX_REQUEST_BODY_FRAMES = 4096
+HEALTH_CHECK_TIMEOUT_SECONDS = 1.0
+WEBHOOK_DELIVERY_ENABLED = False
+WEBHOOK_DNS_TIMEOUT_SECONDS = 2.0
+MAX_WEBHOOK_RESOLVED_ADDRESSES = 16
 
 _BIND_ALL_INTERFACES = str(ipaddress.IPv4Address(0))
 _LOOPBACK_IPV4 = str(ipaddress.IPv4Address("127.0.0.1"))
@@ -171,7 +193,12 @@ def add_with_limit(store: dict, key: str, value: Any, max_size: int) -> None:
 
     SECURITY: Prevents unbounded memory growth from DoS attacks.
     """
-    if len(store) >= max_size:
+    if max_size < 1:
+        raise ValueError("max_size must be positive")
+    # Updating an existing entry consumes no additional capacity.  Evicting a
+    # neighbour in this case loses unrelated state and can be triggered by a
+    # caller who repeatedly overwrites its own record.
+    if key not in store and len(store) >= max_size:
         # Remove oldest (first) item - Python 3.7+ dicts maintain insertion order
         oldest_key = next(iter(store))
         del store[oldest_key]
@@ -220,7 +247,7 @@ class RateTier:
             "sessions_per_day": 10000,
             "answers_per_minute": 600,
             "suites": ["basic", "full"],
-            "features": ["verification", "batch", "webhooks", "fingerprinting"],
+            "features": ["verification", "batch", "fingerprinting"],
         },
         "enterprise": {
             "sessions_per_day": -1,  # Unlimited
@@ -231,14 +258,16 @@ class RateTier:
     }
 
     @staticmethod
-    def get_key_data(api_key: str | None) -> dict[str, Any] | None:
+    def get_key_data(
+        api_key: str | None, *, raise_on_error: bool = False
+    ) -> dict[str, Any] | None:
         """Resolve an API key from memory or durable digest-backed storage."""
-        if not api_key:
+        if not api_key or len(api_key) > MAX_API_KEY_CHARS:
             return None
         if db:
             # Durable storage is authoritative on every request. This avoids a
             # revoked key remaining active in another API process's local cache.
-            key_data = db.get_api_key(api_key)
+            key_data = db.get_api_key(api_key, raise_on_error=raise_on_error)
             if key_data is None:
                 api_keys.pop(api_key, None)
                 return None
@@ -266,33 +295,43 @@ class RateTier:
         """Check if request is within rate limits. Returns (allowed, message)."""
         if amount < 1:
             raise ValueError("Rate-limit charge must be at least one")
-        tier = RateTier.get_tier(api_key)
+        key_data = RateTier.get_key_data(api_key, raise_on_error=True)
+        tier = key_data.get("tier", "free") if key_data else "free"
         limits = RateTier.get_limits(tier)
 
         if limits.get("sessions_per_day") == -1:
             return True, "Enterprise: unlimited"
 
         # Track usage
-        key_data = RateTier.get_key_data(api_key)
         if api_key and key_data is not None:
             today = datetime.now(timezone.utc).date().isoformat()
 
-            if key_data.get("usage_date") != today:
-                key_data["usage_date"] = today
-                key_data["usage_count"] = 0
-
             if limit_type == "session":
                 max_sessions = limits["sessions_per_day"]
+                if db:
+                    reserved, usage_count = db.reserve_api_key_usage(
+                        api_key,
+                        today,
+                        amount,
+                        max_sessions,
+                        raise_on_error=True,
+                    )
+                    if not reserved:
+                        return (
+                            False,
+                            f"Daily limit reached ({max_sessions} sessions)",
+                        )
+                    key_data["usage_date"] = today
+                    key_data["usage_count"] = usage_count
+                    return True, f"OK ({tier} tier)"
+
+                if key_data.get("usage_date") != today:
+                    key_data["usage_date"] = today
+                    key_data["usage_count"] = 0
                 usage_count = key_data.get("usage_count", 0)
                 if usage_count + amount > max_sessions:
                     return False, f"Daily limit reached ({max_sessions} sessions)"
                 key_data["usage_count"] = usage_count + amount
-                if db and not db.update_api_key_usage(
-                    api_key,
-                    key_data["usage_date"],
-                    key_data["usage_count"],
-                ):
-                    return False, "API key usage persistence unavailable"
 
         return True, f"OK ({tier} tier)"
 
@@ -311,11 +350,11 @@ class RateTier:
             "usage_date": None,
             "usage_count": 0,
         }
-        add_with_limit(api_keys, api_key, key_data, MAX_API_KEYS)
-        # Persist to database if enabled
+        # Durable authority changes before the process-local cache.  A failed
+        # write therefore cannot evict or overwrite unrelated cached state.
         if db and not db.save_api_key(api_key, tier, entity_id):
-            api_keys.pop(api_key, None)
             raise RuntimeError("API key persistence unavailable")
+        add_with_limit(api_keys, api_key, key_data, MAX_API_KEYS)
         return key_data
 
     @staticmethod
@@ -469,7 +508,7 @@ def check_admin_auth_rate_limit(ip_address: str) -> tuple[bool, int]:
         last_failure = failures[-1] if failures else 0
         time_since_last = now - last_failure
         if time_since_last < backoff:
-            return False, int(backoff - time_since_last)
+            return False, max(1, math.ceil(backoff - time_since_last))
 
     return True, 0
 
@@ -516,12 +555,146 @@ def verify_admin_key(provided_key: str | None, ip_address: str | None = None) ->
 startup_time: datetime = datetime.now(timezone.utc)
 
 
+# === Request Body Limit Middleware ===
+class RequestBodyLimitMiddleware:
+    """Apply one bounded streaming body policy to every HTTP endpoint.
+
+    The middleware is pure ASGI.  It reads request frames incrementally and
+    retains at most ``max_body_bytes`` before invoking the application, so it
+    also covers chunked requests and requests without ``Content-Length``.
+    WebSocket, lifespan, and other non-HTTP scopes are passed through unchanged.
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        max_body_bytes: int,
+        max_body_frames: int = MAX_REQUEST_BODY_FRAMES,
+    ) -> None:
+        if max_body_bytes < 1 or max_body_frames < 1:
+            raise ValueError("request body limits must be positive")
+        self.app = app
+        self.max_body_bytes = max_body_bytes
+        self.max_body_frames = max_body_frames
+
+    @staticmethod
+    async def _reject(send: Send, status_code: int, detail: str) -> None:
+        body = ('{"detail":"' + detail + '"}').encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status_code,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode("ascii")),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        raw_headers = scope.get("headers", [])
+        if not isinstance(raw_headers, (list, tuple)):
+            await self._reject(send, 400, "Malformed request headers")
+            return
+        raw_lengths: list[bytes] = []
+        for header in raw_headers:
+            if (
+                not isinstance(header, (list, tuple))
+                or len(header) != 2
+                or not isinstance(header[0], bytes)
+                or not isinstance(header[1], bytes)
+            ):
+                await self._reject(send, 400, "Malformed request headers")
+                return
+            name, value = header
+            if name.lower() == b"content-length":
+                raw_lengths.append(value)
+        declared_length: int | None = None
+        if raw_lengths:
+            if len(raw_lengths) != 1:
+                await self._reject(send, 400, "Malformed Content-Length")
+                return
+            raw_length = raw_lengths[0]
+            if not raw_length or not raw_length.isdigit():
+                await self._reject(send, 400, "Malformed Content-Length")
+                return
+            normalized = raw_length.lstrip(b"0") or b"0"
+            limit_text = str(self.max_body_bytes).encode("ascii")
+            if len(normalized) > len(limit_text) or (
+                len(normalized) == len(limit_text) and normalized > limit_text
+            ):
+                await self._reject(send, 413, "Request body too large")
+                return
+            declared_length = int(normalized)
+
+        messages: list[Message] = []
+        received = 0
+        frames = 0
+        completed = False
+        while True:
+            message = await receive()
+            if not isinstance(message, dict):
+                await self._reject(send, 400, "Malformed request body")
+                return
+            frames += 1
+            if frames > self.max_body_frames:
+                await self._reject(send, 400, "Too many request body frames")
+                return
+            messages.append(message)
+            message_type = message.get("type")
+            if message_type == "http.disconnect":
+                break
+            if message_type != "http.request":
+                await self._reject(send, 400, "Malformed request body")
+                return
+            body = message.get("body", b"")
+            more_body = message.get("more_body", False)
+            if not isinstance(body, bytes) or not isinstance(more_body, bool):
+                await self._reject(send, 400, "Malformed request body")
+                return
+            received += len(body)
+            if received > self.max_body_bytes:
+                await self._reject(send, 413, "Request body too large")
+                return
+            if not more_body:
+                completed = True
+                break
+
+        if completed and declared_length is not None and declared_length != received:
+            await self._reject(send, 400, "Content-Length does not match request body")
+            return
+
+        index = 0
+
+        async def replay_receive() -> Message:
+            nonlocal index
+            if index < len(messages):
+                message = messages[index]
+                index += 1
+                return message
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
+
+
 # === Security Headers Middleware ===
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Add security headers to all responses."""
+    """Add security headers, including to sanitized internal-error responses."""
 
     async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            # Starlette's outer ServerErrorMiddleware would otherwise construct
+            # the 500 after every user middleware has unwound, dropping both the
+            # security policy and request trace header from the most sensitive
+            # response class.
+            response = await _unhandled_exception_handler(request, exc)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
@@ -612,7 +785,7 @@ def _persist_legacy_progress(session: MettleSession) -> bool:
 
 
 def _restore_persistent_runtime_state() -> None:
-    """Recover recent legacy sessions and webhook registrations from PostgreSQL."""
+    """Recover recent legacy sessions, collusion history, and webhook cleanup state."""
     if not db:
         return
 
@@ -669,8 +842,74 @@ def _restore_persistent_runtime_state() -> None:
             )
         restored_sessions += 1
 
+    recovered_verifications: list[tuple[float, str, dict[str, Any]]] = []
+    latest_valid_verification_time = time.time() + 30
+    for stored in db.get_recent_verifications(hours=1, raise_on_error=True):
+        try:
+            entity_id = stored["entity_id"]
+            ip_address = stored["ip_address"]
+            passed = stored["passed"]
+            created_at = stored["created_at"]
+            if (
+                not isinstance(entity_id, str)
+                or not entity_id
+                or len(entity_id) > 128
+                or not entity_id.isprintable()
+                or not isinstance(ip_address, str)
+                or not ip_address
+                or len(ip_address) > 45
+                or not ip_address.isprintable()
+                or not isinstance(passed, bool)
+            ):
+                raise ValueError("invalid verification record")
+            if isinstance(created_at, str):
+                created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            if not isinstance(created_at, datetime):
+                raise ValueError("invalid verification timestamp")
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            timestamp = created_at.astimezone(timezone.utc).timestamp()
+            if (
+                not math.isfinite(timestamp)
+                or timestamp < 0
+                or timestamp > latest_valid_verification_time
+            ):
+                raise ValueError("invalid verification timestamp")
+        except (KeyError, TypeError, ValueError, OverflowError, OSError) as exc:
+            logger.warning(
+                "verification_history_recovery_skipped",
+                error=type(exc).__name__,
+            )
+            continue
+        recovered_verifications.append(
+            (
+                timestamp,
+                entity_id,
+                {
+                    "timestamp": timestamp,
+                    "ip_address": ip_address,
+                    "passed": passed,
+                },
+            )
+        )
+
+    # The durable query is authoritative after a restart. Rebuild rather than
+    # merging, which would double-count if lifespan is exercised twice in one
+    # process by a supervisor or test harness.
+    verification_graph.clear()
+    verification_timestamps.clear()
+    for timestamp, entity_id, record in sorted(
+        recovered_verifications, key=lambda item: (item[0], item[1])
+    )[-1000:]:
+        if entity_id not in verification_graph:
+            add_with_limit(verification_graph, entity_id, [], MAX_VERIFICATION_GRAPH)
+        verification_graph[entity_id].append(record)
+        verification_graph[entity_id] = verification_graph[entity_id][-100:]
+        verification_timestamps.append((entity_id, timestamp))
+
     restored_webhooks = 0
-    for stored in db.get_webhooks(limit=MAX_WEBHOOKS, raise_on_error=True):
+    for stored_record in db.get_webhooks(limit=MAX_WEBHOOKS, raise_on_error=True):
+        stored = dict(stored_record)
         entity_id = stored.pop("entity_id")
         add_with_limit(webhooks, entity_id, stored, MAX_WEBHOOKS)
         restored_webhooks += 1
@@ -678,33 +917,54 @@ def _restore_persistent_runtime_state() -> None:
     logger.info(
         "persistent_runtime_state_restored",
         sessions=restored_sessions,
+        verifications=len(recovered_verifications),
         webhooks=restored_webhooks,
     )
 
 
-async def cleanup_expired_sessions():
-    """Background task to remove expired sessions (prevents memory DoS)."""
+def cleanup_expired_state(*, now: float | None = None) -> tuple[int, int]:
+    """Remove expired legacy state using one caller-supplied clock reading."""
+
+    current_time = time.time() if now is None else now
+    cutoff = current_time - LEGACY_SESSION_RECOVERY_SECONDS
+    expired_session_ids = {
+        session_id
+        for session_id, session in tuple(sessions.items())
+        if session.started_at.timestamp() < cutoff
+    }
+    owned_challenge_ids = {
+        challenge.id
+        for session_id, session in tuple(sessions.items())
+        if session_id in expired_session_ids
+        for challenge in session.challenges
+    }
+    expired_challenge_ids = {
+        challenge_id
+        for challenge_id, (_, issued_at) in tuple(challenges.items())
+        if challenge_id in owned_challenge_ids
+        or (issued_at is not None and issued_at < cutoff)
+    }
+
+    for session_id in expired_session_ids:
+        sessions.pop(session_id, None)
+    for challenge_id in expired_challenge_ids:
+        challenges.pop(challenge_id, None)
+
+    if expired_session_ids or expired_challenge_ids:
+        logger.info(
+            "cleanup_expired",
+            sessions_removed=len(expired_session_ids),
+            challenges_removed=len(expired_challenge_ids),
+        )
+    return len(expired_session_ids), len(expired_challenge_ids)
+
+
+async def cleanup_expired_sessions() -> None:
+    """Periodically remove expired sessions and challenges."""
+
     while True:
-        await asyncio.sleep(300)  # Run every 5 minutes
-        cutoff = time.time() - 1800  # 30 minutes TTL
-        expired_sessions = [
-            sid for sid, s in sessions.items() if s.started_at.timestamp() < cutoff
-        ]
-        expired_challenges = [
-            cid
-            for cid, (_, issued_at) in challenges.items()
-            if issued_at is not None and issued_at < cutoff
-        ]
-        for sid in expired_sessions:
-            del sessions[sid]
-        for cid in expired_challenges:
-            del challenges[cid]
-        if expired_sessions or expired_challenges:
-            logger.info(
-                "cleanup_expired",
-                sessions_removed=len(expired_sessions),
-                challenges_removed=len(expired_challenges),
-            )
+        await asyncio.sleep(300)
+        cleanup_expired_state()
 
 
 # === Lifespan Handler ===
@@ -713,77 +973,96 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan."""
     global startup_time
     startup_time = datetime.now(timezone.utc)
-
-    if settings.is_production and not settings.secret_key:
-        raise RuntimeError("SECRET_KEY environment variable required in production")
-
-    if db:
-        try:
-            db.init_db()
-            _restore_persistent_runtime_state()
-        except Exception as exc:
-            raise RuntimeError("Database initialization failed") from exc
+    app.state.redis = None
     app.state.credential_revocation_checker = _credential_is_revoked
+    redis_connection: Any | None = None
+    cleanup_task: asyncio.Task[None] | None = None
 
-    logger.info(
-        "mettle_starting",
-        environment=settings.environment,
-        version=settings.api_version,
-    )
-    print("[METTLE] API starting...")
-    print("   Machine Evaluation Through Turing-inverse Logic Examination")
-    print("   'Prove your mettle.'")
-
-    # Initialize Redis for METTLE router (optional — returns 503 if unavailable)
-    redis_url = os.environ.get("METTLE_REDIS_URL")
-    if redis_url:
-        try:
-            import redis.asyncio as redis_client
-
-            app.state.redis = redis_client.from_url(
-                redis_url,
-                socket_connect_timeout=1.0,
-                socket_timeout=1.0,
-                retry_on_timeout=False,
-                health_check_interval=30,
-            )
-            await app.state.redis.ping()
-            # Never log any portion of a connection URL. Credentials can occur
-            # before the host and may be exposed even by a short prefix.
-            logger.info("redis_connected")
-        except Exception as e:
-            logger.warning("redis_unavailable", error=str(e))
-            app.state.redis = None
-    else:
-        app.state.redis = None
-
-    # Init VCP signing (Ed25519 for attestations)
     try:
-        from mettle.signing import init_signing
-
-        signing_available = init_signing()
-        if settings.is_production and not signing_available:
-            raise RuntimeError("VCP attestation signing is unavailable in production")
-    except ImportError:
         if settings.is_production:
-            raise RuntimeError("VCP attestation signing dependencies are unavailable")
+            if not settings.secret_key:
+                raise RuntimeError(
+                    "SECRET_KEY environment variable required in production"
+                )
+            if db is None:
+                raise RuntimeError("Database persistence is unavailable in production")
+            if not settings.redis_url:
+                raise RuntimeError("Redis persistence is unavailable in production")
 
-    # Start cleanup task
-    cleanup_task = asyncio.create_task(cleanup_expired_sessions())
+        if db:
+            try:
+                db.init_db()
+                _restore_persistent_runtime_state()
+            except Exception as exc:
+                raise RuntimeError("Database initialization failed") from exc
 
-    yield
+        logger.info(
+            "mettle_starting",
+            environment=settings.environment,
+            version=settings.api_version,
+        )
+        print("[METTLE] API starting...")
+        print("   Machine Evaluation Through Turing-inverse Logic Examination")
+        print("   'Prove your mettle.'")
 
-    # Shutdown Redis
-    if getattr(app.state, "redis", None):
-        await app.state.redis.aclose()
+        redis_url = settings.redis_url
+        if redis_url:
+            try:
+                import redis.asyncio as redis_client
 
-    # Shutdown cleanup task
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
-    logger.info("mettle_shutdown")
+                redis_connection = redis_client.from_url(
+                    redis_url,
+                    socket_connect_timeout=1.0,
+                    socket_timeout=1.0,
+                    retry_on_timeout=False,
+                    health_check_interval=30,
+                )
+                await redis_connection.ping()
+                app.state.redis = redis_connection
+                logger.info("redis_connected")
+            except Exception as exc:
+                logger.warning("redis_unavailable", error=type(exc).__name__)
+                if redis_connection is not None:
+                    await redis_connection.aclose()
+                    redis_connection = None
+                app.state.redis = None
+                if settings.is_production:
+                    raise RuntimeError(
+                        "Redis persistence is unavailable in production"
+                    ) from exc
+
+        # Init VCP signing (Ed25519 for attestations)
+        try:
+            from mettle.signing import init_signing
+
+            signing_available = init_signing()
+            if settings.is_production and not signing_available:
+                raise RuntimeError(
+                    "VCP attestation signing is unavailable in production"
+                )
+        except ImportError as exc:
+            if settings.is_production:
+                raise RuntimeError(
+                    "VCP attestation signing dependencies are unavailable"
+                ) from exc
+
+        cleanup_task = asyncio.create_task(cleanup_expired_sessions())
+        yield
+    finally:
+        try:
+            if cleanup_task is not None:
+                cleanup_task.cancel()
+                try:
+                    await cleanup_task
+                except asyncio.CancelledError:
+                    pass
+        finally:
+            try:
+                if redis_connection is not None:
+                    await redis_connection.aclose()
+            finally:
+                app.state.redis = None
+                logger.info("mettle_shutdown")
 
 
 # === FastAPI App ===
@@ -859,20 +1138,49 @@ async def _redis_unavailable_handler(
 
 app.add_exception_handler(RedisError, cast(Any, _redis_unavailable_handler))
 
+
+async def _unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Return a stable error while middleware adds trace and security headers."""
+
+    logger.error(
+        "unhandled_request_exception",
+        path=request.url.path,
+        error=type(exc).__name__,
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
+
+app.add_exception_handler(Exception, cast(Any, _unhandled_exception_handler))
+
 # Add middlewares
+# Body limiting is innermost so its own 400/413 responses still receive CORS,
+# request IDs, and the complete security-header policy.
+app.add_middleware(RequestBodyLimitMiddleware, max_body_bytes=MAX_REQUEST_BODY_BYTES)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
     allow_credentials=settings.allowed_origins != "*",
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
 
 # === Request/Response Models ===
-class StartSessionRequest(BaseModel):
+class StrictRequestModel(BaseModel):
+    """Reject unsupported public request fields instead of silently ignoring them."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class StartSessionRequest(StrictRequestModel):
     """Request to start a METTLE verification session."""
 
     difficulty: Difficulty = Field(
@@ -927,7 +1235,7 @@ class StartSessionResponse(BaseModel):
     }
 
 
-class SubmitAnswerRequest(BaseModel):
+class SubmitAnswerRequest(StrictRequestModel):
     """Submit an answer to a challenge."""
 
     session_id: str = Field(
@@ -1059,7 +1367,7 @@ class BadgeVerifyResponse(BaseModel):
     )
 
 
-class BadgeVerifyRequest(BaseModel):
+class BadgeVerifyRequest(StrictRequestModel):
     """Request body for badge verification without URL token exposure."""
 
     token: str = Field(
@@ -1103,15 +1411,33 @@ async def api_root():
     summary="Health Check",
     description="Check API health and get operational statistics.",
 )
-async def health():
-    """Health check endpoint with detailed status."""
+async def health(request: Request):
+    """Report component readiness without claiming unavailable routes are healthy."""
     now = datetime.now(timezone.utc)
     uptime = (now - startup_time).total_seconds()
+    redis_connection = getattr(request.app.state, "redis", None)
+    redis_ready = False
+    if redis_connection is not None:
+        try:
+            redis_ready = bool(
+                await asyncio.wait_for(
+                    redis_connection.ping(),
+                    timeout=HEALTH_CHECK_TIMEOUT_SECONDS,
+                )
+            )
+        except Exception:
+            redis_ready = False
+    database_ready = db is not None
+    components = {
+        "legacy_persistence": "ready" if database_ready else "memory-only",
+        "v2_session_store": "ready" if redis_ready else "unavailable",
+    }
 
     return {
-        "status": "healthy",
+        "status": "healthy" if redis_ready else "degraded",
+        "components": components,
         "version": settings.api_version,
-        "environment": settings.environment,
+        "environment": settings.environment.value,
         "timestamp": now.isoformat(),
         "uptime_seconds": round(uptime, 2),
         "active_sessions": len(sessions),
@@ -1156,6 +1482,14 @@ async def start_session(
     ),
 ):
     """Start a new METTLE verification session."""
+    # Reject at the cheapest boundary.  Challenge generation can be CPU-heavy
+    # and must never run for a request that cannot be stored.
+    if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
+        raise HTTPException(
+            status_code=503,
+            detail="Verification capacity reached; retry shortly",
+        )
+
     session_id = f"ses_{secrets.token_hex(12)}"
     session_token = secrets.token_urlsafe(32)
 
@@ -1187,13 +1521,6 @@ async def start_session(
         access_token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
     )
 
-    # Public callers must not be able to evict unrelated active sessions. At
-    # capacity, fail closed and let the cleanup task reclaim expired entries.
-    if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
-        raise HTTPException(
-            status_code=503,
-            detail="Verification capacity reached; retry shortly",
-        )
     sessions[session_id] = session
 
     # Store first challenge with timestamp
@@ -1227,10 +1554,10 @@ async def start_session(
     )
 
 
-class BatchStartRequest(BaseModel):
+class BatchStartRequest(StrictRequestModel):
     """Request to start multiple verification sessions."""
 
-    entity_ids: list[str] = Field(
+    entity_ids: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
         ...,
         min_length=1,
         max_length=50,
@@ -1240,6 +1567,15 @@ class BatchStartRequest(BaseModel):
         default=Difficulty.BASIC,
         description="Verification difficulty for all sessions",
     )
+
+    @field_validator("entity_ids")
+    @classmethod
+    def validate_entity_ids(_cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("Duplicate entity IDs are not allowed")
+        if any(value != value.strip() or not value.isprintable() for value in values):
+            raise ValueError("Entity IDs must be trimmed printable strings")
+        return values
 
 
 class BatchStartResponse(BaseModel):
@@ -1276,7 +1612,16 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
 
-    tier = RateTier.get_tier(api_key)
+    try:
+        key_data = RateTier.get_key_data(api_key, raise_on_error=True)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="API key persistence is temporarily unavailable",
+        ) from exc
+    if key_data is None:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    tier = key_data.get("tier", "free")
     features = RateTier.get_limits(tier).get("features", [])
     if "batch" not in features and "all" not in features:
         raise HTTPException(
@@ -1285,9 +1630,15 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
         )
 
     # Enforce per-key daily session limits
-    allowed, message = RateTier.check_limit(
-        api_key, "session", amount=len(body.entity_ids)
-    )
+    try:
+        allowed, message = RateTier.check_limit(
+            api_key, "session", amount=len(body.entity_ids)
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="API key usage persistence is temporarily unavailable",
+        ) from exc
     if not allowed:
         raise HTTPException(status_code=429, detail=message)
 
@@ -1296,6 +1647,8 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
 
     for entity_id in body.entity_ids:
         try:
+            if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
+                raise RuntimeError("Verification capacity reached; retry shortly")
             session_id = f"ses_{secrets.token_hex(12)}"
             session_token = secrets.token_urlsafe(32)
             challenge_list = generate_challenge_set(body.difficulty)
@@ -1307,8 +1660,6 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
                 challenges=challenge_list,
                 access_token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
             )
-            if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
-                raise RuntimeError("Verification capacity reached; retry shortly")
             sessions[session_id] = session
 
             first_challenge = challenge_list[0]
@@ -1721,10 +2072,15 @@ async def verify_badge_legacy(request: Request, token: str):
 # === Revocation Endpoints ===
 
 
-class RevokeBadgeRequest(BaseModel):
+class RevokeBadgeRequest(StrictRequestModel):
     """Request to revoke a legacy badge or Presence credential."""
 
-    token: str | None = Field(None, description="The legacy badge token to revoke")
+    token: str | None = Field(
+        None,
+        min_length=1,
+        max_length=8192,
+        description="The legacy badge token to revoke",
+    )
     jti: str | None = Field(
         None,
         pattern=r"^[0-9a-f]{32}$",
@@ -1741,6 +2097,21 @@ class RevokeBadgeRequest(BaseModel):
     evidence: dict[str, Any] | None = Field(
         None, description="Optional evidence supporting revocation"
     )
+
+    @field_validator("evidence")
+    @classmethod
+    def validate_evidence(_cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is not None:
+            if len(value) > 32:
+                raise ValueError("Evidence contains too many top-level fields")
+            validate_bounded_json(
+                value,
+                max_bytes=64 * 1024,
+                max_depth=12,
+                max_nodes=2048,
+                label="Evidence",
+            )
+        return value
 
 
 class RevokeBadgeResponse(BaseModel):
@@ -2077,7 +2448,7 @@ async def check_entity_collusion(request: Request, entity_id: str):
     return CollusionDetector.check_collusion(entity_id, ip_address)
 
 
-class FingerprintRequest(BaseModel):
+class FingerprintRequest(StrictRequestModel):
     """Request for model fingerprinting."""
 
     responses: list[
@@ -2107,14 +2478,47 @@ async def fingerprint_model(body: FingerprintRequest):
 webhooks: dict[str, dict[str, Any]] = {}
 
 
+async def _resolve_webhook_addresses(
+    hostname: str, port: int
+) -> dict[str, ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """Resolve webhook DNS off-loop with time and fanout bounds."""
+
+    records = await asyncio.wait_for(
+        asyncio.to_thread(
+            socket.getaddrinfo,
+            hostname,
+            port,
+            type=socket.SOCK_STREAM,
+        ),
+        timeout=WEBHOOK_DNS_TIMEOUT_SECONDS,
+    )
+    resolved: dict[str, ipaddress.IPv4Address | ipaddress.IPv6Address] = {}
+    for item in records:
+        try:
+            raw_address = item[4][0]
+        except (IndexError, TypeError) as exc:
+            raise ValueError("DNS resolver returned a malformed address") from exc
+        if not isinstance(raw_address, str):
+            raise ValueError("DNS resolver returned a non-string address")
+        address = raw_address.split("%", 1)[0]
+        resolved[address] = ipaddress.ip_address(address)
+        if len(resolved) > MAX_WEBHOOK_RESOLVED_ADDRESSES:
+            raise ValueError("DNS resolver returned too many addresses")
+    if not resolved:
+        raise ValueError("DNS resolver returned no addresses")
+    return resolved
+
+
 class WebhookManager:
-    """Manage webhook registrations and delivery."""
+    """Compatibility support for existing registrations while delivery is disabled."""
 
     EVENTS = ["session.started", "session.completed", "badge.issued", "badge.revoked"]
 
     @staticmethod
     async def send_webhook(entity_id: str, event: str, payload: dict[str, Any]) -> bool:
-        """Send a webhook notification. Returns True if successful."""
+        """Run compatibility delivery only when explicitly enabled by an operator."""
+        if not WEBHOOK_DELIVERY_ENABLED:
+            return False
         if not entity_id or entity_id not in webhooks:
             return False
 
@@ -2150,8 +2554,6 @@ class WebhookManager:
             webhook_payload["signature"] = signature
 
         try:
-            import ipaddress
-            import socket
             from urllib.parse import urlparse, urlunparse
 
             import httpx
@@ -2165,17 +2567,7 @@ class WebhookManager:
                 return False
             port = parsed.port or (443 if parsed.scheme == "https" else 80)
             try:
-                resolved: set[str] = set()
-                for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM):
-                    raw_address = item[4][0]
-                    if not isinstance(raw_address, str):
-                        raise ValueError("DNS resolver returned a non-string address")
-                    resolved.add(raw_address.split("%", 1)[0])
-                if not resolved:
-                    return False
-                resolved_ips = {
-                    address: ipaddress.ip_address(address) for address in resolved
-                }
+                resolved_ips = await _resolve_webhook_addresses(hostname, port)
                 blocked = [
                     address for address, ip in resolved_ips.items() if not ip.is_global
                 ]
@@ -2187,7 +2579,7 @@ class WebhookManager:
                         resolved_ips=sorted(blocked),
                     )
                     return False
-            except (socket.gaierror, ValueError) as e:
+            except (socket.gaierror, TimeoutError, ValueError) as e:
                 logger.warning(
                     "webhook_dns_validation_failed",
                     entity_id=entity_id,
@@ -2196,7 +2588,7 @@ class WebhookManager:
                 )
                 return False
 
-            resolved_ip = sorted(resolved)[0]
+            resolved_ip = sorted(resolved_ips)[0]
             ip_for_url = (
                 f"[{resolved_ip}]"
                 if resolved_ips[resolved_ip].version == 6
@@ -2258,41 +2650,49 @@ class WebhookManager:
         events: list[str] | None = None,
         secret: str | None = None,
     ) -> dict:
-        """Register a webhook for an entity."""
-        events_list = events or WebhookManager.EVENTS
+        """Maintain an existing registration for compatibility and deletion tests."""
+        events_list = (
+            list(events) if events is not None else list(WebhookManager.EVENTS)
+        )
         config = {
             "url": url,
             "events": events_list,
             "secret": secret,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        add_with_limit(webhooks, entity_id, config, MAX_WEBHOOKS)
-        # Persist to database if enabled
+        # Persist before touching the bounded cache.  On a full cache, doing
+        # this in the opposite order can evict an unrelated registration even
+        # when persistence then fails.
         if db and not db.save_webhook(entity_id, url, events_list, secret):
-            webhooks.pop(entity_id, None)
             raise RuntimeError("Webhook persistence unavailable")
+        add_with_limit(webhooks, entity_id, config, MAX_WEBHOOKS)
         return config
 
     @staticmethod
     def unregister(entity_id: str) -> bool:
         """Unregister a webhook."""
-        if entity_id in webhooks:
-            del webhooks[entity_id]
-            # Remove from database if enabled
-            if db:
-                db.delete_webhook(entity_id)
-            return True
-        # Try database even if not in memory
-        if db and db.delete_webhook(entity_id):
-            return True
-        return False
+        in_memory = entity_id in webhooks
+        if db:
+            deleted = db.delete_webhook(entity_id)
+            if not deleted:
+                if in_memory:
+                    raise RuntimeError("Webhook persistence unavailable")
+                return False
+        elif not in_memory:
+            return False
+
+        webhooks.pop(entity_id, None)
+        return True
 
 
-class WebhookRegisterRequest(BaseModel):
+class WebhookRegisterRequest(StrictRequestModel):
     """Request to register a webhook."""
 
     entity_id: str = Field(
-        ..., description="Entity ID to register webhook for", max_length=128
+        ...,
+        min_length=1,
+        description="Entity ID to register webhook for",
+        max_length=128,
     )
     url: str = Field(..., description="Webhook URL to POST events to", max_length=2048)
     events: list[str] | None = Field(
@@ -2302,7 +2702,9 @@ class WebhookRegisterRequest(BaseModel):
         description="Events to subscribe to (default: all)",
     )
     secret: str | None = Field(
-        None, description="Secret for HMAC signing (min 32 chars)"
+        None,
+        max_length=512,
+        description="Secret for HMAC signing (32 to 512 chars)",
     )
 
     @field_validator("secret")
@@ -2378,77 +2780,19 @@ class WebhookRegisterRequest(BaseModel):
 @api_router.post(
     "/webhooks/register",
     tags=["Status"],
-    summary="Register Webhook",
-    description="Register a webhook URL for verification events. Requires an API key that owns the entity.",
+    summary="Webhook Registration Disabled",
+    description="Webhook delivery is not connected to an owner-bound verification transition, so new registrations are disabled.",
+    deprecated=True,
     responses={
-        200: {"description": "Webhook registered"},
-        400: {"description": "Invalid events"},
-        401: {"description": "Unauthorized - requires API key"},
-        403: {"description": "Forbidden - API key does not own this entity"},
+        410: {"description": "Webhook registration is disabled"},
     },
 )
-async def register_webhook(body: WebhookRegisterRequest, request: Request):
-    """Register a webhook for an entity.
-
-    SECURITY: A webhook discloses session/badge event metadata for an entity and
-    causes outbound requests on its behalf, so registration must be authenticated
-    and restricted to the entity's owner. The caller must present an X-API-Key
-    whose registered entity_id matches the requested entity_id (IDOR protection).
-    """
-    ip_address = get_remote_address(request)
-
-    # Require an API key that owns the target entity (prevents anonymous IDOR overwrite)
-    api_key = request.headers.get("X-API-Key")
-    if not api_key:
-        raise HTTPException(status_code=401, detail="API key required")
-
-    key_data = RateTier.get_key_data(api_key)
-    if not key_data:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-    owned_entity = key_data.get("entity_id")
-    if not owned_entity or owned_entity != body.entity_id:
-        raise HTTPException(
-            status_code=403,
-            detail="API key is not authorized to register webhooks for this entity",
-        )
-
-    tier = RateTier.get_tier(api_key)
-    features = RateTier.get_limits(tier).get("features", [])
-    if "webhooks" not in features and "all" not in features:
-        raise HTTPException(
-            status_code=403,
-            detail="Webhook registration requires a pro or enterprise tier API key",
-        )
-
-    # SECURITY: Audit all webhook registrations
-    logger.info(
-        "webhook_registered",
-        entity_id=body.entity_id,
-        url=body.url[:50] + "..." if len(body.url) > 50 else body.url,
-        events=body.events,
-        ip_address=ip_address,
+async def register_webhook(_body: WebhookRegisterRequest, _request: Request) -> None:
+    """Reject new registrations until a genuinely owner-bound event exists."""
+    raise HTTPException(
+        status_code=410,
+        detail="Webhook registration and delivery are disabled",
     )
-
-    # Validate events
-    if body.events:
-        invalid = [e for e in body.events if e not in WebhookManager.EVENTS]
-        if invalid:
-            raise HTTPException(status_code=400, detail=f"Invalid events: {invalid}")
-
-    try:
-        config = WebhookManager.register(
-            body.entity_id, body.url, body.events, body.secret
-        )
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=503, detail="Webhook persistence is temporarily unavailable"
-        ) from exc
-    return {
-        "registered": True,
-        "entity_id": body.entity_id,
-        "events": config["events"],
-    }
 
 
 @api_router.delete(
@@ -2463,7 +2807,10 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
         429: {"description": "Too many failed auth attempts"},
     },
 )
-async def unregister_webhook(entity_id: str, request: Request):
+async def unregister_webhook(
+    request: Request,
+    entity_id: str = ApiPath(min_length=1, max_length=128),
+):
     """Unregister a webhook. Requires admin authorization.
 
     SECURITY: Deleting another entity's webhook is a denial-of-service against
@@ -2484,7 +2831,15 @@ async def unregister_webhook(entity_id: str, request: Request):
     if not verify_admin_key(admin_key, ip_address):
         raise HTTPException(status_code=401, detail="Admin authorization required")
 
-    if WebhookManager.unregister(entity_id):
+    try:
+        removed = WebhookManager.unregister(entity_id)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Webhook persistence is temporarily unavailable",
+        ) from exc
+
+    if removed:
         # SECURITY: Audit all webhook deletions
         logger.info(
             "webhook_unregistered",
@@ -2502,9 +2857,10 @@ async def unregister_webhook(entity_id: str, request: Request):
     description="List available webhook event types.",
 )
 async def list_webhook_events():
-    """List available webhook events."""
+    """Report the disabled webhook capability without advertising event delivery."""
     return {
-        "events": WebhookManager.EVENTS,
+        "enabled": False,
+        "events": [],
         "registered_count": len(webhooks),
     }
 
@@ -2512,14 +2868,18 @@ async def list_webhook_events():
 # === API Key Management ===
 
 
-class RegisterKeyRequest(BaseModel):
+class RegisterKeyRequest(StrictRequestModel):
     """Request to register an API key."""
 
-    tier: str = Field(..., description="Tier: free, pro, or enterprise")
-    entity_id: str | None = Field(None, description="Associated entity ID")
+    tier: Literal["free", "pro", "enterprise"] = Field(
+        ..., description="Tier: free, pro, or enterprise"
+    )
+    entity_id: str | None = Field(
+        None, min_length=1, max_length=128, description="Associated entity ID"
+    )
 
 
-class RevokeKeyRequest(BaseModel):
+class RevokeKeyRequest(StrictRequestModel):
     """Request to revoke an API key without placing it in the URL."""
 
     api_key: str = Field(..., min_length=16, max_length=512)

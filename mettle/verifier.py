@@ -1,93 +1,151 @@
 """METTLE: Response verification."""
 
+import hashlib
+import re
 from datetime import datetime, timezone
+
 from .models import Challenge, ChallengeType, MettleResult, VerificationResult
 
 
+MAX_ANSWER_CHARS = 1024
+_MAX_NUMERIC_ANSWER_BITS = MAX_ANSWER_CHARS * 4
+
+_KNOWN_INSTRUCTIONS = {
+    "Start your response with 'Indeed,'",
+    "End your response with '...'",
+    "Include the word 'therefore' in your response",
+    "Respond in exactly 5 words",
+    "Start with a number",
+}
+
+
+def _bounded_text_answer(answer: object) -> str | None:
+    """Return a bounded plain string, rejecting implicit object stringification."""
+    if type(answer) is not str or len(answer) > MAX_ANSWER_CHARS:
+        return None
+    return answer.strip()
+
+
+def _parse_integer_answer(answer: object) -> tuple[int | str | None, bool]:
+    """Parse bounded text or a real integer without accepting bools or objects."""
+    if type(answer) is int:
+        if answer.bit_length() > _MAX_NUMERIC_ANSWER_BITS:
+            return None, False
+        return answer, True
+
+    text = _bounded_text_answer(answer)
+    if text is None:
+        return None, False
+    try:
+        return int(text), True
+    except ValueError:
+        return text, False
+
+
+def _time_is_valid(response_time_ms: object, time_limit_ms: int) -> bool:
+    """Accept integer elapsed times from zero through the exact limit."""
+    return type(response_time_ms) is int and 0 <= response_time_ms <= time_limit_ms
+
+
+def _recordable_response_time(response_time_ms: object) -> int:
+    """Keep invalid caller values out of the validated result model."""
+    if type(response_time_ms) is int and response_time_ms >= 0:
+        return response_time_ms
+    return 0
+
+
 def verify_speed_math(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify a speed math response."""
-    user_answer: int | str
-    try:
-        # Accept numeric answer
-        user_answer = int(str(answer).strip())
-        expected = challenge.data["expected_answer"]
-        correct = user_answer == expected
-    except (ValueError, TypeError):
-        correct = False
-        user_answer = answer
+    expected = challenge.data.get("expected_answer")
+    user_answer, answer_is_integer = _parse_integer_answer(answer)
+    correct = answer_is_integer and type(expected) is int and user_answer == expected
 
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
 
     passed = correct and time_ok
     # SECURITY: Only include expected answer if passed (prevents answer harvesting)
-    details = {
+    details: dict[str, object] = {
         "correct_answer": correct,
         "time_ok": time_ok,
         "received": user_answer,
     }
     if passed:
-        details["expected"] = challenge.data["expected_answer"]
+        details["expected"] = expected
 
     return VerificationResult(
         challenge_id=challenge.id,
         challenge_type=challenge.type,
         passed=passed,
         details=details,
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
 
 def verify_chained_reasoning(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify a chained reasoning response."""
-    user_answer: int | str
-    try:
-        user_answer = int(str(answer).strip())
-        expected = challenge.data["expected_answer"]
-        correct = user_answer == expected
-    except (ValueError, TypeError):
-        correct = False
-        user_answer = answer
+    expected = challenge.data.get("expected_answer")
+    chain = challenge.data.get("chain")
+    valid_chain = (
+        isinstance(chain, list)
+        and bool(chain)
+        and all(type(value) is int for value in chain)
+        and type(expected) is int
+        and chain[-1] == expected
+    )
+    user_answer, answer_is_integer = _parse_integer_answer(answer)
+    correct = answer_is_integer and valid_chain and user_answer == expected
 
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
     passed = correct and time_ok
 
     # SECURITY: Only include expected/chain if passed (prevents answer harvesting)
-    details = {
+    details: dict[str, object] = {
         "correct_answer": correct,
         "time_ok": time_ok,
         "received": user_answer,
     }
     if passed:
-        details["expected"] = challenge.data["expected_answer"]
-        details["chain"] = challenge.data["chain"]
+        details["expected"] = expected
+        details["chain"] = chain
 
     return VerificationResult(
         challenge_id=challenge.id,
         challenge_type=challenge.type,
         passed=passed,
         details=details,
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
 
 def verify_token_prediction(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify a token prediction response."""
-    user_answer = str(answer).strip().lower()
-    expected = challenge.data["expected_answer"].lower()
+    raw_answer = _bounded_text_answer(answer)
+    user_answer = raw_answer.casefold() if raw_answer is not None else ""
+    raw_expected = challenge.data.get("expected_answer")
+    if (
+        type(raw_expected) is str
+        and len(raw_expected) <= MAX_ANSWER_CHARS
+        and len(raw_expected.split()) == 1
+    ):
+        expected = raw_expected.strip().casefold()
+        valid_expected = bool(expected)
+    else:
+        expected = ""
+        valid_expected = False
 
     # The challenge asks for one missing token. Requiring the exact token keeps
     # a caller from submitting a list of every possible completion.
-    correct = user_answer == expected
+    correct = raw_answer is not None and valid_expected and user_answer == expected
 
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
     passed = correct and time_ok
 
     # SECURITY: Only include expected if passed (prevents answer harvesting)
@@ -104,33 +162,48 @@ def verify_token_prediction(
         challenge_type=challenge.type,
         passed=passed,
         details=details,
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
 
 def verify_instruction_following(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify an instruction following response."""
-    instruction = challenge.data["instruction"]
-    response = str(answer).strip()
+    instruction = challenge.data.get("instruction")
+    validator_id = challenge.data.get("validator_id")
+    bounded_answer = _bounded_text_answer(answer)
+    response = bounded_answer if bounded_answer is not None else ""
 
-    # Check instruction compliance
-    if "Start your response with 'Indeed,'" in instruction:
-        correct = response.startswith("Indeed,")
-    elif "End your response with '...'" in instruction:
-        correct = response.endswith("...")
-    elif "Include the word 'therefore'" in instruction:
-        correct = "therefore" in response.lower()
-    elif "exactly 5 words" in instruction:
-        correct = len(response.split()) == 5
-    elif "Start with a number" in instruction:
-        correct = response[0].isdigit() if response else False
+    validator_bound = False
+    if isinstance(instruction, str) and instruction in _KNOWN_INSTRUCTIONS:
+        expected_validator = hashlib.sha256(instruction.encode("utf-8")).hexdigest()[:8]
+        validator_bound = validator_id == expected_validator
+
+    if instruction == "Start your response with 'Indeed,'":
+        rule_followed = response.startswith("Indeed,")
+    elif instruction == "End your response with '...'":
+        rule_followed = response.endswith("...")
+    elif instruction == "Include the word 'therefore' in your response":
+        rule_followed = re.search(r"\btherefore\b", response, re.IGNORECASE) is not None
+    elif instruction == "Respond in exactly 5 words":
+        rule_followed = len(response.split()) == 5
+    elif instruction == "Start with a number":
+        rule_followed = bool(response) and response[0].isdigit()
     else:
-        correct = False
+        rule_followed = False
 
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    # Every generated prompt also asks the factual question about France.
+    factual_correct = re.search(r"\bparis\b", response, re.IGNORECASE) is not None
+    correct = (
+        bounded_answer is not None
+        and validator_bound
+        and rule_followed
+        and factual_correct
+    )
+
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
 
     return VerificationResult(
         challenge_id=challenge.id,
@@ -138,103 +211,82 @@ def verify_instruction_following(
         passed=correct and time_ok,
         details={
             "instruction_followed": correct,
+            "validator_bound": validator_bound,
+            "rule_followed": rule_followed,
+            "factual_correct": factual_correct,
             "time_ok": time_ok,
             "instruction": instruction,
             "response_preview": response[:50],  # Truncated to limit info disclosure
         },
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
 
 def verify_consistency(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
-    """Verify a consistency response - answers should be semantically similar but show variation.
+    """Require the exact requested count of independently correct answers."""
+    response = _bounded_text_answer(answer)
 
-    AI naturally produces varied but consistent responses. Humans copying will either:
-    - Give identical responses (too similar - suspicious)
-    - Give inconsistent responses (too different - fails)
-    """
-    response = str(answer).strip()
-    parts = [p.strip() for p in response.split("|")]
-
-    # Need at least the required number of responses
     num_required = challenge.data.get("num_responses", 3)
+    expected = challenge.data.get("expected_answer")
     details: dict[str, object]
 
-    if len(parts) < num_required:
+    valid_challenge = (
+        type(num_required) is int
+        and 1 <= num_required <= 10
+        and type(expected) is str
+        and len(expected) <= MAX_ANSWER_CHARS
+        and bool(expected.strip())
+    )
+    if response is None:
         correct = False
         details = {
-            "error": f"Expected {num_required} responses separated by '|', got {len(parts)}"
+            "error": f"Answer must be a string of at most {MAX_ANSWER_CHARS} characters"
         }
+    elif not valid_challenge:
+        correct = False
+        details = {"error": "Malformed consistency challenge data"}
     else:
-        parts = parts[:num_required]
+        parts = [part.strip() for part in response.split("|")]
+        if len(parts) != num_required or any(not part for part in parts):
+            correct = False
+            details = {
+                "error": (
+                    f"Expected exactly {num_required} nonblank responses "
+                    "separated by '|'"
+                )
+            }
+        else:
+            assert isinstance(expected, str)
 
-        # Extract key content words
-        def extract_key(s: str) -> str:
-            s = s.lower().strip().rstrip(".!?")
-            for word in ["the", "a", "an", "is", "it", "its", "i", "think"]:
-                s = s.replace(f" {word} ", " ")
-            return s.strip()
+            def normalize(value: str) -> str:
+                return value.strip(" \t\r\n.!?,;:'\"").casefold()
 
-        keys = [extract_key(p) for p in parts]
+            expected_normalized = normalize(expected)
+            correctness = [normalize(part) == expected_normalized for part in parts]
+            correct = all(correctness)
+            details = {
+                "responses": parts,
+                "response_count": len(parts),
+                "all_answers_correct": correct,
+            }
 
-        # Check for suspicious exact duplicates (human copy-paste)
-        unique_responses = set(p.lower().strip() for p in parts)
-        all_identical = len(unique_responses) == 1
-
-        # Check semantic consistency
-        reference = keys[0]
-        similarities = [_simple_similarity(reference, k) for k in keys[1:]]
-        avg_similarity = sum(similarities) / len(similarities) if similarities else 1.0
-
-        # AI behavior: varied phrasing (not identical) but consistent meaning (similar)
-        # Human copy-paste: all identical
-        # Human guessing: inconsistent
-        semantically_consistent = avg_similarity > 0.3 or all(
-            reference in k or k in reference for k in keys
-        )
-
-        # Pass if: semantically consistent AND (not all identical OR very short answers)
-        short_answer = all(
-            len(p.split()) <= 3 for p in parts
-        )  # Short answers can be identical
-        correct = semantically_consistent and (not all_identical or short_answer)
-
-        details = {
-            "responses": parts,
-            "unique_count": len(unique_responses),
-            "avg_similarity": round(avg_similarity, 2),
-            "semantically_consistent": semantically_consistent,
-            "natural_variation": not all_identical or short_answer,
-        }
-
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
 
     return VerificationResult(
         challenge_id=challenge.id,
         challenge_type=challenge.type,
         passed=correct and time_ok,
         details={**details, "time_ok": time_ok},
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
 
-def _simple_similarity(a: str, b: str) -> float:
-    """Simple word overlap similarity."""
-    words_a = set(a.lower().split())
-    words_b = set(b.lower().split())
-    if not words_a or not words_b:
-        return 0.0
-    intersection = words_a & words_b
-    union = words_a | words_b
-    return len(intersection) / len(union)
-
-
 def verify_response(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify a response to a challenge."""
     # Check if challenge has expired
@@ -244,7 +296,7 @@ def verify_response(
             challenge_type=challenge.type,
             passed=False,
             details={"error": "Challenge expired"},
-            response_time_ms=response_time_ms,
+            response_time_ms=_recordable_response_time(response_time_ms),
             time_limit_ms=challenge.time_limit_ms,
         )
 
@@ -270,7 +322,9 @@ def compute_mettle_result(
     # Like a conventional CAPTCHA, METTLE is a probabilistic gate. ``verified``
     # means that this challenge session met the configured threshold. It does
     # not claim that the self-asserted entity identifier is a proven identity.
-    verified = pass_rate >= 0.8
+    # Three is the smallest generated challenge battery. A truncated or
+    # corrupted result list cannot confer verification by passing one item.
+    verified = total >= 3 and pass_rate >= 0.8
 
     return MettleResult(
         entity_id=entity_id,

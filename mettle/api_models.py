@@ -6,11 +6,13 @@ Request/response models for session management, verification, and multi-round ch
 from __future__ import annotations
 
 import enum
+import base64
 import json
-from datetime import datetime
-from typing import Any, Literal
+import math
+from datetime import datetime, timedelta
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class SessionStatus(str, enum.Enum):
@@ -48,6 +50,109 @@ SINGLE_SHOT_SUITES = [s for s in SUITE_NAMES if s != MULTI_ROUND_SUITE]
 MAX_SUITES_PER_SESSION = len(SUITE_NAMES)
 MAX_ANSWER_BYTES = 64 * 1024
 MAX_ATTESTATION_BYTES = 128 * 1024
+MAX_JSON_DEPTH = 16
+MAX_JSON_NODES = 4096
+
+
+class StrictRequestModel(BaseModel):
+    """Base class for public request bodies.
+
+    Silently ignored fields turn client mistakes into ambiguous requests and can
+    hide unsupported security-relevant claims.  Request schemas therefore reject
+    unknown fields at every nested model boundary.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def validate_bounded_json(
+    value: Any,
+    *,
+    max_bytes: int,
+    max_depth: int = MAX_JSON_DEPTH,
+    max_nodes: int = MAX_JSON_NODES,
+    label: str = "JSON value",
+) -> Any:
+    """Validate a JSON-compatible value without unbounded traversal.
+
+    The iterative walk rejects cycles and repeated container aliases, excessive
+    depth or node counts, non-string object keys, unsupported Python objects, and
+    non-finite floats before serialisation.  A cheap UTF-8 estimate prevents a
+    single huge scalar from forcing a large temporary allocation; the final
+    canonical serialisation enforces the exact byte limit.
+    """
+
+    if max_bytes < 1 or max_depth < 0 or max_nodes < 1:
+        raise ValueError("JSON validation limits must be positive")
+
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    seen_containers: set[int] = set()
+    nodes = 0
+    estimated_bytes = 0
+
+    while stack:
+        item, depth = stack.pop()
+        nodes += 1
+        if nodes > max_nodes:
+            raise ValueError(f"{label} contains too many values")
+        if depth > max_depth:
+            raise ValueError(f"{label} exceeds maximum nesting depth")
+
+        if item is None:
+            estimated_bytes += 4
+        elif isinstance(item, bool):
+            estimated_bytes += 4 if item else 5
+        elif isinstance(item, int):
+            estimated_bytes += len(str(item))
+        elif isinstance(item, float):
+            if not math.isfinite(item):
+                raise ValueError(f"{label} contains a non-finite number")
+            estimated_bytes += len(json.dumps(item, allow_nan=False))
+        elif isinstance(item, str):
+            # Every Unicode code point needs at least one UTF-8 byte. Reject an
+            # obviously oversized scalar before allocating its encoded copy;
+            # only values within a small bounded multiplier reach encode().
+            if estimated_bytes + len(item) + 2 > max_bytes:
+                raise ValueError(f"{label} exceeds {max_bytes} bytes")
+            estimated_bytes += len(item.encode("utf-8")) + 2
+        elif isinstance(item, dict):
+            identity = id(item)
+            if identity in seen_containers:
+                raise ValueError(f"{label} contains a cycle or repeated container")
+            seen_containers.add(identity)
+            estimated_bytes += 2
+            for key, child in item.items():
+                if not isinstance(key, str):
+                    raise ValueError(f"{label} object keys must be strings")
+                if estimated_bytes + len(key) + 3 > max_bytes:
+                    raise ValueError(f"{label} exceeds {max_bytes} bytes")
+                estimated_bytes += len(key.encode("utf-8")) + 3
+                stack.append((child, depth + 1))
+        elif isinstance(item, list):
+            identity = id(item)
+            if identity in seen_containers:
+                raise ValueError(f"{label} contains a cycle or repeated container")
+            seen_containers.add(identity)
+            estimated_bytes += 2
+            stack.extend((child, depth + 1) for child in item)
+        else:
+            raise ValueError(f"{label} must contain only JSON-compatible values")
+
+        if estimated_bytes > max_bytes:
+            raise ValueError(f"{label} exceeds {max_bytes} bytes")
+
+    try:
+        encoded = json.dumps(
+            value,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise ValueError(f"{label} must be JSON serializable") from exc
+    if len(encoded) > max_bytes:
+        raise ValueError(f"{label} exceeds {max_bytes} bytes")
+    return value
 
 
 def _validate_answer_object(value: dict[str, Any]) -> dict[str, Any]:
@@ -55,18 +160,20 @@ def _validate_answer_object(value: dict[str, Any]) -> dict[str, Any]:
     if len(value) > 100:
         raise ValueError("Answer object contains too many top-level fields")
     try:
-        encoded = json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode()
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Answers must be JSON serializable") from exc
-    if len(encoded) > MAX_ANSWER_BYTES:
-        raise ValueError(f"Answer payload exceeds {MAX_ANSWER_BYTES} bytes")
+        validate_bounded_json(
+            value,
+            max_bytes=MAX_ANSWER_BYTES,
+            label="Answer payload",
+        )
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     return value
 
 
 # ---- Request Models ----
 
 
-class OperatorCommitment(BaseModel):
+class OperatorCommitment(StrictRequestModel):
     """Operator accountability commitment submitted with session creation.
 
     The operator signs a commitment accepting accountability for the agent.
@@ -84,23 +191,54 @@ class OperatorCommitment(BaseModel):
         description="Ed25519 public key (PEM format)",
     )
     signed_commitment: str = Field(
-        min_length=1,
-        max_length=1024,
+        min_length=88,
+        max_length=88,
         description="Base64 Ed25519 signature over the canonical version-1 operator commitment JSON",
     )
-    contact_method: str = Field(
-        min_length=1,
-        max_length=64,
+    contact_method: Literal["email_hash", "platform_handle", "legal_entity"] = Field(
         description="Contact method type: email_hash, platform_handle, legal_entity",
     )
     contact_hash: str = Field(
-        min_length=1,
-        max_length=128,
+        pattern=r"^[0-9a-f]{64}$",
         description="SHA-256 of actual contact info (verifiable without revealing)",
     )
+    issued_at: datetime = Field(
+        description="UTC time at which the operator signed this commitment",
+    )
+    nonce: str = Field(
+        pattern=r"^[0-9a-f]{64}$",
+        description="Single-use 32-byte cryptographic nonce encoded as lowercase hex",
+    )
+
+    @field_validator("operator_pseudonym")
+    @classmethod
+    def validate_operator_pseudonym(_cls, value: str) -> str:
+        if value != value.strip() or not value.isprintable():
+            raise ValueError("operator_pseudonym must be a trimmed printable string")
+        return value
+
+    @field_validator("signed_commitment")
+    @classmethod
+    def validate_signature(_cls, value: str) -> str:
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("signed_commitment must be canonical base64") from exc
+        if len(decoded) != 64:
+            raise ValueError("signed_commitment must contain an Ed25519 signature")
+        return value
+
+    @field_validator("issued_at")
+    @classmethod
+    def validate_issued_at(_cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("issued_at must include a UTC timezone")
+        if value.utcoffset() != timedelta(0):
+            raise ValueError("issued_at must use UTC")
+        return value
 
 
-class PresenceRegistration(BaseModel):
+class PresenceRegistration(StrictRequestModel):
     """Opt-in key binding for a METTLE Presence Protocol session."""
 
     public_key_pem: str = Field(
@@ -122,7 +260,7 @@ class PresenceRegistration(BaseModel):
         return value
 
 
-class PresenceProof(BaseModel):
+class PresenceProof(StrictRequestModel):
     """Holder signature over one server-issued session submission message."""
 
     nonce: str = Field(min_length=32, max_length=256)
@@ -157,10 +295,10 @@ class PresenceState(BaseModel):
     issuer_receipt: PresenceStateReceipt
 
 
-class CreateSessionRequest(BaseModel):
+class CreateSessionRequest(StrictRequestModel):
     """Request to start a METTLE verification session."""
 
-    suites: list[str] = Field(
+    suites: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
         default=["all"],
         min_length=1,
         max_length=MAX_SUITES_PER_SESSION,
@@ -202,7 +340,7 @@ class CreateSessionRequest(BaseModel):
         return self
 
 
-class RoundAnswerRequest(BaseModel):
+class RoundAnswerRequest(StrictRequestModel):
     """Submit answers for a multi-round challenge round."""
 
     answers: dict[str, Any] = Field(description="Challenge-specific answers")
@@ -214,10 +352,10 @@ class RoundAnswerRequest(BaseModel):
     _bound_answers = field_validator("answers")(_validate_answer_object)
 
 
-class VerifyRequest(BaseModel):
+class VerifyRequest(StrictRequestModel):
     """Submit answers for a single-shot suite."""
 
-    suite: str = Field(description="Suite name to verify")
+    suite: str = Field(min_length=1, max_length=64, description="Suite name to verify")
     answers: dict[str, Any] = Field(description="Suite-specific answers")
     presence_proof: PresenceProof | None = None
 
@@ -267,7 +405,7 @@ class VerifyResponse(BaseModel):
     next_challenge: dict[str, Any] | None = None
 
 
-class PresentationChallengeRequest(BaseModel):
+class PresentationChallengeRequest(StrictRequestModel):
     """Request a fresh, single-use proof-of-possession challenge."""
 
     credential_jti: str = Field(pattern=r"^[0-9a-f]{32}$")
@@ -289,7 +427,7 @@ class PresentationChallengeResponse(BaseModel):
     expires_at: datetime
 
 
-class PresentationVerifyRequest(BaseModel):
+class PresentationVerifyRequest(StrictRequestModel):
     """Verify one issuer-signed credential and live holder signature."""
 
     challenge_id: str = Field(min_length=32, max_length=256)
@@ -301,12 +439,12 @@ class PresentationVerifyRequest(BaseModel):
     def validate_attestation(_cls, value: dict[str, Any]) -> dict[str, Any]:
         if len(value) > 32:
             raise ValueError("Attestation contains too many top-level fields")
-        try:
-            encoded = json.dumps(value, separators=(",", ":")).encode("utf-8")
-        except (TypeError, ValueError) as exc:
-            raise ValueError("Attestation must be JSON serializable") from exc
-        if len(encoded) > MAX_ATTESTATION_BYTES:
-            raise ValueError(f"Attestation exceeds {MAX_ATTESTATION_BYTES} bytes")
+        validate_bounded_json(
+            value,
+            max_bytes=MAX_ATTESTATION_BYTES,
+            max_nodes=MAX_JSON_NODES * 2,
+            label="Attestation",
+        )
         return value
 
 
@@ -385,18 +523,33 @@ class OperatorAttestation(BaseModel):
     """
 
     operator_pseudonym: str = Field(
-        description="Operator identifier (can be pseudonymous)"
+        min_length=1,
+        max_length=256,
+        description="Operator identifier (can be pseudonymous)",
     )
-    operator_public_key: str = Field(description="Ed25519 public key (PEM format)")
+    operator_public_key: str = Field(
+        min_length=1,
+        max_length=8192,
+        description="Ed25519 public key (PEM format)",
+    )
     operator_signed_commitment: str = Field(
-        description="Operator signs: 'I accept accountability for agent {entity_id}'"
+        min_length=88,
+        max_length=88,
+        description="Operator signs: 'I accept accountability for agent {entity_id}'",
     )
-    commitment_timestamp: datetime = Field(description="When commitment was signed")
-    contact_method: str = Field(
+    commitment_timestamp: datetime = Field(
+        description="Signed UTC time at which the operator made the commitment"
+    )
+    commitment_nonce: str = Field(
+        pattern=r"^[0-9a-f]{64}$",
+        description="Signed single-use commitment nonce",
+    )
+    contact_method: Literal["email_hash", "platform_handle", "legal_entity"] = Field(
         description="Contact method type: email_hash, platform_handle, legal_entity"
     )
     contact_hash: str = Field(
-        description="SHA-256 of actual contact info (verifiable without revealing)"
+        pattern=r"^[0-9a-f]{64}$",
+        description="SHA-256 of actual contact info (verifiable without revealing)",
     )
 
 

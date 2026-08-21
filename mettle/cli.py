@@ -37,6 +37,8 @@ from mettle.verifier import compute_mettle_result, verify_response
 METTLE_VERSION = "0.1.0"
 # Suites without a deterministic single-pass CLI path (handled via hosted API).
 _LLM_SUITE = "llm-dynamic"
+_MAX_QUICK_ANSWER_BYTES = 1024
+_MAX_SUITE_ANSWER_BYTES = 64 * 1024
 
 
 # === Local result construction ===
@@ -108,6 +110,17 @@ def _emit(obj: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
+def _read_bounded_line(*, label: str, max_bytes: int) -> str:
+    """Read one UTF-8 answer line without allowing unbounded stdin growth."""
+    raw = sys.stdin.readline(max_bytes + 2)
+    if raw == "":
+        return ""
+    value = raw.rstrip("\r\n")
+    if len(value.encode("utf-8")) > max_bytes:
+        raise ValueError(f"{label} exceeds the {max_bytes}-byte limit")
+    return value
+
+
 def run_quick(
     difficulty: Difficulty,
     *,
@@ -131,11 +144,11 @@ def run_quick(
 
         _emit(challenge_line)
         start = time.monotonic()
-        answer = sys.stdin.readline()
+        answer = _read_bounded_line(
+            label=f"Answer for challenge '{challenge.id}'",
+            max_bytes=_MAX_QUICK_ANSWER_BYTES,
+        )
         elapsed_ms = int((time.monotonic() - start) * 1000)
-        if answer == "":  # EOF
-            answer = ""
-        answer = answer.rstrip("\n")
 
         result = verify_response(challenge, answer, elapsed_ms)
         results.append(result)
@@ -213,8 +226,7 @@ def run_suite(
     if gen is None:
         raise ValueError(
             f"Suite '{suite}' cannot be run in single-pass CLI mode. "
-            "Multi-round and LLM-dynamic suites require the hosted API at "
-            "the hosted API."
+            "Multi-round and LLM-dynamic suites require the hosted API."
         )
 
     client_data, server_answers = gen()
@@ -229,12 +241,19 @@ def run_suite(
 
     _emit(challenge_line)
     start = time.monotonic()
-    raw = sys.stdin.readline()
+    raw = _read_bounded_line(
+        label=f"JSON answer for suite '{suite}'",
+        max_bytes=_MAX_SUITE_ANSWER_BYTES,
+    )
     elapsed_ms = int((time.monotonic() - start) * 1000)
+    if not raw.strip():
+        raise ValueError(f"JSON answer for suite '{suite}' must be a non-empty object")
     try:
-        answers = json.loads(raw) if raw.strip() else {}
+        answers = json.loads(raw)
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON answer for suite '{suite}': {e}") from e
+    if not isinstance(answers, dict):
+        raise ValueError(f"JSON answer for suite '{suite}' must be an object")
 
     time_ok = elapsed_ms <= time_limit_ms
     evaluation = ChallengeAdapter.evaluate_single_shot(suite, answers, server_answers)

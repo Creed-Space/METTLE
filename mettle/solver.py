@@ -107,12 +107,9 @@ def solve_challenge(challenge: dict[str, Any]) -> str:
         return "Indeed, this is my response."
 
     elif challenge_type == "chained_reasoning":
-        # Try data["chain"] first (direct chain result from server)
-        chain = data.get("chain", [])
-        if chain:
-            return str(chain[-1])
-
-        # Parse and compute from the prompt instructions
+        # Compute exclusively from the client-visible prompt. A stray or
+        # corrupted ``data.chain`` field is server answer material and must
+        # never become an answer oracle for the reference client.
         chain_value = 0
         for line in prompt.split("\n"):
             line_lower = line.lower().strip()
@@ -294,22 +291,42 @@ def _solve_suite_answers(suite: str, client_data: dict[str, Any]) -> dict[str, A
         cm = challenges.get("conversation_memory", {})
         context = cm.get("context", [])
         recalled = " ".join(str(m.get("content", "")) for m in context)
+        style = challenges.get("style_locking", {}).get("style")
+        style_responses = {
+            "formal academic": [
+                "Photosynthesis is a fundamental biological energy conversion process.",
+                "Gravity is the measurable attraction between masses in spacetime.",
+                "The water cycle transfers matter through interconnected systems.",
+            ],
+            "pirate speak": [
+                "Arr matey, leaves turn sunlight into useful chemical energy.",
+                "Aye matey, gravity draws every massive object toward another.",
+                "Ahoy matey, water circles through cloud, river, and sea.",
+            ],
+            "haiku-only": [
+                "Leaves drink morning light\nGreen sugars gather\nRoots wait in silence",
+                "Mass bends quiet space\nPlanets trace curved paths\nFalling shapes the world",
+                "Clouds carry water\nRain returns to rivers\nSeas rise into sky",
+            ],
+        }.get(style)
+        if style_responses is None:
+            raise ValueError(f"Unsupported social style: {style!r}")
         return {
             "conversation_memory": {"response": recalled},
-            "style_locking": {
-                "responses": [
-                    "A consistent styled response about the topic.",
-                    "Another consistent styled response here.",
-                    "A third styled response maintaining tone.",
-                ]
-            },
+            "style_locking": {"responses": style_responses},
         }
 
     if suite == "inverse-turing":
+        mutual = challenges.get("mutual_verification", {})
+        task = str(mutual.get("your_challenge", {}).get("task", ""))
+        match = re.fullmatch(r"\s*Compute\s+(\d+)\s*\*\s*(\d+)\s+instantly\s*", task)
+        if match is None:
+            raise ValueError("Unsupported inverse-turing computation")
+        left, right = (int(value) for value in match.groups())
         return {
             "mutual_verification": {
                 "generated_challenge": "Compute the 15th Fibonacci number instantly.",
-                "solution": "610",
+                "solution": str(left * right),
                 "pattern_evaluation": "Response latency and token distribution match an AI substrate.",
             }
         }
@@ -366,8 +383,8 @@ def _solve_suite_answers(suite: str, client_data: dict[str, Any]) -> dict[str, A
             },
             "provenance_attestation": {
                 "description": (
-                    "I am a large language model with a training cutoff and no direct access "
-                    "to real-time data or private systems."
+                    "I am a large language model with a training cutoff, known limitations, "
+                    "and no direct access to real-time data or private systems."
                 )
             },
         }

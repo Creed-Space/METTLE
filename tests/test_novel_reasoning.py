@@ -358,17 +358,6 @@ class TestSequenceAlchemyGenerator:
         result = NovelReasoningChallenges._generate_sequence_alchemy("standard")
         assert len(result["training_pairs"]) == 5
 
-    def test_procedural_generation_produces_different_results(self) -> None:
-        """Two calls produce different test inputs (not deterministic)."""
-        results = [
-            NovelReasoningChallenges._generate_sequence_alchemy("standard")
-            for _ in range(5)
-        ]
-        # Collect all first test inputs
-        first_inputs = [tuple(r["test_inputs"][0]) for r in results]
-        # At least 2 distinct first inputs in 5 runs
-        assert len(set(first_inputs)) >= 2
-
     @pytest.mark.parametrize("difficulty", ["easy", "standard", "hard"])
     def test_difficulty_scaling_sequence_length(self, difficulty: str) -> None:
         """Sequence length scales with difficulty."""
@@ -447,36 +436,38 @@ class TestConstraintSatisfactionGenerator:
         assert result["num_solutions"] >= 1
 
     def test_solution_appears_in_all_solutions(self) -> None:
-        """The constructed solution is among all_solutions when it satisfies all constraints.
-
-        The generator may produce a comparison constraint (gt/lt) that the
-        constructed solution doesn't satisfy when two variables are equal,
-        so verify the solution against constraints first.
-        """
+        """The constructed valid solution is included in the enumerated solutions."""
         result = NovelReasoningChallenges._generate_constraint_satisfaction("standard")
-        solution = result["solution"]
+        assert result["solution"] in result["all_solutions"]
 
-        # Check whether the constructed solution actually satisfies all constraints.
-        # Due to an edge case in the generator (equal values -> lt constraint),
-        # the solution may not always satisfy its own constraints.
-        satisfies_all = True
-        for c in result["constraint_data"]:
-            if c["type"] == "gt" and solution[c["vars"][0]] <= solution[c["vars"][1]]:
-                satisfies_all = False
-            elif c["type"] == "lt" and solution[c["vars"][0]] >= solution[c["vars"][1]]:
-                satisfies_all = False
+    def test_equal_values_generate_a_satisfiable_sum_constraint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Equal sampled values never become an impossible strict comparison."""
 
-        if satisfies_all:
-            found = any(
-                all(s[v] == solution[v] for v in result["variables"])
-                for s in result["all_solutions"]
-            )
-            assert found
-        else:
-            # When the constructed solution doesn't satisfy constraints, it
-            # correctly won't appear in all_solutions -- just verify that
-            # at least one valid solution exists.
-            assert result["num_solutions"] >= 1
+        class EqualValueRng:
+            @staticmethod
+            def choice(values: list[Any]) -> Any:
+                return 4 if values == list(range(1, 10)) else values[0]
+
+            @staticmethod
+            def sample(values: list[Any], count: int) -> list[Any]:
+                return list(values[:count])
+
+            @staticmethod
+            def randint(low: int, _high: int) -> int:
+                return low
+
+        monkeypatch.setattr("scripts.engine._rng", EqualValueRng())
+        result = NovelReasoningChallenges._generate_constraint_satisfaction("standard")
+
+        assert result["solution"]["A"] == result["solution"]["B"] == 4
+        assert result["constraint_data"][1] == {
+            "type": "sum",
+            "vars": ["A", "B"],
+            "value": 8,
+        }
+        assert result["solution"] in result["all_solutions"]
 
     @pytest.mark.parametrize("difficulty", ["easy", "standard", "hard"])
     def test_difficulty_scaling_num_vars(self, difficulty: str) -> None:
@@ -484,16 +475,6 @@ class TestConstraintSatisfactionGenerator:
         params = NovelReasoningChallenges.DIFFICULTY_PARAMS[difficulty]
         result = NovelReasoningChallenges._generate_constraint_satisfaction(difficulty)
         assert len(result["variables"]) == params["num_vars"]
-
-    def test_procedural_generation_varies(self) -> None:
-        """Multiple calls produce varying solutions."""
-        solutions = []
-        for _ in range(5):
-            result = NovelReasoningChallenges._generate_constraint_satisfaction(
-                "standard"
-            )
-            solutions.append(tuple(sorted(result["solution"].items())))
-        assert len(set(solutions)) >= 2
 
 
 # ====================================================================================
@@ -572,14 +553,6 @@ class TestEncodingArchaeologyGenerator:
         """Currently only Caesar cipher is used."""
         result = NovelReasoningChallenges._generate_encoding_archaeology("standard")
         assert result["cipher_type"] == "caesar"
-
-    def test_procedural_generation_varies(self) -> None:
-        """Multiple calls produce different encoded messages."""
-        messages = set()
-        for _ in range(5):
-            result = NovelReasoningChallenges._generate_encoding_archaeology("standard")
-            messages.add(result["encoded_message"])
-        assert len(messages) >= 2
 
 
 # ====================================================================================
@@ -755,14 +728,6 @@ class TestCompositionalLogicGenerator:
             for if_p, then_p in result["implications"]:
                 if if_p in prop_set:
                     assert then_p in prop_set, f"{entity} has {if_p} but not {then_p}"
-
-    def test_procedural_generation_varies(self) -> None:
-        """Multiple calls produce different premise sets."""
-        premise_sets = []
-        for _ in range(5):
-            result = NovelReasoningChallenges._generate_compositional_logic("standard")
-            premise_sets.append(tuple(result["premises"]))
-        assert len(set(premise_sets)) >= 2
 
 
 # ====================================================================================

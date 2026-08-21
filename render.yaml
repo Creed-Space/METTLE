@@ -27,6 +27,8 @@ services:
         value: "true"
       - key: METTLE_DATABASE_URL
         sync: false
+      - key: METTLE_REDIS_URL
+        sync: false
       - key: METTLE_DEV_MODE
         value: "false"
       - key: METTLE_LOG_LEVEL

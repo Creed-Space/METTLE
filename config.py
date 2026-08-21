@@ -1,17 +1,50 @@
 """METTLE configuration management."""
 
+import enum
 from functools import lru_cache
 from urllib.parse import urlparse
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+
+class RuntimeEnvironment(str, enum.Enum):
+    """Recognised deployment environments.
+
+    A closed set prevents a typo such as ``prodution`` from silently acquiring
+    development behaviour.
+    """
+
+    LOCAL = "local"
+    DEVELOPMENT = "development"
+    TEST = "test"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+
+def normalize_runtime_environment(value: object) -> RuntimeEnvironment:
+    """Normalise a runtime environment or fail closed on unknown values."""
+
+    if isinstance(value, RuntimeEnvironment):
+        return value
+    if not isinstance(value, str):
+        raise ValueError("METTLE_ENVIRONMENT must be a recognised string")
+    normalized = value.strip().lower()
+    try:
+        return RuntimeEnvironment(normalized)
+    except ValueError as exc:
+        allowed = ", ".join(item.value for item in RuntimeEnvironment)
+        raise ValueError(f"METTLE_ENVIRONMENT must be one of: {allowed}") from exc
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # Environment
-    environment: str = Field(default="development", description="Runtime environment")
+    environment: RuntimeEnvironment = Field(
+        default=RuntimeEnvironment.DEVELOPMENT,
+        description="Runtime environment",
+    )
     debug: bool = Field(default=False, description="Enable debug mode")
 
     # API
@@ -74,6 +107,13 @@ class Settings(BaseSettings):
         description="Enable database persistence (default: in-memory)",
     )
 
+    # Redis persistence for v2 session state
+    redis_url: str = Field(
+        default="",
+        repr=False,
+        description="Redis URL. Required in production for v2 session persistence.",
+    )
+
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
 
@@ -97,7 +137,12 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         """Check if running in production."""
-        return self.environment.lower() == "production"
+        return self.environment is RuntimeEnvironment.PRODUCTION
+
+    @field_validator("environment", mode="before")
+    @classmethod
+    def validate_environment(_cls, value: object) -> RuntimeEnvironment:
+        return normalize_runtime_environment(value)
 
     @model_validator(mode="after")
     def validate_production_config(self) -> "Settings":
@@ -124,6 +169,8 @@ class Settings(BaseSettings):
                 raise ValueError("METTLE_VCP_SIGNING_KEY is required in production")
             if not self.use_database:
                 raise ValueError("METTLE_USE_DATABASE must be enabled in production")
+            if not self.redis_url.strip():
+                raise ValueError("METTLE_REDIS_URL is required in production")
             database_scheme = urlparse(self.database_url).scheme
             if database_scheme not in {"postgres", "postgresql"}:
                 raise ValueError(

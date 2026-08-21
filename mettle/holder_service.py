@@ -37,7 +37,7 @@ from mettle.holder import (
 
 HOLDER_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 STATE_ENVELOPE_SCHEMA = "mettle-holder-envelope-v1"
-MAX_REQUEST_BYTES = 1048576
+MAX_REQUEST_BYTES = 256 * 1024
 VAULT_TOKEN_RENEWAL_RETRY_SECONDS = 5.0
 
 logger = logging.getLogger(__name__)
@@ -236,11 +236,14 @@ class PostgresHolderStateStore:
 
 
 def _canonical_json(value: dict[str, Any]) -> bytes:
+    if not isinstance(value, dict):
+        raise ValueError("Holder state must be a JSON object")
     return json.dumps(
         value,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=True,
+        allow_nan=False,
     ).encode("ascii")
 
 
@@ -602,6 +605,12 @@ class SignPresentationRequest(StrictModel):
 
 class RequestBodyLimitMiddleware:
     def __init__(self, app: Any, maximum_bytes: int = MAX_REQUEST_BYTES) -> None:
+        if (
+            isinstance(maximum_bytes, bool)
+            or not isinstance(maximum_bytes, int)
+            or maximum_bytes < 0
+        ):
+            raise ValueError("Request body limit must be a non-negative integer")
         self.app = app
         self.maximum_bytes = maximum_bytes
 
@@ -609,42 +618,100 @@ class RequestBodyLimitMiddleware:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
-        headers = dict(scope.get("headers", []))
-        content_length = headers.get(b"content-length")
-        if content_length is not None:
-            try:
-                if int(content_length) > self.maximum_bytes:
-                    response = JSONResponse(
-                        {"detail": "Request body is too large"}, status_code=413
-                    )
-                    await response(scope, receive, send)
-                    return
-            except ValueError:
-                response = JSONResponse(
-                    {"detail": "Content-Length is invalid"}, status_code=400
-                )
-                await response(scope, receive, send)
-                return
-        consumed = 0
 
-        async def limited_receive() -> dict[str, Any]:
-            nonlocal consumed
-            message = await receive()
-            if message.get("type") == "http.request":
-                consumed += len(message.get("body", b""))
-                if consumed > self.maximum_bytes:
-                    raise HolderPolicyError("Request body is too large")
-            return message
-
-        try:
-            await self.app(scope, limited_receive, send)
-        except HolderPolicyError as exc:
-            if str(exc) != "Request body is too large":
-                raise
-            response = JSONResponse(
-                {"detail": "Request body is too large"}, status_code=413
-            )
+        async def reject(detail: str, status_code: int) -> None:
+            response = JSONResponse({"detail": detail}, status_code=status_code)
             await response(scope, receive, send)
+
+        raw_headers = scope.get("headers", [])
+        if not isinstance(raw_headers, (list, tuple)):
+            await reject("Request headers are invalid", 400)
+            return
+        content_lengths: list[bytes] = []
+        for header in raw_headers:
+            if (
+                not isinstance(header, (list, tuple))
+                or len(header) != 2
+                or not isinstance(header[0], bytes)
+                or not isinstance(header[1], bytes)
+            ):
+                await reject("Request headers are invalid", 400)
+                return
+            name, value = header
+            if name.lower() == b"content-length":
+                content_lengths.append(value)
+        if len(content_lengths) > 1:
+            await reject("Content-Length is invalid", 400)
+            return
+        declared_length: int | None = None
+        if content_lengths:
+            raw_length = content_lengths[0]
+            if (
+                not isinstance(raw_length, bytes)
+                or re.fullmatch(rb"[0-9]+", raw_length) is None
+            ):
+                await reject("Content-Length is invalid", 400)
+                return
+            normalized_length = raw_length.lstrip(b"0") or b"0"
+            maximum_text = str(self.maximum_bytes).encode("ascii")
+            if len(normalized_length) > len(maximum_text) or (
+                len(normalized_length) == len(maximum_text)
+                and normalized_length > maximum_text
+            ):
+                await reject("Request body is too large", 413)
+                return
+            declared_length = int(normalized_length)
+
+        messages: list[dict[str, Any]] = []
+        consumed = 0
+        body_complete = False
+        for _ in range(1024):
+            message = await receive()
+            if not isinstance(message, dict):
+                await reject("Request body framing is invalid", 400)
+                return
+            messages.append(message)
+            message_type = message.get("type")
+            if message_type == "http.disconnect":
+                break
+            if message_type != "http.request":
+                await reject("Request body framing is invalid", 400)
+                return
+            body = message.get("body", b"")
+            more_body = message.get("more_body", False)
+            if not isinstance(body, bytes) or not isinstance(more_body, bool):
+                await reject("Request body framing is invalid", 400)
+                return
+            consumed += len(body)
+            if consumed > self.maximum_bytes:
+                await reject("Request body is too large", 413)
+                return
+            if not more_body:
+                body_complete = True
+                break
+        else:
+            await reject("Request body framing is invalid", 400)
+            return
+
+        if (
+            body_complete
+            and declared_length is not None
+            and consumed != declared_length
+        ):
+            await reject("Content-Length is invalid", 400)
+            return
+
+        next_message = 0
+
+        async def replay_receive() -> dict[str, Any]:
+            nonlocal next_message
+            if next_message < len(messages):
+                message = messages[next_message]
+                next_message += 1
+                return message
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay_receive, send)
 
 
 def create_holder_service(

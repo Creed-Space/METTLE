@@ -2,6 +2,7 @@
 
 import base64
 import builtins
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -86,6 +87,24 @@ class TestInitSigning:
         assert result is False
         assert signing._initialized is True
         assert signing._private_key is None
+
+    def test_rejects_well_formed_non_ed25519_private_key(self, monkeypatch):
+        from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+        )
+
+        pem = generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        )
+        monkeypatch.setenv("METTLE_VCP_SIGNING_KEY", pem.decode("ascii"))
+        mock_settings = type("MockSettings", (), {"vcp_signing_key": ""})()
+        with patch("mettle.app_config.settings", mock_settings):
+            assert signing.init_signing() is False
+        assert signing._private_key is None
+        assert signing._public_key is None
 
     def test_without_cryptography_returns_false(self):
         """init_signing returns False when cryptography is not installed."""
@@ -270,3 +289,36 @@ class TestIsAvailable:
         result = signing.is_available()
         assert result is True
         assert signing._initialized is True
+
+
+class TestVerifySignature:
+    def test_verification_is_total_and_strict_over_untrusted_values(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        private_key = Ed25519PrivateKey.generate()
+        public_pem = (
+            private_key.public_key()
+            .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+            .decode("ascii")
+        )
+        data = b"signed protocol object"
+        signature = base64.b64encode(private_key.sign(data)).decode("ascii")
+        assert signing.verify_signature(public_pem, data, signature) is True
+
+        rsa_pem = (
+            generate_private_key(public_exponent=65537, key_size=2048)
+            .public_key()
+            .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        )
+        malformed: list[tuple[Any, Any, Any]] = [
+            (None, data, signature),
+            (public_pem, "not-bytes", signature),
+            (public_pem, data, None),
+            (public_pem, data, "%%%"),
+            (public_pem, data, base64.b64encode(b"short").decode("ascii")),
+            (rsa_pem.decode("ascii"), data, signature),
+        ]
+        for key, payload, candidate in malformed:
+            assert signing.verify_signature(key, payload, candidate) is False

@@ -19,6 +19,7 @@ PRODUCTION_CONFIG = {
     "vcp_signing_key": "test-pem",
     "use_database": True,
     "database_url": "postgresql://db.example/mettle",
+    "redis_url": "redis://redis.internal:6379/0",
 }
 
 
@@ -75,6 +76,7 @@ class TestProductionValidation:
             ({"admin_api_key": "short"}, "ADMIN_API_KEY"),
             ({"vcp_signing_key": ""}, "VCP_SIGNING_KEY"),
             ({"use_database": False}, "USE_DATABASE"),
+            ({"redis_url": ""}, "REDIS_URL"),
             ({"database_url": "sqlite:///mettle.db"}, "PostgreSQL"),
             ({"allowed_origins": "http://mettle.sh"}, "HTTPS"),
         ],
@@ -96,6 +98,18 @@ class TestProductionValidation:
             security_warnings = [x for x in w if "SECURITY WARNING" in str(x.message)]
             assert len(security_warnings) == 0
 
+    @pytest.mark.parametrize(
+        "environment",
+        ["prod", "productionn", "qa", "", 42],
+    )
+    def test_unknown_environment_is_rejected(self, environment):
+        """Invented environment names cannot silently acquire dev behavior."""
+        with pytest.raises(ValueError, match="recognised|string|one of"):
+            SettingsFactory(
+                environment=environment,
+                _env_file="nonexistent.env",
+            )
+
 
 def test_render_blueprint_declares_fail_closed_production_dependencies():
     """Render must supply every setting required by production validation."""
@@ -107,6 +121,7 @@ def test_render_blueprint_declares_fail_closed_production_dependencies():
         "METTLE_VCP_SIGNING_KEY_ID",
         "METTLE_USE_DATABASE",
         "METTLE_DATABASE_URL",
+        "METTLE_REDIS_URL",
     ):
         assert f"key: {key}" in blueprint
     assert "--workers 1" in blueprint

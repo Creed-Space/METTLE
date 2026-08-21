@@ -36,7 +36,7 @@ _TEST_TIME_LIMIT = 30000  # 30 seconds - plenty for CI
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     """Create a test client with lenient timing for CI stability."""
     # Patch the challenger module to use lenient time limits
     import mettle.challenger as challenger
@@ -57,23 +57,33 @@ def client():
 
         return wrapper
 
-    # Apply lenient timing to all challenge generators
-    challenger.generate_speed_math_challenge = lenient_time(original_speed)
-    challenger.generate_chained_reasoning_challenge = lenient_time(original_chained)
-    challenger.generate_token_prediction_challenge = lenient_time(original_token)
-    challenger.generate_instruction_following_challenge = lenient_time(
-        original_instruction
+    # pytest's monkeypatch teardown is exception-safe even if fixture setup or
+    # a test fails partway through, so generator state cannot leak to later tests.
+    monkeypatch.setattr(
+        challenger, "generate_speed_math_challenge", lenient_time(original_speed)
     )
-    challenger.generate_consistency_challenge = lenient_time(original_consistency)
+    monkeypatch.setattr(
+        challenger,
+        "generate_chained_reasoning_challenge",
+        lenient_time(original_chained),
+    )
+    monkeypatch.setattr(
+        challenger,
+        "generate_token_prediction_challenge",
+        lenient_time(original_token),
+    )
+    monkeypatch.setattr(
+        challenger,
+        "generate_instruction_following_challenge",
+        lenient_time(original_instruction),
+    )
+    monkeypatch.setattr(
+        challenger,
+        "generate_consistency_challenge",
+        lenient_time(original_consistency),
+    )
 
     yield SessionAwareTestClient(app)
-
-    # Restore original functions
-    challenger.generate_speed_math_challenge = original_speed
-    challenger.generate_chained_reasoning_challenge = original_chained
-    challenger.generate_token_prediction_challenge = original_token
-    challenger.generate_instruction_following_challenge = original_instruction
-    challenger.generate_consistency_challenge = original_consistency
 
 
 @pytest.fixture(autouse=True)

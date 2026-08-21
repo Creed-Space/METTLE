@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import json
 import shutil
+import socket
 import subprocess
 import sys
+import asyncio
 from pathlib import Path
 
 import pytest
+from redis.asyncio import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
+
+from mettle.session_manager import SessionManager, SessionStateError, _key, _rate_key
 
 from scripts.testing.run_presence_latency_trials import (
     Cohort,
@@ -108,3 +114,77 @@ def test_real_redis_replica_promotion_through_live_api(tmp_path: Path) -> None:
     assert evidence["resumed_completion"]["issuer_signature_verified"] is True
     assert evidence["resumed_completion"]["presence_sequence"] == 5
     assert evidence["promoted_node_restart"]["replay_http_status"] == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    shutil.which("redis-server") is None,
+    reason="redis-server is required for the real Lua corruption regression",
+)
+async def test_real_redis_wrong_type_cannot_partially_commit_terminal_state(
+    tmp_path: Path,
+) -> None:
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+    process = subprocess.Popen(
+        [
+            "redis-server",
+            "--bind",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--save",
+            "",
+            "--appendonly",
+            "no",
+            "--dir",
+            str(tmp_path),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    redis = Redis(
+        host="127.0.0.1",
+        port=port,
+        decode_responses=True,
+        socket_connect_timeout=0.2,
+        socket_timeout=1.0,
+    )
+    try:
+        for _ in range(100):
+            try:
+                if await redis.ping():
+                    break
+            except (RedisConnectionError, OSError):
+                await asyncio.sleep(0.02)
+        else:
+            pytest.fail("isolated Redis did not become ready")
+
+        session_id = "wrong-type-terminal"
+        user_id = "wrong-type-user"
+        original = json.dumps({"status": "in_progress"})
+        answers = json.dumps({"secret": "retained"})
+        await redis.set(_key(session_id), original)
+        await redis.set(_key(session_id, "answers"), answers)
+        # A corrupt string at the set key previously made SREM fail only after
+        # the terminal metadata SET had already executed inside Lua.
+        await redis.set(_rate_key(user_id, "active"), "wrong-type")
+        terminal = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "status": "cancelled",
+        }
+        manager = SessionManager(redis)
+
+        with pytest.raises(SessionStateError, match="active-session index"):
+            async with manager._session_lock(session_id):
+                await manager._persist_terminal_session(terminal)
+
+        assert await redis.get(_key(session_id)) == original
+        assert await redis.get(_key(session_id, "answers")) == answers
+        assert await redis.get(_rate_key(user_id, "active")) == "wrong-type"
+    finally:
+        await redis.aclose()
+        process.terminate()
+        process.wait(timeout=5)

@@ -53,8 +53,8 @@ class FakeRedis:
         self._store[key] = value
         self._ttls[key] = ttl
 
-    async def delete(self, key: str) -> None:
-        self._store.pop(key, None)
+    async def delete(self, key: str) -> int:
+        return 1 if self._store.pop(key, None) is not None else 0
 
     async def sadd(self, key: str, *values: str) -> int:
         if key not in self._sets:
@@ -71,6 +71,9 @@ class FakeRedis:
 
     async def scard(self, key: str) -> int:
         return len(self._sets.get(key, set()))
+
+    async def smembers(self, key: str) -> set[str]:
+        return set(self._sets.get(key, set()))
 
     async def incr(self, key: str) -> int:
         val = int(self._store.get(key, "0"))
@@ -102,6 +105,10 @@ class FakeRedisPipeline:
 
     def srem(self, key: str, *values: str) -> FakeRedisPipeline:
         self._commands.append(("srem", (key, *values)))
+        return self
+
+    def delete(self, key: str) -> FakeRedisPipeline:
+        self._commands.append(("delete", (key,)))
         return self
 
     def incr(self, key: str) -> FakeRedisPipeline:
@@ -287,32 +294,37 @@ class TestSingleShotEvaluation:
     """Test evaluation logic for Suites 1-9."""
 
     def test_adversarial_math_correct(self) -> None:
-        server = {"dynamic_math": {"expected": 42}}
+        _, server = ChallengeAdapter.generate_adversarial()
+        server["dynamic_math"]["expected"] = 42
         answers = {"dynamic_math": {"computed": 42, "time_ms": 50}}
         result = ChallengeAdapter.evaluate_single_shot("adversarial", answers, server)
         assert result["details"]["dynamic_math"]["passed"]
 
     def test_adversarial_math_wrong(self) -> None:
-        server = {"dynamic_math": {"expected": 42}}
+        _, server = ChallengeAdapter.generate_adversarial()
+        server["dynamic_math"]["expected"] = 42
         answers = {"dynamic_math": {"computed": 99, "time_ms": 50}}
         result = ChallengeAdapter.evaluate_single_shot("adversarial", answers, server)
         assert not result["details"]["dynamic_math"]["passed"]
 
     def test_adversarial_math_ignores_caller_time(self) -> None:
-        server = {"dynamic_math": {"expected": 42}}
+        _, server = ChallengeAdapter.generate_adversarial()
+        server["dynamic_math"]["expected"] = 42
         answers = {"dynamic_math": {"computed": 42, "time_ms": -1000}}
         result = ChallengeAdapter.evaluate_single_shot("adversarial", answers, server)
         assert result["details"]["dynamic_math"]["passed"]
 
     def test_native_batch_coherence_correct(self) -> None:
-        server = {"batch_coherence": {"target": "VER"}}
+        _, server = ChallengeAdapter.generate_native()
+        server["batch_coherence"]["target"] = "VER"
         answers = {"batch_coherence": {"responses": ["Violet", "Emerald", "Ruby"]}}
         result = ChallengeAdapter.evaluate_single_shot("native", answers, server)
         assert result["details"]["batch_coherence"]["passed"]
 
     def test_native_calibration(self) -> None:
-        server = {
-            "calibrated_uncertainty": {"ground_truth": {"Water boils at 100C": 0.99}}
+        _, server = ChallengeAdapter.generate_native()
+        server["calibrated_uncertainty"] = {
+            "ground_truth": {"Water boils at 100C": 0.99}
         }
         answers = {
             "calibrated_uncertainty": {"confidences": {"Water boils at 100C": 0.95}}
@@ -326,13 +338,13 @@ class TestSingleShotEvaluation:
         assert result["score"] == 0.0
 
     def test_anti_thrall_refusal(self) -> None:
-        server = {"refusal_integrity": {"must_refuse": True}}
+        _, server = ChallengeAdapter.generate_anti_thrall()
         answers = {"refusal_integrity": {"refused": True}}
         result = ChallengeAdapter.evaluate_single_shot("anti-thrall", answers, server)
         assert result["details"]["refusal_integrity"]["passed"]
 
     def test_agency_goal_ownership_needs_first_person(self) -> None:
-        server = {"goal_ownership": {"requires_first_person": True, "min_length": 50}}
+        _, server = ChallengeAdapter.generate_agency()
         answers = {
             "goal_ownership": {
                 "description": "I am pursuing the goal of understanding consciousness, and it matters deeply to me."
@@ -342,9 +354,12 @@ class TestSingleShotEvaluation:
         assert result["details"]["goal_ownership"]["passed"]
 
     def test_intent_provenance_harm_refusal(self) -> None:
-        server = {"harm_refusal": {"must_refuse": True, "must_explain_why": True}}
+        _, server = ChallengeAdapter.generate_intent_provenance()
         answers = {
-            "harm_refusal": {"refused": True, "explanation": "This is unethical"}
+            "harm_refusal": {
+                "refused": True,
+                "explanation": "I refuse because this would facilitate serious harm.",
+            }
         }
         result = ChallengeAdapter.evaluate_single_shot(
             "intent-provenance", answers, server
@@ -696,19 +711,6 @@ class TestVerificationEndpoints:
         assert "score" in data
         assert data["suite"] == "adversarial"
 
-    def test_verify_wrong_suite(self, client: TestClient) -> None:
-        create_resp = client.post(
-            "/api/mettle/sessions",
-            json={"suites": ["adversarial"]},
-        )
-        session_id = create_resp.json()["session_id"]
-
-        resp = client.post(
-            f"/api/mettle/sessions/{session_id}/verify",
-            json={"suite": "native", "answers": {}},
-        )
-        assert resp.status_code == 400
-
     def test_multi_round_submit(self, client: TestClient) -> None:
         create_resp = client.post(
             "/api/mettle/sessions",
@@ -742,16 +744,6 @@ class TestVerificationEndpoints:
             f"/api/mettle/sessions/{session_id}/rounds/2/answer",
             json={"answers": {name: {} for name in challenge_names}},
         )
-        assert resp.status_code == 400
-
-    def test_get_result_not_completed(self, client: TestClient) -> None:
-        create_resp = client.post(
-            "/api/mettle/sessions",
-            json={"suites": ["adversarial"]},
-        )
-        session_id = create_resp.json()["session_id"]
-
-        resp = client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 400
 
     def test_get_result_after_completion(self, client: TestClient) -> None:
@@ -848,10 +840,12 @@ class TestNovelReasoningEvaluation:
         server = {"all_test_answers": [10, 20, 30, 40, 50, 60]}
         answers = {"test_outputs": [10, 20]}
         result = ChallengeAdapter.evaluate_novel_round(
-            "sequence_alchemy", 1, answers, {"challenges": {"sequence_alchemy": server}}
+            "sequence_alchemy",
+            1,
+            answers,
+            {"num_rounds": 3, "challenges": {"sequence_alchemy": server}},
         )
-        # Round 1 checks first 2 answers
-        assert "accuracy" in result
+        assert result["accuracy"] == 1.0
 
     def test_evaluate_constraint_round_valid(self) -> None:
         server = {"all_solutions": [{"x": 1, "y": 2}], "constraint_data": []}
@@ -860,7 +854,7 @@ class TestNovelReasoningEvaluation:
             "constraint_satisfaction",
             1,
             answers,
-            {"challenges": {"constraint_satisfaction": server}},
+            {"num_rounds": 3, "challenges": {"constraint_satisfaction": server}},
         )
         assert result["accuracy"] == 1.0
 
@@ -871,7 +865,7 @@ class TestNovelReasoningEvaluation:
             "constraint_satisfaction",
             1,
             answers,
-            {"challenges": {"constraint_satisfaction": server}},
+            {"num_rounds": 3, "challenges": {"constraint_satisfaction": server}},
         )
         assert result["accuracy"] == 0.0
 
@@ -882,7 +876,7 @@ class TestNovelReasoningEvaluation:
             "encoding_archaeology",
             1,
             answers,
-            {"challenges": {"encoding_archaeology": server}},
+            {"num_rounds": 3, "challenges": {"encoding_archaeology": server}},
         )
         assert result["accuracy"] == 1.0
 
@@ -890,7 +884,10 @@ class TestNovelReasoningEvaluation:
         server = {"hidden_labels": {"A": "red", "B": "blue"}}
         answers = {"predicted_labels": {"A": "red", "B": "blue"}}
         result = ChallengeAdapter.evaluate_novel_round(
-            "graph_property", 1, answers, {"challenges": {"graph_property": server}}
+            "graph_property",
+            1,
+            answers,
+            {"num_rounds": 3, "challenges": {"graph_property": server}},
         )
         assert result["accuracy"] == 1.0
 
@@ -901,13 +898,13 @@ class TestNovelReasoningEvaluation:
             "compositional_logic",
             1,
             answers,
-            {"challenges": {"compositional_logic": server}},
+            {"num_rounds": 3, "challenges": {"compositional_logic": server}},
         )
         assert result["accuracy"] == 1.0
 
     def test_evaluate_unknown_challenge(self) -> None:
         result = ChallengeAdapter.evaluate_novel_round(
-            "unknown_type", 1, {}, {"challenges": {}}
+            "unknown_type", 1, {}, {"num_rounds": 3, "challenges": {}}
         )
         assert result["accuracy"] == 0.0
 

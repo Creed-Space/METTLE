@@ -119,6 +119,25 @@ def _make_badge_token(
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
+def _passing_legacy_battery(difficulty):
+    """Build a valid legacy battery and one passing result per challenge."""
+    from mettle import VerificationResult
+    from mettle.challenger import generate_challenge_set
+
+    battery = generate_challenge_set(difficulty)
+    results = [
+        VerificationResult(
+            challenge_id=challenge.id,
+            challenge_type=challenge.type,
+            passed=True,
+            response_time_ms=1,
+            time_limit_ms=challenge.time_limit_ms,
+        )
+        for challenge in battery
+    ]
+    return battery, results
+
+
 # =============================================================================
 # Durable runtime recovery
 # =============================================================================
@@ -130,11 +149,14 @@ class TestPersistentRuntimeRecovery:
     def test_persist_legacy_session_and_progress(self):
         from mettle import BadgeInfo, Difficulty, MettleSession
 
+        battery, results = _passing_legacy_battery(Difficulty.BASIC)
         session = MettleSession(
             session_id="persistent-session",
             entity_id="persistent-agent",
             difficulty=Difficulty.BASIC,
-            challenges=[],
+            challenges=battery,
+            results=results,
+            completed=True,
             access_token_hash="a" * 64,
             badge_info=BadgeInfo(
                 token="signed-token",
@@ -174,31 +196,12 @@ class TestPersistentRuntimeRecovery:
             assert main_module._persist_legacy_progress(session) is True
 
     def test_restore_sessions_challenges_and_webhooks(self):
-        from mettle import (
-            BadgeInfo,
-            Challenge,
-            ChallengeType,
-            Difficulty,
-            VerificationResult,
-        )
+        from mettle import BadgeInfo, Difficulty
 
         now = datetime.now(timezone.utc)
-        challenge = Challenge(
-            id="recovered-challenge",
-            type=ChallengeType.SPEED_MATH,
-            prompt="What is 2 + 2?",
-            data={"expected_answer": 4},
-            issued_at=now,
-            expires_at=now + timedelta(minutes=5),
-            time_limit_ms=1000,
-        )
-        result = VerificationResult(
-            challenge_id=challenge.id,
-            challenge_type=challenge.type,
-            passed=True,
-            response_time_ms=10,
-            time_limit_ms=challenge.time_limit_ms,
-        )
+        incomplete_battery, _ = _passing_legacy_battery(Difficulty.BASIC)
+        complete_battery, complete_results = _passing_legacy_battery(Difficulty.FULL)
+        challenge = incomplete_battery[0]
         badge = BadgeInfo(
             token="recovered-token",
             expires_at=now + timedelta(hours=1),
@@ -212,7 +215,9 @@ class TestPersistentRuntimeRecovery:
                 "session_id": "recovered-incomplete",
                 "entity_id": "agent-incomplete",
                 "difficulty": Difficulty.BASIC.value,
-                "challenges": [challenge.model_dump(mode="json")],
+                "challenges": [
+                    item.model_dump(mode="json") for item in incomplete_battery
+                ],
                 "results": [],
                 "created_at": now.replace(tzinfo=None).isoformat(),
                 "completed": False,
@@ -223,8 +228,10 @@ class TestPersistentRuntimeRecovery:
                 "session_id": "recovered-complete",
                 "entity_id": "agent-complete",
                 "difficulty": Difficulty.FULL.value,
-                "challenges": [challenge.model_dump(mode="json")],
-                "results": [result.model_dump(mode="json")],
+                "challenges": [
+                    item.model_dump(mode="json") for item in complete_battery
+                ],
+                "results": [item.model_dump(mode="json") for item in complete_results],
                 "created_at": now,
                 "completed": True,
                 "access_token_hash": "c" * 64,
@@ -265,6 +272,9 @@ class TestPersistentRuntimeRecovery:
     def test_restore_is_a_noop_without_database(self):
         with patch.object(main_module, "db", None):
             main_module._restore_persistent_runtime_state()
+        assert sessions == {}
+        assert challenges == {}
+        assert webhooks == {}
 
 
 # =============================================================================
@@ -274,24 +284,17 @@ class TestPersistentRuntimeRecovery:
 
 class TestStableBadgeIssuance:
     def test_repeated_result_reads_return_same_signed_badge(self, client):
-        from mettle import ChallengeType, Difficulty, MettleSession, VerificationResult
+        from mettle import Difficulty, MettleSession
 
         session_id = "stable-session"
         session_token = "stable-session-token"
+        battery, results = _passing_legacy_battery(Difficulty.BASIC)
         sessions[session_id] = MettleSession(
             session_id=session_id,
             entity_id="agent-1",
             difficulty=Difficulty.BASIC,
-            challenges=[],
-            results=[
-                VerificationResult(
-                    challenge_id="challenge-1",
-                    challenge_type=ChallengeType.SPEED_MATH,
-                    passed=True,
-                    response_time_ms=1,
-                    time_limit_ms=1000,
-                )
-            ],
+            challenges=battery,
+            results=results,
             completed=True,
             access_token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
         )
@@ -657,7 +660,12 @@ class TestBadgeRevocationFull:
 
 
 class TestWebhookDelivery:
-    """Tests for WebhookManager.send_webhook method."""
+    """Compatibility-only tests for the inactive internal delivery helper."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_compatibility_delivery(self):
+        with patch("main.WEBHOOK_DELIVERY_ENABLED", True):
+            yield
 
     @staticmethod
     def _stream_context(status_code: int = 200):
@@ -872,15 +880,15 @@ class TestAPIKeyManagement:
 
         assert response.status_code == 401
 
-    def test_register_key_invalid_tier_returns_400(self, client):
-        """Invalid tier name should return 400."""
+    def test_register_key_invalid_tier_returns_422(self, client):
+        """The request schema rejects an invalid tier before endpoint dispatch."""
         response = client.post(
             "/api/keys/register",
             json={"tier": "nonexistent-tier"},
             headers=ADMIN_HEADERS,
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 422
 
 
 # =============================================================================
@@ -909,12 +917,11 @@ class TestStaticAndSEOEndpoints:
         content_type = response.headers["content-type"]
         assert "text/plain" in content_type or "text" in content_type
 
-    def test_root_serves_ui_or_redirect(self, client):
-        """GET / should either serve index.html or redirect to /api."""
+    def test_root_serves_installed_ui(self, client):
+        """GET / serves the repository's installed index page."""
         response = client.get("/", follow_redirects=False)
-
-        # Either 200 (serves index.html) or 307 redirect
-        assert response.status_code in (200, 307)
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
 
     def test_legacy_ui_redirect(self, client):
         """GET /ui should redirect to / with 301."""
@@ -923,11 +930,11 @@ class TestStaticAndSEOEndpoints:
         assert response.status_code == 301
         assert response.headers["location"] == "/"
 
-    def test_about_serves_or_redirects(self, client):
-        """GET /about should serve about.html or redirect."""
+    def test_about_serves_installed_page(self, client):
+        """GET /about serves the repository's installed about page."""
         response = client.get("/about", follow_redirects=False)
-
-        assert response.status_code in (200, 307)
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
 
 
 # =============================================================================
@@ -1493,7 +1500,7 @@ class TestWebhookProductionValidation:
     """Tests for webhook URL production-only HTTPS requirement."""
 
     def test_http_allowed_in_dev(self, client):
-        """HTTP URLs should be allowed in non-production (with an owning API key)."""
+        """The request model accepts HTTP in development before disabled dispatch."""
         RateTier.register_key("dev-http-key", "pro", "test")
         response = client.post(
             "/api/webhooks/register",
@@ -1503,7 +1510,7 @@ class TestWebhookProductionValidation:
             },
             headers={"X-API-Key": "dev-http-key"},
         )
-        assert response.status_code == 200
+        assert response.status_code == 410
 
     def test_webhook_secret_min_length_validated(self, client):
         """Webhook secret must be at least 32 chars."""
@@ -1549,7 +1556,7 @@ class TestBatchStartExceptionHandling:
 
 
 class TestWebhookDNSFailure:
-    """Tests for webhook DNS resolution failure handling."""
+    """Compatibility-only DNS failure handling for inactive delivery code."""
 
     @pytest.mark.asyncio
     async def test_dns_resolution_failure_blocks_request(self):
@@ -1561,7 +1568,11 @@ class TestWebhookDNSFailure:
         mock_response = AsyncMock()
         mock_response.status_code = 200
 
-        with patch("httpx.AsyncClient") as mock_client_cls, patch("main.logger"):
+        with (
+            patch("httpx.AsyncClient") as mock_client_cls,
+            patch("main.logger"),
+            patch("main.WEBHOOK_DELIVERY_ENABLED", True),
+        ):
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -1577,35 +1588,3 @@ class TestWebhookDNSFailure:
 
         assert result is False
         mock_client.post.assert_not_awaited()
-
-
-# =============================================================================
-# Static file paths when static dir doesn't exist (lines 1812, 1828, 1836, 1878)
-# =============================================================================
-
-
-class TestStaticFileFallbacks:
-    """Tests for static file paths when files don't exist."""
-
-    def test_root_redirects_when_no_static(self, client):
-        """Root should redirect to /api when static dir doesn't exist."""
-        with patch("main._static_dir") as mock_dir:
-            mock_dir.exists.return_value = False
-            response = client.get("/", follow_redirects=False)
-            # Should redirect to /api when no static files
-            assert response.status_code in (200, 307)
-
-    def test_about_redirects_when_no_static(self, client):
-        """About should redirect to / when no static files."""
-        with patch("main._static_dir") as mock_dir:
-            mock_dir.exists.return_value = False
-            response = client.get("/about", follow_redirects=False)
-            assert response.status_code in (200, 307)
-
-    def test_robots_fallback_when_no_static(self, client):
-        """Robots.txt should return generated content when no static file."""
-        with patch("main._static_dir") as mock_dir:
-            mock_dir.exists.return_value = False
-            response = client.get("/robots.txt")
-            assert response.status_code == 200
-            assert "User-agent" in response.text

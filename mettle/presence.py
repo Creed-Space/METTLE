@@ -30,15 +30,21 @@ from mettle.continuity import (
 PRESENCE_PROTOCOL = "mettle-presence-v1"
 HASH_PREFIX = "sha256:"
 PRESENCE_STATE_RECEIPT_PURPOSE = "mettle-presence-state"
+PRESENCE_ACTION_PATTERN = re.compile(
+    r"(?:suite|round):[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+)
 
 
 def canonical_bytes(value: dict[str, Any]) -> bytes:
     """Serialize one protocol object deterministically."""
+    if not isinstance(value, dict):
+        raise ValueError("Canonical Presence JSON must be an object")
     return json.dumps(
         value,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
+        allow_nan=False,
     ).encode("utf-8")
 
 
@@ -170,6 +176,8 @@ def issuer_signed_session_presence(
 
 def validate_credential_presence(presence: dict[str, Any]) -> None:
     """Reject corrupt internal state before the issuer signs a credential."""
+    if not isinstance(presence, dict):
+        raise ValueError("Presence credential state must be an object")
     required_strings = {
         "public_key_pem",
         "key_fingerprint",
@@ -193,24 +201,42 @@ def validate_credential_presence(presence: dict[str, Any]) -> None:
     continuity_protocol = presence.get("continuity_protocol")
     if continuity_protocol not in {None, CONTINUITY_PROTOCOL}:
         raise ValueError("Presence credential continuity protocol is invalid")
+    started_at = presence.get("started_at_unix_ms")
     if (
-        not isinstance(sequence, int)
+        isinstance(sequence, bool)
+        or not isinstance(sequence, int)
         or sequence <= 0
         or not isinstance(submissions, list)
         or len(submissions) != sequence
-        or not isinstance(presence.get("started_at_unix_ms"), int)
+        or isinstance(started_at, bool)
+        or not isinstance(started_at, int)
+        or started_at < 0
     ):
         raise ValueError("Presence credential sequence is invalid")
     challenge_ids: set[str] = set()
+    previous_accepted_at = started_at
     for expected_sequence, submission in enumerate(submissions, start=1):
+        response_time = (
+            submission.get("response_time_ms") if isinstance(submission, dict) else None
+        )
+        accepted_at = (
+            submission.get("accepted_at_unix_ms")
+            if isinstance(submission, dict)
+            else None
+        )
         if not (
             isinstance(submission, dict)
+            and not isinstance(submission.get("sequence"), bool)
             and submission.get("sequence") == expected_sequence
             and isinstance(submission.get("action"), str)
-            and submission["action"].startswith(("suite:", "round:"))
-            and isinstance(submission.get("response_time_ms"), int)
-            and submission["response_time_ms"] >= 0
-            and isinstance(submission.get("accepted_at_unix_ms"), int)
+            and PRESENCE_ACTION_PATTERN.fullmatch(submission["action"]) is not None
+            and not isinstance(response_time, bool)
+            and isinstance(response_time, int)
+            and response_time >= 0
+            and not isinstance(accepted_at, bool)
+            and isinstance(accepted_at, int)
+            and accepted_at >= previous_accepted_at
+            and response_time == accepted_at - previous_accepted_at
             and re.fullmatch(
                 r"sha256:[0-9a-f]{64}",
                 str(submission.get("transcript_hash", "")),
@@ -228,6 +254,7 @@ def validate_credential_presence(presence: dict[str, Any]) -> None:
             ):
                 raise ValueError("Presence credential continuity history is invalid")
             challenge_ids.add(challenge_id)
+        previous_accepted_at = accepted_at
     if submissions[-1]["transcript_hash"] != presence["transcript_hash"]:
         raise ValueError("Presence credential transcript commitment is inconsistent")
 
@@ -257,7 +284,7 @@ def submission_signing_bytes(
 def _decode_signature(signature: str) -> bytes:
     try:
         decoded = base64.b64decode(signature, validate=True)
-    except (binascii.Error, ValueError) as exc:
+    except (binascii.Error, TypeError, ValueError) as exc:
         raise ValueError("Presence signature must be valid base64") from exc
     if len(decoded) != 64:
         raise ValueError("Presence signature must be an Ed25519 signature")
@@ -326,8 +353,9 @@ def advance_session_presence(
         message=message,
         signature=signature,
     )
-    accepted_at_ms = int(time.time() * 1000)
-    response_time_ms = max(0, accepted_at_ms - int(presence["nonce_issued_at_unix_ms"]))
+    issued_at_ms = int(presence["nonce_issued_at_unix_ms"])
+    accepted_at_ms = max(issued_at_ms, int(time.time() * 1000))
+    response_time_ms = accepted_at_ms - issued_at_ms
     next_sequence = int(presence.get("sequence", 0)) + 1
     receipt = {
         "sequence": next_sequence,
@@ -353,11 +381,13 @@ def presentation_signing_bytes(
 ) -> bytes:
     """Build the exact verifier challenge a credential holder signs."""
     try:
+        if not isinstance(expires_at, str):
+            raise ValueError("expiry is not a string")
+        parsed_expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        if parsed_expiry.tzinfo is None:
+            raise ValueError("expiry is timezone-naive")
         normalized_expiry = (
-            datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-            .astimezone(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z")
+            parsed_expiry.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         )
     except (TypeError, ValueError) as exc:
         raise ValueError("Presentation challenge expiry is invalid") from exc
@@ -382,7 +412,10 @@ def verify_holder_signature(
 ) -> None:
     """Verify that the bound holder signed one live presentation challenge."""
     try:
-        expires_at = datetime.fromisoformat(str(challenge["expires_at"]))
+        raw_expiry = challenge["expires_at"]
+        if not isinstance(raw_expiry, str):
+            raise ValueError("expiry is not a string")
+        expires_at = datetime.fromisoformat(raw_expiry.replace("Z", "+00:00"))
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("Presentation challenge expiry is invalid") from exc
     if expires_at.tzinfo is None or expires_at <= datetime.now(timezone.utc):

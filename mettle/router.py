@@ -8,7 +8,11 @@ SECURITY: All endpoints require authentication. Correct answers are NEVER sent t
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
+import re
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
@@ -44,6 +48,19 @@ from redis.exceptions import RedisError
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/mettle", tags=["mettle"])
+
+_OPERATOR_COMMITMENT_MAX_AGE_SECONDS = 5 * 60
+_OPERATOR_COMMITMENT_FUTURE_SKEW_SECONDS = 30
+_OPERATOR_NONCE_TTL_SECONDS = (
+    _OPERATOR_COMMITMENT_MAX_AGE_SECONDS + _OPERATOR_COMMITMENT_FUTURE_SKEW_SECONDS
+)
+_OPERATOR_NONCE_PREFIX = "mettle:operator-commitment:nonce:"
+_RELEASE_OPERATOR_NONCE_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
 
 # Type alias for auth dependency
 AuthUser = Annotated[AuthenticatedUser, Depends(require_authenticated_user)]
@@ -137,17 +154,49 @@ async def create_session(
     WITHOUT correct answers -- the server stores answers for secure evaluation.
     """
     try:
-        session_id, challenges, meta = await mgr.create_session(
-            user_id=user.user_id,
-            suites=request.suites,
-            difficulty=request.difficulty,
-            entity_id=request.entity_id,
-            vcp_token=request.vcp_token,
-            operator_commitment=request.operator_commitment.model_dump()
+        operator_commitment = (
+            request.operator_commitment.model_dump(mode="json")
             if request.operator_commitment
-            else None,
-            presence=request.presence.model_dump() if request.presence else None,
+            else None
         )
+        nonce_reservation: tuple[str, str] | None = None
+        if operator_commitment is not None:
+            if (
+                _verify_operator_commitment(
+                    operator_commitment,
+                    request.entity_id,
+                )
+                is None
+            ):
+                raise ValueError("Operator commitment is invalid or stale")
+            nonce_key = _OPERATOR_NONCE_PREFIX + operator_commitment["nonce"]
+            reservation_token = secrets.token_urlsafe(32)
+            reserved = await mgr.redis.set(
+                nonce_key,
+                reservation_token,
+                ex=_OPERATOR_NONCE_TTL_SECONDS,
+                nx=True,
+            )
+            if not reserved:
+                raise ValueError("Operator commitment nonce has already been used")
+            nonce_reservation = (nonce_key, reservation_token)
+
+        try:
+            session_id, challenges, meta = await mgr.create_session(
+                user_id=user.user_id,
+                suites=request.suites,
+                difficulty=request.difficulty,
+                entity_id=request.entity_id,
+                vcp_token=request.vcp_token,
+                operator_commitment=operator_commitment,
+                presence=request.presence.model_dump(mode="json")
+                if request.presence
+                else None,
+            )
+        except Exception:
+            if nonce_reservation is not None:
+                await _release_operator_nonce(mgr.redis, *nonce_reservation)
+            raise
 
         logger.info(
             "METTLE session created",
@@ -529,8 +578,19 @@ async def get_session_result(
     operator_attestation = None
     operator_commitment = session.get("operator_commitment")
     if operator_commitment:
+        accepted_at_raw = session.get("created_at")
+        try:
+            accepted_at = (
+                datetime.fromisoformat(accepted_at_raw)
+                if isinstance(accepted_at_raw, str)
+                else None
+            )
+        except ValueError:
+            accepted_at = None
         operator_attestation = _build_operator_attestation(
-            operator_commitment, session.get("entity_id")
+            operator_commitment,
+            session.get("entity_id"),
+            accepted_at=accepted_at,
         )
     result["operator_attestation"] = operator_attestation
 
@@ -588,18 +648,41 @@ async def verify_credential_presentation(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="METTLE credential verification is unavailable",
         )
-    if not verify_mettle_attestation(request.attestation, issuer_public_key):
+    try:
+        attestation_valid = verify_mettle_attestation(
+            request.attestation, issuer_public_key
+        )
+    except (KeyError, TypeError, ValueError, AttributeError):
+        attestation_valid = False
+    if not attestation_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Credential signature, policy, or expiry is invalid",
         )
 
-    metadata = request.attestation["metadata"]
+    metadata = request.attestation.get("metadata")
+    if not isinstance(metadata, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential metadata is invalid",
+        )
     proof = metadata.get("proof_of_possession")
     if not isinstance(proof, dict):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Credential is not bound to a holder key",
+        )
+    required_metadata = ("jti", "audience", "tier", "subject_id")
+    if not all(isinstance(metadata.get(field), str) for field in required_metadata):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential metadata is invalid",
+        )
+    required_proof = ("public_key_pem", "key_fingerprint", "transcript_hash")
+    if not all(isinstance(proof.get(field), str) for field in required_proof):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential holder proof is invalid",
         )
     jti = metadata["jti"]
     checker = getattr(raw_request.app.state, "credential_revocation_checker", None)
@@ -693,7 +776,7 @@ def _build_governance_attestation(
         from mettle.vcp import parse_csm1_token
 
         parsed = parse_csm1_token(vcp_token)
-    except (ValueError, ImportError):
+    except (ValueError, TypeError, AttributeError, UnicodeError, ImportError):
         logger.warning("Failed to parse VCP token for governance attestation")
         return None
 
@@ -736,30 +819,110 @@ def _build_governance_attestation(
     )
 
 
-def _build_operator_attestation(
+def _parse_operator_issued_at(value: Any) -> datetime | None:
+    """Parse the signed timestamp without silently accepting a non-UTC value."""
+
+    if isinstance(value, datetime):
+        issued_at = value
+    elif isinstance(value, str):
+        try:
+            issued_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if issued_at.tzinfo is None or issued_at.utcoffset() != timedelta(0):
+        return None
+    return issued_at.astimezone(timezone.utc)
+
+
+def _canonical_operator_commitment(
+    commitment: dict[str, Any], entity_id: str, issued_at: datetime
+) -> bytes:
+    """Return the canonical version-1 message signed by the operator."""
+
+    issued_at_text = issued_at.isoformat().replace("+00:00", "Z")
+    return json.dumps(
+        {
+            "contact_hash": commitment["contact_hash"],
+            "contact_method": commitment["contact_method"],
+            "entity_id": entity_id,
+            "issued_at": issued_at_text,
+            "nonce": commitment["nonce"],
+            "operator_pseudonym": commitment["operator_pseudonym"],
+            "operator_public_key": commitment["operator_public_key"],
+            "version": 1,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+
+
+def _verify_operator_commitment(
     commitment: dict[str, Any],
     entity_id: str | None,
-) -> OperatorAttestation | None:
-    """Build OperatorAttestation from an operator commitment.
+    *,
+    accepted_at: datetime | None = None,
+) -> datetime | None:
+    """Verify one fresh, fully bound operator commitment.
 
-    Verifies the Ed25519 signature before accepting the commitment.
-    Returns None if verification fails.
+    ``accepted_at`` is the authoritative receipt time.  Passing the session's
+    persisted creation time allows later result reads to revalidate the original
+    acceptance decision without making an old commitment look freshly issued.
     """
-    import base64
 
     if not entity_id:
         logger.warning("Operator commitment requires a non-empty entity_id")
         return None
 
-    required_fields = [
+    required_fields = {
         "operator_pseudonym",
         "operator_public_key",
         "signed_commitment",
         "contact_method",
         "contact_hash",
-    ]
-    if not all(commitment.get(f) for f in required_fields):
+        "issued_at",
+        "nonce",
+    }
+    if set(commitment) != required_fields or not all(
+        commitment.get(field) for field in required_fields
+    ):
         logger.warning("Operator commitment missing required fields")
+        return None
+
+    if not isinstance(commitment["operator_pseudonym"], str) or not isinstance(
+        commitment["operator_public_key"], str
+    ):
+        return None
+    if commitment["contact_method"] not in {
+        "email_hash",
+        "platform_handle",
+        "legal_entity",
+    }:
+        return None
+    if (
+        not isinstance(commitment["contact_hash"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", commitment["contact_hash"]) is None
+    ):
+        return None
+    if (
+        not isinstance(commitment["nonce"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", commitment["nonce"]) is None
+    ):
+        return None
+
+    issued_at = _parse_operator_issued_at(commitment["issued_at"])
+    reference = accepted_at or datetime.now(timezone.utc)
+    if issued_at is None or reference.tzinfo is None or reference.utcoffset() is None:
+        logger.warning("Operator commitment has an invalid timestamp")
+        return None
+    reference = reference.astimezone(timezone.utc)
+    age_seconds = (reference - issued_at).total_seconds()
+    if age_seconds > _OPERATOR_COMMITMENT_MAX_AGE_SECONDS:
+        logger.warning("Operator commitment is stale")
+        return None
+    if age_seconds < -_OPERATOR_COMMITMENT_FUTURE_SKEW_SECONDS:
+        logger.warning("Operator commitment timestamp is too far in the future")
         return None
 
     # Verify Ed25519 signature
@@ -772,24 +935,15 @@ def _build_operator_attestation(
             logger.warning("Operator public key is not Ed25519")
             return None
 
-        # Bind every returned accountability field to the entity. This prevents
-        # replaying one signature with a different pseudonym or contact claim.
-        import json
-
-        expected_message = json.dumps(
-            {
-                "contact_hash": commitment["contact_hash"],
-                "contact_method": commitment["contact_method"],
-                "entity_id": entity_id,
-                "operator_pseudonym": commitment["operator_pseudonym"],
-                "operator_public_key": commitment["operator_public_key"],
-                "version": 1,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
+        signature_bytes = base64.b64decode(
+            commitment["signed_commitment"], validate=True
         )
-        signature_bytes = base64.b64decode(commitment["signed_commitment"])
-        public_key.verify(signature_bytes, expected_message.encode())
+        if len(signature_bytes) != 64:
+            return None
+        public_key.verify(
+            signature_bytes,
+            _canonical_operator_commitment(commitment, entity_id, issued_at),
+        )
 
     except ImportError:
         logger.warning(
@@ -802,11 +956,50 @@ def _build_operator_attestation(
         )
         return None
 
+    return issued_at
+
+
+async def _release_operator_nonce(
+    redis: Any,
+    nonce_key: str,
+    reservation_token: str,
+) -> None:
+    """Release only the nonce reservation created by this request."""
+
+    await redis.eval(
+        _RELEASE_OPERATOR_NONCE_SCRIPT,
+        1,
+        nonce_key,
+        reservation_token,
+    )
+
+
+def _build_operator_attestation(
+    commitment: dict[str, Any],
+    entity_id: str | None,
+    *,
+    accepted_at: datetime | None,
+) -> OperatorAttestation | None:
+    """Build an attestation from a signature valid at its persisted receipt time."""
+
+    if accepted_at is None:
+        logger.warning("Operator commitment receipt time is unavailable")
+        return None
+
+    issued_at = _verify_operator_commitment(
+        commitment,
+        entity_id,
+        accepted_at=accepted_at,
+    )
+    if issued_at is None:
+        return None
+
     return OperatorAttestation(
         operator_pseudonym=commitment["operator_pseudonym"],
         operator_public_key=commitment["operator_public_key"],
         operator_signed_commitment=commitment["signed_commitment"],
-        commitment_timestamp=datetime.now(tz=timezone.utc),
+        commitment_timestamp=issued_at,
+        commitment_nonce=commitment["nonce"],
         contact_method=commitment["contact_method"],
         contact_hash=commitment["contact_hash"],
     )

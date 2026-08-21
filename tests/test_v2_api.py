@@ -56,6 +56,7 @@ from mettle.session_manager import (  # noqa: E402
     MAX_SESSIONS_PER_HOUR,
     SessionManager,
     SessionRateLimitError,
+    SessionStateError,
     _key,
     _rate_key,
 )
@@ -83,6 +84,9 @@ class FakeRedis:
             self._data[key] = value.encode()
         else:
             self._data[key] = str(value).encode()
+
+    async def delete(self, key: str) -> int:
+        return 1 if self._data.pop(key, None) is not None else 0
 
     async def scard(self, key: str) -> int:
         return len(self._sets.get(key, set()))
@@ -134,6 +138,10 @@ class FakePipeline:
         self._ops.append(("srem", key, *members))
         return self
 
+    def delete(self, key: str) -> "FakePipeline":
+        self._ops.append(("delete", key))
+        return self
+
     async def execute(self) -> None:
         for op in self._ops:
             if op[0] == "setex":
@@ -144,6 +152,8 @@ class FakePipeline:
                 await self._redis.incr(op[1])
             elif op[0] == "srem":
                 await self._redis.srem(op[1], *op[2:])
+            elif op[0] == "delete":
+                await self._redis.delete(op[1])
         self._ops = []
 
 
@@ -160,7 +170,14 @@ _NOVEL_SERVER_STUB = {
     "time_budget_s": 30,
     "num_rounds": 3,
     "pass_threshold": 0.65,
-    "challenges": {"seq": {"all_test_answers": [1, 2]}},
+    "challenges": {
+        "constraint_satisfaction": {
+            "solution": {"x": 1},
+            "all_solutions": [{"x": 1}],
+            "num_solutions": 1,
+            "constraint_data": [],
+        }
+    },
 }
 
 
@@ -337,7 +354,9 @@ class TestCreateSession:
             mgr, ["adversarial", MULTI_ROUND_SUITE]
         )
         assert MULTI_ROUND_SUITE in meta["suites"]
-        assert meta["time_budget_ms"] == 30 * 1000 + 2 * 30000
+        # Novel reasoning's advertised budget is already the total for all
+        # rounds, so it is counted once alongside the single-shot suite.
+        assert meta["time_budget_ms"] == 30 * 1000 + 30 * 1000
 
     @pytest.mark.asyncio
     async def test_create_intent_provenance_with_vcp_token(self, mgr, fake_redis):
@@ -519,16 +538,37 @@ class TestSubmitRoundAnswer:
     async def test_submit_round_success(self, mgr, fake_redis):
         sid, _, _ = await _create_session(mgr, [MULTI_ROUND_SUITE])
         result = await mgr.submit_round_answer(
-            sid, 1, {"challenges": {"seq": {"test_outputs": [1]}}}
+            sid, 1, {"challenges": {"constraint_satisfaction": {"test_outputs": [1]}}}
         )
         assert result["round_num"] == 1
         assert result["accuracy"] == 0.8
-        assert result["next_round_data"] is not None
+        assert result["next_round_data"] == {
+            "round": 2,
+            "challenges": {
+                "constraint_satisfaction": {"type": "constraint_satisfaction"}
+            },
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "answers",
+        [
+            {"challenges": ["constraint_satisfaction"]},
+            {"challenges": {"constraint_satisfaction": []}},
+        ],
+    )
+    async def test_submit_round_rejects_nonobject_answer_shapes(self, mgr, answers):
+        sid, _, _ = await _create_session(mgr, [MULTI_ROUND_SUITE])
+
+        with pytest.raises(ValueError, match="mapping challenge names to objects"):
+            await mgr.submit_round_answer(sid, 1, answers)
 
     @pytest.mark.asyncio
     async def test_submit_round_starts_timing(self, mgr, fake_redis):
         sid, _, _ = await _create_session(mgr, [MULTI_ROUND_SUITE])
-        await mgr.submit_round_answer(sid, 1, {"challenges": {"seq": {}}})
+        await mgr.submit_round_answer(
+            sid, 1, {"challenges": {"constraint_satisfaction": {}}}
+        )
         session = await mgr.get_session(sid)
         assert session["start_time"] is not None
         assert session["status"] == SessionStatus.IN_PROGRESS.value
@@ -536,9 +576,15 @@ class TestSubmitRoundAnswer:
     @pytest.mark.asyncio
     async def test_submit_final_round_completes(self, mgr, fake_redis):
         sid, _, _ = await _create_session(mgr, [MULTI_ROUND_SUITE])
-        await mgr.submit_round_answer(sid, 1, {"challenges": {"seq": {}}})
-        await mgr.submit_round_answer(sid, 2, {"challenges": {"seq": {}}})
-        result = await mgr.submit_round_answer(sid, 3, {"challenges": {"seq": {}}})
+        await mgr.submit_round_answer(
+            sid, 1, {"challenges": {"constraint_satisfaction": {}}}
+        )
+        await mgr.submit_round_answer(
+            sid, 2, {"challenges": {"constraint_satisfaction": {}}}
+        )
+        result = await mgr.submit_round_answer(
+            sid, 3, {"challenges": {"constraint_satisfaction": {}}}
+        )
         assert result["next_round_data"] is None
         session = await mgr.get_session(sid)
         assert MULTI_ROUND_SUITE in session["suites_completed"]
@@ -580,7 +626,9 @@ class TestSubmitRoundAnswer:
     @pytest.mark.asyncio
     async def test_submit_round_uses_flat_answers(self, mgr, fake_redis):
         sid, _, _ = await _create_session(mgr, [MULTI_ROUND_SUITE])
-        result = await mgr.submit_round_answer(sid, 1, {"seq": {"test_outputs": [1]}})
+        result = await mgr.submit_round_answer(
+            sid, 1, {"constraint_satisfaction": {"test_outputs": [1]}}
+        )
         assert result["round_num"] == 1
 
 
@@ -588,7 +636,9 @@ class TestGetRoundFeedback:
     @pytest.mark.asyncio
     async def test_get_feedback_found(self, mgr, fake_redis):
         sid, _, _ = await _create_session(mgr, [MULTI_ROUND_SUITE])
-        await mgr.submit_round_answer(sid, 1, {"challenges": {"seq": {}}})
+        await mgr.submit_round_answer(
+            sid, 1, {"challenges": {"constraint_satisfaction": {}}}
+        )
         feedback = await mgr.get_round_feedback(sid, 1)
         assert feedback is not None and feedback["round"] == 1
 
@@ -615,9 +665,15 @@ class TestGetResult:
     @pytest.mark.asyncio
     async def test_get_result_completed_with_novel_reasoning(self, mgr, fake_redis):
         sid, _, _ = await _create_session(mgr, [MULTI_ROUND_SUITE])
-        await mgr.submit_round_answer(sid, 1, {"challenges": {"seq": {}}})
-        await mgr.submit_round_answer(sid, 2, {"challenges": {"seq": {}}})
-        await mgr.submit_round_answer(sid, 3, {"challenges": {"seq": {}}})
+        await mgr.submit_round_answer(
+            sid, 1, {"challenges": {"constraint_satisfaction": {}}}
+        )
+        await mgr.submit_round_answer(
+            sid, 2, {"challenges": {"constraint_satisfaction": {}}}
+        )
+        await mgr.submit_round_answer(
+            sid, 3, {"challenges": {"constraint_satisfaction": {}}}
+        )
         result = await mgr.get_result(sid)
         assert result is not None
         assert result["iteration_curve"] is not None
@@ -640,8 +696,8 @@ class TestGetResult:
         session["suites_completed"] = ["adversarial"]
         session["start_time"] = None
         await fake_redis.setex(_key(sid), COMPLETED_SESSION_TTL, json.dumps(session))
-        result = await mgr.get_result(sid)
-        assert result is not None and result["elapsed_ms"] == 0
+        with pytest.raises(SessionStateError, match="start_time"):
+            await mgr.get_result(sid)
 
     @pytest.mark.asyncio
     async def test_get_result_empty_results(self, mgr, fake_redis):
@@ -652,8 +708,8 @@ class TestGetResult:
         session["suites_completed"] = []
         session["start_time"] = time.time()
         await fake_redis.setex(_key(sid), COMPLETED_SESSION_TTL, json.dumps(session))
-        result = await mgr.get_result(sid)
-        assert result["overall_passed"] is False
+        with pytest.raises(SessionStateError, match="fully completed"):
+            await mgr.get_result(sid)
 
 
 class TestAnalyzeIterationCurve:
@@ -703,10 +759,6 @@ class TestAnalyzeIterationCurve:
 
 class TestCheckRateLimits:
     @pytest.mark.asyncio
-    async def test_no_limits_hit(self, mgr, fake_redis):
-        await mgr._check_rate_limits(TEST_USER)
-
-    @pytest.mark.asyncio
     async def test_active_sessions_limit(self, mgr, fake_redis):
         fake_redis._sets[_rate_key(TEST_USER, "active")] = {
             f"s{i}" for i in range(MAX_ACTIVE_SESSIONS_PER_USER)
@@ -721,10 +773,6 @@ class TestCheckRateLimits:
         ).encode()
         with pytest.raises(ValueError, match="Hourly session limit"):
             await mgr._check_rate_limits(TEST_USER)
-
-    @pytest.mark.asyncio
-    async def test_scard_returns_none(self, mgr, fake_redis):
-        await mgr._check_rate_limits(TEST_USER)
 
 
 # ===================================================================
@@ -936,7 +984,7 @@ class TestRouterSubmitRoundAnswer:
         sid = _create_via_api(client, [MULTI_ROUND_SUITE])
         resp = client.post(
             f"/api/mettle/sessions/{sid}/rounds/1/answer",
-            json={"answers": {"challenges": {"seq": {}}}},
+            json={"answers": {"challenges": {"constraint_satisfaction": {}}}},
         )
         assert resp.status_code == 200
         assert resp.json()["round_num"] == 1
@@ -982,7 +1030,7 @@ class TestRouterGetRoundFeedback:
         sid = _create_via_api(client, [MULTI_ROUND_SUITE])
         client.post(
             f"/api/mettle/sessions/{sid}/rounds/1/answer",
-            json={"answers": {"challenges": {"seq": {}}}},
+            json={"answers": {"challenges": {"constraint_satisfaction": {}}}},
         )
         resp = client.get(f"/api/mettle/sessions/{sid}/rounds/1/feedback")
         assert resp.status_code == 200

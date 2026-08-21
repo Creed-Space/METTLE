@@ -2,4 +2,6 @@
 # Install with: pip install -r requirements-mcp.txt
 
 httpx>=0.26.0
-mcp>=1.0.0
+# mcp_server.py uses the maintained v1 decorator API. Stable v2 is a breaking
+# rewrite, so keep fresh installs on the security-supported v1 line.
+mcp>=1.28,<2

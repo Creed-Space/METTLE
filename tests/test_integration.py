@@ -173,8 +173,8 @@ class TestFullVerificationFlow:
         assert result["screening_passed"] is (result["passed"] >= 4)
         assert result["verified"] is result["screening_passed"]
 
-    def test_multiple_concurrent_sessions(self, client):
-        """Test multiple sessions can run concurrently."""
+    def test_multiple_sessions_are_isolated(self, client):
+        """Sequential sessions retain independent identifiers and results."""
         # Start 3 sessions
         sessions = []
         for i in range(3):
@@ -358,12 +358,17 @@ class TestCORS:
     """Test CORS configuration."""
 
     def test_cors_headers(self, client):
-        """Test CORS headers are present."""
+        """A valid browser preflight returns the configured CORS contract."""
         response = client.options(
-            "/api/session/start", headers={"Origin": "http://localhost:3000"}
+            "/api/session/start",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+            },
         )
-        # OPTIONS should succeed
-        assert response.status_code in [200, 405]
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "*"
+        assert "POST" in response.headers["access-control-allow-methods"]
 
 
 class TestDataIntegrity:
@@ -376,6 +381,7 @@ class TestDataIntegrity:
         session_id = data["session_id"]
 
         challenge = data["current_challenge"]
+        assert challenge is not None
         completed = 0
 
         while challenge:
@@ -402,6 +408,16 @@ class TestDataIntegrity:
             if result_data["session_complete"]:
                 break
             challenge = result_data["next_challenge"]
+
+        assert result_data["session_complete"] is True
+        assert result_data["next_challenge"] is None
+        assert completed == data["total_challenges"]
+
+        terminal_response = client.get(f"/api/session/{session_id}")
+        assert terminal_response.status_code == 200
+        terminal_status = terminal_response.json()
+        assert terminal_status["status"] == "completed"
+        assert terminal_status["result"]["total"] == completed
 
     def test_challenge_ids_unique_across_session(self, client):
         """Test that all challenge IDs in a session are unique."""

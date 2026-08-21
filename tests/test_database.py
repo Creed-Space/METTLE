@@ -6,6 +6,8 @@ webhooks, and verification records using an isolated in-memory SQLite database.
 
 import hashlib
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -105,13 +107,6 @@ class TestGetDb:
             assert session is not None
             # Session should be usable
             session.execute(db.Base.metadata.tables["sessions"].select())
-
-    def test_get_db_closes_session_on_exit(self, isolated_db):
-        """Session should be closed after context manager exits."""
-        db = isolated_db
-        with db.get_db() as _session:
-            pass
-        # After exiting, session.close() has been called (no error expected)
 
 
 # ── Session Operations ───────────────────────────────────────────────────────
@@ -271,6 +266,137 @@ class TestGetRecentSessions:
             "recover-new"
         ]
 
+    @pytest.mark.parametrize(
+        "corrupt_column",
+        ["challenges_json", "results_json", "badge_info_json"],
+    )
+    def test_corrupt_row_is_skipped_without_losing_valid_rows(
+        self, isolated_db, corrupt_column, caplog
+    ):
+        db = isolated_db
+        now = datetime.now(timezone.utc)
+        db.save_session(
+            "valid-old",
+            "e1",
+            "basic",
+            [MockChallenge()],
+            access_token_hash="a" * 64,
+            started_at=now - timedelta(seconds=3),
+        )
+        with db.get_db() as session:
+            corrupt = db.DBSession(
+                session_id="corrupt-row",
+                entity_id="e2",
+                difficulty="basic",
+                challenges_json="[]",
+                results_json="[]",
+                badge_info_json=None,
+                access_token_hash="b" * 64,
+                created_at=now - timedelta(seconds=2),
+            )
+            setattr(corrupt, corrupt_column, "{not-json")
+            session.add(corrupt)
+            session.commit()
+        db.save_session(
+            "valid-new",
+            "e3",
+            "basic",
+            [MockChallenge()],
+            access_token_hash="c" * 64,
+            started_at=now - timedelta(seconds=1),
+        )
+
+        rows = db.get_recent_sessions(limit=2)
+
+        assert [row["session_id"] for row in rows] == ["valid-old", "valid-new"]
+        assert "corrupt-row" in caplog.text
+        assert "not-json" not in caplog.text
+
+    def test_oversized_row_is_skipped_before_json_parsing(self, isolated_db, caplog):
+        db = isolated_db
+        now = datetime.now(timezone.utc)
+        db.save_session(
+            "valid-before-oversized",
+            "e1",
+            "basic",
+            [MockChallenge()],
+            access_token_hash="a" * 64,
+            started_at=now - timedelta(seconds=1),
+        )
+        with db.get_db() as session:
+            session.add(
+                db.DBSession(
+                    session_id="oversized-row",
+                    entity_id="e2",
+                    difficulty="basic",
+                    challenges_json="x" * (db.MAX_SESSION_RECOVERY_JSON_BYTES + 1),
+                    results_json="[]",
+                    access_token_hash="b" * 64,
+                    created_at=now,
+                )
+            )
+            session.commit()
+
+        assert [row["session_id"] for row in db.get_recent_sessions(limit=1)] == [
+            "valid-before-oversized"
+        ]
+        assert "oversized-row" in caplog.text
+
+    def test_corruption_flood_has_bounded_logs_and_still_finds_valid_row(
+        self, isolated_db, caplog
+    ):
+        db = isolated_db
+        now = datetime.now(timezone.utc)
+        db.save_session(
+            "valid-behind-corruption",
+            "e1",
+            "basic",
+            [MockChallenge()],
+            access_token_hash="a" * 64,
+            started_at=now,
+        )
+        with db.get_db() as session:
+            session.add_all(
+                [
+                    db.DBSession(
+                        session_id=f"corrupt-{index}",
+                        entity_id="e2",
+                        difficulty="basic",
+                        challenges_json="{bad",
+                        results_json="[]",
+                        access_token_hash="b" * 64,
+                        created_at=now + timedelta(seconds=index + 1),
+                    )
+                    for index in range(db.MAX_RECOVERY_ROW_WARNINGS + 5)
+                ]
+            )
+            session.commit()
+
+        assert [row["session_id"] for row in db.get_recent_sessions(limit=1)] == [
+            "valid-behind-corruption"
+        ]
+        per_row_warnings = [
+            record
+            for record in caplog.records
+            if "Skipping malformed persisted session" in record.getMessage()
+        ]
+        assert len(per_row_warnings) == db.MAX_RECOVERY_ROW_WARNINGS
+        assert "Skipped 5 additional malformed persisted sessions" in caplog.text
+
+    @pytest.mark.parametrize(
+        ("keyword", "value"),
+        [
+            ("limit", 0),
+            ("limit", True),
+            ("limit", 5001),
+            ("max_age_seconds", -1),
+            ("max_age_seconds", 86401),
+        ],
+    )
+    def test_rejects_invalid_query_bounds(self, isolated_db, keyword, value):
+        with pytest.raises(ValueError):
+            isolated_db.get_recent_sessions(**{keyword: value})
+
     def test_update_nonexistent_session_returns_false(self, isolated_db):
         db = isolated_db
         result = db.update_session_results("no-such", [MockResult()], completed=True)
@@ -369,6 +495,11 @@ class TestGetRevokedBadges:
 
         result = db.get_revoked_badges(limit=3)
         assert len(result) == 3
+
+    @pytest.mark.parametrize("limit", [0, True, 1001])
+    def test_invalid_limits_are_rejected(self, isolated_db, limit):
+        with pytest.raises(ValueError):
+            isolated_db.get_revoked_badges(limit=limit)
 
     def test_ordered_by_revoked_at_desc(self, isolated_db):
         db = isolated_db
@@ -526,6 +657,87 @@ class TestUpdateApiKeyUsage:
             assert result is False
 
 
+class TestReserveApiKeyUsage:
+    def test_reserves_and_resets_on_new_utc_date(self, isolated_db):
+        db = isolated_db
+        db.save_api_key("reserve-key", "basic", "entity")
+
+        assert db.reserve_api_key_usage("reserve-key", "2026-08-20", 4, 5) == (
+            True,
+            4,
+        )
+        assert db.reserve_api_key_usage("reserve-key", "2026-08-20", 2, 5) == (
+            False,
+            4,
+        )
+        assert db.reserve_api_key_usage("reserve-key", "2026-08-21", 2, 5) == (
+            True,
+            2,
+        )
+
+    def test_last_slot_has_exactly_one_concurrent_winner(self, isolated_db, tmp_path):
+        db = isolated_db
+        concurrent_engine = create_engine(
+            f"sqlite:///{tmp_path / 'quota.db'}",
+            connect_args={"check_same_thread": False, "timeout": 10},
+        )
+        concurrent_sessions = sessionmaker(
+            autocommit=False, autoflush=False, bind=concurrent_engine
+        )
+        prior_engine, prior_sessions = db.engine, db.SessionLocal
+        db.engine, db.SessionLocal = concurrent_engine, concurrent_sessions
+        try:
+            db.Base.metadata.create_all(bind=concurrent_engine)
+            assert db.save_api_key("race-key", "basic", "entity")
+            assert db.update_api_key_usage("race-key", "2026-08-20", 99)
+            barrier = threading.Barrier(2)
+
+            def reserve() -> tuple[bool, int]:
+                barrier.wait(timeout=5)
+                return db.reserve_api_key_usage(
+                    "race-key", "2026-08-20", 1, 100, raise_on_error=True
+                )
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(lambda _index: reserve(), range(2)))
+
+            assert sorted(reserved for reserved, _count in results) == [False, True]
+            assert db.get_api_key("race-key")["usage_count"] == 100
+        finally:
+            db.engine, db.SessionLocal = prior_engine, prior_sessions
+            concurrent_engine.dispose()
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            ("key", "2026-8-20", 1, 10),
+            ("key", "2026-02-30", 1, 10),
+            ("key", "2026-08-20", 0, 10),
+            ("key", "2026-08-20", True, 10),
+            ("key", "2026-08-20", 1, 0),
+        ],
+    )
+    def test_rejects_invalid_reservation_arguments(self, isolated_db, arguments):
+        with pytest.raises(ValueError):
+            isolated_db.reserve_api_key_usage(*arguments)
+
+    def test_missing_key_and_database_failure_are_distinct(self, isolated_db):
+        db = isolated_db
+        assert db.reserve_api_key_usage("missing", "2026-08-20", 1, 10) == (
+            False,
+            0,
+        )
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            assert db.reserve_api_key_usage("key", "2026-08-20", 1, 10) == (
+                False,
+                0,
+            )
+            with pytest.raises(RuntimeError, match="persistence unavailable"):
+                db.reserve_api_key_usage(
+                    "key", "2026-08-20", 1, 10, raise_on_error=True
+                )
+
+
 # ── Webhook Operations ───────────────────────────────────────────────────────
 
 
@@ -555,6 +767,76 @@ class TestSaveWebhook:
         rows = db.get_webhooks()
         assert [row["entity_id"] for row in rows] == ["entity-1", "entity-2"]
         assert rows[1]["events"] == ["session.completed"]
+
+    def test_bounded_recovery_keeps_newest_members_in_stable_order(self, isolated_db):
+        db = isolated_db
+        now = datetime.now(timezone.utc)
+        with db.get_db() as session:
+            session.add_all(
+                [
+                    db.DBWebhook(
+                        entity_id=f"entity-{index:04d}",
+                        url=f"https://example.com/{index}",
+                        events_json='["all"]',
+                        created_at=now + timedelta(microseconds=index),
+                    )
+                    for index in range(db.MAX_RECOVERED_WEBHOOKS + 1)
+                ]
+            )
+            session.commit()
+
+        rows = db.get_webhooks(limit=db.MAX_RECOVERED_WEBHOOKS)
+
+        assert len(rows) == db.MAX_RECOVERED_WEBHOOKS
+        assert rows[0]["entity_id"] == "entity-0001"
+        assert rows[-1]["entity_id"] == "entity-1000"
+
+    def test_corrupt_and_oversized_webhooks_do_not_hide_valid_rows(
+        self, isolated_db, caplog
+    ):
+        db = isolated_db
+        now = datetime.now(timezone.utc)
+        with db.get_db() as session:
+            session.add_all(
+                [
+                    db.DBWebhook(
+                        entity_id="valid-old",
+                        url="https://example.com/old",
+                        events_json='["all"]',
+                        created_at=now,
+                    ),
+                    db.DBWebhook(
+                        entity_id="corrupt-events",
+                        url="https://example.com/corrupt",
+                        events_json="{bad",
+                        created_at=now + timedelta(seconds=1),
+                    ),
+                    db.DBWebhook(
+                        entity_id="oversized-events",
+                        url="https://example.com/oversized",
+                        events_json="x" * (db.MAX_WEBHOOK_RECOVERY_JSON_BYTES + 1),
+                        created_at=now + timedelta(seconds=2),
+                    ),
+                    db.DBWebhook(
+                        entity_id="valid-new",
+                        url="https://example.com/new",
+                        events_json='["session.completed"]',
+                        created_at=now + timedelta(seconds=3),
+                    ),
+                ]
+            )
+            session.commit()
+
+        rows = db.get_webhooks(limit=2, raise_on_error=True)
+
+        assert [row["entity_id"] for row in rows] == ["valid-old", "valid-new"]
+        assert "corrupt-events" in caplog.text
+        assert "oversized-events" in caplog.text
+
+    @pytest.mark.parametrize("limit", [0, True, 1001])
+    def test_get_webhooks_rejects_invalid_limits(self, isolated_db, limit):
+        with pytest.raises(ValueError):
+            isolated_db.get_webhooks(limit=limit)
 
     def test_save_webhook_upsert_replaces_existing(self, isolated_db):
         """Saving a webhook for the same entity_id should replace the old one."""
@@ -680,6 +962,17 @@ class TestGetRecentVerifications:
             result = db.get_recent_verifications()
             assert result == []
 
+    def test_get_recent_verifications_can_fail_closed(self, isolated_db):
+        db = isolated_db
+        with patch.object(db, "get_db", side_effect=Exception("db error")):
+            with pytest.raises(RuntimeError, match="history recovery unavailable"):
+                db.get_recent_verifications(raise_on_error=True)
+
+    @pytest.mark.parametrize("hours", [0, True, 8761])
+    def test_invalid_hours_are_rejected(self, isolated_db, hours):
+        with pytest.raises(ValueError):
+            isolated_db.get_recent_verifications(hours=hours)
+
 
 class TestGetEntityVerificationCount:
     def test_zero_when_no_records(self, isolated_db):
@@ -715,6 +1008,11 @@ class TestGetEntityVerificationCount:
         with patch.object(db, "get_db", side_effect=Exception("db error")):
             result = db.get_entity_verification_count("err")
             assert result == 0
+
+    @pytest.mark.parametrize("hours", [0, True, 8761])
+    def test_invalid_hours_are_rejected(self, isolated_db, hours):
+        with pytest.raises(ValueError):
+            isolated_db.get_entity_verification_count("entity", hours=hours)
 
 
 class TestGetIpEntities:
@@ -752,33 +1050,34 @@ class TestGetIpEntities:
             result = db.get_ip_entities("1.1.1.1")
             assert result == set()
 
+    @pytest.mark.parametrize("hours", [0, True, 8761])
+    def test_invalid_hours_are_rejected(self, isolated_db, hours):
+        with pytest.raises(ValueError):
+            isolated_db.get_ip_entities("1.1.1.1", hours=hours)
+
 
 # ── Module-Level Initialization / URL Rewriting ──────────────────────────────
 
 
 class TestDatabaseUrlRewriting:
-    def test_postgres_url_rewritten(self):
-        """The module should rewrite postgres:// to postgresql://."""
-        # We test this by checking the documented behavior.
-        # The actual rewriting happens at import time (lines 28-29).
-        url = "postgres://user:pass@host/db"
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql://", 1)
-        assert url == "postgresql://user:pass@host/db"
+    @pytest.mark.parametrize(
+        ("configured", "expected"),
+        [
+            (
+                "postgres://user:pass@host/db",
+                "postgresql://user:pass@host/db",
+            ),
+            (
+                "postgresql://user:pass@host/db",
+                "postgresql://user:pass@host/db",
+            ),
+            ("sqlite:///test.db", "sqlite:///test.db"),
+        ],
+    )
+    def test_normalizes_supported_database_urls(self, configured, expected):
+        import database
 
-    def test_postgresql_url_unchanged(self):
-        """A postgresql:// URL should not be modified."""
-        url = "postgresql://user:pass@host/db"
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql://", 1)
-        assert url == "postgresql://user:pass@host/db"
-
-    def test_sqlite_url_unchanged(self):
-        """A sqlite:// URL should not be modified."""
-        url = "sqlite:///test.db"
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql://", 1)
-        assert url == "sqlite:///test.db"
+        assert database._normalize_database_url(configured) == expected
 
     def test_prefixed_database_url_takes_precedence(self, monkeypatch):
         import database

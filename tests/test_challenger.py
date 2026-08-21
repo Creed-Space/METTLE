@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 
+import pytest
+import mettle.challenger as challenger
 from mettle.challenger import (
     generate_chained_reasoning_challenge,
     generate_challenge,
@@ -57,29 +59,23 @@ class TestSpeedMathChallenge:
         challenge = generate_speed_math_challenge(Difficulty.BASIC)
         assert challenge.expires_at > datetime.now(timezone.utc)
 
-    def test_math_operations(self):
-        """Test that math operations are correct."""
-        # Generate many challenges to test different operations
-        operations = set()
-        for _ in range(50):
-            challenge = generate_speed_math_challenge(Difficulty.BASIC)
-            a = challenge.data["a"]
-            b = challenge.data["b"]
-            op = challenge.data["op"]
-            expected = challenge.data["expected_answer"]
-            operations.add(op)
+    @pytest.mark.parametrize(
+        ("operator", "expected"), [("+", 72), ("-", 12), ("*", 1260)]
+    )
+    def test_each_math_operation_is_correct(self, monkeypatch, operator, expected):
+        """Exercise every operation deterministically rather than by chance."""
+        values = iter([42, 30])
+        monkeypatch.setattr(challenger, "_secure_randint", lambda _a, _b: next(values))
+        monkeypatch.setattr(challenger, "_secure_choice", lambda _seq: operator)
 
-            if op == "+":
-                assert expected == a + b
-            elif op == "-":
-                assert expected == a - b
-            elif op == "*":
-                assert expected == a * b
+        challenge = generate_speed_math_challenge(Difficulty.BASIC)
 
-        # Should see all three operations
-        assert "+" in operations
-        assert "-" in operations
-        assert "*" in operations
+        assert challenge.data == {
+            "expected_answer": expected,
+            "a": 42,
+            "b": 30,
+            "op": operator,
+        }
 
 
 class TestChainedReasoningChallenge:
@@ -183,6 +179,7 @@ class TestConsistencyChallenge:
         """Test that challenge requires multiple responses."""
         challenge = generate_consistency_challenge(Difficulty.BASIC)
         assert challenge.data["num_responses"] == 3
+        assert str(challenge.data["expected_answer"]).strip()
         assert "THREE times" in challenge.prompt
         assert "|" in challenge.prompt
 

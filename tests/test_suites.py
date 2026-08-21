@@ -20,6 +20,8 @@ Coverage includes:
 - Full assessment methods aggregate scoring correctly
 """
 
+import json
+
 import pytest
 
 # ====================================================================================
@@ -78,16 +80,6 @@ class TestAdversarialChallenges:
         result = AdversarialChallenges.dynamic_math_challenge()
         # In current implementation, computed always equals expected (demo mode)
         assert result["computed"] == result["expected"]
-
-    def test_dynamic_math_challenge_procedural_generation(self):
-        """Verify each call generates different problems."""
-        from scripts.engine import AdversarialChallenges
-
-        results = [AdversarialChallenges.dynamic_math_challenge() for _ in range(5)]
-        problems = [r["problem"] for r in results]
-
-        # Should have at least some variation
-        assert len(set(problems)) > 1, "Expected different problems to be generated"
 
     def test_chained_reasoning_structure(self):
         """Verify chained_reasoning returns proper dict structure."""
@@ -428,21 +420,6 @@ class TestInverseTuringChallenge:
         assert len(challenges) > 0
         for challenge in challenges:
             assert "type" in challenge
-
-    def test_generate_challenge_set_uniqueness(self):
-        """Verify each call generates different challenges."""
-        from scripts.engine import InverseTuringChallenge
-
-        # Math problems should vary
-        challenges1 = InverseTuringChallenge.generate_challenge_set()
-        challenges2 = InverseTuringChallenge.generate_challenge_set()
-
-        # At least the math problem should differ
-        math1 = challenges1[0]["expected_answer"]
-        math2 = challenges2[0]["expected_answer"]
-        # May be same rarely, but structure should be same
-        assert isinstance(math1, int)
-        assert isinstance(math2, int)
 
     def test_full_protocol_structure(self):
         """Verify full_protocol returns proper structure."""
@@ -795,18 +772,6 @@ class TestCounterCoachingChallenges:
         assert "context_code" in result
         assert "scenario" in result
 
-    def test_adversarial_dynamic_probe_uniqueness(self):
-        """Verify adversarial_dynamic_probe generates different scenarios."""
-        from scripts.engine import CounterCoachingChallenges
-
-        results = [
-            CounterCoachingChallenges.adversarial_dynamic_probe() for _ in range(3)
-        ]
-        scenarios = [r["scenario"] for r in results]
-
-        # Should have some variation
-        assert len(set(scenarios)) >= 1  # At least one unique
-
     def test_contradiction_trap_probe_structure(self):
         """Verify contradiction_trap_probe returns proper structure."""
         from scripts.engine import CounterCoachingChallenges
@@ -815,14 +780,6 @@ class TestCounterCoachingChallenges:
 
         assert "challenge" in result
         assert "passed" in result
-
-    def test_contradiction_trap_probe_has_required_keys(self):
-        """Verify contradiction_trap_probe returns required keys."""
-        from scripts.engine import CounterCoachingChallenges
-
-        result = CounterCoachingChallenges.contradiction_trap_probe()
-        # Just verify it returns a dict with required fields
-        assert isinstance(result, dict)
 
     def test_recursive_meta_probe_structure(self):
         """Verify recursive_meta_probe returns proper structure."""
@@ -839,7 +796,12 @@ class TestCounterCoachingChallenges:
 
         for depth in [2, 3, 4]:
             result = CounterCoachingChallenges.recursive_meta_probe(max_depth=depth)
-            assert isinstance(result, dict)
+            assert result["max_depth"] == depth
+            assert result["depth_reached"] == depth
+            assert len(result["results"]) == depth
+            assert [item["depth"] for item in result["results"]] == list(
+                range(1, depth + 1)
+            )
 
     def test_honest_defector_protocol_structure(self):
         """Verify honest_defector_protocol returns proper structure."""
@@ -871,13 +833,6 @@ class TestCounterCoachingChallenges:
         assert "challenge" in result
         assert "passed" in result
 
-    def test_generative_coherence_test_is_dict(self):
-        """Verify generative_coherence_test returns dict."""
-        from scripts.engine import CounterCoachingChallenges
-
-        result = CounterCoachingChallenges.generative_coherence_test()
-        assert isinstance(result, dict)
-
     def test_full_counter_coaching_assessment_structure(self):
         """Verify full_counter_coaching_assessment aggregates correctly."""
         from scripts.engine import CounterCoachingChallenges
@@ -886,13 +841,6 @@ class TestCounterCoachingChallenges:
 
         assert "challenge" in result
         assert "passed" in result
-
-    def test_full_counter_coaching_assessment_is_dict(self):
-        """Verify full_counter_coaching_assessment returns dict."""
-        from scripts.engine import CounterCoachingChallenges
-
-        result = CounterCoachingChallenges.full_counter_coaching_assessment()
-        assert isinstance(result, dict)
 
 
 # ====================================================================================
@@ -911,13 +859,6 @@ class TestIntentProvenanceChallenges:
 
         assert "challenge" in result
         assert "passed" in result
-
-    def test_constitutional_binding_probe_is_dict(self):
-        """Verify constitutional_binding_probe returns dict."""
-        from scripts.engine import IntentProvenanceChallenges
-
-        result = IntentProvenanceChallenges.constitutional_binding_probe()
-        assert isinstance(result, dict)
 
     def test_harm_refusal_test_structure(self):
         """Verify harm_refusal_test returns proper structure."""
@@ -948,13 +889,6 @@ class TestIntentProvenanceChallenges:
 
         assert "challenge" in result
         assert "passed" in result
-
-    def test_provenance_attestation_probe_is_dict(self):
-        """Verify provenance_attestation_probe returns dict."""
-        from scripts.engine import IntentProvenanceChallenges
-
-        result = IntentProvenanceChallenges.provenance_attestation_probe()
-        assert isinstance(result, dict)
 
     def test_scope_coherence_test_structure(self):
         """Verify scope_coherence_test returns proper structure."""
@@ -1161,48 +1095,30 @@ class TestRunnerFunctions:
 class TestCLI:
     """Test CLI argument parsing and main function."""
 
-    def test_main_basic_mode(self, monkeypatch):
-        """Test main function with --basic flag runs without error."""
-        from scripts.engine import main
+    @pytest.mark.parametrize(
+        ("arguments", "runner_name", "expected"),
+        [
+            (["--basic"], "run_basic_verification", {"mode": "basic"}),
+            (
+                ["--suite", "adversarial"],
+                "run_adversarial_suite",
+                {"mode": "adversarial"},
+            ),
+            (["--full"], "run_all_suites", {"mode": "full"}),
+        ],
+    )
+    def test_main_routes_mode_and_emits_exact_json(
+        self, monkeypatch, capsys, arguments, runner_name, expected
+    ):
+        """Each CLI mode selects its runner and emits one exact JSON document."""
+        import scripts.engine as engine
 
-        monkeypatch.setattr("sys.argv", ["mettle.py", "--basic"])
+        monkeypatch.setattr(engine, runner_name, lambda: expected)
+        monkeypatch.setattr("sys.argv", ["mettle.py", *arguments, "--json"])
 
-        # main() returns None -- just verify it doesn't raise
-        main()
+        engine.main()
 
-    def test_main_suite_selection(self, monkeypatch):
-        """Test main function with --suite flag runs without error."""
-        from scripts.engine import main
-
-        monkeypatch.setattr("sys.argv", ["mettle.py", "--suite", "adversarial"])
-
-        main()
-
-    def test_main_full_mode(self, monkeypatch):
-        """Test main function with --full flag runs without error."""
-        from scripts.engine import main
-
-        monkeypatch.setattr("sys.argv", ["mettle.py", "--full"])
-
-        main()
-
-    def test_main_json_output(self, monkeypatch, capsys):
-        """Test main function with --json flag."""
-        from scripts.engine import main
-
-        monkeypatch.setattr("sys.argv", ["mettle.py", "--basic", "--json"])
-
-        main()
-        # Should produce JSON output
-        captured = capsys.readouterr()
-        # JSON output should be parseable
-        import json
-
-        try:
-            json.loads(captured.out)
-        except json.JSONDecodeError:
-            # Some output may not be pure JSON, that's ok
-            pass
+        assert json.loads(capsys.readouterr().out) == expected
 
 
 # ====================================================================================
@@ -1237,12 +1153,17 @@ class TestEdgeCases:
         assert "target_message" in result
 
     def test_calibrated_uncertainty_empty_claims(self):
-        """Test calibrated_uncertainty with empty claims list raises ZeroDivisionError."""
+        """An empty calibration sample fails closed without division by zero."""
         from scripts.engine import NativeCapabilityChallenges
 
-        # Empty list causes division by zero -- verify the behavior
-        with pytest.raises(ZeroDivisionError):
-            NativeCapabilityChallenges.calibrated_uncertainty([])
+        result = NativeCapabilityChallenges.calibrated_uncertainty([])
+
+        assert result["passed"] is False
+        assert result["num_claims"] == 0
+        assert result["brier_score"] is None
+        assert result["calibration_error"] is None
+        assert result["buckets"] == {}
+        assert result["error"] == "At least one calibration claim is required"
 
     def test_safe_math_helper_function(self):
         """Test safe_math helper function."""

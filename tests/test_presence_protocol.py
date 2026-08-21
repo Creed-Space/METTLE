@@ -29,10 +29,14 @@ from mettle.continuity import (
     solve_continuity_challenge,
 )
 from mettle.presence import (
+    advance_session_presence,
     answer_hash,
+    canonical_bytes,
+    key_fingerprint,
     presence_state_signing_bytes,
     presentation_signing_bytes,
     submission_signing_bytes,
+    validate_credential_presence,
 )
 from mettle.router import router
 
@@ -65,6 +69,9 @@ class FakeRedis:
 
     async def scard(self, key: str) -> int:
         return len(self._sets.get(key, set()))
+
+    async def smembers(self, key: str) -> set[str]:
+        return set(self._sets.get(key, set()))
 
     async def sadd(self, key: str, *members: str) -> int:
         self._sets.setdefault(key, set()).update(members)
@@ -122,6 +129,30 @@ def _keypair() -> tuple[Ed25519PrivateKey, str]:
 
 def _sign(private_key: Ed25519PrivateKey, message: bytes) -> str:
     return base64.b64encode(private_key.sign(message)).decode("ascii")
+
+
+def _valid_credential_presence() -> dict[str, Any]:
+    _, public_key_pem = _keypair()
+    transcript_hash = "sha256:" + "a" * 64
+    return {
+        "protocol": "mettle-presence-v1",
+        "public_key_pem": public_key_pem,
+        "key_fingerprint": key_fingerprint(public_key_pem),
+        "audience": "service.example",
+        "credential_jti": "c" * 32,
+        "transcript_hash": transcript_hash,
+        "sequence": 1,
+        "started_at_unix_ms": 1_000,
+        "submissions": [
+            {
+                "sequence": 1,
+                "action": "suite:adversarial",
+                "response_time_ms": 250,
+                "accepted_at_unix_ms": 1_250,
+                "transcript_hash": transcript_hash,
+            }
+        ],
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -188,12 +219,15 @@ def client() -> Generator[TestClient, None, None]:
         patch(
             "mettle.session_manager.ChallengeAdapter.generate_novel_reasoning",
             return_value=(
-                {"round": 1, "challenges": {"seq": {}}},
+                {
+                    "round": 1,
+                    "challenges": {"graph_property": {"type": "graph_property"}},
+                },
                 {
                     "time_budget_s": 30,
-                    "num_rounds": 1,
+                    "num_rounds": 2,
                     "pass_threshold": 0.65,
-                    "challenges": {"seq": {}},
+                    "challenges": {"graph_property": {"expected": {}}},
                 },
             ),
         )
@@ -787,7 +821,7 @@ def test_multi_round_answers_participate_in_the_same_transcript(
     answers = _answers_with_continuity(
         created["challenges"],
         "novel-reasoning",
-        {"challenges": {"seq": {"value": 1}}},
+        {"challenges": {"graph_property": {"value": 1}}},
     )
     message = submission_signing_bytes(
         session_id=created["session_id"],
@@ -809,9 +843,46 @@ def test_multi_round_answers_participate_in_the_same_transcript(
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["presence"]["completed"] is True
-    assert response.json()["presence"]["sequence"] == 1
-    assert response.json()["presence"]["action"] is None
+    first = response.json()
+    assert first["presence"]["completed"] is False
+    assert first["presence"]["sequence"] == 1
+    assert first["presence"]["action"] == "round:2"
+    assert first["presence"]["transcript_hash"] != state["transcript_hash"]
+
+    second_state = first["presence"]
+    second_round = first["next_round_data"]
+    second_challenge = second_round[CONTINUITY_CHALLENGE_KEY]
+    second_answers = {
+        "challenges": {"graph_property": {"value": 2}},
+        CONTINUITY_ANSWER_KEY: {
+            "challenge_id": second_challenge["challenge_id"],
+            "computed": solve_continuity_challenge(second_challenge),
+        },
+    }
+    second_message = submission_signing_bytes(
+        session_id=created["session_id"],
+        action="round:2",
+        nonce=second_state["nonce"],
+        previous_transcript_hash=second_state["transcript_hash"],
+        payload_hash=answer_hash(second_answers),
+    )
+    second = client.post(
+        f"/api/mettle/sessions/{created['session_id']}/rounds/2/answer",
+        json={
+            "answers": second_answers,
+            "presence_proof": {
+                "nonce": second_state["nonce"],
+                "previous_transcript_hash": second_state["transcript_hash"],
+                "signature": _sign(private_key, second_message),
+            },
+        },
+    )
+    assert second.status_code == 200, second.text
+    completed = second.json()["presence"]
+    assert completed["completed"] is True
+    assert completed["sequence"] == 2
+    assert completed["action"] is None
+    assert completed["transcript_hash"] != second_state["transcript_hash"]
 
 
 def test_future_continuity_challenge_is_transcript_bound_and_unharvestable(
@@ -889,3 +960,61 @@ def test_future_continuity_challenge_is_transcript_bound_and_unharvestable(
     )
     assert rejected.status_code == 400
     assert "continuity challenge" in rejected.json()["detail"].lower()
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("sequence",), True),
+        (("started_at_unix_ms",), True),
+        (("submissions", 0, "sequence"), True),
+        (("submissions", 0, "response_time_ms"), True),
+        (("submissions", 0, "accepted_at_unix_ms"), True),
+        (("submissions", 0, "response_time_ms"), 249),
+        (("submissions", 0, "accepted_at_unix_ms"), 999),
+        (("submissions", 0, "action"), "suite:"),
+    ],
+)
+def test_credential_presence_rejects_boolean_and_incoherent_timing_fields(
+    path: tuple[Any, ...], value: Any
+) -> None:
+    presence = _valid_credential_presence()
+    target: Any = presence
+    for part in path[:-1]:
+        target = target[part]
+    target[path[-1]] = value
+    with pytest.raises(ValueError):
+        validate_credential_presence(presence)
+
+
+def test_credential_presence_accepts_coherent_timing_and_rejects_nonfinite_json() -> (
+    None
+):
+    validate_credential_presence(_valid_credential_presence())
+    with pytest.raises(ValueError):
+        answer_hash({"score": float("nan")})
+    with pytest.raises(ValueError, match="object"):
+        canonical_bytes([])  # type: ignore[arg-type]
+
+
+def test_advance_presence_clamps_a_backward_clock_without_negative_timing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    presence: dict[str, Any] = {
+        "transcript_hash": "sha256:" + "a" * 64,
+        "nonce_issued_at_unix_ms": 1_000,
+        "sequence": 0,
+        "submissions": [],
+        "continuity_protocol": None,
+    }
+    signature = base64.b64encode(b"s" * 64).decode("ascii")
+    monkeypatch.setattr("mettle.presence.time.time", lambda: 0.5)
+    advance_session_presence(
+        presence=presence,
+        message=b"signed-message",
+        signature=signature,
+        action="suite:adversarial",
+    )
+    assert presence["submissions"][0]["accepted_at_unix_ms"] == 1_000
+    assert presence["submissions"][0]["response_time_ms"] == 0
+    assert presence["nonce_issued_at_unix_ms"] == 1_000

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -21,6 +22,7 @@ import mettle.signing as issuer_signing
 from mettle.holder import (
     EphemeralEd25519Signer,
     FileSecretProvider,
+    HOLDER_STATE_SCHEMA,
     HolderPolicy,
     HolderPolicyError,
     PresenceHolder,
@@ -28,10 +30,13 @@ from mettle.holder import (
 from mettle.holder_service import (
     HolderServiceSettings,
     HolderServiceUnavailable,
+    MAX_REQUEST_BYTES,
     MemoryHolderStateStore,
     PersistentHolderRuntime,
     PostgresHolderStateStore,
+    RequestBodyLimitMiddleware,
     VAULT_TOKEN_RENEWAL_RETRY_SECONDS,
+    _canonical_json,
     _load_policy,
     _maintain_vault_token,
     _read_bounded_file,
@@ -214,11 +219,12 @@ def _presence(
     return state
 
 
-def _complete_credential(
+def _complete_attestation(
     runtime: PersistentHolderRuntime,
     *,
     session_id: str = "durable-session",
-) -> str:
+    credential_jti: str = "c" * 32,
+) -> dict[str, Any]:
     initial_hash = "sha256:" + "a" * 64
     runtime.authorize_session(
         issuer=ISSUER,
@@ -270,7 +276,7 @@ def _complete_credential(
             "public_key_pem": runtime.holder.public_key_pem,
             "key_fingerprint": runtime.holder.key_fingerprint,
             "audience": AUDIENCE,
-            "credential_jti": "c" * 32,
+            "credential_jti": credential_jti,
             "transcript_hash": final_hash,
             "sequence": 1,
             "started_at_unix_ms": now_ms - 100,
@@ -285,7 +291,92 @@ def _complete_credential(
             ],
         },
     )
-    return runtime.register_credential(issuer=ISSUER, attestation=attestation)
+    return attestation
+
+
+def _complete_credential(
+    runtime: PersistentHolderRuntime,
+    *,
+    session_id: str = "durable-session",
+    credential_jti: str = "c" * 32,
+) -> str:
+    return runtime.register_credential(
+        issuer=ISSUER,
+        attestation=_complete_attestation(
+            runtime,
+            session_id=session_id,
+            credential_jti=credential_jti,
+        ),
+    )
+
+
+def _freeze_module_clock(
+    monkeypatch: pytest.MonkeyPatch, module: str, now: datetime
+) -> None:
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> Any:
+            return now if tz is None else now.astimezone(tz)
+
+    monkeypatch.setattr(f"{module}.datetime", FrozenDateTime)
+
+
+async def _exercise_body_limiter(
+    *,
+    messages: list[Any],
+    headers: Any = (),
+    read_body: bool = True,
+    scope_type: str = "http",
+    maximum_bytes: int = MAX_REQUEST_BYTES,
+) -> dict[str, Any]:
+    queued = list(messages)
+    sent: list[dict[str, Any]] = []
+    app_calls = 0
+    receive_calls = 0
+    received_body = bytearray()
+
+    async def receive() -> Any:
+        nonlocal receive_calls
+        receive_calls += 1
+        if not queued:
+            raise AssertionError("middleware read beyond the supplied ASGI body")
+        return queued.pop(0)
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    async def app(
+        _scope: dict[str, Any],
+        app_receive: Callable[[], Any],
+        app_send: Callable[[dict[str, Any]], Any],
+    ) -> None:
+        nonlocal app_calls
+        app_calls += 1
+        if read_body and scope_type == "http":
+            while True:
+                message = await app_receive()
+                if message.get("type") != "http.request":
+                    break
+                received_body.extend(message.get("body", b""))
+                if not message.get("more_body", False):
+                    break
+        await app_send({"type": "http.response.start", "status": 204, "headers": []})
+        await app_send({"type": "http.response.body", "body": b""})
+
+    middleware = RequestBodyLimitMiddleware(app, maximum_bytes=maximum_bytes)
+    await middleware(
+        {"type": scope_type, "method": "POST", "path": "/", "headers": headers},
+        receive,
+        send,
+    )
+    status = next((message["status"] for message in sent if "status" in message), None)
+    return {
+        "status": status,
+        "app_calls": app_calls,
+        "receive_calls": receive_calls,
+        "received_body": bytes(received_body),
+        "sent": sent,
+    }
 
 
 def test_file_secret_provider_reads_on_demand_without_retaining_secret(
@@ -364,6 +455,272 @@ def test_runtime_restart_preserves_presentations_and_concurrent_idempotency(
         )
     assert len(set(signatures)) == 1
     assert restarted.status()["presentations"] == 2
+
+
+def test_expired_credential_cannot_be_registered(
+    issuer_key: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = PersistentHolderRuntime(
+        _holder(issuer_key), MemoryHolderStateStore(), STATE_KEY
+    )
+    attestation = _complete_attestation(runtime, session_id="expired-registration")
+    expires_at = datetime.fromisoformat(attestation["expires_at"])
+    _freeze_module_clock(monkeypatch, "mettle.holder", expires_at)
+    with pytest.raises(HolderPolicyError, match="expired"):
+        runtime.register_credential(issuer=ISSUER, attestation=attestation)
+    assert runtime.status()["credentials"] == 0
+
+
+def test_expiry_is_preserved_across_export_restore_and_pruned_at_boundaries(
+    issuer_key: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+    holder = _holder(issuer_key, private_key=private_key)
+    runtime = PersistentHolderRuntime(holder, MemoryHolderStateStore(), STATE_KEY)
+    credential_jti = _complete_credential(runtime, session_id="expiry-roundtrip")
+    credential_expiry = datetime.fromisoformat(
+        runtime.holder.export_state()["credentials"][0]["expires_at"]
+    )
+    presentation_expiry = datetime.now(timezone.utc) + timedelta(minutes=5)
+    runtime.sign_presentation(
+        challenge_id="expiry-presentation",
+        nonce="p" * 32,
+        audience=AUDIENCE,
+        credential_jti=credential_jti,
+        expires_at=presentation_expiry.isoformat(),
+    )
+    snapshot = runtime.holder.export_state()
+    assert snapshot["credentials"][0]["expires_at"] == credential_expiry.isoformat()
+    encoded_message = snapshot["credentials"][0]["presentations"][0]["message"]
+    presentation_payload = json.loads(base64.b64decode(encoded_message))
+    assert (
+        datetime.fromisoformat(
+            presentation_payload["expires_at"].replace("Z", "+00:00")
+        )
+        == presentation_expiry
+    )
+
+    restored = _holder(issuer_key, private_key=private_key)
+    restored.restore_state(snapshot)
+    assert restored.status()["credentials"] == 1
+    assert restored.status()["presentations"] == 1
+    assert restored.export_state()["credentials"][0]["expires_at"] == (
+        credential_expiry.isoformat()
+    )
+
+    _freeze_module_clock(monkeypatch, "mettle.holder", presentation_expiry)
+    assert restored.status()["credentials"] == 1
+    assert restored.status()["presentations"] == 0
+
+    _freeze_module_clock(monkeypatch, "mettle.holder", credential_expiry)
+    assert restored.status()["credentials"] == 0
+    assert restored.export_state()["credentials"] == []
+    expired_restore = _holder(issuer_key, private_key=private_key)
+    expired_restore.restore_state(snapshot)
+    assert expired_restore.status()["credentials"] == 0
+    assert expired_restore.status()["presentations"] == 0
+
+
+@pytest.mark.parametrize(
+    ("corruption", "error"),
+    [("legacy-schema", "schema"), ("missing-expiry", "Credential expiry")],
+)
+def test_restore_fails_closed_when_credential_expiry_cannot_be_recovered(
+    issuer_key: str, corruption: str, error: str
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+    runtime = PersistentHolderRuntime(
+        _holder(issuer_key, private_key=private_key),
+        MemoryHolderStateStore(),
+        STATE_KEY,
+    )
+    _complete_credential(runtime, session_id=f"expiry-corruption-{corruption}")
+    snapshot = runtime.holder.export_state()
+    if corruption == "legacy-schema":
+        snapshot["schema"] = "mettle-holder-state-v1"
+    else:
+        del snapshot["credentials"][0]["expires_at"]
+
+    with pytest.raises(HolderPolicyError, match=error):
+        _holder(issuer_key, private_key=private_key).restore_state(snapshot)
+
+
+def test_restore_rejects_credential_count_before_processing_entries(
+    issuer_key: str,
+) -> None:
+    holder = _holder(issuer_key, max_credentials=1)
+    snapshot = {
+        "schema": HOLDER_STATE_SCHEMA,
+        "key_fingerprint": holder.key_fingerprint,
+        "sessions": [],
+        "credentials": [None, None],
+    }
+
+    with pytest.raises(HolderPolicyError, match="credential budget"):
+        holder.restore_state(snapshot)
+
+
+@pytest.mark.parametrize(
+    ("policy", "error"),
+    [
+        ({"max_presentations_per_credential": 1}, "presentation state exceeds"),
+        (
+            {
+                "max_presentations_per_credential": 2,
+                "max_presentation_records": 1,
+            },
+            "presentation record budget",
+        ),
+    ],
+)
+def test_restore_rejects_presentation_counts_before_processing_entries(
+    issuer_key: str,
+    policy: dict[str, int],
+    error: str,
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+    runtime = PersistentHolderRuntime(
+        _holder(issuer_key, private_key=private_key, **policy),
+        MemoryHolderStateStore(),
+        STATE_KEY,
+    )
+    _complete_credential(runtime, session_id="bounded-restore")
+    snapshot = runtime.holder.export_state()
+    snapshot["credentials"][0]["presentations"] = [None, None]
+    restored = _holder(issuer_key, private_key=private_key, **policy)
+
+    with pytest.raises(HolderPolicyError, match=error):
+        restored.restore_state(snapshot)
+
+
+def test_expired_records_release_presentation_and_credential_caps_safely(
+    issuer_key: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    baseline = datetime.now(timezone.utc)
+    runtime = PersistentHolderRuntime(
+        _holder(
+            issuer_key,
+            max_credentials=1,
+            max_presentations_per_credential=1,
+            max_presentation_ttl_seconds=3600,
+        ),
+        MemoryHolderStateStore(),
+        STATE_KEY,
+    )
+    first_jti = _complete_credential(
+        runtime, session_id="cap-first", credential_jti="c" * 32
+    )
+    first_presentation_expiry = baseline + timedelta(seconds=30)
+    runtime.sign_presentation(
+        challenge_id="cap-first-presentation",
+        nonce="p" * 32,
+        audience=AUDIENCE,
+        credential_jti=first_jti,
+        expires_at=first_presentation_expiry.isoformat(),
+    )
+    _freeze_module_clock(
+        monkeypatch,
+        "mettle.holder",
+        baseline + timedelta(seconds=31),
+    )
+    runtime.sign_presentation(
+        challenge_id="cap-second-presentation",
+        nonce="q" * 32,
+        audience=AUDIENCE,
+        credential_jti=first_jti,
+        expires_at=(baseline + timedelta(minutes=2)).isoformat(),
+    )
+    assert runtime.status()["presentations"] == 1
+
+    _freeze_module_clock(
+        monkeypatch,
+        "mettle.vcp",
+        baseline + timedelta(minutes=30),
+    )
+    second_attestation = _complete_attestation(
+        runtime,
+        session_id="cap-second",
+        credential_jti="d" * 32,
+    )
+    _freeze_module_clock(
+        monkeypatch,
+        "mettle.holder",
+        baseline + timedelta(minutes=61),
+    )
+    assert (
+        runtime.register_credential(issuer=ISSUER, attestation=second_attestation)
+        == "d" * 32
+    )
+    assert runtime.status()["credentials"] == 1
+    assert runtime.status()["presentations"] == 0
+
+
+def test_presentation_must_not_outlive_its_registered_credential(
+    issuer_key: str,
+) -> None:
+    runtime = PersistentHolderRuntime(
+        _holder(issuer_key, max_presentation_ttl_seconds=3600),
+        MemoryHolderStateStore(),
+        STATE_KEY,
+    )
+    credential_jti = _complete_credential(runtime, session_id="expiry-upper-bound")
+    credential_expiry = datetime.fromisoformat(
+        runtime.holder.export_state()["credentials"][0]["expires_at"]
+    )
+    with pytest.raises(HolderPolicyError, match="outlives credential"):
+        runtime.sign_presentation(
+            challenge_id="outliving-presentation",
+            nonce="p" * 32,
+            audience=AUDIENCE,
+            credential_jti=credential_jti,
+            expires_at=(credential_expiry + timedelta(microseconds=1)).isoformat(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("advance_to_credential_expiry", "error"),
+    [
+        (False, "challenge expired while signing"),
+        (True, "Credential expired while signing"),
+    ],
+)
+def test_expiry_is_rechecked_after_the_signer_returns(
+    issuer_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    advance_to_credential_expiry: bool,
+    error: str,
+) -> None:
+    baseline = datetime.now(timezone.utc)
+    _freeze_module_clock(monkeypatch, "mettle.holder", baseline)
+    runtime = PersistentHolderRuntime(
+        _holder(issuer_key), MemoryHolderStateStore(), STATE_KEY
+    )
+    credential_jti = _complete_credential(
+        runtime,
+        session_id=f"signing-expiry-{advance_to_credential_expiry}",
+    )
+    credential_expiry = datetime.fromisoformat(
+        runtime.holder.export_state()["credentials"][0]["expires_at"]
+    )
+    presentation_expiry = baseline + timedelta(minutes=5)
+    target = credential_expiry if advance_to_credential_expiry else presentation_expiry
+    original_sign = runtime.holder._signer.sign
+
+    def delayed_sign(message: bytes) -> bytes:
+        signature = original_sign(message)
+        _freeze_module_clock(monkeypatch, "mettle.holder", target)
+        return signature
+
+    monkeypatch.setattr(runtime.holder._signer, "sign", delayed_sign)
+    with pytest.raises(HolderPolicyError, match=error):
+        runtime.sign_presentation(
+            challenge_id=f"signing-expiry-{advance_to_credential_expiry}",
+            nonce="p" * 32,
+            audience=AUDIENCE,
+            credential_jti=credential_jti,
+            expires_at=presentation_expiry.isoformat(),
+        )
+    assert runtime.status()["presentations"] == 0
 
 
 def test_authenticated_state_tampering_fails_closed(issuer_key: str) -> None:
@@ -517,6 +874,174 @@ def test_holder_service_authentication_limits_and_security_headers(
             content=b"x" * 1048577,
         )
         assert oversized.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_direct_body_limiter_accepts_exact_256_kib_and_rejects_one_byte_over() -> (
+    None
+):
+    exact_body = b"x" * MAX_REQUEST_BYTES
+    exact = await _exercise_body_limiter(
+        messages=[{"type": "http.request", "body": exact_body, "more_body": False}],
+        headers=[(b"content-length", str(MAX_REQUEST_BYTES).encode("ascii"))],
+    )
+    assert exact["status"] == 204
+    assert exact["app_calls"] == 1
+    assert exact["received_body"] == exact_body
+
+    over = await _exercise_body_limiter(
+        messages=[
+            {
+                "type": "http.request",
+                "body": b"x" * (MAX_REQUEST_BYTES + 1),
+                "more_body": False,
+            }
+        ],
+    )
+    assert over["status"] == 413
+    assert over["app_calls"] == 0
+
+
+@pytest.mark.asyncio
+async def test_direct_body_limiter_enforces_unknown_length_when_app_never_reads() -> (
+    None
+):
+    exact_unread = await _exercise_body_limiter(
+        messages=[
+            {
+                "type": "http.request",
+                "body": b"x" * MAX_REQUEST_BYTES,
+                "more_body": False,
+            }
+        ],
+        read_body=False,
+    )
+    assert exact_unread["status"] == 204
+    assert exact_unread["app_calls"] == 1
+    assert exact_unread["receive_calls"] == 1
+
+    over_unread = await _exercise_body_limiter(
+        messages=[
+            {
+                "type": "http.request",
+                "body": b"x" * MAX_REQUEST_BYTES,
+                "more_body": True,
+            },
+            {"type": "http.request", "body": b"x", "more_body": False},
+        ],
+        read_body=False,
+    )
+    assert over_unread["status"] == 413
+    assert over_unread["app_calls"] == 0
+
+
+@pytest.mark.asyncio
+async def test_direct_body_limiter_rejects_duplicate_and_malformed_length_headers() -> (
+    None
+):
+    cases = [
+        ([(b"content-length", b"1"), (b"Content-Length", b"1")], 400),
+        ([(b"content-length", b"-1")], 400),
+        ([(b"content-length", b"+1")], 400),
+        ([(b"content-length", b"1.0")], 400),
+        ([(b"content-length", b"9" * 5000)], 413),
+        ([("content-length", b"1")], 400),
+        ({b"content-length": b"1"}, 400),
+    ]
+    for headers, expected_status in cases:
+        result = await _exercise_body_limiter(
+            messages=[{"type": "http.request", "body": b"x", "more_body": False}],
+            headers=headers,
+        )
+        assert result["status"] == expected_status
+        assert result["app_calls"] == 0
+
+
+@pytest.mark.asyncio
+async def test_direct_body_limiter_rejects_declared_mismatch_and_malformed_frames() -> (
+    None
+):
+    mismatch = await _exercise_body_limiter(
+        messages=[{"type": "http.request", "body": b"x", "more_body": False}],
+        headers=[(b"content-length", b"2")],
+    )
+    assert mismatch["status"] == 400
+    assert mismatch["app_calls"] == 0
+
+    for message in (
+        "not-an-asgi-message",
+        {"type": "http.request", "body": "x", "more_body": False},
+        {"type": "http.request", "body": b"x", "more_body": 1},
+        {"type": "unexpected", "body": b"x", "more_body": False},
+    ):
+        malformed = await _exercise_body_limiter(messages=[message])
+        assert malformed["status"] == 400
+        assert malformed["app_calls"] == 0
+
+    exhausted = await _exercise_body_limiter(
+        messages=[
+            {"type": "http.request", "body": b"", "more_body": True}
+            for _ in range(1024)
+        ]
+    )
+    assert exhausted["status"] == 400
+    assert exhausted["app_calls"] == 0
+
+
+@pytest.mark.asyncio
+async def test_direct_body_limiter_replays_disconnect() -> None:
+    result = await _exercise_body_limiter(messages=[{"type": "http.disconnect"}])
+    assert result["status"] == 204
+    assert result["app_calls"] == 1
+    assert result["receive_calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_direct_body_limiter_short_circuits_declared_overflow_before_receive() -> (
+    None
+):
+    result = await _exercise_body_limiter(
+        messages=[],
+        headers=[(b"content-length", str(MAX_REQUEST_BYTES + 1).encode("ascii"))],
+        read_body=False,
+    )
+    assert result["status"] == 413
+    assert result["app_calls"] == 0
+    assert result["receive_calls"] == 0
+
+
+@pytest.mark.asyncio
+async def test_direct_body_limiter_allows_early_response_and_bypasses_non_http() -> (
+    None
+):
+    early = await _exercise_body_limiter(
+        messages=[{"type": "http.request", "body": b"ok", "more_body": False}],
+        headers=[(b"content-length", b"2")],
+        read_body=False,
+    )
+    assert early["status"] == 204
+    assert early["app_calls"] == 1
+
+    non_http = await _exercise_body_limiter(
+        messages=[],
+        headers="malformed but irrelevant",
+        read_body=False,
+        scope_type="lifespan",
+    )
+    assert non_http["status"] == 204
+    assert non_http["app_calls"] == 1
+    assert non_http["receive_calls"] == 0
+
+
+def test_holder_state_canonical_json_rejects_nonfinite_numbers() -> None:
+    with pytest.raises(ValueError):
+        _canonical_json({"revision": float("inf")})
+
+
+@pytest.mark.parametrize("maximum", [True, -1, 1.5, "256"])
+def test_body_limiter_rejects_invalid_configuration(maximum: Any) -> None:
+    with pytest.raises(ValueError, match="non-negative integer"):
+        RequestBodyLimitMiddleware(lambda *_args: None, maximum_bytes=maximum)
 
 
 def test_holder_service_settings_fail_closed_without_required_environment(

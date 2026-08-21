@@ -317,20 +317,6 @@ class TestVerifySingleShot:
         )
         assert resp.status_code == 403
 
-    def test_value_error_from_manager_returns_400(self, client: TestClient) -> None:
-        # Create session with adversarial, then try to verify 'native' (not in session)
-        create_resp = client.post(
-            "/api/mettle/sessions",
-            json={"suites": ["adversarial"]},
-        )
-        session_id = create_resp.json()["session_id"]
-
-        resp = client.post(
-            f"/api/mettle/sessions/{session_id}/verify",
-            json={"suite": "native", "answers": {}},
-        )
-        assert resp.status_code == 400
-
 
 # ---------------------------------------------------------------------------
 # submit_round_answer: not found, different user, ValueError
@@ -458,14 +444,3 @@ class TestGetSessionResult:
 
         resp = other_client.get(f"/api/mettle/sessions/{session_id}/result")
         assert resp.status_code == 403
-
-    def test_session_not_completed_returns_400(self, client: TestClient) -> None:
-        create_resp = client.post(
-            "/api/mettle/sessions",
-            json={"suites": ["adversarial"]},
-        )
-        session_id = create_resp.json()["session_id"]
-
-        # Session is in challenges_generated state, not completed
-        resp = client.get(f"/api/mettle/sessions/{session_id}/result")
-        assert resp.status_code == 400

@@ -9,6 +9,7 @@ Requires: pip install cryptography
 from __future__ import annotations
 
 import base64
+import binascii
 import logging
 import os
 import re
@@ -78,7 +79,10 @@ def init_signing() -> bool:
 
     if pem_key:
         try:
-            _private_key = load_pem_private_key(pem_key.encode(), password=None)
+            loaded_key = load_pem_private_key(pem_key.encode(), password=None)
+            if not isinstance(loaded_key, Ed25519PrivateKey):
+                raise ValueError("VCP signing key must use Ed25519")
+            _private_key = loaded_key
             _public_key = _private_key.public_key()
             logger.info("VCP signing key loaded from METTLE_VCP_SIGNING_KEY")
         except Exception:
@@ -183,15 +187,25 @@ def verify_signature(public_key_pem: str, data: bytes, signature_b64: str) -> bo
     except ImportError:
         return False
 
+    if (
+        not isinstance(public_key_pem, str)
+        or not isinstance(data, bytes)
+        or not isinstance(signature_b64, str)
+    ):
+        return False
+
     try:
         public_key = load_pem_public_key(public_key_pem.encode("ascii"))
         if not isinstance(public_key, Ed25519PublicKey):
             logger.debug("Public key is not Ed25519: %s", type(public_key).__name__)
             return False
-        public_key.verify(base64.b64decode(signature_b64), data)
+        signature = base64.b64decode(signature_b64, validate=True)
+        if len(signature) != 64:
+            return False
+        public_key.verify(signature, data)
         return True
     except InvalidSignature:
         return False
-    except (ValueError, TypeError) as e:
+    except (AttributeError, binascii.Error, UnicodeError, ValueError, TypeError) as e:
         logger.debug("Signature verification error: %s", e)
         return False

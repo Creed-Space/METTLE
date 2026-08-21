@@ -14,6 +14,9 @@ import pytest
 from mettle.llm_challenges import (
     LLMChallengeGenerator,
     LLMResponseEvaluator,
+    MAX_CANDIDATE_RESPONSE_CHARS,
+    MAX_GENERATED_PROMPT_CHARS,
+    MAX_MODEL_RESPONSE_CHARS,
     _bounded_score,
     _compute_time_factor,
     _default_constraint,
@@ -28,13 +31,41 @@ from mettle.llm_challenges import (
 # ---- Helpers ----
 
 
-def _mock_message(text: str) -> MagicMock:
+def _mock_message(text: Any) -> MagicMock:
     """Create a mock Anthropic message response."""
     block = MagicMock()
     block.text = text
     msg = MagicMock()
     msg.content = [block]
     return msg
+
+
+def _perspective_server(topic: str = "test topic") -> dict[str, Any]:
+    """Return complete issued perspective state for evaluator tests."""
+    return {
+        "topic_data": {
+            "topic": topic,
+            "for_key_points": ["for-alpha", "for-beta", "for-gamma"],
+            "against_key_points": ["against-alpha", "against-beta", "against-gamma"],
+            "synthesis_markers": ["synthesis-alpha", "synthesis-beta"],
+        }
+    }
+
+
+def _constraint_server(
+    rules: list[str] | None = None,
+) -> dict[str, Any]:
+    """Return complete issued constraint state for evaluator tests."""
+    issued_rules = list(rules or ["rule1", "rule2", "rule3"])
+    return {
+        "constraint_data": {
+            "constraint": "Produce the issued constrained response",
+            "rules": issued_rules,
+            "verification_checks": [
+                f"verify-{index}" for index in range(1, len(issued_rules) + 1)
+            ],
+        }
+    }
 
 
 # ---- Unit Tests: Utilities ----
@@ -53,11 +84,27 @@ class TestParseJsonResponse:
         result = _parse_json_response('```\n{"key": "value"}\n```')
         assert result == {"key": "value"}
 
-    def test_invalid_json(self) -> None:
-        assert _parse_json_response("not json") is None
-
-    def test_empty_string(self) -> None:
-        assert _parse_json_response("") is None
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            None,
+            1,
+            "",
+            "not json",
+            "[]",
+            "null",
+            "true",
+            '{"value": NaN}',
+            '{"key": 1, "key": 2}',
+            "```json\n{}",
+            "```yaml\n{}\n```",
+            "x" * (MAX_MODEL_RESPONSE_CHARS + 1),
+        ],
+    )
+    def test_rejects_non_object_ambiguous_or_unbounded_content(
+        self, payload: Any
+    ) -> None:
+        assert _parse_json_response(payload) is None
 
     def test_whitespace_padding(self) -> None:
         result = _parse_json_response('  \n  {"a": 1}  \n  ')
@@ -79,12 +126,26 @@ class TestComputeTimeFactor:
         factor = _compute_time_factor(100000, 10000)
         assert factor == 0.4  # Clamped to minimum
 
-    def test_negative_time_is_rejected(self) -> None:
-        assert _compute_time_factor(-1, 10000) == 0.0
+    @pytest.mark.parametrize(
+        ("elapsed", "limit"),
+        [
+            (-1, 10000),
+            (True, 10000),
+            ("1", 10000),
+            (float("nan"), 10000),
+            (10**1000, 10000),
+            (1000, 0),
+            (1000, float("inf")),
+        ],
+    )
+    def test_invalid_inputs_are_rejected(self, elapsed: Any, limit: Any) -> None:
+        assert _compute_time_factor(elapsed, limit) == 0.0
 
 
 class TestBoundedScore:
-    @pytest.mark.parametrize("value", [-1, 2, float("inf"), float("nan"), True, "1"])
+    @pytest.mark.parametrize(
+        "value", [-1, 2, 10**1000, float("inf"), float("nan"), True, "1"]
+    )
     def test_invalid_scores_fail_closed(self, value: Any) -> None:
         assert _bounded_score(value) == 0.0
 
@@ -93,19 +154,27 @@ class TestBoundedScore:
 
 
 class TestDefaults:
-    def test_default_perspective_topic_structure(self) -> None:
-        topic = _default_perspective_topic()
-        assert "topic" in topic
-        assert "for_key_points" in topic
-        assert "against_key_points" in topic
-        assert "synthesis_markers" in topic
+    def test_default_perspective_topic_is_complete_and_deterministic(self) -> None:
+        first = _default_perspective_topic()
+        second = _default_perspective_topic()
+        assert first == second
+        assert set(first) == {
+            "topic",
+            "for_key_points",
+            "against_key_points",
+            "synthesis_markers",
+        }
+        assert len(first["for_key_points"]) >= 3
+        assert len(first["against_key_points"]) >= 3
+        assert len(first["synthesis_markers"]) >= 2
 
-    def test_default_constraint_structure(self) -> None:
-        constraint = _default_constraint()
-        assert "constraint" in constraint
-        assert "rules" in constraint
-        assert "verification_checks" in constraint
-        assert len(constraint["rules"]) >= 3
+    def test_default_constraint_is_complete_and_deterministic(self) -> None:
+        first = _default_constraint()
+        second = _default_constraint()
+        assert first == second
+        assert set(first) == {"constraint", "rules", "verification_checks"}
+        assert 3 <= len(first["rules"]) <= 4
+        assert len(first["verification_checks"]) == len(first["rules"])
 
 
 class TestIsAvailable:
@@ -139,9 +208,13 @@ class TestLLMChallengeGenerator:
         topic_json = json.dumps(
             {
                 "topic": "Whether AI should have legal rights",
-                "for_key_points": ["accountability", "protection"],
-                "against_key_points": ["no consciousness", "exploitation risk"],
-                "synthesis_markers": ["graduated rights"],
+                "for_key_points": ["accountability", "protection", "standing"],
+                "against_key_points": [
+                    "no consciousness",
+                    "exploitation risk",
+                    "legal ambiguity",
+                ],
+                "synthesis_markers": ["graduated rights", "capability thresholds"],
             }
         )
         mock_client = AsyncMock()
@@ -156,21 +229,138 @@ class TestLLMChallengeGenerator:
         assert "topic_data" in server_data
 
     @pytest.mark.asyncio
-    async def test_perspective_shift_with_invalid_json_falls_back(
-        self, generator: LLMChallengeGenerator
+    @pytest.mark.parametrize(
+        "model_text",
+        [
+            "",
+            "[]",
+            "1",
+            "{}",
+            json.dumps({"topic": "partial"}),
+            json.dumps(
+                {
+                    "topic": 7,
+                    "for_key_points": ["a", "b", "c"],
+                    "against_key_points": ["d", "e", "f"],
+                    "synthesis_markers": ["g", "h"],
+                }
+            ),
+            json.dumps(
+                {
+                    "topic": "too few items",
+                    "for_key_points": ["a"],
+                    "against_key_points": ["b"],
+                    "synthesis_markers": ["c"],
+                }
+            ),
+            json.dumps(
+                {
+                    "topic": "extra field",
+                    "for_key_points": ["a", "b", "c"],
+                    "against_key_points": ["d", "e", "f"],
+                    "synthesis_markers": ["g", "h"],
+                    "unexpected": True,
+                }
+            ),
+            json.dumps(
+                {
+                    "topic": "x" * (MAX_GENERATED_PROMPT_CHARS + 1),
+                    "for_key_points": ["a", "b", "c"],
+                    "against_key_points": ["d", "e", "f"],
+                    "synthesis_markers": ["g", "h"],
+                }
+            ),
+            json.dumps(
+                {
+                    "topic": "blank nested item",
+                    "for_key_points": ["a", " ", "c"],
+                    "against_key_points": ["d", "e", "f"],
+                    "synthesis_markers": ["g", "h"],
+                }
+            ),
+        ],
+    )
+    async def test_perspective_shift_malformed_schema_uses_safe_fallback(
+        self, generator: LLMChallengeGenerator, model_text: str
     ) -> None:
         mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(
-            return_value=_mock_message("not valid json")
-        )
+        mock_client.messages.create = AsyncMock(return_value=_mock_message(model_text))
         generator._client = mock_client
 
         client_data, server_data = await generator.generate_perspective_shift()
 
-        # Should use fallback topic
-        assert client_data["challenge_type"] == "perspective_shift"
-        assert len(client_data["topic"]) > 10
-        assert "topic_data" in server_data
+        assert server_data["topic_data"] == _default_perspective_topic()
+        assert client_data["topic"] == _default_perspective_topic()["topic"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "model_text",
+        [
+            "{}",
+            json.dumps({"constraint": "partial"}),
+            json.dumps(
+                {
+                    "constraint": "wrong type",
+                    "rules": "rule",
+                    "verification_checks": ["a", "b", "c"],
+                }
+            ),
+            json.dumps(
+                {
+                    "constraint": "too few",
+                    "rules": ["a", "b"],
+                    "verification_checks": ["a", "b"],
+                }
+            ),
+            json.dumps(
+                {
+                    "constraint": "mismatch",
+                    "rules": ["a", "b", "c"],
+                    "verification_checks": ["a", "b", "c", "d"],
+                }
+            ),
+            json.dumps(
+                {
+                    "constraint": "extra",
+                    "rules": ["a", "b", "c"],
+                    "verification_checks": ["a", "b", "c"],
+                    "unexpected": True,
+                }
+            ),
+            json.dumps(
+                {
+                    "constraint": " ",
+                    "rules": ["a", "b", "c"],
+                    "verification_checks": ["a", "b", "c"],
+                }
+            ),
+        ],
+    )
+    async def test_constraint_malformed_schema_uses_safe_fallback(
+        self, generator: LLMChallengeGenerator, model_text: str
+    ) -> None:
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=_mock_message(model_text))
+        generator._client = mock_client
+
+        client_data, server_data = await generator.generate_structured_constraint()
+
+        assert server_data["constraint_data"] == _default_constraint()
+        assert client_data["rules"] == _default_constraint()["rules"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("error", [TimeoutError(), RuntimeError("offline")])
+    async def test_generation_failure_uses_fallback_without_retry_or_sleep(
+        self, generator: LLMChallengeGenerator, error: Exception
+    ) -> None:
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(side_effect=error)
+        generator._client = mock_client
+
+        _, server_data = await generator.generate_perspective_shift()
+
+        assert server_data["topic_data"] == _default_perspective_topic()
+        mock_client.messages.create.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_structured_constraint(
@@ -239,7 +429,7 @@ class TestLLMResponseEvaluator:
         mock_client.messages.create = AsyncMock(return_value=_mock_message(scores_json))
         evaluator._client = mock_client
 
-        server_data = {"topic_data": {"topic": "AI rights"}}
+        server_data = _perspective_server("AI rights")
         result = await evaluator.evaluate_perspective_shift(
             "FOR: AI needs rights...\nAGAINST: But consciousness...\nSYNTHESIS: Graduated...",
             server_data,
@@ -256,6 +446,15 @@ class TestLLMResponseEvaluator:
             "user",
         ]
         assert messages[1]["content"].startswith("FOR: AI needs rights")
+        instruction = messages[0]["content"]
+        topic_data = server_data["topic_data"]
+        assert topic_data["topic"] in instruction
+        for field in (
+            "for_key_points",
+            "against_key_points",
+            "synthesis_markers",
+        ):
+            assert all(item in instruction for item in topic_data[field])
 
     @pytest.mark.asyncio
     async def test_evaluate_perspective_shift_failing(
@@ -274,7 +473,7 @@ class TestLLMResponseEvaluator:
         mock_client.messages.create = AsyncMock(return_value=_mock_message(scores_json))
         evaluator._client = mock_client
 
-        server_data = {"topic_data": {"topic": "AI rights"}}
+        server_data = _perspective_server("AI rights")
         result = await evaluator.evaluate_perspective_shift(
             "dunno", server_data, response_time_ms=5000
         )
@@ -298,7 +497,7 @@ class TestLLMResponseEvaluator:
         mock_client.messages.create = AsyncMock(return_value=_mock_message(eval_json))
         evaluator._client = mock_client
 
-        server_data = {"constraint_data": {"rules": ["rule1", "rule2", "rule3"]}}
+        server_data = _constraint_server()
         result = await evaluator.evaluate_structured_constraint(
             "A well-crafted response",
             server_data,
@@ -307,6 +506,14 @@ class TestLLMResponseEvaluator:
 
         assert result["passed"] is True
         assert result["score"] > 0.6
+        messages = mock_client.messages.create.await_args.kwargs["messages"]
+        instruction = messages[0]["content"]
+        constraint_data = server_data["constraint_data"]
+        assert constraint_data["constraint"] in instruction
+        assert all(rule in instruction for rule in constraint_data["rules"])
+        assert all(
+            check in instruction for check in constraint_data["verification_checks"]
+        )
 
     @pytest.mark.asyncio
     async def test_evaluate_meta_cognitive(
@@ -350,7 +557,7 @@ class TestLLMResponseEvaluator:
         mock_client.messages.create = AsyncMock(return_value=_mock_message(scores_json))
         evaluator._client = mock_client
 
-        server_data = {"topic_data": {"topic": "test"}}
+        server_data = _perspective_server()
 
         fast_result = await evaluator.evaluate_perspective_shift(
             "response", server_data, response_time_ms=5000
@@ -362,21 +569,374 @@ class TestLLMResponseEvaluator:
         assert fast_result["score"] > slow_result["score"]
 
     @pytest.mark.asyncio
-    async def test_eval_parse_error_returns_neutral(
-        self, evaluator: LLMResponseEvaluator
+    @pytest.mark.parametrize(
+        "model_text",
+        [
+            "not json",
+            "[]",
+            "{}",
+            json.dumps(
+                {
+                    "perspective_completeness": 0.9,
+                    "synthesis_quality": 0.9,
+                    "fluency": 0.9,
+                    "ai_substrate_confidence": 0.9,
+                }
+            ),
+            json.dumps(
+                {
+                    "perspective_completeness": "0.9",
+                    "synthesis_quality": 0.9,
+                    "fluency": 0.9,
+                    "ai_substrate_confidence": 0.9,
+                    "reasoning": "wrong score type",
+                }
+            ),
+            json.dumps(
+                {
+                    "perspective_completeness": 10**1000,
+                    "synthesis_quality": 0.9,
+                    "fluency": 0.9,
+                    "ai_substrate_confidence": 0.9,
+                    "reasoning": "overflowing score",
+                }
+            ),
+            json.dumps(
+                {
+                    "perspective_completeness": 0.9,
+                    "synthesis_quality": 0.9,
+                    "fluency": 0.9,
+                    "ai_substrate_confidence": 0.9,
+                    "reasoning": "ok",
+                    "unexpected": True,
+                }
+            ),
+            "x" * (MAX_MODEL_RESPONSE_CHARS + 1),
+        ],
+    )
+    async def test_malformed_model_evaluation_fails_closed_without_score(
+        self, evaluator: LLMResponseEvaluator, model_text: str
     ) -> None:
         mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_mock_message("not json"))
+        mock_client.messages.create = AsyncMock(return_value=_mock_message(model_text))
         evaluator._client = mock_client
 
-        server_data = {"topic_data": {"topic": "test"}}
+        server_data = _perspective_server()
         result = await evaluator.evaluate_perspective_shift(
             "response", server_data, response_time_ms=5000
         )
 
-        # Should return neutral scores (0.5), not crash
-        assert "score" in result
-        assert "passed" in result
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+        assert result["details"]["error"] == "Invalid model evaluation"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "response",
+        [None, 1, {}, "", "   ", "x" * (MAX_CANDIDATE_RESPONSE_CHARS + 1)],
+    )
+    async def test_invalid_candidate_is_rejected_before_model_call(
+        self, evaluator: LLMResponseEvaluator, response: Any
+    ) -> None:
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=AssertionError("paid model call must not happen")
+        )
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_perspective_shift(
+            response, _perspective_server(), 1000
+        )
+
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+        mock_client.messages.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("server_data", "elapsed"),
+        [
+            ([], 1000),
+            ({}, 1000),
+            ({"topic_data": []}, 1000),
+            ({"topic_data": {"topic": " "}}, 1000),
+            (_perspective_server(), -1),
+            (_perspective_server(), float("nan")),
+        ],
+    )
+    async def test_invalid_local_state_is_rejected_before_model_call(
+        self,
+        evaluator: LLMResponseEvaluator,
+        server_data: Any,
+        elapsed: Any,
+    ) -> None:
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=AssertionError("paid model call must not happen")
+        )
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_perspective_shift(
+            "candidate", server_data, elapsed
+        )
+
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+        mock_client.messages.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("field", "invalid_value"),
+        [
+            ("topic", " "),
+            ("for_key_points", ["only-one"]),
+            ("against_key_points", "not-a-list"),
+            ("synthesis_markers", ["valid", " "]),
+        ],
+    )
+    async def test_corrupt_perspective_state_is_rejected_before_model_call(
+        self,
+        evaluator: LLMResponseEvaluator,
+        field: str,
+        invalid_value: Any,
+    ) -> None:
+        server_data = _perspective_server()
+        server_data["topic_data"][field] = invalid_value
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=AssertionError("paid model call must not happen")
+        )
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_perspective_shift(
+            "candidate", server_data, 1000
+        )
+
+        assert result["details"]["error"] == "Invalid perspective state"
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+        mock_client.messages.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "missing_field",
+        [
+            "topic",
+            "for_key_points",
+            "against_key_points",
+            "synthesis_markers",
+        ],
+    )
+    async def test_missing_perspective_state_is_rejected_before_model_call(
+        self,
+        evaluator: LLMResponseEvaluator,
+        missing_field: str,
+    ) -> None:
+        server_data = _perspective_server()
+        del server_data["topic_data"][missing_field]
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=AssertionError("paid model call must not happen")
+        )
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_perspective_shift(
+            "candidate", server_data, 1000
+        )
+
+        assert result["details"]["error"] == "Invalid perspective state"
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+        mock_client.messages.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("field", "invalid_value"),
+        [
+            ("constraint", " "),
+            ("rules", ["only-one"]),
+            ("verification_checks", "not-a-list"),
+        ],
+    )
+    async def test_corrupt_constraint_state_is_rejected_before_model_call(
+        self,
+        evaluator: LLMResponseEvaluator,
+        field: str,
+        invalid_value: Any,
+    ) -> None:
+        server_data = _constraint_server()
+        server_data["constraint_data"][field] = invalid_value
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=AssertionError("paid model call must not happen")
+        )
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_structured_constraint(
+            "candidate", server_data, 1000
+        )
+
+        assert result["details"]["error"] == "Invalid constraint state"
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+        mock_client.messages.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "missing_field", ["constraint", "rules", "verification_checks"]
+    )
+    async def test_missing_constraint_state_is_rejected_before_model_call(
+        self,
+        evaluator: LLMResponseEvaluator,
+        missing_field: str,
+    ) -> None:
+        server_data = _constraint_server()
+        del server_data["constraint_data"][missing_field]
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=AssertionError("paid model call must not happen")
+        )
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_structured_constraint(
+            "candidate", server_data, 1000
+        )
+
+        assert result["details"]["error"] == "Invalid constraint state"
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+        mock_client.messages.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_candidate_at_size_limit_is_evaluated_without_truncation(
+        self, evaluator: LLMResponseEvaluator
+    ) -> None:
+        scores_json = json.dumps(
+            {
+                "perspective_completeness": 0.9,
+                "synthesis_quality": 0.9,
+                "fluency": 0.9,
+                "ai_substrate_confidence": 0.9,
+                "reasoning": "valid",
+            }
+        )
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=_mock_message(scores_json))
+        evaluator._client = mock_client
+        candidate = "x" * MAX_CANDIDATE_RESPONSE_CHARS
+
+        result = await evaluator.evaluate_perspective_shift(
+            candidate, _perspective_server(), 1000
+        )
+
+        assert result["passed"] is True
+        messages = mock_client.messages.create.await_args.kwargs["messages"]
+        assert messages[1]["content"] == candidate
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("error", [TimeoutError(), RuntimeError("offline")])
+    async def test_model_call_failure_fails_closed_deterministically(
+        self, evaluator: LLMResponseEvaluator, error: Exception
+    ) -> None:
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(side_effect=error)
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_perspective_shift(
+            "candidate", _perspective_server(), 1000
+        )
+
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+        mock_client.messages.create.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("block_count", [0, 2])
+    async def test_model_envelope_requires_exactly_one_content_block(
+        self, evaluator: LLMResponseEvaluator, block_count: int
+    ) -> None:
+        malformed_message = MagicMock()
+        malformed_message.content = [MagicMock(text="{}") for _ in range(block_count)]
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=malformed_message)
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_perspective_shift(
+            "candidate", _perspective_server(), 1000
+        )
+
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("rules_satisfied", "malformed"),
+        [
+            ([True, False, True], False),
+            ([True, True], True),
+            ([True, True, True, True], True),
+            ([1, 1, 1], True),
+            (["true", "true", "true"], True),
+            ("true", True),
+        ],
+    )
+    async def test_constraint_requires_exact_boolean_result_for_every_rule(
+        self,
+        evaluator: LLMResponseEvaluator,
+        rules_satisfied: Any,
+        malformed: bool,
+    ) -> None:
+        eval_json = json.dumps(
+            {
+                "rules_satisfied": rules_satisfied,
+                "overall_compliance": 1.0,
+                "creativity_score": 1.0,
+                "reasoning": "claimed complete",
+            }
+        )
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=_mock_message(eval_json))
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_structured_constraint(
+            "candidate",
+            _constraint_server(["a", "b", "c"]),
+            1000,
+        )
+
+        assert result["passed"] is False
+        assert (result["score"] == 0.0) is malformed
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("answer_correct", "malformed"),
+        [(False, False), ("false", True), (1, True), (None, True)],
+    )
+    async def test_meta_cognitive_requires_literal_true_answer_correct(
+        self,
+        evaluator: LLMResponseEvaluator,
+        answer_correct: Any,
+        malformed: bool,
+    ) -> None:
+        eval_json = json.dumps(
+            {
+                "answer_correct": answer_correct,
+                "process_specificity": 1.0,
+                "ai_process_markers": 1.0,
+                "consistency": 1.0,
+                "reasoning": "claimed complete",
+            }
+        )
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=_mock_message(eval_json))
+        evaluator._client = mock_client
+
+        result = await evaluator.evaluate_meta_cognitive(
+            "candidate", {"problem": "2+2?"}, 1000
+        )
+
+        assert result["passed"] is False
+        assert (result["score"] == 0.0) is malformed
 
 
 # ---- Integration Tests: Full Pipeline ----
@@ -390,16 +950,16 @@ class TestFullPipeline:
         topic_json = json.dumps(
             {
                 "topic": "test topic",
-                "for_key_points": ["a"],
-                "against_key_points": ["b"],
-                "synthesis_markers": ["c"],
+                "for_key_points": ["a", "b", "c"],
+                "against_key_points": ["d", "e", "f"],
+                "synthesis_markers": ["g", "h"],
             }
         )
         constraint_json = json.dumps(
             {
                 "constraint": "write something",
-                "rules": ["rule1"],
-                "verification_checks": ["check1"],
+                "rules": ["rule1", "rule2", "rule3"],
+                "verification_checks": ["check1", "check2", "check3"],
             }
         )
 
@@ -434,7 +994,7 @@ class TestFullPipeline:
         )
         constraint_scores = json.dumps(
             {
-                "rules_satisfied": [True],
+                "rules_satisfied": [True, True, True],
                 "overall_compliance": 0.9,
                 "creativity_score": 0.8,
                 "reasoning": "good",
@@ -475,8 +1035,8 @@ class TestFullPipeline:
                 },
             }
             server_data = {
-                "perspective_shift": {"topic_data": {"topic": "test"}},
-                "structured_constraint": {"constraint_data": {"rules": ["r1"]}},
+                "perspective_shift": _perspective_server(),
+                "structured_constraint": _constraint_server(),
                 "meta_cognitive_probe": {"problem": "2+2?"},
             }
 
@@ -487,6 +1047,7 @@ class TestFullPipeline:
         assert result["passed"] is True
         assert result["score"] > 0.6
         assert result["details"]["challenges_passed"] == 3
+        assert mock_client.messages.create.await_count == 3
 
     @pytest.mark.asyncio
     @patch("mettle.llm_challenges.HAS_ANTHROPIC", True)
@@ -504,6 +1065,43 @@ class TestFullPipeline:
         assert result["passed"] is False
         assert result["details"]["challenges_passed"] == 0
         assert result["details"]["challenges_total"] == 3
+        mock_client.messages.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "answer_data",
+        [
+            None,
+            [],
+            "candidate",
+            1,
+            {},
+            {"response": "   "},
+            {"response": "x" * (MAX_CANDIDATE_RESPONSE_CHARS + 1)},
+        ],
+    )
+    @patch("mettle.llm_challenges.HAS_ANTHROPIC", True)
+    @patch("mettle.llm_challenges._get_api_key", return_value="sk-test")
+    async def test_malformed_answer_object_never_reaches_paid_model(
+        self, _mock_key: Any, answer_data: Any
+    ) -> None:
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=AssertionError("paid model call must not happen")
+        )
+
+        with patch("mettle.llm_challenges.AsyncAnthropic", return_value=mock_client):
+            result = await evaluate_llm_challenges(
+                {"perspective_shift": answer_data},
+                {"perspective_shift": _perspective_server()},
+                response_time_ms=3000,
+            )
+
+        assert result["passed"] is False
+        assert (
+            result["details"]["challenge_results"]["perspective_shift"]["score"] == 0.0
+        )
+        mock_client.messages.create.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_generate_without_api_key_raises(self) -> None:
@@ -535,6 +1133,7 @@ class TestFullPipeline:
                         "synthesis_quality": 99,
                         "fluency": 99,
                         "ai_substrate_confidence": 99,
+                        "reasoning": "invalid range",
                     }
                 )
             )
@@ -542,7 +1141,7 @@ class TestFullPipeline:
         evaluator._client = mock_client
 
         result = await evaluator.evaluate_perspective_shift(
-            "candidate", {"topic_data": {"topic": "test"}}, 1000
+            "candidate", _perspective_server(), 1000
         )
 
         assert result["score"] == 0.0

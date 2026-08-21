@@ -10,19 +10,36 @@ import logging
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from typing import TypeVar
 
 from sqlalchemy import (
     Boolean,
+    case,
     Column,
     DateTime,
+    func,
     Integer,
     String,
     Text,
     create_engine,
     inspect,
     text,
+    update,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+
+MAX_RECOVERY_SESSIONS = 5000
+MAX_RECOVERED_WEBHOOKS = 1000
+MAX_REVOKED_BADGES_QUERY = 1000
+MAX_SESSION_RECOVERY_SCAN_ROWS = MAX_RECOVERY_SESSIONS * 4
+MAX_WEBHOOK_RECOVERY_SCAN_ROWS = MAX_RECOVERED_WEBHOOKS * 4
+MAX_RECOVERY_AGE_SECONDS = 24 * 60 * 60
+MAX_VERIFICATION_HISTORY_HOURS = 24 * 365
+MAX_SESSION_RECOVERY_JSON_BYTES = 1024 * 1024
+MAX_WEBHOOK_RECOVERY_JSON_BYTES = 64 * 1024
+MAX_RECOVERY_ROW_WARNINGS = 20
+_JSONType = TypeVar("_JSONType")
 
 
 def _database_url_from_env() -> str:
@@ -34,12 +51,15 @@ def _database_url_from_env() -> str:
     )
 
 
-# Database configuration
-DATABASE_URL = _database_url_from_env()
+def _normalize_database_url(value: str) -> str:
+    """Return a SQLAlchemy-compatible database URL."""
+    if value.startswith("postgres://"):
+        return value.replace("postgres://", "postgresql://", 1)
+    return value
 
-# Handle Render's postgres:// vs postgresql://
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Database configuration
+DATABASE_URL = _normalize_database_url(_database_url_from_env())
 
 # Create engine with appropriate settings
 if DATABASE_URL.startswith("sqlite"):
@@ -59,6 +79,55 @@ def _model_json_dict(value: object) -> dict:
         # Simple test doubles commonly expose model_dump() without Pydantic's
         # keyword arguments. Their return values are already JSON-compatible.
         return value.model_dump()  # type: ignore[attr-defined,no-any-return]
+
+
+def _bounded_positive_int(value: object, name: str, maximum: int) -> int:
+    """Validate a caller-controlled positive query bound."""
+    if type(value) is not int or not 1 <= value <= maximum:
+        raise ValueError(f"{name} must be an integer between 1 and {maximum}")
+    return value
+
+
+def _bounded_log_value(value: object, maximum: int = 128) -> str:
+    """Bound untrusted persisted identifiers before they enter recovery logs."""
+    rendered = str(value)
+    if len(rendered) > maximum:
+        return rendered[:maximum] + "..."
+    return rendered
+
+
+def _reject_json_constant(value: str) -> None:
+    """Reject non-standard JSON constants such as NaN and Infinity."""
+    raise ValueError(f"invalid JSON constant: {value}")
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Build a JSON object while rejecting ambiguous duplicate keys."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _load_bounded_json(
+    raw: object, *, maximum: int, expected: type[_JSONType]
+) -> _JSONType:
+    """Parse one persisted JSON value after enforcing a strict byte ceiling."""
+    if not isinstance(raw, str) or len(raw) > maximum:
+        raise ValueError("persisted JSON exceeds its recovery limit")
+    encoded = raw.encode("utf-8")
+    if len(encoded) > maximum:
+        raise ValueError("persisted JSON exceeds its recovery limit")
+    value = json.loads(
+        encoded,
+        parse_constant=_reject_json_constant,
+        object_pairs_hook=_reject_duplicate_keys,
+    )
+    if not isinstance(value, expected):
+        raise ValueError("persisted JSON has the wrong top-level type")
+    return value
 
 
 class Base(DeclarativeBase):
@@ -265,33 +334,74 @@ def update_session_results(
 
 def get_recent_sessions(max_age_seconds: int = 1800, limit: int = 5000) -> list[dict]:
     """Load recent sessions that are eligible for process-restart recovery."""
+    max_age_seconds = _bounded_positive_int(
+        max_age_seconds, "max_age_seconds", MAX_RECOVERY_AGE_SECONDS
+    )
+    limit = _bounded_positive_int(limit, "limit", MAX_RECOVERY_SESSIONS)
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
     try:
         with get_db() as db:
             rows = (
                 db.query(DBSession)
                 .filter(DBSession.created_at >= cutoff)
-                .order_by(DBSession.created_at.desc())
-                .limit(limit)
-                .all()
+                .filter(DBSession.access_token_hash.is_not(None))
+                .order_by(DBSession.created_at.desc(), DBSession.id.desc())
+                .limit(MAX_SESSION_RECOVERY_SCAN_ROWS)
+                .yield_per(100)
             )
-            return [
-                {
-                    "session_id": row.session_id,
-                    "entity_id": row.entity_id,
-                    "difficulty": row.difficulty,
-                    "challenges": json.loads(row.challenges_json),
-                    "results": json.loads(row.results_json),
-                    "completed": row.completed,
-                    "created_at": row.created_at,
-                    "access_token_hash": row.access_token_hash,
-                    "badge_info": json.loads(row.badge_info_json)
-                    if row.badge_info_json
-                    else None,
-                }
-                for row in rows
-                if row.access_token_hash
-            ]
+            recovered: list[dict] = []
+            invalid_rows = 0
+            for row in rows:
+                try:
+                    challenges = _load_bounded_json(
+                        row.challenges_json,
+                        maximum=MAX_SESSION_RECOVERY_JSON_BYTES,
+                        expected=list,
+                    )
+                    results = _load_bounded_json(
+                        row.results_json,
+                        maximum=MAX_SESSION_RECOVERY_JSON_BYTES,
+                        expected=list,
+                    )
+                    badge_info = (
+                        _load_bounded_json(
+                            row.badge_info_json,
+                            maximum=MAX_SESSION_RECOVERY_JSON_BYTES,
+                            expected=dict,
+                        )
+                        if row.badge_info_json
+                        else None
+                    )
+                except (UnicodeError, ValueError, TypeError):
+                    invalid_rows += 1
+                    if invalid_rows <= MAX_RECOVERY_ROW_WARNINGS:
+                        logger.warning(
+                            "Skipping malformed persisted session %r during recovery",
+                            _bounded_log_value(row.session_id),
+                        )
+                    continue
+                recovered.append(
+                    {
+                        "session_id": row.session_id,
+                        "entity_id": row.entity_id,
+                        "difficulty": row.difficulty,
+                        "challenges": challenges,
+                        "results": results,
+                        "completed": row.completed,
+                        "created_at": row.created_at,
+                        "access_token_hash": row.access_token_hash,
+                        "badge_info": badge_info,
+                    }
+                )
+                if len(recovered) == limit:
+                    break
+            if invalid_rows > MAX_RECOVERY_ROW_WARNINGS:
+                logger.warning(
+                    "Skipped %d additional malformed persisted sessions during recovery",
+                    invalid_rows - MAX_RECOVERY_ROW_WARNINGS,
+                )
+            recovered.reverse()
+            return recovered
     except Exception as exc:
         logger.exception("Failed to load recent sessions: %s", exc)
         raise RuntimeError("Session recovery unavailable") from exc
@@ -335,6 +445,7 @@ def is_badge_revoked(jti: str, *, raise_on_error: bool = False) -> bool:
 
 def get_revoked_badges(limit: int = 100, *, raise_on_error: bool = False) -> list[dict]:
     """Get list of revoked badges."""
+    limit = _bounded_positive_int(limit, "limit", MAX_REVOKED_BADGES_QUERY)
     try:
         with get_db() as db:
             results = (
@@ -472,6 +583,70 @@ def update_api_key_usage(api_key: str, usage_date: str, usage_count: int) -> boo
         return False
 
 
+def reserve_api_key_usage(
+    api_key: str,
+    usage_date: str,
+    amount: int,
+    daily_limit: int,
+    *,
+    raise_on_error: bool = False,
+) -> tuple[bool, int]:
+    """Atomically reserve daily quota and return ``(reserved, current_count)``.
+
+    A denied reservation never mutates the durable counter. The count returned
+    for a denial is the observed usage for ``usage_date`` and is informational;
+    a later concurrent reservation may advance it immediately afterwards.
+    """
+    try:
+        parsed_date = datetime.strptime(usage_date, "%Y-%m-%d")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("usage_date must use YYYY-MM-DD") from exc
+    if parsed_date.strftime("%Y-%m-%d") != usage_date:
+        raise ValueError("usage_date must use YYYY-MM-DD")
+    amount = _bounded_positive_int(amount, "amount", 2**31 - 1)
+    daily_limit = _bounded_positive_int(daily_limit, "daily_limit", 2**31 - 1)
+
+    digest = _api_key_digest(api_key)
+    lookup_values = [digest] if digest == api_key else [digest, api_key]
+    try:
+        with get_db() as db:
+            usage_for_date = case(
+                (
+                    DBAPIKey.usage_date == usage_date,
+                    func.coalesce(DBAPIKey.usage_count, 0),
+                ),
+                else_=0,
+            )
+            next_count = usage_for_date + amount
+            statement = (
+                update(DBAPIKey)
+                .where(DBAPIKey.api_key.in_(lookup_values))
+                .where(next_count <= daily_limit)
+                .values(
+                    api_key=digest,
+                    usage_date=usage_date,
+                    usage_count=next_count,
+                )
+                .returning(DBAPIKey.usage_count)
+            )
+            reserved_count = db.execute(statement).scalar_one_or_none()
+            if reserved_count is not None:
+                db.commit()
+                return True, int(reserved_count)
+
+            record = (
+                db.query(DBAPIKey).filter(DBAPIKey.api_key.in_(lookup_values)).first()
+            )
+            if record is None or record.usage_date != usage_date:
+                return False, 0
+            return False, int(record.usage_count or 0)
+    except Exception as exc:
+        logger.exception("Failed to reserve API key usage: %s", exc)
+        if raise_on_error:
+            raise RuntimeError("API key persistence unavailable") from exc
+        return False, 0
+
+
 # === Webhook Operations ===
 
 
@@ -521,21 +696,57 @@ def get_webhook(entity_id: str) -> dict | None:
 
 def get_webhooks(limit: int = 1000, *, raise_on_error: bool = False) -> list[dict]:
     """Load persisted webhook registrations for restart recovery."""
+    limit = _bounded_positive_int(limit, "limit", MAX_RECOVERED_WEBHOOKS)
     try:
         with get_db() as db:
-            rows = db.query(DBWebhook).order_by(DBWebhook.created_at.asc()).limit(limit)
-            return [
-                {
-                    "entity_id": row.entity_id,
-                    "url": row.url,
-                    "events": json.loads(row.events_json),
-                    "secret": row.secret,
-                    "created_at": row.created_at.isoformat()
-                    if row.created_at
-                    else None,
-                }
-                for row in rows
-            ]
+            rows = (
+                db.query(DBWebhook)
+                .order_by(DBWebhook.created_at.desc(), DBWebhook.id.desc())
+                .limit(MAX_WEBHOOK_RECOVERY_SCAN_ROWS)
+                .yield_per(100)
+            )
+            recovered: list[dict] = []
+            invalid_rows = 0
+            for row in rows:
+                try:
+                    events = _load_bounded_json(
+                        row.events_json,
+                        maximum=MAX_WEBHOOK_RECOVERY_JSON_BYTES,
+                        expected=list,
+                    )
+                    if len(events) > 64 or any(
+                        not isinstance(event, str) or len(event) > 128
+                        for event in events
+                    ):
+                        raise ValueError("persisted webhook events are invalid")
+                except (UnicodeError, ValueError, TypeError):
+                    invalid_rows += 1
+                    if invalid_rows <= MAX_RECOVERY_ROW_WARNINGS:
+                        logger.warning(
+                            "Skipping malformed persisted webhook for entity %r during recovery",
+                            _bounded_log_value(row.entity_id),
+                        )
+                    continue
+                recovered.append(
+                    {
+                        "entity_id": row.entity_id,
+                        "url": row.url,
+                        "events": events,
+                        "secret": row.secret,
+                        "created_at": row.created_at.isoformat()
+                        if row.created_at
+                        else None,
+                    }
+                )
+                if len(recovered) == limit:
+                    break
+            if invalid_rows > MAX_RECOVERY_ROW_WARNINGS:
+                logger.warning(
+                    "Skipped %d additional malformed persisted webhooks during recovery",
+                    invalid_rows - MAX_RECOVERY_ROW_WARNINGS,
+                )
+            recovered.reverse()
+            return recovered
     except Exception as exc:
         logger.exception("Failed to load webhook registrations: %s", exc)
         if raise_on_error:
@@ -579,11 +790,12 @@ def save_verification_record(entity_id: str, ip_address: str, passed: bool) -> b
         return False
 
 
-def get_recent_verifications(hours: int = 1) -> list[dict]:
+def get_recent_verifications(
+    hours: int = 1, *, raise_on_error: bool = False
+) -> list[dict]:
     """Get recent verification records."""
+    hours = _bounded_positive_int(hours, "hours", MAX_VERIFICATION_HISTORY_HOURS)
     try:
-        from datetime import timedelta
-
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         with get_db() as db:
             results = (
@@ -604,14 +816,15 @@ def get_recent_verifications(hours: int = 1) -> list[dict]:
             ]
     except Exception as exc:
         logger.exception("Failed to fetch recent verifications: %s", exc)
+        if raise_on_error:
+            raise RuntimeError("Verification history recovery unavailable") from exc
         return []
 
 
 def get_entity_verification_count(entity_id: str, hours: int = 1) -> int:
     """Get verification count for an entity in the last N hours."""
+    hours = _bounded_positive_int(hours, "hours", MAX_VERIFICATION_HISTORY_HOURS)
     try:
-        from datetime import timedelta
-
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         with get_db() as db:
             return (
@@ -629,9 +842,8 @@ def get_entity_verification_count(entity_id: str, hours: int = 1) -> int:
 
 def get_ip_entities(ip_address: str, hours: int = 1) -> set[str]:
     """Get entities verified from an IP address."""
+    hours = _bounded_positive_int(hours, "hours", MAX_VERIFICATION_HISTORY_HOURS)
     try:
-        from datetime import timedelta
-
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         with get_db() as db:
             results = (

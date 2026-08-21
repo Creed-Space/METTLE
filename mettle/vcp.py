@@ -9,13 +9,23 @@ Zero dependency on the Rewind/VCP codebase - operates purely on string formats.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+ASSURANCE_PROFILE = "mettle_behavioral_verification"
+ALLOWED_DIFFICULTIES = frozenset({"basic", "full", "easy", "standard", "hard"})
+MAX_ATTESTATION_LIFETIME = timedelta(hours=1)
+MAX_ISSUANCE_CLOCK_SKEW = timedelta(minutes=5)
+PROTOCOL_ACTION_PATTERN = re.compile(
+    r"(?:suite|round):[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+)
 
 # Suite numbers mapped to names for tier computation
 SUITE_ORDER: dict[str, int] = {
@@ -162,6 +172,58 @@ def compute_tier(
     return "none"
 
 
+def _validate_suite_partition(
+    suites_passed: Any, suites_failed: Any
+) -> tuple[list[str], list[str]]:
+    """Validate one unambiguous partition of known METTLE suite names."""
+    if not isinstance(suites_passed, list) or not isinstance(suites_failed, list):
+        raise ValueError("Suite results must be lists")
+    for suites in (suites_passed, suites_failed):
+        if any(
+            not isinstance(suite, str) or suite not in SUITE_ORDER for suite in suites
+        ):
+            raise ValueError("Suite results must contain only known suite names")
+        if len(set(suites)) != len(suites):
+            raise ValueError("Suite results must not contain duplicates")
+    if set(suites_passed) & set(suites_failed):
+        raise ValueError("A suite cannot be both passed and failed")
+    return suites_passed, suites_failed
+
+
+def _coherent_pass_rate(
+    suites_passed: list[str], suites_failed: list[str], pass_rate: Any
+) -> float:
+    if (
+        isinstance(pass_rate, bool)
+        or not isinstance(pass_rate, (int, float))
+        or not math.isfinite(pass_rate)
+        or not 0.0 <= pass_rate <= 1.0
+    ):
+        raise ValueError("pass_rate must be a finite number between 0.0 and 1.0")
+    total = len(suites_passed) + len(suites_failed)
+    expected = len(suites_passed) / total if total else 0.0
+    normalized = round(float(pass_rate), 4)
+    if normalized != round(expected, 4):
+        raise ValueError("pass_rate does not match the suite results")
+    return normalized
+
+
+def _bounded_protocol_text(value: Any, name: str, maximum: int = 256) -> str:
+    if not isinstance(value, str) or not value or len(value) > maximum:
+        raise ValueError(f"{name} must be a non-empty bounded string")
+    return value
+
+
+def _utc_protocol_datetime(value: Any) -> datetime:
+    if not isinstance(value, str) or not value:
+        raise ValueError("Attestation timestamp must be a non-empty string")
+    candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
+    parsed = datetime.fromisoformat(candidate)
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        raise ValueError("Attestation timestamps must use UTC")
+    return parsed.astimezone(timezone.utc)
+
+
 def build_mettle_attestation(
     session_id: str,
     difficulty: str,
@@ -186,12 +248,20 @@ def build_mettle_attestation(
     Returns:
         VCP-compatible attestation dict.
     """
-    if not session_id or not subject_id:
-        raise ValueError("session_id and authenticated subject_id are required")
-    if not 0.0 <= pass_rate <= 1.0:
-        raise ValueError("pass_rate must be between 0.0 and 1.0")
-    if set(suites_passed) & set(suites_failed):
-        raise ValueError("A suite cannot be both passed and failed")
+    session_id = _bounded_protocol_text(session_id, "session_id")
+    subject_id = _bounded_protocol_text(subject_id, "subject_id")
+    if entity_id is not None:
+        entity_id = _bounded_protocol_text(entity_id, "entity_id")
+    difficulty = _bounded_protocol_text(difficulty, "difficulty", maximum=32)
+    if difficulty not in ALLOWED_DIFFICULTIES:
+        raise ValueError("difficulty is not a supported METTLE profile")
+    key_id = _bounded_protocol_text(key_id, "key_id", maximum=128)
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", key_id) is None:
+        raise ValueError("key_id is invalid")
+    suites_passed, suites_failed = _validate_suite_partition(
+        suites_passed, suites_failed
+    )
+    pass_rate = _coherent_pass_rate(suites_passed, suites_failed, pass_rate)
 
     tier = compute_tier(suites_passed)
     credential_eligible = tier != "none"
@@ -206,7 +276,7 @@ def build_mettle_attestation(
         "entity_id": entity_id,
         "tier": tier,
         "verified": credential_eligible,
-        "assurance": "mettle_behavioral_verification",
+        "assurance": ASSURANCE_PROFILE,
         "credential_eligible": credential_eligible,
         "suites_passed": sorted(suites_passed),
         "suites_failed": sorted(suites_failed),
@@ -302,146 +372,211 @@ def build_mettle_attestation(
     return attestation
 
 
-def verify_mettle_attestation(attestation: dict[str, Any], public_key_pem: str) -> bool:
-    """Verify a METTLE credential envelope and its current validity."""
-    if (
-        attestation.get("attestation_type")
-        not in {"mettle-verification-credential", "mettle-presence-credential"}
-        or attestation.get("credential_issued") is not True
-    ):
-        return False
-    metadata = attestation.get("metadata")
-    if not isinstance(metadata, dict):
-        return False
-    tier = metadata.get("tier")
-    suites_passed = metadata.get("suites_passed")
-    suites_failed = metadata.get("suites_failed")
-    if not isinstance(suites_passed, list) or not isinstance(suites_failed, list):
-        return False
-    if set(suites_passed) & set(suites_failed):
-        return False
-    if (
-        not metadata.get("credential_eligible")
-        or tier not in TIER_RANGES
-        or compute_tier(suites_passed) != tier
-        or not metadata.get("session_id")
-        or not metadata.get("subject_id")
-    ):
-        return False
-    if attestation.get("attestation_type") == "mettle-presence-credential":
-        proof = metadata.get("proof_of_possession")
-        if not isinstance(proof, dict):
+def verify_mettle_attestation(
+    attestation: Any,
+    public_key_pem: Any,
+    *,
+    expected_subject_id: str | None = None,
+    expected_entity_id: str | None = None,
+    expected_key_id: str | None = None,
+    expected_assurance: str = ASSURANCE_PROFILE,
+    expected_difficulty: str | None = None,
+) -> bool:
+    """Verify a credential envelope, its semantics, and its current validity.
+
+    Verification is total over untrusted values: malformed inputs return ``False``.
+    Optional expectations bind the signed result to the relying party's context.
+    """
+    try:
+        if not isinstance(attestation, dict) or not isinstance(public_key_pem, str):
             return False
-        try:
+        attestation_type = attestation.get("attestation_type")
+        if (
+            attestation_type
+            not in {"mettle-verification-credential", "mettle-presence-credential"}
+            or attestation.get("credential_issued") is not True
+            or attestation.get("auditor") != "mettle.creed.space"
+        ):
+            return False
+        key_id = attestation.get("auditor_key_id")
+        if (
+            not isinstance(key_id, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", key_id) is None
+            or (expected_key_id is not None and key_id != expected_key_id)
+        ):
+            return False
+
+        metadata = attestation.get("metadata")
+        if not isinstance(metadata, dict):
+            return False
+        suites_passed, suites_failed = _validate_suite_partition(
+            metadata.get("suites_passed"), metadata.get("suites_failed")
+        )
+        tier = metadata.get("tier")
+        session_id = metadata.get("session_id")
+        subject_id = metadata.get("subject_id")
+        entity_id = metadata.get("entity_id")
+        difficulty = metadata.get("difficulty")
+        if (
+            metadata.get("mettle_version") != "2.0"
+            or metadata.get("verified") is not True
+            or metadata.get("credential_eligible") is not True
+            or metadata.get("assurance") != expected_assurance
+            or tier not in TIER_RANGES
+            or compute_tier(suites_passed) != tier
+            or not isinstance(session_id, str)
+            or not session_id
+            or len(session_id) > 256
+            or not isinstance(subject_id, str)
+            or not subject_id
+            or len(subject_id) > 256
+            or (
+                entity_id is not None
+                and (
+                    not isinstance(entity_id, str)
+                    or not entity_id
+                    or len(entity_id) > 256
+                )
+            )
+            or difficulty not in ALLOWED_DIFFICULTIES
+            or (expected_subject_id is not None and subject_id != expected_subject_id)
+            or (expected_entity_id is not None and entity_id != expected_entity_id)
+            or (expected_difficulty is not None and difficulty != expected_difficulty)
+        ):
+            return False
+        _coherent_pass_rate(suites_passed, suites_failed, metadata.get("pass_rate"))
+
+        proof = metadata.get("proof_of_possession")
+        if (attestation_type == "mettle-presence-credential") != isinstance(
+            proof, dict
+        ):
+            return False
+        if attestation_type == "mettle-presence-credential":
             from mettle.presence import key_fingerprint
 
+            assert isinstance(proof, dict)
             timing = proof.get("server_timing")
             continuity = proof.get("continuity")
+            sequence = proof.get("sequence")
             timing_submissions = (
                 timing.get("submissions") if isinstance(timing, dict) else None
             )
-            timing_valid = (
-                isinstance(timing, dict)
-                and isinstance(timing.get("total_elapsed_ms"), int)
-                and timing["total_elapsed_ms"] >= 0
-                and isinstance(timing_submissions, list)
-                and len(timing_submissions) == proof.get("sequence")
-            )
-            if timing_valid and isinstance(timing_submissions, list):
-                for expected_sequence, submission in enumerate(
-                    timing_submissions, start=1
+            if (
+                isinstance(sequence, bool)
+                or not isinstance(sequence, int)
+                or sequence <= 0
+                or not isinstance(timing, dict)
+                or isinstance(timing.get("total_elapsed_ms"), bool)
+                or not isinstance(timing.get("total_elapsed_ms"), int)
+                or timing["total_elapsed_ms"] < 0
+                or not isinstance(timing_submissions, list)
+                or len(timing_submissions) != sequence
+            ):
+                return False
+            challenge_ids: set[str] = set()
+            response_times: list[int] = []
+            for expected_sequence, submission in enumerate(timing_submissions, start=1):
+                if not isinstance(submission, dict):
+                    return False
+                action = submission.get("action")
+                response_time = submission.get("response_time_ms")
+                if (
+                    isinstance(submission.get("sequence"), bool)
+                    or submission.get("sequence") != expected_sequence
+                    or not isinstance(action, str)
+                    or PROTOCOL_ACTION_PATTERN.fullmatch(action) is None
+                    or isinstance(response_time, bool)
+                    or not isinstance(response_time, int)
+                    or response_time < 0
+                    or not isinstance(submission.get("transcript_hash"), str)
+                    or re.fullmatch(
+                        r"sha256:[0-9a-f]{64}", submission["transcript_hash"]
+                    )
+                    is None
                 ):
-                    if not (
-                        isinstance(submission, dict)
-                        and submission.get("sequence") == expected_sequence
-                        and isinstance(submission.get("action"), str)
-                        and submission["action"].startswith(("suite:", "round:"))
-                        and isinstance(submission.get("response_time_ms"), int)
-                        and submission["response_time_ms"] >= 0
-                        and re.fullmatch(
-                            r"sha256:[0-9a-f]{64}",
-                            str(submission.get("transcript_hash", "")),
-                        )
-                        is not None
+                    return False
+                response_times.append(response_time)
+                if continuity is not None:
+                    challenge_id = submission.get("challenge_id")
+                    if (
+                        submission.get("challenge_family") != "mettle-continuity-v1"
+                        or not isinstance(challenge_id, str)
+                        or re.fullmatch(r"[0-9a-f]{32}", challenge_id) is None
+                        or challenge_id in challenge_ids
                     ):
-                        timing_valid = False
-                        break
-                    if continuity is not None and not (
-                        submission.get("challenge_family") == "mettle-continuity-v1"
-                        and re.fullmatch(
-                            r"[0-9a-f]{32}",
-                            str(submission.get("challenge_id", "")),
-                        )
-                        is not None
-                    ):
-                        timing_valid = False
-                        break
-                if timing_submissions and (
-                    timing_submissions[-1].get("transcript_hash")
-                    != proof.get("transcript_hash")
-                ):
-                    timing_valid = False
-            continuity_valid = continuity is None or (
-                isinstance(continuity, dict)
-                and continuity.get("protocol") == "mettle-continuity-v1"
-                and continuity.get("challenge_count") == proof.get("sequence")
-                and continuity.get("transcript_bound") is True
-                and isinstance(continuity.get("max_response_time_ms"), int)
-                and continuity["max_response_time_ms"] >= 0
-                and isinstance(timing_submissions, list)
-                and len(
-                    {
-                        submission.get("challenge_id")
-                        for submission in timing_submissions
-                        if isinstance(submission, dict)
-                    }
-                )
-                == proof.get("sequence")
-            )
-            valid_presence = (
-                isinstance(metadata.get("jti"), str)
-                and re.fullmatch(r"[0-9a-f]{32}", metadata["jti"]) is not None
-                and isinstance(metadata.get("audience"), str)
-                and bool(metadata["audience"])
-                and proof.get("protocol") == "mettle-presence-v1"
-                and isinstance(proof.get("public_key_pem"), str)
-                and key_fingerprint(proof["public_key_pem"])
-                == proof.get("key_fingerprint")
-                and isinstance(proof.get("transcript_hash"), str)
-                and re.fullmatch(r"sha256:[0-9a-f]{64}", proof["transcript_hash"])
-                is not None
-                and isinstance(proof.get("sequence"), int)
-                and proof["sequence"] > 0
-                and timing_valid
-                and continuity_valid
-            )
-        except (TypeError, ValueError):
-            return False
-        if not valid_presence:
-            return False
-    expected_hash = f"sha256:{hashlib.sha256(_canonical_bytes(metadata)).hexdigest()}"
-    if attestation.get("content_hash") != expected_hash:
-        return False
-    signature = attestation.get("signature")
-    if not isinstance(signature, str) or not signature.startswith("ed25519:"):
-        return False
-    try:
-        reviewed_at = datetime.fromisoformat(str(attestation["reviewed_at"]))
-        expires_at = datetime.fromisoformat(str(attestation["expires_at"]))
-        if expires_at <= reviewed_at or expires_at <= datetime.now(timezone.utc):
-            return False
-    except (KeyError, TypeError, ValueError):
-        return False
+                        return False
+                    challenge_ids.add(challenge_id)
+            if timing_submissions[-1].get("transcript_hash") != proof.get(
+                "transcript_hash"
+            ) or timing["total_elapsed_ms"] != sum(response_times):
+                return False
+            if continuity is not None and (
+                not isinstance(continuity, dict)
+                or continuity.get("protocol") != "mettle-continuity-v1"
+                or isinstance(continuity.get("challenge_count"), bool)
+                or continuity.get("challenge_count") != sequence
+                or continuity.get("transcript_bound") is not True
+                or isinstance(continuity.get("max_response_time_ms"), bool)
+                or continuity.get("max_response_time_ms") != max(response_times)
+                or len(challenge_ids) != sequence
+            ):
+                return False
+            if (
+                not isinstance(metadata.get("jti"), str)
+                or re.fullmatch(r"[0-9a-f]{32}", metadata["jti"]) is None
+                or not isinstance(metadata.get("audience"), str)
+                or not metadata["audience"]
+                or len(metadata["audience"]) > 256
+                or proof.get("protocol") != "mettle-presence-v1"
+                or not isinstance(proof.get("public_key_pem"), str)
+                or len(proof["public_key_pem"]) > 4096
+                or key_fingerprint(proof["public_key_pem"])
+                != proof.get("key_fingerprint")
+                or not isinstance(proof.get("transcript_hash"), str)
+                or re.fullmatch(r"sha256:[0-9a-f]{64}", proof["transcript_hash"])
+                is None
+            ):
+                return False
 
-    unsigned = dict(attestation)
-    unsigned.pop("signature", None)
-    from mettle.signing import verify_signature
+        expected_hash = (
+            f"sha256:{hashlib.sha256(_canonical_bytes(metadata)).hexdigest()}"
+        )
+        if attestation.get("content_hash") != expected_hash:
+            return False
+        signature = attestation.get("signature")
+        if not isinstance(signature, str) or not signature.startswith("ed25519:"):
+            return False
 
-    return verify_signature(
-        public_key_pem,
-        _canonical_bytes(unsigned),
-        signature.removeprefix("ed25519:"),
-    )
+        reviewed_at = _utc_protocol_datetime(attestation.get("reviewed_at"))
+        expires_at = _utc_protocol_datetime(attestation.get("expires_at"))
+        now = datetime.now(timezone.utc)
+        lifetime = expires_at - reviewed_at
+        if (
+            reviewed_at > now + MAX_ISSUANCE_CLOCK_SKEW
+            or lifetime <= timedelta(0)
+            or lifetime > MAX_ATTESTATION_LIFETIME
+            or expires_at <= now
+        ):
+            return False
+
+        unsigned = dict(attestation)
+        unsigned.pop("signature", None)
+        from mettle.signing import verify_signature
+
+        return verify_signature(
+            public_key_pem,
+            _canonical_bytes(unsigned),
+            signature.removeprefix("ed25519:"),
+        )
+    except (
+        AttributeError,
+        KeyError,
+        OverflowError,
+        RecursionError,
+        TypeError,
+        ValueError,
+    ):
+        return False
 
 
 def format_csm1_line(tier: str, session_id: str, timestamp: str | None = None) -> str:
@@ -473,6 +608,11 @@ def _canonical_bytes(data: dict[str, Any]) -> bytes:
 
     Uses sorted JSON keys for deterministic output.
     """
-    import json
-
-    return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if not isinstance(data, dict):
+        raise ValueError("Canonical protocol JSON must be an object")
+    return json.dumps(
+        data,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")

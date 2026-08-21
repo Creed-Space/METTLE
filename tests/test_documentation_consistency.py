@@ -22,12 +22,10 @@ def _read(relative_path: str) -> str:
 
 def _video_narration() -> str:
     """The narration the video build would speak, straight from the scene list."""
-    import sys
+    import runpy
 
-    sys.path.insert(0, str(ROOT / "video"))
-    import build  # type: ignore[import-not-found]
-
-    return "\n".join(scene["narration"] for scene in build.SCENES)
+    namespace = runpy.run_path(str(ROOT / "video" / "build.py"))
+    return "\n".join(scene["narration"] for scene in namespace["SCENES"])
 
 
 def test_public_homepage_matches_registered_suite_count() -> None:

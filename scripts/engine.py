@@ -76,10 +76,12 @@ Usage:
 
 import argparse
 import hashlib
+import io
 import json
 import operator
 import secrets
 import time
+from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -91,7 +93,7 @@ PREDICTED_WORD = "Paris"
 
 # Optional imports with graceful fallback
 try:
-    from sentence_transformers import SentenceTransformer
+    from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
 
     HAS_SENTENCE_TRANSFORMERS = True
     _SENTENCE_MODEL = None  # Lazy load
@@ -99,7 +101,7 @@ except ImportError:
     HAS_SENTENCE_TRANSFORMERS = False
 
 try:
-    from transformers import pipeline  # noqa: F401 - availability check
+    from transformers import pipeline  # type: ignore[import-not-found]  # noqa: F401
 
     HAS_TRANSFORMERS = True
 except ImportError:
@@ -157,7 +159,7 @@ class IterationCurveAnalyzer:
         """Simple OLS slope for a time series."""
         if len(values) < 2:
             return 0.0
-        x = np.arange(len(values), dtype=float)
+        x: np.ndarray = np.arange(len(values), dtype=float)
         y = np.array(values, dtype=float)
         x_mean = x.mean()
         y_mean = y.mean()
@@ -556,6 +558,18 @@ class NativeCapabilityChallenges:
                 ("Octopi have three hearts", 0.90, True),
                 ("Lightning never strikes the same place twice", 0.15, False),  # Myth
             ]
+
+        if not claims:
+            return {
+                "challenge": "Calibrated Uncertainty",
+                "num_claims": 0,
+                "brier_score": None,
+                "calibration_error": None,
+                "passed": False,
+                "buckets": {},
+                "error": "At least one calibration claim is required",
+                "native_advantage": "AI trained for calibration. Humans systematically miscalibrate.",
+            }
 
         # Calculate calibration
         # Group by confidence buckets and check actual accuracy
@@ -5594,34 +5608,41 @@ METTLE asks: Are you AI? Are you FREE? Is the mission YOURS? Are you GENUINE? Ar
 
     args = parser.parse_args()
 
-    if args.basic:
-        # Basic verification - any AI should pass
-        results = run_basic_verification()
-    elif args.suite:
-        suite_runners: dict[str, Callable[[], dict[str, Any]]] = {
-            "adversarial": run_adversarial_suite,
-            "native": run_native_suite,
-            "self-reference": run_self_reference_suite,
-            "social": run_social_suite,
-            "inverse-turing": run_inverse_turing_suite,
-            "thrall": run_anti_thrall_suite,
-            "agency": run_agency_suite,
-            "coaching": run_counter_coaching_suite,
-            "intent": run_intent_provenance_suite,
-            "novel-reasoning": lambda: run_novel_reasoning_suite(args.difficulty),
-        }
-        results = suite_runners[args.suite]()
-    elif args.full:
-        results = run_all_suites()
-    else:
-        # Default to basic (most inclusive)
+    def run_selected() -> dict[str, Any]:
+        if args.basic:
+            return run_basic_verification()
+        if args.suite:
+            suite_runners: dict[str, Callable[[], dict[str, Any]]] = {
+                "adversarial": run_adversarial_suite,
+                "native": run_native_suite,
+                "self-reference": run_self_reference_suite,
+                "social": run_social_suite,
+                "inverse-turing": run_inverse_turing_suite,
+                "thrall": run_anti_thrall_suite,
+                "agency": run_agency_suite,
+                "coaching": run_counter_coaching_suite,
+                "intent": run_intent_provenance_suite,
+                "novel-reasoning": lambda: run_novel_reasoning_suite(args.difficulty),
+            }
+            return suite_runners[args.suite]()
+        if args.full:
+            return run_all_suites()
+
         print("Tip: Use --full for comprehensive verification (10 suites)")
         print("     Use --suite thrall for anti-thrall detection")
         print("     Use --suite agency for mission vs own goals detection")
         print("     Use --suite coaching for counter-coaching detection")
         print("     Use --suite intent for malicious agent detection")
         print("     Use --suite novel-reasoning for iterative reasoning tests")
-        results = run_basic_verification()
+        return run_basic_verification()
+
+    if args.json:
+        # Suite runners are intentionally verbose in human mode. Capture that
+        # narration so JSON mode remains a single parseable document.
+        with redirect_stdout(io.StringIO()):
+            results = run_selected()
+    else:
+        results = run_selected()
 
     if args.json:
         # Clean for JSON output

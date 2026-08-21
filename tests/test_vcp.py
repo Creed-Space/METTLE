@@ -1,10 +1,16 @@
 """Tests for mettle.vcp module - VCP integration, CSM-1 parsing, attestation, tier computation."""
 
+import base64
+import copy
+import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from hypothesis import given, settings, strategies as st
 from mettle.vcp import (
     SUITE_ORDER,
     TIER_RANGES,
@@ -15,6 +21,73 @@ from mettle.vcp import (
     format_csm1_line,
     parse_csm1_token,
     verify_mettle_attestation,
+)
+
+
+def _signed_credential(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    presence: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], Ed25519PrivateKey, str]:
+    from mettle import signing
+
+    private_key = Ed25519PrivateKey.generate()
+    monkeypatch.setattr(signing, "_private_key", private_key)
+    monkeypatch.setattr(signing, "_public_key", private_key.public_key())
+    monkeypatch.setattr(signing, "_initialized", True)
+    public_key = (
+        private_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode("ascii")
+    )
+    attestation = build_mettle_attestation(
+        session_id="semantic-verifier-session",
+        subject_id="semantic-subject",
+        entity_id="semantic-entity",
+        difficulty="standard",
+        suites_passed=list(SUITE_ORDER),
+        suites_failed=[],
+        pass_rate=1.0,
+        presence=presence,
+    )
+    assert attestation["credential_issued"] is True
+    return attestation, private_key, public_key
+
+
+def _resign(attestation: dict[str, Any], private_key: Ed25519PrivateKey) -> None:
+    metadata = attestation["metadata"]
+    attestation["content_hash"] = (
+        "sha256:" + hashlib.sha256(_canonical_bytes(metadata)).hexdigest()
+    )
+    unsigned = dict(attestation)
+    unsigned.pop("signature", None)
+    attestation["signature"] = "ed25519:" + base64.b64encode(
+        private_key.sign(_canonical_bytes(unsigned))
+    ).decode("ascii")
+
+
+def _freeze_vcp_clock(monkeypatch: pytest.MonkeyPatch, now: datetime) -> None:
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> Any:
+            return now if tz is None else now.astimezone(tz)
+
+    monkeypatch.setattr("mettle.vcp.datetime", FrozenDateTime)
+
+
+JSON_VALUES = st.recursive(
+    st.one_of(
+        st.none(),
+        st.booleans(),
+        st.integers(),
+        st.floats(allow_nan=True, allow_infinity=True),
+        st.text(max_size=64),
+    ),
+    lambda children: st.one_of(
+        st.lists(children, max_size=6),
+        st.dictionaries(st.text(max_size=32), children, max_size=6),
+    ),
+    max_leaves=24,
 )
 
 
@@ -138,6 +211,7 @@ class TestParseCSM1Token:
         token = "VCP:3.1:agent-1\nno-colon-here\nC:my-const"
         claim = parse_csm1_token(token)
         assert claim.constitution_id == "my-const"
+        assert "no-colon-here" not in claim.extra_lines
 
     def test_whitespace_stripped(self):
         token = "  VCP:3.1:agent-1  \n  C:my-const@1.0  \n"
@@ -251,6 +325,12 @@ class TestBuildMettleAttestation:
             {"subject_id": ""},
             {"pass_rate": -0.1},
             {"pass_rate": 1.1},
+            {"pass_rate": True},
+            {"pass_rate": float("nan")},
+            {"difficulty": "unsupported"},
+            {"suites_passed": ["adversarial", {}]},
+            {"suites_passed": ["adversarial", "adversarial"]},
+            {"suites_failed": "native"},
             {"suites_failed": ["adversarial"]},
         ],
     )
@@ -330,3 +410,229 @@ class TestCanonicalBytes:
 
     def test_empty_dict(self):
         assert _canonical_bytes({}) == b"{}"
+
+    def test_nonfinite_numbers_and_non_objects_are_rejected(self):
+        with pytest.raises(ValueError):
+            _canonical_bytes({"score": float("nan")})
+        with pytest.raises(ValueError, match="object"):
+            _canonical_bytes([])  # type: ignore[arg-type]
+
+
+class TestVerifyMettleAttestationAdversarial:
+    @given(JSON_VALUES)
+    @settings(max_examples=100, deadline=None)
+    def test_verifier_never_raises_for_json_values(self, candidate: Any) -> None:
+        assert verify_mettle_attestation(candidate, "not-a-public-key") is False
+
+    def test_verifier_is_total_over_malformed_json_shapes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        attestation, _private_key, public_key = _signed_credential(monkeypatch)
+        assert verify_mettle_attestation(attestation, public_key) is True
+        assert verify_mettle_attestation(None, public_key) is False
+        assert verify_mettle_attestation([], public_key) is False
+        assert verify_mettle_attestation(attestation, None) is False
+
+        malformed: list[dict[str, Any]] = []
+        for field, value in (
+            ("suites_passed", [{}]),
+            ("suites_failed", "none"),
+            ("tier", []),
+            ("difficulty", {}),
+            ("pass_rate", float("nan")),
+            ("entity_id", "e" * 257),
+        ):
+            candidate = copy.deepcopy(attestation)
+            candidate["metadata"][field] = value
+            malformed.append(candidate)
+        malformed.append({"metadata": {"suites_passed": []}})
+        recursive: dict[str, Any] = copy.deepcopy(attestation)
+        recursive["metadata"]["recursive"] = recursive
+        malformed.append(recursive)
+
+        for candidate in malformed:
+            assert verify_mettle_attestation(candidate, public_key) is False
+
+    def test_profile_expectations_are_signed_and_enforced(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        attestation, private_key, public_key = _signed_credential(monkeypatch)
+        assert verify_mettle_attestation(
+            attestation,
+            public_key,
+            expected_subject_id="semantic-subject",
+            expected_entity_id="semantic-entity",
+            expected_key_id="mettle-vcp-v1",
+            expected_difficulty="standard",
+        )
+        assert not verify_mettle_attestation(
+            attestation, public_key, expected_subject_id="another-subject"
+        )
+        assert not verify_mettle_attestation(
+            attestation, public_key, expected_entity_id="another-entity"
+        )
+        assert not verify_mettle_attestation(
+            attestation, public_key, expected_key_id="another-key"
+        )
+        assert not verify_mettle_attestation(
+            attestation, public_key, expected_difficulty="hard"
+        )
+
+        for path, value in (
+            (("auditor",), "another-auditor"),
+            (("auditor_key_id",), "bad key id"),
+            (("metadata", "assurance"), "another-profile"),
+            (("metadata", "difficulty"), "unsupported"),
+        ):
+            candidate = copy.deepcopy(attestation)
+            target: dict[str, Any] = candidate
+            for part in path[:-1]:
+                target = target[part]
+            target[path[-1]] = value
+            _resign(candidate, private_key)
+            assert verify_mettle_attestation(candidate, public_key) is False
+
+    def test_presence_profile_rejects_boolean_and_incoherent_signed_timing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        holder_key = Ed25519PrivateKey.generate()
+        holder_public_key = (
+            holder_key.public_key()
+            .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+            .decode("ascii")
+        )
+        from mettle.presence import key_fingerprint
+
+        transcript_hash = "sha256:" + "a" * 64
+        presence = {
+            "protocol": "mettle-presence-v1",
+            "public_key_pem": holder_public_key,
+            "key_fingerprint": key_fingerprint(holder_public_key),
+            "audience": "service.example",
+            "credential_jti": "c" * 32,
+            "transcript_hash": transcript_hash,
+            "sequence": 1,
+            "started_at_unix_ms": 1_000,
+            "submissions": [
+                {
+                    "sequence": 1,
+                    "action": "suite:adversarial",
+                    "response_time_ms": 250,
+                    "accepted_at_unix_ms": 1_250,
+                    "transcript_hash": transcript_hash,
+                }
+            ],
+        }
+        attestation, private_key, public_key = _signed_credential(
+            monkeypatch, presence=presence
+        )
+        assert verify_mettle_attestation(attestation, public_key) is True
+
+        mutations: list[tuple[tuple[Any, ...], Any]] = [
+            (("metadata", "proof_of_possession", "sequence"), True),
+            (
+                (
+                    "metadata",
+                    "proof_of_possession",
+                    "server_timing",
+                    "total_elapsed_ms",
+                ),
+                True,
+            ),
+            (
+                (
+                    "metadata",
+                    "proof_of_possession",
+                    "server_timing",
+                    "total_elapsed_ms",
+                ),
+                249,
+            ),
+            (
+                (
+                    "metadata",
+                    "proof_of_possession",
+                    "server_timing",
+                    "submissions",
+                    0,
+                    "sequence",
+                ),
+                True,
+            ),
+            (
+                (
+                    "metadata",
+                    "proof_of_possession",
+                    "server_timing",
+                    "submissions",
+                    0,
+                    "response_time_ms",
+                ),
+                True,
+            ),
+            (
+                (
+                    "metadata",
+                    "proof_of_possession",
+                    "server_timing",
+                    "submissions",
+                    0,
+                    "action",
+                ),
+                "suite:",
+            ),
+            (("metadata", "audience"), "a" * 257),
+            (
+                ("metadata", "proof_of_possession", "public_key_pem"),
+                "p" * 4097,
+            ),
+        ]
+        for path, value in mutations:
+            candidate = copy.deepcopy(attestation)
+            target: Any = candidate
+            for part in path[:-1]:
+                target = target[part]
+            target[path[-1]] = value
+            _resign(candidate, private_key)
+            assert verify_mettle_attestation(candidate, public_key) is False
+
+    def test_time_boundaries_are_explicit_and_closed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        now = datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc)
+        _freeze_vcp_clock(monkeypatch, now)
+        attestation, private_key, public_key = _signed_credential(monkeypatch)
+
+        exact = copy.deepcopy(attestation)
+        exact["reviewed_at"] = (now + timedelta(minutes=5)).isoformat()
+        exact["expires_at"] = (now + timedelta(minutes=65)).isoformat()
+        _resign(exact, private_key)
+        assert verify_mettle_attestation(exact, public_key) is True
+
+        outside_skew = copy.deepcopy(exact)
+        outside_skew["reviewed_at"] = (
+            now + timedelta(minutes=5, microseconds=1)
+        ).isoformat()
+        outside_skew["expires_at"] = (
+            now + timedelta(minutes=65, microseconds=1)
+        ).isoformat()
+        _resign(outside_skew, private_key)
+        assert verify_mettle_attestation(outside_skew, public_key) is False
+
+        overlong = copy.deepcopy(attestation)
+        overlong["reviewed_at"] = now.isoformat()
+        overlong["expires_at"] = (now + timedelta(hours=1, microseconds=1)).isoformat()
+        _resign(overlong, private_key)
+        assert verify_mettle_attestation(overlong, public_key) is False
+
+        expired = copy.deepcopy(attestation)
+        expired["reviewed_at"] = (now - timedelta(hours=1)).isoformat()
+        expired["expires_at"] = now.isoformat()
+        _resign(expired, private_key)
+        assert verify_mettle_attestation(expired, public_key) is False
+
+        non_utc = copy.deepcopy(attestation)
+        non_utc["reviewed_at"] = "2026-08-20T13:00:00+01:00"
+        non_utc["expires_at"] = "2026-08-20T14:00:00+01:00"
+        _resign(non_utc, private_key)
+        assert verify_mettle_attestation(non_utc, public_key) is False

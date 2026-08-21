@@ -219,6 +219,52 @@ def test_holder_validates_static_policy(
         PresenceHolder(EphemeralEd25519Signer(), HolderPolicy(**values))
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "max_active_sessions",
+        "max_actions_per_session",
+        "max_presentations_per_credential",
+        "max_presentation_ttl_seconds",
+        "max_session_records",
+        "max_credentials",
+        "max_presentation_records",
+    ],
+)
+def test_every_integer_holder_policy_field_rejects_boolean_values(
+    issuer_key: str, field: str
+) -> None:
+    values: dict[str, Any] = {
+        "issuer_public_keys": {ISSUER: issuer_key},
+        "allowed_audiences": frozenset({AUDIENCE}),
+        field: True,
+    }
+    with pytest.raises(HolderPolicyError, match="budget|TTL|record"):
+        PresenceHolder(EphemeralEd25519Signer(), HolderPolicy(**values))
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"issuer_public_keys": [ISSUER]},
+        {"issuer_public_keyrings": [ISSUER]},
+        {"allowed_audiences": {AUDIENCE}},
+        {"allowed_audiences": AUDIENCE},
+    ],
+)
+def test_holder_policy_requires_declared_trust_collection_types(
+    issuer_key: str, updates: dict[str, Any]
+) -> None:
+    values: dict[str, Any] = {
+        "issuer_public_keys": {ISSUER: issuer_key},
+        "issuer_public_keyrings": {},
+        "allowed_audiences": frozenset({AUDIENCE}),
+    }
+    values.update(updates)
+    with pytest.raises(HolderPolicyError, match="mapping|frozen"):
+        PresenceHolder(EphemeralEd25519Signer(), HolderPolicy(**values))
+
+
 def test_macos_keychain_signer_loads_without_shell_or_plaintext_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

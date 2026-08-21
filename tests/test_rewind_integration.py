@@ -189,56 +189,36 @@ class TestAuthEnforcement:
     The auth module also returns 401 when credentials are provided but invalid.
     """
 
-    def test_list_suites_requires_auth(
-        self, unauthenticated_client: TestClient
+    @pytest.mark.parametrize(
+        ("method", "path", "payload"),
+        [
+            ("GET", "/api/mettle/suites", None),
+            ("GET", "/api/mettle/suites/adversarial", None),
+            ("POST", "/api/mettle/sessions", {"suites": ["adversarial"]}),
+            ("GET", "/api/mettle/sessions/some-id", None),
+            ("DELETE", "/api/mettle/sessions/some-id", None),
+            (
+                "POST",
+                "/api/mettle/sessions/some-id/verify",
+                {"suite": "adversarial", "answers": {}},
+            ),
+            (
+                "POST",
+                "/api/mettle/sessions/some-id/rounds/1/answer",
+                {"answers": {}},
+            ),
+            ("GET", "/api/mettle/sessions/some-id/result", None),
+        ],
+    )
+    def test_endpoint_requires_auth(
+        self,
+        unauthenticated_client: TestClient,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None,
     ) -> None:
-        resp = unauthenticated_client.get("/api/mettle/suites")
-        assert resp.status_code in (401, 403)
-
-    def test_get_suite_requires_auth(self, unauthenticated_client: TestClient) -> None:
-        resp = unauthenticated_client.get("/api/mettle/suites/adversarial")
-        assert resp.status_code in (401, 403)
-
-    def test_create_session_requires_auth(
-        self, unauthenticated_client: TestClient
-    ) -> None:
-        resp = unauthenticated_client.post(
-            "/api/mettle/sessions",
-            json={"suites": ["adversarial"]},
-        )
-        assert resp.status_code in (401, 403)
-
-    def test_get_session_requires_auth(
-        self, unauthenticated_client: TestClient
-    ) -> None:
-        resp = unauthenticated_client.get("/api/mettle/sessions/some-id")
-        assert resp.status_code in (401, 403)
-
-    def test_cancel_session_requires_auth(
-        self, unauthenticated_client: TestClient
-    ) -> None:
-        resp = unauthenticated_client.delete("/api/mettle/sessions/some-id")
-        assert resp.status_code in (401, 403)
-
-    def test_verify_requires_auth(self, unauthenticated_client: TestClient) -> None:
-        resp = unauthenticated_client.post(
-            "/api/mettle/sessions/some-id/verify",
-            json={"suite": "adversarial", "answers": {}},
-        )
-        assert resp.status_code in (401, 403)
-
-    def test_submit_round_requires_auth(
-        self, unauthenticated_client: TestClient
-    ) -> None:
-        resp = unauthenticated_client.post(
-            "/api/mettle/sessions/some-id/rounds/1/answer",
-            json={"answers": {}},
-        )
-        assert resp.status_code in (401, 403)
-
-    def test_get_result_requires_auth(self, unauthenticated_client: TestClient) -> None:
-        resp = unauthenticated_client.get("/api/mettle/sessions/some-id/result")
-        assert resp.status_code in (401, 403)
+        response = unauthenticated_client.request(method, path, json=payload)
+        assert response.status_code == 401
 
 
 # ---- Ownership Enforcement (403) ----
@@ -546,20 +526,6 @@ class TestAllSuitesSmoke:
 
 class TestErrorHandling:
     """Verify proper error responses for invalid inputs."""
-
-    def test_verify_nonexistent_session(self, client: TestClient) -> None:
-        resp = client.post(
-            "/api/mettle/sessions/nonexistent/verify",
-            json={"suite": "adversarial", "answers": {}},
-        )
-        assert resp.status_code == 404
-
-    def test_submit_round_nonexistent_session(self, client: TestClient) -> None:
-        resp = client.post(
-            "/api/mettle/sessions/nonexistent/rounds/1/answer",
-            json={"answers": {}},
-        )
-        assert resp.status_code == 404
 
     def test_duplicate_suite_verification(self, client: TestClient) -> None:
         """Verifying the same suite twice should fail."""

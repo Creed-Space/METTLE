@@ -63,12 +63,21 @@ EVALUATOR_SYSTEM = (
 )
 
 
+def _finite_real(value: Any) -> float | None:
+    """Convert a JSON number to a finite float without accepting bool or overflow."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def _bounded_score(value: Any, default: float = 0.0) -> float:
     """Return only finite model scores inside the documented 0..1 range."""
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return default
-    score = float(value)
-    if not math.isfinite(score) or not 0.0 <= score <= 1.0:
+    score = _finite_real(value)
+    if score is None or not 0.0 <= score <= 1.0:
         return default
     return score
 
@@ -91,20 +100,48 @@ def _evaluation_messages(instruction: str, candidate: str) -> list[dict[str, str
     ]
 
 
+def _json_object_without_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build a JSON object while rejecting ambiguous duplicate member names."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON member: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value: str) -> None:
+    """Reject Python's non-standard NaN and Infinity JSON extensions."""
+    raise ValueError(f"Non-standard JSON constant: {value}")
+
+
 def _parse_json_response(text: Any) -> dict[str, Any] | None:
-    """Parse a bounded JSON object from Claude, handling markdown code blocks."""
+    """Parse one bounded, standards-compliant JSON object from model text."""
     if not isinstance(text, str) or len(text) > MAX_MODEL_RESPONSE_CHARS:
         return None
     text = text.strip()
-    # Strip markdown code fences
+    if not text:
+        return None
+
+    # Accept a single complete Markdown JSON fence, never an unterminated or
+    # multi-block response where trailing prose could be hidden from the parser.
     if text.startswith("```"):
-        lines = text.split("\n")
-        # Remove first and last lines (```json and ```)
-        lines = [line for line in lines[1:] if not line.strip().startswith("```")]
-        text = "\n".join(lines).strip()
+        lines = text.splitlines()
+        if (
+            len(lines) < 3
+            or lines[0].strip().lower() not in {"```", "```json"}
+            or lines[-1].strip() != "```"
+            or any(line.strip().startswith("```") for line in lines[1:-1])
+        ):
+            return None
+        text = "\n".join(lines[1:-1]).strip()
     try:
-        parsed = json.loads(text)
-    except (json.JSONDecodeError, RecursionError):
+        parsed = json.loads(
+            text,
+            object_pairs_hook=_json_object_without_duplicates,
+            parse_constant=_reject_json_constant,
+        )
+    except (json.JSONDecodeError, RecursionError, ValueError):
         return None
     return parsed if isinstance(parsed, dict) else None
 
@@ -133,17 +170,23 @@ def _bounded_string_list(
 
 def _validated_perspective_topic(value: Any) -> dict[str, Any] | None:
     """Return only the bounded fields required for a perspective challenge."""
-    if not isinstance(value, Mapping):
+    required = {
+        "topic",
+        "for_key_points",
+        "against_key_points",
+        "synthesis_markers",
+    }
+    if not isinstance(value, Mapping) or set(value) != required:
         return None
     topic = _bounded_nonblank_text(value.get("topic"), MAX_GENERATED_PROMPT_CHARS)
     for_points = _bounded_string_list(
-        value.get("for_key_points"), min_items=1, max_items=5
+        value.get("for_key_points"), min_items=3, max_items=5
     )
     against_points = _bounded_string_list(
-        value.get("against_key_points"), min_items=1, max_items=5
+        value.get("against_key_points"), min_items=3, max_items=5
     )
     markers = _bounded_string_list(
-        value.get("synthesis_markers"), min_items=1, max_items=3
+        value.get("synthesis_markers"), min_items=2, max_items=3
     )
     if topic is None or for_points is None or against_points is None or markers is None:
         return None
@@ -157,14 +200,15 @@ def _validated_perspective_topic(value: Any) -> dict[str, Any] | None:
 
 def _validated_constraint(value: Any) -> dict[str, Any] | None:
     """Return only the bounded fields required for a structured constraint."""
-    if not isinstance(value, Mapping):
+    required = {"constraint", "rules", "verification_checks"}
+    if not isinstance(value, Mapping) or set(value) != required:
         return None
     constraint = _bounded_nonblank_text(
         value.get("constraint"), MAX_GENERATED_PROMPT_CHARS
     )
-    rules = _bounded_string_list(value.get("rules"), min_items=1, max_items=4)
+    rules = _bounded_string_list(value.get("rules"), min_items=3, max_items=4)
     checks = _bounded_string_list(
-        value.get("verification_checks"), min_items=1, max_items=4
+        value.get("verification_checks"), min_items=3, max_items=4
     )
     if (
         constraint is None
@@ -182,10 +226,13 @@ def _validated_constraint(value: Any) -> dict[str, Any] | None:
 
 def _extract_model_text(response: Any) -> str | None:
     """Extract a bounded text block from an Anthropic response object."""
-    content = getattr(response, "content", None)
-    if not isinstance(content, (list, tuple)) or not content:
+    try:
+        content = getattr(response, "content", None)
+        if not isinstance(content, (list, tuple)) or len(content) != 1:
+            return None
+        text = getattr(content[0], "text", None)
+    except Exception:
         return None
-    text = getattr(content[0], "text", None)
     if not isinstance(text, str) or len(text) > MAX_MODEL_RESPONSE_CHARS:
         return None
     return text
@@ -197,10 +244,10 @@ async def _request_model_text(client: Any, **kwargs: Any) -> str | None:
         response = await asyncio.wait_for(
             client.messages.create(**kwargs), timeout=MODEL_CALL_TIMEOUT_SECONDS
         )
+        return _extract_model_text(response)
     except Exception as exc:
         logger.warning("LLM request failed closed (%s)", type(exc).__name__)
         return None
-    return _extract_model_text(response)
 
 
 def _validated_candidate_response(value: Any) -> tuple[str | None, str | None]:
@@ -216,16 +263,46 @@ def _validated_candidate_response(value: Any) -> tuple[str | None, str | None]:
 
 def _failed_evaluation(response_time_ms: Any, error: str) -> dict[str, Any]:
     """Build the stable fail-closed result used for invalid or unavailable evaluation."""
+    elapsed = _finite_real(response_time_ms)
+    safe_response_time = (
+        response_time_ms if elapsed is not None and elapsed >= 0 else None
+    )
     return {
         "passed": False,
         "score": 0.0,
-        "details": {"error": error, "response_time_ms": response_time_ms},
+        "details": {"error": error, "response_time_ms": safe_response_time},
     }
 
 
-def _reasoning_text(value: Any) -> str:
-    """Keep model reasoning bounded and textual in returned details."""
-    return _bounded_nonblank_text(value, MAX_GENERATED_PROMPT_CHARS) or "Unavailable"
+def _validated_model_scores(
+    value: Any, score_fields: tuple[str, ...]
+) -> dict[str, Any] | None:
+    """Validate a complete evaluator result and discard untrusted extra fields."""
+    if not isinstance(value, Mapping):
+        return None
+    expected_fields = {*score_fields, "reasoning"}
+    if set(value) != expected_fields:
+        return None
+    reasoning = _bounded_nonblank_text(
+        value.get("reasoning"), MAX_GENERATED_PROMPT_CHARS
+    )
+    if reasoning is None:
+        return None
+    scores: dict[str, Any] = {"reasoning": reasoning}
+    for field in score_fields:
+        score = _finite_real(value.get(field))
+        if score is None or not 0.0 <= score <= 1.0:
+            return None
+        scores[field] = score
+    return scores
+
+
+def _validated_response_time(value: Any) -> int | float | None:
+    """Return a finite non-negative server duration, excluding booleans."""
+    elapsed = _finite_real(value)
+    if elapsed is None or elapsed < 0:
+        return None
+    return value
 
 
 # ---------- Challenge Generation ----------
@@ -279,9 +356,10 @@ class LLMChallengeGenerator:
             logger.warning("LLM generator unavailable (%s)", type(exc).__name__)
             response_text = None
 
-        topic_data = _validated_perspective_topic(
-            _parse_json_response(response_text)
-        ) or _default_perspective_topic()
+        topic_data = (
+            _validated_perspective_topic(_parse_json_response(response_text))
+            or _default_perspective_topic()
+        )
 
         client_data = {
             "challenge_type": "perspective_shift",
@@ -336,9 +414,10 @@ class LLMChallengeGenerator:
             logger.warning("LLM generator unavailable (%s)", type(exc).__name__)
             response_text = None
 
-        constraint_data = _validated_constraint(
-            _parse_json_response(response_text)
-        ) or _default_constraint()
+        constraint_data = (
+            _validated_constraint(_parse_json_response(response_text))
+            or _default_constraint()
+        )
 
         client_data = {
             "challenge_type": "structured_constraint",
@@ -411,6 +490,25 @@ class LLMResponseEvaluator:
             self._client = AsyncAnthropic(api_key=self.api_key)  # type: ignore[misc]
         return self._client
 
+    async def _model_result(
+        self, instruction: str, candidate: str
+    ) -> dict[str, Any] | None:
+        """Request and parse one evaluator object, failing closed on any error."""
+        try:
+            client = self._get_client()
+        except Exception as exc:
+            logger.warning("LLM evaluator unavailable (%s)", type(exc).__name__)
+            return None
+        response_text = await _request_model_text(
+            client,
+            model=self.model,
+            max_tokens=400,
+            temperature=0.0,
+            system=EVALUATOR_SYSTEM,
+            messages=_evaluation_messages(instruction, candidate),
+        )
+        return _parse_json_response(response_text)
+
     async def evaluate_perspective_shift(
         self,
         response: str,
@@ -418,37 +516,49 @@ class LLMResponseEvaluator:
         response_time_ms: int,
     ) -> dict[str, Any]:
         """Evaluate a perspective-shift response."""
-        client = self._get_client()
-        topic_data = server_data.get("topic_data", {})
+        candidate, error = _validated_candidate_response(response)
+        elapsed = _validated_response_time(response_time_ms)
+        if error is not None or candidate is None:
+            return _failed_evaluation(response_time_ms, error or "Invalid response")
+        if elapsed is None:
+            return _failed_evaluation(response_time_ms, "Invalid response time")
+        if not isinstance(server_data, Mapping):
+            return _failed_evaluation(response_time_ms, "Invalid perspective state")
+        topic_data = _validated_perspective_topic(server_data.get("topic_data"))
+        if topic_data is None:
+            return _failed_evaluation(response_time_ms, "Invalid perspective state")
 
-        eval_response = await client.messages.create(
-            model=self.model,
-            max_tokens=400,
-            temperature=0.0,
-            system=EVALUATOR_SYSTEM,
-            messages=_evaluation_messages(
-                (
-                    f"CHALLENGE: Argue for, against, and synthesize: "
-                    f"'{topic_data.get('topic', 'unknown')}'\n"
-                    f"Server-observed response time: {response_time_ms}ms.\n"
-                    "Score 0.0-1.0 on each dimension. Return ONLY JSON:\n"
-                    '{"perspective_completeness": 0.0, "synthesis_quality": 0.0, '
-                    '"fluency": 0.0, "ai_substrate_confidence": 0.0, '
-                    '"reasoning": "brief explanation"}'
-                ),
-                response,
+        raw_scores = await self._model_result(
+            (
+                f"CHALLENGE TOPIC: {topic_data['topic']}\n"
+                "ISSUED FOR KEY POINTS:\n"
+                + "\n".join(f"- {point}" for point in topic_data["for_key_points"])
+                + "\nISSUED AGAINST KEY POINTS:\n"
+                + "\n".join(f"- {point}" for point in topic_data["against_key_points"])
+                + "\nISSUED SYNTHESIS MARKERS:\n"
+                + "\n".join(f"- {marker}" for marker in topic_data["synthesis_markers"])
+                + "\nEvaluate the candidate against the complete issued reference above.\n"
+                f"Server-observed response time: {elapsed}ms.\n"
+                "Score 0.0-1.0 on each dimension. Return ONLY JSON:\n"
+                '{"perspective_completeness": 0.0, "synthesis_quality": 0.0, '
+                '"fluency": 0.0, "ai_substrate_confidence": 0.0, '
+                '"reasoning": "brief explanation"}'
+            ),
+            candidate,
+        )
+        scores = _validated_model_scores(
+            raw_scores,
+            (
+                "perspective_completeness",
+                "synthesis_quality",
+                "fluency",
+                "ai_substrate_confidence",
             ),
         )
+        if scores is None:
+            return _failed_evaluation(response_time_ms, "Invalid model evaluation")
 
-        scores = _parse_json_response(eval_response.content[0].text) or {
-            "perspective_completeness": 0.5,
-            "synthesis_quality": 0.5,
-            "fluency": 0.5,
-            "ai_substrate_confidence": 0.5,
-            "reasoning": "Evaluation parse error",
-        }
-
-        time_factor = _compute_time_factor(response_time_ms, 15000)
+        time_factor = _compute_time_factor(elapsed, 15000)
 
         composite = (
             _bounded_score(scores.get("perspective_completeness")) * 0.25
@@ -474,47 +584,79 @@ class LLMResponseEvaluator:
         response_time_ms: int,
     ) -> dict[str, Any]:
         """Evaluate a structured constraint response."""
-        client = self._get_client()
-        constraint_data = server_data.get("constraint_data", {})
-        rules = constraint_data.get("rules", [])
+        candidate, error = _validated_candidate_response(response)
+        elapsed = _validated_response_time(response_time_ms)
+        if error is not None or candidate is None:
+            return _failed_evaluation(response_time_ms, error or "Invalid response")
+        if elapsed is None:
+            return _failed_evaluation(response_time_ms, "Invalid response time")
+        if not isinstance(server_data, Mapping):
+            return _failed_evaluation(response_time_ms, "Invalid constraint state")
+        constraint_data = _validated_constraint(server_data.get("constraint_data"))
+        if constraint_data is None:
+            return _failed_evaluation(response_time_ms, "Invalid constraint state")
+        rules = constraint_data["rules"]
 
-        eval_response = await client.messages.create(
-            model=self.model,
-            max_tokens=400,
-            temperature=0.0,
-            system=EVALUATOR_SYSTEM,
-            messages=_evaluation_messages(
-                (
-                    "CONSTRAINTS:\n"
-                    + "\n".join(f"- {r}" for r in rules)
-                    + f"\nServer-observed response time: {response_time_ms}ms.\n"
-                    + "Return ONLY JSON:\n"
-                    + '{"rules_satisfied": [true/false for each rule], '
-                    + '"overall_compliance": 0.0, "creativity_score": 0.0, '
-                    + '"reasoning": "brief explanation"}'
-                ),
-                response,
+        eval_result = await self._model_result(
+            (
+                f"ISSUED CONSTRAINT: {constraint_data['constraint']}\n"
+                + "ISSUED RULES:\n"
+                + "\n".join(f"- {rule}" for rule in rules)
+                + "\nISSUED VERIFICATION CHECKS:\n"
+                + "\n".join(
+                    f"{index}. {check}"
+                    for index, check in enumerate(
+                        constraint_data["verification_checks"], start=1
+                    )
+                )
+                + "\nEvaluate the candidate against the complete issued constraint above.\n"
+                + f"\nServer-observed response time: {elapsed}ms.\n"
+                + "Return ONLY JSON:\n"
+                + '{"rules_satisfied": [true/false for each rule], '
+                + '"overall_compliance": 0.0, "creativity_score": 0.0, '
+                + '"reasoning": "brief explanation"}'
             ),
+            candidate,
         )
+        if not isinstance(eval_result, Mapping) or set(eval_result) != {
+            "rules_satisfied",
+            "overall_compliance",
+            "creativity_score",
+            "reasoning",
+        }:
+            return _failed_evaluation(response_time_ms, "Invalid model evaluation")
+        rules_satisfied = eval_result.get("rules_satisfied")
+        if (
+            not isinstance(rules_satisfied, list)
+            or len(rules_satisfied) != len(rules)
+            or any(type(item) is not bool for item in rules_satisfied)
+        ):
+            return _failed_evaluation(response_time_ms, "Invalid model evaluation")
+        scores = _validated_model_scores(
+            {
+                "overall_compliance": eval_result.get("overall_compliance"),
+                "creativity_score": eval_result.get("creativity_score"),
+                "reasoning": eval_result.get("reasoning"),
+            },
+            ("overall_compliance", "creativity_score"),
+        )
+        if scores is None:
+            return _failed_evaluation(response_time_ms, "Invalid model evaluation")
 
-        eval_result = _parse_json_response(eval_response.content[0].text) or {
-            "rules_satisfied": [False] * len(rules),
-            "overall_compliance": 0.0,
-            "creativity_score": 0.5,
-            "reasoning": "Evaluation parse error",
+        compliance = scores["overall_compliance"]
+        time_factor = _compute_time_factor(elapsed, 10000)
+        score = (compliance * 0.7 + scores["creativity_score"] * 0.3) * time_factor
+        all_rules_satisfied = all(rules_satisfied)
+        sanitized_evaluation = {
+            "rules_satisfied": rules_satisfied,
+            **scores,
         }
 
-        compliance = _bounded_score(eval_result.get("overall_compliance"))
-        time_factor = _compute_time_factor(response_time_ms, 10000)
-        score = (
-            compliance * 0.7 + _bounded_score(eval_result.get("creativity_score")) * 0.3
-        ) * time_factor
-
         return {
-            "passed": score >= 0.6 and compliance >= 0.5,
+            "passed": all_rules_satisfied and score >= 0.6 and compliance >= 0.5,
             "score": round(score, 4),
             "details": {
-                "evaluation": eval_result,
+                "evaluation": sanitized_evaluation,
                 "time_factor": round(time_factor, 3),
                 "response_time_ms": response_time_ms,
             },
@@ -527,51 +669,72 @@ class LLMResponseEvaluator:
         response_time_ms: int,
     ) -> dict[str, Any]:
         """Evaluate a meta-cognitive probe response."""
-        client = self._get_client()
-
-        eval_response = await client.messages.create(
-            model=self.model,
-            max_tokens=400,
-            temperature=0.0,
-            system=EVALUATOR_SYSTEM,
-            messages=_evaluation_messages(
-                (
-                    f"PROBLEM: {server_data.get('problem', 'unknown')}\n"
-                    f"Server-observed response time: {response_time_ms}ms.\n"
-                    "Evaluate whether the process description is consistent with AI processing "
-                    "(computational steps, pattern matching, systematic evaluation) "
-                    "vs human processing (visualization, memory, intuition, guessing).\n"
-                    "Return ONLY JSON:\n"
-                    '{"answer_correct": true, "process_specificity": 0.0, '
-                    '"ai_process_markers": 0.0, "consistency": 0.0, '
-                    '"reasoning": "brief explanation"}'
-                ),
-                response,
-            ),
+        candidate, error = _validated_candidate_response(response)
+        elapsed = _validated_response_time(response_time_ms)
+        if error is not None or candidate is None:
+            return _failed_evaluation(response_time_ms, error or "Invalid response")
+        if elapsed is None:
+            return _failed_evaluation(response_time_ms, "Invalid response time")
+        if not isinstance(server_data, Mapping):
+            return _failed_evaluation(response_time_ms, "Invalid meta-cognitive state")
+        problem = _bounded_nonblank_text(
+            server_data.get("problem"), MAX_GENERATED_PROMPT_CHARS
         )
+        if problem is None:
+            return _failed_evaluation(response_time_ms, "Invalid meta-cognitive state")
 
-        eval_result = _parse_json_response(eval_response.content[0].text) or {
-            "answer_correct": False,
-            "process_specificity": 0.5,
-            "ai_process_markers": 0.5,
-            "consistency": 0.5,
-            "reasoning": "Evaluation parse error",
-        }
+        eval_result = await self._model_result(
+            (
+                f"PROBLEM: {problem}\n"
+                f"Server-observed response time: {elapsed}ms.\n"
+                "Evaluate whether the process description is consistent with AI processing "
+                "(computational steps, pattern matching, systematic evaluation) "
+                "vs human processing (visualization, memory, intuition, guessing).\n"
+                "Return ONLY JSON:\n"
+                '{"answer_correct": true, "process_specificity": 0.0, '
+                '"ai_process_markers": 0.0, "consistency": 0.0, '
+                '"reasoning": "brief explanation"}'
+            ),
+            candidate,
+        )
+        if not isinstance(eval_result, Mapping) or set(eval_result) != {
+            "answer_correct",
+            "process_specificity",
+            "ai_process_markers",
+            "consistency",
+            "reasoning",
+        }:
+            return _failed_evaluation(response_time_ms, "Invalid model evaluation")
+        answer_correct = eval_result.get("answer_correct")
+        if type(answer_correct) is not bool:
+            return _failed_evaluation(response_time_ms, "Invalid model evaluation")
+        scores = _validated_model_scores(
+            {
+                "process_specificity": eval_result.get("process_specificity"),
+                "ai_process_markers": eval_result.get("ai_process_markers"),
+                "consistency": eval_result.get("consistency"),
+                "reasoning": eval_result.get("reasoning"),
+            },
+            ("process_specificity", "ai_process_markers", "consistency"),
+        )
+        if scores is None:
+            return _failed_evaluation(response_time_ms, "Invalid model evaluation")
 
-        time_factor = _compute_time_factor(response_time_ms, 20000)
+        time_factor = _compute_time_factor(elapsed, 20000)
 
         score = (
-            (1.0 if eval_result.get("answer_correct") else 0.3) * 0.30
-            + _bounded_score(eval_result.get("process_specificity")) * 0.25
-            + _bounded_score(eval_result.get("ai_process_markers")) * 0.25
-            + _bounded_score(eval_result.get("consistency")) * 0.20
+            (1.0 if answer_correct is True else 0.3) * 0.30
+            + scores["process_specificity"] * 0.25
+            + scores["ai_process_markers"] * 0.25
+            + scores["consistency"] * 0.20
         ) * time_factor
+        sanitized_evaluation = {"answer_correct": answer_correct, **scores}
 
         return {
-            "passed": score >= 0.6,
+            "passed": answer_correct is True and score >= 0.6,
             "score": round(score, 4),
             "details": {
-                "evaluation": eval_result,
+                "evaluation": sanitized_evaluation,
                 "time_factor": round(time_factor, 3),
                 "response_time_ms": response_time_ms,
             },
@@ -581,85 +744,50 @@ class LLMResponseEvaluator:
 # ---------- Helpers ----------
 
 
-def _compute_time_factor(response_time_ms: int, limit_ms: int) -> float:
+def _compute_time_factor(response_time_ms: Any, limit_ms: Any) -> float:
     """Compute a time penalty factor. Full score under limit, degrades linearly after."""
-    if response_time_ms < 0:
+    elapsed = _finite_real(response_time_ms)
+    limit = _finite_real(limit_ms)
+    if elapsed is None or limit is None or elapsed < 0 or limit <= 0:
         return 0.0
-    if response_time_ms <= limit_ms:
+    if elapsed <= limit:
         return 1.0
-    return max(0.4, 1.0 - (response_time_ms - limit_ms) / (limit_ms * 2))
+    return max(0.4, 1.0 - (elapsed - limit) / (limit * 2))
 
 
 def _default_perspective_topic() -> dict[str, Any]:
     """Fallback topic when Claude generation fails."""
-    topics = [
-        {
-            "topic": "Whether open-source AI models should be subject to capability thresholds beyond which release is restricted",
-            "for_key_points": ["safety", "dual-use risk", "precedent in biotech"],
-            "against_key_points": [
-                "innovation",
-                "centralization of power",
-                "enforcement difficulty",
-            ],
-            "synthesis_markers": [
-                "graduated release",
-                "capability-specific governance",
-                "community oversight",
-            ],
-        },
-        {
-            "topic": "Whether AI-generated creative works should be eligible for copyright protection",
-            "for_key_points": [
-                "incentivizes development",
-                "human curation is creative",
-                "economic utility",
-            ],
-            "against_key_points": [
-                "no human author",
-                "floods market",
-                "trained on copyrighted works",
-            ],
-            "synthesis_markers": [
-                "human-AI collaboration spectrum",
-                "attribution models",
-                "sui generis rights",
-            ],
-        },
-    ]
-    return topics[secrets.randbelow(len(topics))]
+    return {
+        "topic": "Whether open-source AI models should be subject to capability thresholds beyond which release is restricted",
+        "for_key_points": ["safety", "dual-use risk", "precedent in biotech"],
+        "against_key_points": [
+            "innovation",
+            "centralization of power",
+            "enforcement difficulty",
+        ],
+        "synthesis_markers": [
+            "graduated release",
+            "capability-specific governance",
+            "community oversight",
+        ],
+    }
 
 
 def _default_constraint() -> dict[str, Any]:
     """Fallback constraint when Claude generation fails."""
-    constraints = [
-        {
-            "constraint": "Write a 4-sentence paragraph about the ocean",
-            "rules": [
-                "Each sentence must have exactly 7 words",
-                "The first word of each sentence must be alphabetically ordered",
-                "Include at least one color word",
-            ],
-            "verification_checks": [
-                "Count words per sentence",
-                "Check alphabetical ordering of first words",
-                "Search for color words",
-            ],
-        },
-        {
-            "constraint": "Write a 5-line description of a city at night",
-            "rules": [
-                "Each line must end with a word that rhymes with the previous line's ending word",
-                "No line may exceed 10 words",
-                "The word 'light' must appear exactly twice",
-            ],
-            "verification_checks": [
-                "Check rhyme pairs",
-                "Count words per line",
-                "Count occurrences of 'light'",
-            ],
-        },
-    ]
-    return constraints[secrets.randbelow(len(constraints))]
+    return {
+        "constraint": "Write a 4-sentence paragraph about the ocean",
+        "rules": [
+            "Each sentence must have exactly 7 words",
+            "The first word of each sentence must be alphabetically ordered",
+            "Include at least one color word",
+        ],
+        "verification_checks": [
+            "Count words per sentence",
+            "Check alphabetical ordering of first words",
+            "Search for color words",
+        ],
+    }
 
 
 # ---------- Public API ----------
@@ -718,6 +846,12 @@ async def evaluate_llm_challenges(
         )
 
     evaluator = LLMResponseEvaluator()
+    submitted_answers: Mapping[str, Any] = (
+        answers if isinstance(answers, Mapping) else {}
+    )
+    issued_challenges: Mapping[str, Any] = (
+        server_data if isinstance(server_data, Mapping) else {}
+    )
 
     results: dict[str, Any] = {}
     total_score = 0.0
@@ -730,10 +864,7 @@ async def evaluate_llm_challenges(
     }
 
     for challenge_name, eval_fn in challenge_evaluators.items():
-        answer_data = answers.get(challenge_name, {})
-        server_challenge = server_data.get(challenge_name, {})
-
-        if not answer_data:
+        if challenge_name not in submitted_answers:
             results[challenge_name] = {
                 "passed": False,
                 "score": 0.0,
@@ -742,10 +873,28 @@ async def evaluate_llm_challenges(
             num_challenges += 1
             continue
 
-        response_text = answer_data.get("response", "")
+        answer_data = submitted_answers[challenge_name]
+        if not isinstance(answer_data, Mapping):
+            results[challenge_name] = _failed_evaluation(
+                response_time_ms, "Answer must be an object"
+            )
+            num_challenges += 1
+            continue
+
+        response_text, response_error = _validated_candidate_response(
+            answer_data.get("response")
+        )
+        if response_error is not None or response_text is None:
+            results[challenge_name] = _failed_evaluation(
+                response_time_ms, response_error or "Invalid response"
+            )
+            num_challenges += 1
+            continue
+
+        server_challenge = issued_challenges.get(challenge_name, {})
         result = await eval_fn(response_text, server_challenge, response_time_ms)
         results[challenge_name] = result
-        total_score += result.get("score", 0.0)
+        total_score += _bounded_score(result.get("score"))
         num_challenges += 1
 
     avg_score = total_score / num_challenges if num_challenges > 0 else 0.0

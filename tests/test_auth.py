@@ -63,6 +63,41 @@ class TestRequireAuthenticatedUser:
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("environment", ["staging", "prod", "productionn"])
+    async def test_dev_bypass_uses_an_explicit_environment_allowlist(
+        self, monkeypatch, environment
+    ):
+        monkeypatch.setenv("METTLE_API_KEYS", "")
+        monkeypatch.setenv("METTLE_DEV_MODE", "true")
+        monkeypatch.setenv("METTLE_ENVIRONMENT", environment)
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="anything")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_authenticated_user(creds)
+
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_non_bearer_scheme_is_rejected(self, monkeypatch):
+        monkeypatch.setenv("METTLE_API_KEYS", "key1")
+        monkeypatch.setenv("METTLE_DEV_MODE", "false")
+        creds = HTTPAuthorizationCredentials(scheme="Basic", credentials="key1")
+
+        with pytest.raises(HTTPException, match="scheme"):
+            await require_authenticated_user(creds)
+
+    @pytest.mark.asyncio
+    async def test_oversized_key_is_rejected_before_comparison(self, monkeypatch):
+        monkeypatch.setenv("METTLE_API_KEYS", "x" * 513)
+        monkeypatch.setenv("METTLE_DEV_MODE", "false")
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="x" * 513)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_authenticated_user(creds)
+
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
     async def test_empty_api_keys_rejects(self, monkeypatch):
         """Empty METTLE_API_KEYS with dev mode off rejects all keys."""
         monkeypatch.setenv("METTLE_API_KEYS", "")

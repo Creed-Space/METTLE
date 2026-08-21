@@ -283,7 +283,7 @@ class TestRateTier:
 
         assert limits["sessions_per_day"] == 10000
         assert "full" in limits["suites"]
-        assert "webhooks" in limits["features"]
+        assert "webhooks" not in limits["features"]
 
     def test_get_limits_enterprise(self):
         """Test getting Enterprise tier limits."""
@@ -336,6 +336,14 @@ class TestRateTier:
             assert RateTier.get_key_data("durable-key") == key_data
 
         assert api_keys["durable-key"] == key_data
+
+    def test_oversized_api_key_is_rejected_before_durable_lookup(self):
+        mock_db = MagicMock()
+
+        with patch("main.db", mock_db):
+            assert RateTier.get_key_data("k" * 513, raise_on_error=True) is None
+
+        mock_db.get_api_key.assert_not_called()
 
     def test_register_key_persistence_failure_removes_authority(self):
         mock_db = MagicMock()
@@ -544,8 +552,8 @@ class TestWebhookEndpoints:
         RateTier.register_key(api_key, "pro", entity_id)
         return api_key
 
-    def test_register_webhook_endpoint(self, client):
-        """Test POST /api/webhooks/register with an owning API key."""
+    def test_registration_is_explicitly_disabled_without_mutating_state(self, client):
+        """No caller can create a registration while delivery lacks owner binding."""
         api_key = self._owner_key("test-entity")
         response = client.post(
             "/api/webhooks/register",
@@ -555,111 +563,26 @@ class TestWebhookEndpoints:
             },
             headers={"X-API-Key": api_key},
         )
+
+        assert response.status_code == 410
+        assert "disabled" in response.json()["detail"].lower()
+        assert "test-entity" not in webhooks
+        assert "webhooks" not in RateTier.get_limits("pro")["features"]
+
+    def test_events_endpoint_does_not_advertise_inactive_delivery(self, client):
+        response = client.get("/api/webhooks/events")
 
         assert response.status_code == 200
-        data = response.json()
-        assert data["registered"] is True
-        assert data["entity_id"] == "test-entity"
-
-    def test_register_webhook_with_events(self, client):
-        """Test registering webhook with specific events."""
-        api_key = self._owner_key("test-entity")
-        response = client.post(
-            "/api/webhooks/register",
-            json={
-                "entity_id": "test-entity",
-                "url": "https://example.com/webhook",
-                "events": ["session.completed", "badge.issued"],
-            },
-            headers={"X-API-Key": api_key},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["events"] == ["session.completed", "badge.issued"]
-
-    def test_register_webhook_invalid_event(self, client):
-        """Test registering webhook with invalid event (after passing auth)."""
-        api_key = self._owner_key("test-entity")
-        response = client.post(
-            "/api/webhooks/register",
-            json={
-                "entity_id": "test-entity",
-                "url": "https://example.com/webhook",
-                "events": ["invalid.event"],
-            },
-            headers={"X-API-Key": api_key},
-        )
-
-        assert response.status_code == 400
-
-    def test_register_webhook_no_api_key(self, client):
-        """SECURITY: anonymous webhook registration is rejected with 401."""
-        response = client.post(
-            "/api/webhooks/register",
-            json={
-                "entity_id": "victim-entity",
-                "url": "https://example.com/webhook",
-            },
-        )
-
-        assert response.status_code == 401
-        assert "victim-entity" not in webhooks
-
-    def test_register_webhook_unknown_api_key(self, client):
-        """SECURITY: an unrecognized API key is rejected with 401."""
-        response = client.post(
-            "/api/webhooks/register",
-            json={
-                "entity_id": "victim-entity",
-                "url": "https://example.com/webhook",
-            },
-            headers={"X-API-Key": "not-a-real-key"},
-        )
-
-        assert response.status_code == 401
-        assert "victim-entity" not in webhooks
-
-    def test_register_webhook_entity_mismatch(self, client):
-        """SECURITY: alice's key cannot register a webhook for bob (IDOR)."""
-        alice_key = self._owner_key("entity-alice")
-        response = client.post(
-            "/api/webhooks/register",
-            json={
-                "entity_id": "entity-bob",
-                "url": "https://example.com/webhook",
-            },
-            headers={"X-API-Key": alice_key},
-        )
-
-        assert response.status_code == 403
-        # The cross-entity webhook must not have been registered
-        assert "entity-bob" not in webhooks
-
-    def test_register_webhook_free_tier_is_forbidden(self, client):
-        """SECURITY: entity ownership cannot bypass the webhook feature tier."""
-        RateTier.register_key("free-webhook-key", "free", "free-entity")
-        response = client.post(
-            "/api/webhooks/register",
-            json={
-                "entity_id": "free-entity",
-                "url": "https://example.com/webhook",
-            },
-            headers={"X-API-Key": "free-webhook-key"},
-        )
-        assert response.status_code == 403
-        assert "pro or enterprise" in response.json()["detail"]
-        assert "free-entity" not in webhooks
+        assert response.json() == {
+            "enabled": False,
+            "events": [],
+            "registered_count": 0,
+        }
 
     def test_unregister_webhook_endpoint(self, client):
         """Test DELETE /api/webhooks/{entity_id} with admin key."""
-        # First register with the owning key
-        api_key = self._owner_key("test-entity")
-        client.post(
-            "/api/webhooks/register",
-            json={"entity_id": "test-entity", "url": "https://example.com/webhook"},
-            headers={"X-API-Key": api_key},
-        )
+        # Existing durable registrations remain removable during decommissioning.
+        WebhookManager.register("test-entity", "https://example.com/webhook")
 
         # Then unregister with admin key
         response = client.delete(
@@ -715,15 +638,6 @@ class TestWebhookEndpoints:
             statuses.append(resp.status_code)
 
         assert 429 in statuses
-
-    def test_list_webhook_events(self, client):
-        """Test GET /api/webhooks/events."""
-        response = client.get("/api/webhooks/events")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "events" in data
-        assert len(data["events"]) == 4
 
 
 # === Batch Verification Tests ===
@@ -825,8 +739,8 @@ class TestBatchVerification:
 
         assert response.status_code == 403
 
-    def test_batch_unknown_key_is_free_tier(self, client):
-        """SECURITY: an unrecognized key defaults to free tier and is forbidden (403)."""
+    def test_batch_unknown_key_is_unauthorized(self, client):
+        """SECURITY: an unrecognized credential is not a valid free-tier key."""
         response = client.post(
             "/api/session/batch",
             json={
@@ -836,7 +750,7 @@ class TestBatchVerification:
             headers={"X-API-Key": "totally-unknown-key"},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     def test_batch_enterprise_tier(self, client):
         """An enterprise-tier key (features ['all']) can use batch (200)."""

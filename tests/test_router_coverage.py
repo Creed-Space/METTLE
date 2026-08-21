@@ -13,11 +13,15 @@ Uses the same FakeRedis + dependency-override pattern as test_api_coverage.py.
 
 from __future__ import annotations
 
+import base64
 import json
+from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -45,8 +49,107 @@ class FakeRedis:
         self._store[key] = value
         self._ttls[key] = ttl
 
-    async def delete(self, key: str) -> None:
-        self._store.pop(key, None)
+    async def set(
+        self,
+        key: str,
+        value: str,
+        *,
+        ex: int | None = None,
+        nx: bool = False,
+    ) -> bool:
+        if nx and key in self._store:
+            return False
+        self._store[key] = value
+        if ex is not None:
+            self._ttls[key] = ex
+        return True
+
+    async def delete(self, key: str) -> int:
+        return int(self._store.pop(key, None) is not None)
+
+    async def eval(
+        self,
+        _script: str,
+        numkeys: int,
+        *args: Any,
+    ) -> int:
+        if numkeys == 1 and len(args) == 2:
+            key, expected_value = args
+            if self._store.get(key) != expected_value:
+                return 0
+            if "DEL" in _script:
+                return await self.delete(key)
+            return 1
+
+        if numkeys == 1 and len(args) == 3:
+            key, expected_value, ttl = args
+            if self._store.get(key) != expected_value:
+                return 0
+            self._ttls[key] = int(ttl)
+            return 1
+
+        if numkeys == 2 and len(args) == 5:
+            session_key, lock_key, payload, ttl, lock_token = args
+            if self._store.get(lock_key) != lock_token:
+                return 0
+            self._store[session_key] = payload
+            self._ttls[session_key] = int(ttl)
+            return 1
+
+        if numkeys == 5 and len(args) == 9:
+            (
+                session_key,
+                active_key,
+                answers_key,
+                lock_key,
+                reservation_key,
+                payload,
+                ttl,
+                session_id,
+                lock_token,
+            ) = args
+            if self._store.get(lock_key) != lock_token:
+                return 0
+            self._store[session_key] = payload
+            self._ttls[session_key] = int(ttl)
+            self._sets.get(active_key, set()).discard(session_id)
+            self._store.pop(answers_key, None)
+            self._store.pop(reservation_key, None)
+            return 1
+
+        if numkeys == 3 and len(args) == 9:
+            (
+                active_key,
+                hourly_key,
+                reservation_key,
+                session_id,
+                max_active,
+                max_hourly,
+                active_ttl,
+                hourly_ttl,
+                _session_prefix,
+            ) = args
+            if len(self._sets.get(active_key, set())) >= int(max_active):
+                return -1
+            if int(self._store.get(hourly_key, "0")) >= int(max_hourly):
+                return -2
+            self._sets.setdefault(active_key, set()).add(session_id)
+            self._ttls[active_key] = int(active_ttl)
+            self._store[hourly_key] = str(int(self._store.get(hourly_key, "0")) + 1)
+            self._ttls[hourly_key] = int(hourly_ttl)
+            self._store[reservation_key] = "1"
+            self._ttls[reservation_key] = int(active_ttl)
+            return 1
+
+        if numkeys == 3 and len(args) == 4:
+            active_key, hourly_key, reservation_key, session_id = args
+            self._sets.get(active_key, set()).discard(session_id)
+            self._store.pop(reservation_key, None)
+            hourly = int(self._store.get(hourly_key, "0"))
+            self._store[hourly_key] = str(max(0, hourly - 1))
+            return 1
+
+        raise AssertionError("Unexpected Lua script in FakeRedis")
 
     async def sadd(self, key: str, *values: str) -> int:
         if key not in self._sets:
@@ -122,6 +225,37 @@ def _make_mock_user(user_id: str = "test-user-123") -> MagicMock:
     user = MagicMock()
     user.user_id = user_id
     return user
+
+
+def _operator_commitment(entity_id: str, nonce: str = "c" * 64) -> dict[str, str]:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = (
+        private_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    issued_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    commitment = {
+        "operator_pseudonym": "operator-1",
+        "operator_public_key": public_key,
+        "contact_method": "email_hash",
+        "contact_hash": "a" * 64,
+        "issued_at": issued_at,
+        "nonce": nonce,
+    }
+    message = json.dumps(
+        {
+            **commitment,
+            "entity_id": entity_id,
+            "version": 1,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    commitment["signed_commitment"] = base64.b64encode(
+        private_key.sign(message)
+    ).decode()
+    return commitment
 
 
 def _build_app(user: MagicMock, fake_redis: FakeRedis) -> FastAPI:
@@ -283,6 +417,67 @@ class TestCreateSessionGenericException:
         assert response.json()["detail"] == (
             "METTLE session storage temporarily unavailable"
         )
+
+
+class TestOperatorCommitmentNonceReservation:
+    """Operator commitments are fresh, single-use, and rollback-safe."""
+
+    def test_replay_is_rejected_after_atomic_nonce_reservation(
+        self, fake_redis: FakeRedis
+    ) -> None:
+        user = _make_mock_user()
+        test_client = TestClient(_build_app(user, fake_redis))
+        commitment = _operator_commitment("agent-1")
+        body = {
+            "suites": ["adversarial"],
+            "entity_id": "agent-1",
+            "operator_commitment": commitment,
+        }
+
+        first = test_client.post("/api/mettle/sessions", json=body)
+        replay = test_client.post("/api/mettle/sessions", json=body)
+
+        assert first.status_code == 201
+        assert replay.status_code == 400
+        assert "already been used" in replay.json()["detail"]
+        nonce_key = "mettle:operator-commitment:nonce:" + commitment["nonce"]
+        assert nonce_key in fake_redis._store
+        assert fake_redis._ttls[nonce_key] >= 330
+
+    def test_failed_session_creation_releases_only_its_nonce(
+        self, fake_redis: FakeRedis
+    ) -> None:
+        user = _make_mock_user()
+        from mettle.auth import require_authenticated_user
+        from mettle.router import get_session_manager, router
+
+        async def failing_manager() -> SessionManager:
+            manager = SessionManager(fake_redis)
+
+            async def explode(*_args: Any, **_kwargs: Any) -> Any:
+                raise RuntimeError("challenge generation failed")
+
+            manager.create_session = explode  # type: ignore[assignment]
+            return manager
+
+        test_app = FastAPI()
+        test_app.include_router(router)
+        test_app.dependency_overrides[require_authenticated_user] = lambda: user
+        test_app.dependency_overrides[get_session_manager] = failing_manager
+        commitment = _operator_commitment("agent-1", nonce="d" * 64)
+
+        response = TestClient(test_app).post(
+            "/api/mettle/sessions",
+            json={
+                "suites": ["adversarial"],
+                "entity_id": "agent-1",
+                "operator_commitment": commitment,
+            },
+        )
+
+        assert response.status_code == 500
+        nonce_key = "mettle:operator-commitment:nonce:" + commitment["nonce"]
+        assert nonce_key not in fake_redis._store
 
 
 # ---------------------------------------------------------------------------
