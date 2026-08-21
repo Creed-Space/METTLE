@@ -10,6 +10,7 @@ from mettle.api_models import (
     CreateSessionRequest,
     RoundAnswerRequest,
     VerifyRequest,
+    validate_bounded_json,
 )
 
 
@@ -59,3 +60,26 @@ def test_retired_operator_commitment_is_rejected_not_silently_ignored() -> None:
                 }
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("value", "exact_bytes"),
+    [(None, 4), (True, 4), (False, 5), (-1, 2), (0.0, 3), ("é", 4), ([], 2), ({}, 2)],
+)
+def test_bounded_json_accepts_exact_boundaries(value: Any, exact_bytes: int) -> None:
+    assert validate_bounded_json(value, max_bytes=exact_bytes) is value
+    with pytest.raises(ValueError, match="exceeds"):
+        validate_bounded_json(value, max_bytes=exact_bytes - 1)
+
+
+def test_bounded_json_rejects_cycles_nonfinite_and_huge_scalars() -> None:
+    cycle: list[Any] = []
+    cycle.append(cycle)
+    for value, message in [
+        (cycle, "cycle"),
+        (float("nan"), "non-finite"),
+        ({1: "value"}, "keys"),
+        ("x" * 1_000_000, "exceeds"),
+    ]:
+        with pytest.raises(ValueError, match=message):
+            validate_bounded_json(value, max_bytes=64)

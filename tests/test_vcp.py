@@ -392,3 +392,13 @@ class TestCanonicalBytes:
 
     def test_empty_dict(self):
         assert _canonical_bytes({}) == b"{}"
+
+    def test_nonfinite_cycles_and_non_objects_are_rejected(self):
+        with pytest.raises(ValueError):
+            _canonical_bytes({"score": float("nan")})
+        cyclic: dict[str, Any] = {}
+        cyclic["self"] = cyclic
+        with pytest.raises(ValueError, match="cycle"):
+            _canonical_bytes(cyclic)
+        with pytest.raises(ValueError, match="object"):
+            _canonical_bytes([])  # type: ignore[arg-type]
