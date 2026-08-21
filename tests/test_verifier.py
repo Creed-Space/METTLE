@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from mettle.models import ChallengeType
 from mettle.verifier import (
+    MAX_ANSWER_CHARS,
     _simple_similarity,
     compute_mettle_result,
     verify_chained_reasoning,
@@ -13,6 +14,36 @@ from mettle.verifier import (
     verify_speed_math,
     verify_token_prediction,
 )
+
+
+def test_untrusted_types_negative_time_and_resource_exhaustion_fail_closed(
+    sample_speed_math_challenge,
+    sample_token_challenge,
+    sample_instruction_challenge,
+    sample_chained_challenge,
+    sample_consistency_challenge,
+) -> None:
+    class Stringifiable:
+        def __str__(self) -> str:
+            return "42"
+
+    assert not verify_speed_math(sample_speed_math_challenge, True, 1).passed
+    assert not verify_speed_math(sample_speed_math_challenge, Stringifiable(), 1).passed
+    assert not verify_speed_math(sample_speed_math_challenge, "42", -1).passed
+    assert not verify_chained_reasoning(
+        sample_chained_challenge, Stringifiable(), 1
+    ).passed
+    assert not verify_token_prediction(sample_token_challenge, ["fox"], 1).passed
+    assert not verify_instruction_following(
+        sample_instruction_challenge, Stringifiable(), 1
+    ).passed
+    assert not verify_consistency(
+        sample_consistency_challenge, Stringifiable(), 1
+    ).passed
+    assert not verify_instruction_following(
+        sample_instruction_challenge, "x" * (MAX_ANSWER_CHARS + 1), 1
+    ).passed
+    assert not verify_consistency(sample_consistency_challenge, "4|4|4|4", 1).passed
 
 
 class TestVerifySpeedMath:

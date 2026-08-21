@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import enum
 import json
+import math
 from datetime import datetime
 from typing import Any, Literal
 
@@ -48,18 +49,86 @@ SINGLE_SHOT_SUITES = [s for s in SUITE_NAMES if s != MULTI_ROUND_SUITE]
 MAX_SUITES_PER_SESSION = len(SUITE_NAMES)
 MAX_ANSWER_BYTES = 64 * 1024
 MAX_ATTESTATION_BYTES = 128 * 1024
+MAX_JSON_DEPTH = 16
+MAX_JSON_NODES = 4096
+
+
+def validate_bounded_json(
+    value: Any,
+    *,
+    max_bytes: int,
+    max_depth: int = MAX_JSON_DEPTH,
+    max_nodes: int = MAX_JSON_NODES,
+    label: str = "JSON value",
+) -> Any:
+    """Validate finite, acyclic JSON within explicit traversal and byte limits."""
+    if max_bytes < 1 or max_depth < 0 or max_nodes < 1:
+        raise ValueError("JSON validation limits must be positive")
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    seen_containers: set[int] = set()
+    nodes = 0
+    estimated_bytes = 0
+    while stack:
+        item, depth = stack.pop()
+        nodes += 1
+        if nodes > max_nodes:
+            raise ValueError(f"{label} contains too many values")
+        if depth > max_depth:
+            raise ValueError(f"{label} exceeds maximum nesting depth")
+        if item is None:
+            estimated_bytes += 4
+        elif isinstance(item, bool):
+            estimated_bytes += 4 if item else 5
+        elif isinstance(item, int):
+            estimated_bytes += len(str(item))
+        elif isinstance(item, float):
+            if not math.isfinite(item):
+                raise ValueError(f"{label} contains a non-finite number")
+            estimated_bytes += len(json.dumps(item, allow_nan=False))
+        elif isinstance(item, str):
+            if estimated_bytes + len(item) + 2 > max_bytes:
+                raise ValueError(f"{label} exceeds {max_bytes} bytes")
+            estimated_bytes += len(item.encode("utf-8")) + 2
+        elif isinstance(item, dict):
+            identity = id(item)
+            if identity in seen_containers:
+                raise ValueError(f"{label} contains a cycle or repeated container")
+            seen_containers.add(identity)
+            estimated_bytes += 2
+            for key, child in item.items():
+                if not isinstance(key, str):
+                    raise ValueError(f"{label} object keys must be strings")
+                if estimated_bytes + len(key) + 3 > max_bytes:
+                    raise ValueError(f"{label} exceeds {max_bytes} bytes")
+                estimated_bytes += len(key.encode("utf-8")) + 3
+                stack.append((child, depth + 1))
+        elif isinstance(item, list):
+            identity = id(item)
+            if identity in seen_containers:
+                raise ValueError(f"{label} contains a cycle or repeated container")
+            seen_containers.add(identity)
+            estimated_bytes += 2
+            stack.extend((child, depth + 1) for child in item)
+        else:
+            raise ValueError(f"{label} must contain only JSON-compatible values")
+        if estimated_bytes > max_bytes:
+            raise ValueError(f"{label} exceeds {max_bytes} bytes")
+    try:
+        encoded = json.dumps(
+            value, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        ).encode("utf-8")
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise ValueError(f"{label} must be JSON serializable") from exc
+    if len(encoded) > max_bytes:
+        raise ValueError(f"{label} exceeds {max_bytes} bytes")
+    return value
 
 
 def _validate_answer_object(value: dict[str, Any]) -> dict[str, Any]:
     """Bound evaluator input before iteration, persistence, or LLM use."""
     if len(value) > 100:
         raise ValueError("Answer object contains too many top-level fields")
-    try:
-        encoded = json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode()
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Answers must be JSON serializable") from exc
-    if len(encoded) > MAX_ANSWER_BYTES:
-        raise ValueError(f"Answer payload exceeds {MAX_ANSWER_BYTES} bytes")
+    validate_bounded_json(value, max_bytes=MAX_ANSWER_BYTES, label="Answer payload")
     return value
 
 

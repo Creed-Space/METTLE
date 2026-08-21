@@ -29,10 +29,13 @@ from mettle.continuity import (
     solve_continuity_challenge,
 )
 from mettle.presence import (
+    advance_session_presence,
     answer_hash,
+    canonical_bytes,
     presence_state_signing_bytes,
     presentation_signing_bytes,
     submission_signing_bytes,
+    validate_credential_presence,
 )
 from mettle.router import router
 from mettle.vcp import verify_mettle_credential_with_status
@@ -46,6 +49,91 @@ BRONZE_SUITES = [
     "social",
     "inverse-turing",
 ]
+
+
+def _coherent_credential_presence() -> dict[str, Any]:
+    key = Ed25519PrivateKey.generate()
+    public_key_pem = (
+        key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode("ascii")
+    )
+    from mettle.presence import key_fingerprint
+
+    transcript_hash = "sha256:" + "a" * 64
+    return {
+        "protocol": "mettle-presence-v1",
+        "public_key_pem": public_key_pem,
+        "key_fingerprint": key_fingerprint(public_key_pem),
+        "audience": "verifier.example",
+        "credential_jti": "a" * 32,
+        "transcript_hash": transcript_hash,
+        "sequence": 1,
+        "started_at_unix_ms": 1_000,
+        "submissions": [
+            {
+                "sequence": 1,
+                "action": "suite:adversarial",
+                "response_time_ms": 250,
+                "accepted_at_unix_ms": 1_250,
+                "transcript_hash": transcript_hash,
+            }
+        ],
+        "continuity_protocol": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("sequence",), True),
+        (("started_at_unix_ms",), True),
+        (("submissions", 0, "sequence"), True),
+        (("submissions", 0, "response_time_ms"), True),
+        (("submissions", 0, "accepted_at_unix_ms"), True),
+        (("submissions", 0, "response_time_ms"), 249),
+        (("submissions", 0, "accepted_at_unix_ms"), 999),
+        (("submissions", 0, "action"), "suite:"),
+    ],
+)
+def test_credential_presence_rejects_boolean_and_incoherent_timing_fields(
+    path: tuple[Any, ...], value: Any
+) -> None:
+    presence = _coherent_credential_presence()
+    target: Any = presence
+    for part in path[:-1]:
+        target = target[part]
+    target[path[-1]] = value
+    with pytest.raises(ValueError):
+        validate_credential_presence(presence)
+
+
+def test_presence_canonical_json_and_backward_clock_are_strict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    validate_credential_presence(_coherent_credential_presence())
+    with pytest.raises(ValueError):
+        answer_hash({"score": float("nan")})
+    with pytest.raises(ValueError, match="object"):
+        canonical_bytes([])  # type: ignore[arg-type]
+
+    presence: dict[str, Any] = {
+        "transcript_hash": "sha256:" + "a" * 64,
+        "nonce_issued_at_unix_ms": 1_000,
+        "sequence": 0,
+        "submissions": [],
+        "continuity_protocol": None,
+    }
+    signature = base64.b64encode(b"s" * 64).decode("ascii")
+    monkeypatch.setattr("mettle.presence.time.time", lambda: 0.5)
+    advance_session_presence(
+        presence=presence,
+        message=b"signed-message",
+        signature=signature,
+        action="suite:adversarial",
+    )
+    assert presence["submissions"][0]["accepted_at_unix_ms"] == 1_000
+    assert presence["submissions"][0]["response_time_ms"] == 0
 
 
 class FakeRedis:

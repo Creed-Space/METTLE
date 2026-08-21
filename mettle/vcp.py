@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, TypeGuard
 
+from mettle.api_models import MAX_ATTESTATION_BYTES, validate_bounded_json
+
 from mettle.protocol import (
     CREDENTIAL_CLOCK_SKEW_SECONDS,
     CREDENTIAL_SCHEMA_VERSION,
@@ -429,6 +431,7 @@ def _verify_mettle_attestation_impl(
             )
             timing_valid = (
                 isinstance(timing, dict)
+                and not isinstance(timing.get("total_elapsed_ms"), bool)
                 and isinstance(timing.get("total_elapsed_ms"), int)
                 and timing["total_elapsed_ms"] >= 0
                 and isinstance(timing_submissions, list)
@@ -440,9 +443,11 @@ def _verify_mettle_attestation_impl(
                 ):
                     if not (
                         isinstance(submission, dict)
+                        and not isinstance(submission.get("sequence"), bool)
                         and submission.get("sequence") == expected_sequence
                         and isinstance(submission.get("action"), str)
                         and submission["action"].startswith(("suite:", "round:"))
+                        and not isinstance(submission.get("response_time_ms"), bool)
                         and isinstance(submission.get("response_time_ms"), int)
                         and submission["response_time_ms"] >= 0
                         and re.fullmatch(
@@ -476,11 +481,23 @@ def _verify_mettle_attestation_impl(
                     timing_submissions[-1], dict
                 ):
                     timing_valid = False
+                if (
+                    timing_valid
+                    and isinstance(timing, dict)
+                    and timing["total_elapsed_ms"]
+                    != sum(
+                        submission["response_time_ms"]
+                        for submission in timing_submissions
+                    )
+                ):
+                    timing_valid = False
             continuity_valid = continuity is None or (
                 isinstance(continuity, dict)
                 and continuity.get("protocol") == "mettle-continuity-v1"
+                and not isinstance(continuity.get("challenge_count"), bool)
                 and continuity.get("challenge_count") == proof.get("sequence")
                 and continuity.get("transcript_bound") is True
+                and not isinstance(continuity.get("max_response_time_ms"), bool)
                 and isinstance(continuity.get("max_response_time_ms"), int)
                 and continuity["max_response_time_ms"] >= 0
                 and isinstance(timing_submissions, list)
@@ -492,6 +509,14 @@ def _verify_mettle_attestation_impl(
                     }
                 )
                 == proof.get("sequence")
+                and continuity["max_response_time_ms"]
+                == max(
+                    (
+                        submission["response_time_ms"]
+                        for submission in timing_submissions
+                    ),
+                    default=0,
+                )
             )
             valid_presence = (
                 isinstance(metadata.get("jti"), str)
@@ -505,6 +530,7 @@ def _verify_mettle_attestation_impl(
                 and isinstance(proof.get("transcript_hash"), str)
                 and re.fullmatch(r"sha256:[0-9a-f]{64}", proof["transcript_hash"])
                 is not None
+                and not isinstance(proof.get("sequence"), bool)
                 and isinstance(proof.get("sequence"), int)
                 and proof["sequence"] > 0
                 and timing_valid
@@ -564,7 +590,14 @@ def verify_mettle_attestation(
             now=now,
             clock_skew_seconds=clock_skew_seconds,
         )
-    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
+    except (
+        AttributeError,
+        KeyError,
+        OverflowError,
+        RecursionError,
+        TypeError,
+        ValueError,
+    ):
         return False
 
 
@@ -753,6 +786,14 @@ def _canonical_bytes(data: dict[str, Any]) -> bytes:
     """
     import json
 
+    if not isinstance(data, dict):
+        raise ValueError("Canonical credential JSON must be an object")
+    validate_bounded_json(
+        data,
+        max_bytes=MAX_ATTESTATION_BYTES,
+        label="Credential JSON",
+    )
+
     metadata_value = data.get("metadata")
     metadata: dict[str, Any] = (
         metadata_value if isinstance(metadata_value, dict) else data
@@ -775,4 +816,5 @@ def _canonical_bytes(data: dict[str, Any]) -> bytes:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=not versioned,
+        allow_nan=False,
     ).encode("utf-8")

@@ -3,22 +3,50 @@
 from datetime import datetime, timezone
 from .models import Challenge, ChallengeType, MettleResult, VerificationResult
 
+MAX_ANSWER_CHARS = 1024
+_MAX_NUMERIC_ANSWER_BITS = MAX_ANSWER_CHARS * 4
+
+
+def _bounded_text_answer(answer: object) -> str | None:
+    if type(answer) is not str or len(answer) > MAX_ANSWER_CHARS:
+        return None
+    return answer.strip()
+
+
+def _parse_integer_answer(answer: object) -> tuple[int | str | None, bool]:
+    if type(answer) is int:
+        if answer.bit_length() > _MAX_NUMERIC_ANSWER_BITS:
+            return None, False
+        return answer, True
+    text = _bounded_text_answer(answer)
+    if text is None:
+        return None, False
+    try:
+        return int(text), True
+    except ValueError:
+        return text, False
+
+
+def _time_is_valid(response_time_ms: object, time_limit_ms: int) -> bool:
+    return type(response_time_ms) is int and 0 <= response_time_ms <= time_limit_ms
+
+
+def _recordable_response_time(response_time_ms: object) -> int:
+    return (
+        response_time_ms
+        if type(response_time_ms) is int and response_time_ms >= 0
+        else 0
+    )
+
 
 def verify_speed_math(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify a speed math response."""
-    user_answer: int | str
-    try:
-        # Accept numeric answer
-        user_answer = int(str(answer).strip())
-        expected = challenge.data["expected_answer"]
-        correct = user_answer == expected
-    except (ValueError, TypeError):
-        correct = False
-        user_answer = answer
-
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    user_answer, answer_is_integer = _parse_integer_answer(answer)
+    expected = challenge.data.get("expected_answer")
+    correct = answer_is_integer and type(expected) is int and user_answer == expected
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
 
     passed = correct and time_ok
     # Public verification details report the verdict, never the server-held answer.
@@ -32,25 +60,19 @@ def verify_speed_math(
         challenge_type=challenge.type,
         passed=passed,
         details=details,
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
 
 def verify_chained_reasoning(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify a chained reasoning response."""
-    user_answer: int | str
-    try:
-        user_answer = int(str(answer).strip())
-        expected = challenge.data["expected_answer"]
-        correct = user_answer == expected
-    except (ValueError, TypeError):
-        correct = False
-        user_answer = answer
-
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    user_answer, answer_is_integer = _parse_integer_answer(answer)
+    expected = challenge.data.get("expected_answer")
+    correct = answer_is_integer and type(expected) is int and user_answer == expected
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
     passed = correct and time_ok
 
     # Public verification details report the verdict, never the answer or chain.
@@ -64,23 +86,25 @@ def verify_chained_reasoning(
         challenge_type=challenge.type,
         passed=passed,
         details=details,
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
 
 def verify_token_prediction(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify a token prediction response."""
-    user_answer = str(answer).strip().lower()
-    expected = challenge.data["expected_answer"].lower()
+    bounded = _bounded_text_answer(answer)
+    user_answer = bounded.casefold() if bounded is not None else ""
+    raw_expected = challenge.data.get("expected_answer")
+    expected = raw_expected.casefold() if type(raw_expected) is str else ""
 
     # The challenge asks for one missing token. Requiring the exact token keeps
     # a caller from submitting a list of every possible completion.
-    correct = user_answer == expected
+    correct = bounded is not None and bool(expected) and user_answer == expected
 
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
     passed = correct and time_ok
 
     # Public verification details report the verdict, never the expected token.
@@ -94,17 +118,18 @@ def verify_token_prediction(
         challenge_type=challenge.type,
         passed=passed,
         details=details,
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
 
 def verify_instruction_following(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify an instruction following response."""
-    instruction = challenge.data["instruction"]
-    response = str(answer).strip()
+    instruction = challenge.data.get("instruction")
+    bounded = _bounded_text_answer(answer)
+    response = bounded or ""
     instruction_kind = challenge.data.get("instruction_kind")
     marker = challenge.data.get("marker")
 
@@ -124,20 +149,24 @@ def verify_instruction_following(
         correct = response.startswith(str(challenge.data.get("starting_digit"))) and (
             marker in response.split()
         )
-    elif "Start your response with 'Indeed,'" in instruction:
+    elif (
+        isinstance(instruction, str)
+        and "Start your response with 'Indeed,'" in instruction
+    ):
         correct = response.startswith("Indeed,")
-    elif "End your response with '...'" in instruction:
+    elif isinstance(instruction, str) and "End your response with '...'" in instruction:
         correct = response.endswith("...")
-    elif "Include the word 'therefore'" in instruction:
+    elif isinstance(instruction, str) and "Include the word 'therefore'" in instruction:
         correct = "therefore" in response.lower()
-    elif "exactly 5 words" in instruction:
+    elif isinstance(instruction, str) and "exactly 5 words" in instruction:
         correct = len(response.split()) == 5
-    elif "Start with a number" in instruction:
+    elif isinstance(instruction, str) and "Start with a number" in instruction:
         correct = response[0].isdigit() if response else False
     else:
         correct = False
 
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    correct = bounded is not None and correct
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
 
     return VerificationResult(
         challenge_id=challenge.id,
@@ -149,13 +178,13 @@ def verify_instruction_following(
             "instruction": instruction,
             "response_preview": response[:50],  # Truncated to limit info disclosure
         },
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
 
 def verify_consistency(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify a consistency response - answers should be semantically similar but show variation.
 
@@ -163,21 +192,25 @@ def verify_consistency(
     - Give identical responses (too similar - suspicious)
     - Give inconsistent responses (too different - fails)
     """
-    response = str(answer).strip()
+    bounded = _bounded_text_answer(answer)
+    response = bounded or ""
     parts = [p.strip() for p in response.split("|")]
 
     # Need at least the required number of responses
     num_required = challenge.data.get("num_responses", 3)
     details: dict[str, object]
 
-    if len(parts) < num_required:
+    if type(num_required) is not int or not 1 <= num_required <= 10:
+        correct = False
+        details = {"error": "Malformed consistency challenge data"}
+    elif (
+        bounded is None or len(parts) != num_required or any(not part for part in parts)
+    ):
         correct = False
         details = {
             "error": f"Expected {num_required} responses separated by '|', got {len(parts)}"
         }
     else:
-        parts = parts[:num_required]
-
         # Extract key content words
         def extract_key(s: str) -> str:
             s = s.lower().strip().rstrip(".!?")
@@ -217,14 +250,14 @@ def verify_consistency(
             "natural_variation": not all_identical or short_answer,
         }
 
-    time_ok = response_time_ms <= challenge.time_limit_ms
+    time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
 
     return VerificationResult(
         challenge_id=challenge.id,
         challenge_type=challenge.type,
         passed=correct and time_ok,
         details={**details, "time_ok": time_ok},
-        response_time_ms=response_time_ms,
+        response_time_ms=_recordable_response_time(response_time_ms),
         time_limit_ms=challenge.time_limit_ms,
     )
 
@@ -241,7 +274,7 @@ def _simple_similarity(a: str, b: str) -> float:
 
 
 def verify_response(
-    challenge: Challenge, answer: str, response_time_ms: int
+    challenge: Challenge, answer: object, response_time_ms: object
 ) -> VerificationResult:
     """Verify a response to a challenge."""
     # Check if challenge has expired
@@ -251,7 +284,7 @@ def verify_response(
             challenge_type=challenge.type,
             passed=False,
             details={"error": "Challenge expired"},
-            response_time_ms=response_time_ms,
+            response_time_ms=_recordable_response_time(response_time_ms),
             time_limit_ms=challenge.time_limit_ms,
         )
 

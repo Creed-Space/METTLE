@@ -29,6 +29,24 @@ def reset_signing_state(monkeypatch):
 
 
 class TestInitSigning:
+    def test_rejects_well_formed_non_ed25519_private_key(self, monkeypatch):
+        from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+        )
+
+        pem = generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        )
+        monkeypatch.setenv("METTLE_VCP_SIGNING_KEY", pem.decode("ascii"))
+        mock_settings = type("MockSettings", (), {"vcp_signing_key": ""})()
+        with patch("mettle.app_config.settings", mock_settings):
+            assert signing.init_signing() is False
+        assert signing._private_key is None
+        assert signing._public_key is None
+
     def test_ephemeral_key_generation(self):
         """init_signing generates ephemeral key when no env var set."""
         result = signing.init_signing()
@@ -323,3 +341,34 @@ def test_verify_signature_rejects_tampered_data_and_invalid_base64() -> None:
     assert signing.verify_signature(public_key_pem, b"original", signature)
     assert not signing.verify_signature(public_key_pem, b"tampered", signature)
     assert not signing.verify_signature(public_key_pem, b"original", "not-base64!")
+
+
+def test_verify_signature_is_total_over_untrusted_types_and_algorithms() -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    private_key = Ed25519PrivateKey.generate()
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode("ascii")
+    )
+    data = b"signed protocol object"
+    signature = base64.b64encode(private_key.sign(data)).decode("ascii")
+    rsa_pem = (
+        generate_private_key(public_exponent=65537, key_size=2048)
+        .public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        .decode("ascii")
+    )
+    assert signing.verify_signature(public_pem, data, signature)
+    for key, payload, candidate in [
+        (None, data, signature),
+        (public_pem, "not-bytes", signature),
+        (public_pem, data, None),
+        (public_pem, data, "%%%"),
+        (public_pem, data, base64.b64encode(b"short").decode("ascii")),
+        (rsa_pem, data, signature),
+    ]:
+        assert signing.verify_signature(key, payload, candidate) is False

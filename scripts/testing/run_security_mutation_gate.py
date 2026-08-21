@@ -87,10 +87,7 @@ MUTATIONS = (
         name="ed25519-verification-bypass",
         invariant="Altered data must fail Ed25519 verification.",
         path="mettle/signing.py",
-        original=(
-            "        public_key.verify(base64.b64decode(signature_b64), data)\n"
-            "        return True"
-        ),
+        original=("        public_key.verify(signature, data)\n        return True"),
         replacement=(
             "        # SECURITY MUTANT: signature check bypassed\n        return True"
         ),
