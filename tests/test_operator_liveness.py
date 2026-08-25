@@ -12,7 +12,7 @@ These pin the two security properties fixed in this change:
    and still verify. On a credential whose entire point is freshness, that is fatal.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -228,7 +228,7 @@ def test_attestation_signature_covers_reviewed_at():
     assert verify_attestation(att, pem) is True
 
     tampered = dict(att)
-    tampered["reviewed_at"] = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
+    tampered["reviewed_at"] = (datetime.now(UTC) + timedelta(days=365)).isoformat()
 
     assert verify_attestation(tampered, pem) is False
 

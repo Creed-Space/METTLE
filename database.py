@@ -10,7 +10,7 @@ import logging
 import os
 import secrets
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from sqlalchemy import (
@@ -57,7 +57,7 @@ class DBSession(Base):
     challenges_json = Column(Text, nullable=False)  # JSON array
     results_json = Column(Text, default="[]")  # JSON array
     completed = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime, nullable=True)
 
 
@@ -71,7 +71,7 @@ class DBRevokedBadge(Base):
     entity_id = Column(String(128), index=True)
     reason = Column(Text, nullable=False)
     evidence_json = Column(Text, nullable=True)
-    revoked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    revoked_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class DBOperatorChallenge(Base):
@@ -96,7 +96,7 @@ class DBOperatorChallenge(Base):
     expires_at = Column(DateTime, nullable=False)
     consumed = Column(Boolean, default=False, nullable=False)
     consumed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class DBAPIKey(Base):
@@ -110,7 +110,7 @@ class DBAPIKey(Base):
     entity_id = Column(String(128), index=True)
     usage_date = Column(String(10), nullable=True)  # YYYY-MM-DD
     usage_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class DBWebhook(Base):
@@ -123,7 +123,7 @@ class DBWebhook(Base):
     url = Column(String(512), nullable=False)
     events_json = Column(Text, nullable=False)  # JSON array
     secret = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class DBVerificationRecord(Base):
@@ -135,7 +135,7 @@ class DBVerificationRecord(Base):
     entity_id = Column(String(128), index=True, nullable=False)
     ip_address = Column(String(45), index=True, nullable=False)
     passed = Column(Boolean, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
 
 
 # === Database Functions ===
@@ -210,7 +210,7 @@ def update_session_results(session_id: str, results: list, completed: bool = Fal
                 db_session.results_json = json.dumps([r.model_dump() for r in results], default=str)
                 db_session.completed = completed
                 if completed:
-                    db_session.completed_at = datetime.now(timezone.utc)
+                    db_session.completed_at = datetime.now(UTC)
                 db.commit()
                 return True
             return False
@@ -325,7 +325,7 @@ def _as_utc(value: datetime) -> datetime:
     silently misjudges expiry on any non-UTC host. We write UTC, so we read UTC. (Same class of
     bug already fixed once for revocation pruning.)
     """
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 class OperatorChallengeStoreUnavailable(RuntimeError):
@@ -346,7 +346,7 @@ def create_operator_challenge(entity_id: str, ttl_seconds: int = 300) -> dict:
             that ignored the failure would be accepting unverifiable commitments.
     """
     nonce = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+    expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
     try:
         with get_db() as db:
             db.add(DBOperatorChallenge(nonce=nonce, entity_id=entity_id, expires_at=expires_at))
@@ -385,7 +385,7 @@ def consume_operator_challenge_strict(nonce: str, entity_id: str) -> datetime:
                     DBOperatorChallenge.consumed.is_(False),
                 )
                 .update(
-                    {"consumed": True, "consumed_at": datetime.now(timezone.utc)},
+                    {"consumed": True, "consumed_at": datetime.now(UTC)},
                     synchronize_session=False,
                 )
             )
@@ -403,7 +403,7 @@ def consume_operator_challenge_strict(nonce: str, entity_id: str) -> datetime:
 
     # Stored naive by SQLite; stamp UTC so an expiry comparison on a non-UTC host is correct.
     expires_at = _as_utc(cast(datetime, record.expires_at))
-    if expires_at < datetime.now(timezone.utc):
+    if expires_at < datetime.now(UTC):
         raise ValueError("Operator challenge nonce has expired")
     if cast(str, record.entity_id) != entity_id:
         raise ValueError("Operator challenge nonce is bound to a different entity_id")
@@ -417,7 +417,7 @@ def purge_expired_operator_challenges() -> int:
         with get_db() as db:
             deleted = (
                 db.query(DBOperatorChallenge)
-                .filter(DBOperatorChallenge.expires_at < datetime.now(timezone.utc))
+                .filter(DBOperatorChallenge.expires_at < datetime.now(UTC))
                 .delete(synchronize_session=False)
             )
             db.commit()
@@ -560,7 +560,7 @@ def get_recent_verifications(hours: int = 1) -> list[dict]:
     try:
         from datetime import timedelta
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
         with get_db() as db:
             results = (
                 db.query(DBVerificationRecord)
@@ -588,7 +588,7 @@ def get_entity_verification_count(entity_id: str, hours: int = 1) -> int:
     try:
         from datetime import timedelta
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
         with get_db() as db:
             return (
                 db.query(DBVerificationRecord)
@@ -606,7 +606,7 @@ def get_ip_entities(ip_address: str, hours: int = 1) -> set[str]:
     try:
         from datetime import timedelta
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
         with get_db() as db:
             results = (
                 db.query(DBVerificationRecord.entity_id)

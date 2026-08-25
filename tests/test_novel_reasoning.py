@@ -451,9 +451,7 @@ class TestConstraintSatisfactionGenerator:
         # the solution may not always satisfy its own constraints.
         satisfies_all = True
         for c in result["constraint_data"]:
-            if c["type"] == "gt" and solution[c["vars"][0]] <= solution[c["vars"][1]]:
-                satisfies_all = False
-            elif c["type"] == "lt" and solution[c["vars"][0]] >= solution[c["vars"][1]]:
+            if c["type"] == "gt" and solution[c["vars"][0]] <= solution[c["vars"][1]] or c["type"] == "lt" and solution[c["vars"][0]] >= solution[c["vars"][1]]:
                 satisfies_all = False
 
         if satisfies_all:

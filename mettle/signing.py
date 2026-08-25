@@ -177,7 +177,7 @@ def is_available() -> bool:
 CLI_KEY_ID = "mettle-cli-ed25519-v1"
 
 
-def cli_key_dir() -> "os.PathLike[str] | str":
+def cli_key_dir() -> os.PathLike[str] | str:
     """Return the directory holding the CLI's persistent signing key.
 
     Defaults to ``~/.mettle`` but can be overridden with ``METTLE_HOME``

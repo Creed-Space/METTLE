@@ -11,7 +11,7 @@ import asyncio
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -104,7 +104,7 @@ class FakeRedis:
     async def expire(self, key: str, ttl: int) -> None:
         pass
 
-    def pipeline(self) -> "FakePipeline":
+    def pipeline(self) -> FakePipeline:
         return FakePipeline(self)
 
 
@@ -113,23 +113,23 @@ class FakePipeline:
         self._redis = redis
         self._ops: list[tuple[str, ...]] = []
 
-    def setex(self, key: str, ttl: int, value: Any) -> "FakePipeline":
+    def setex(self, key: str, ttl: int, value: Any) -> FakePipeline:
         self._ops.append(("setex", key, str(ttl), value))
         return self
 
-    def sadd(self, key: str, *members: str) -> "FakePipeline":
+    def sadd(self, key: str, *members: str) -> FakePipeline:
         self._ops.append(("sadd", key, *members))
         return self
 
-    def expire(self, key: str, ttl: int) -> "FakePipeline":
+    def expire(self, key: str, ttl: int) -> FakePipeline:
         self._ops.append(("expire", key, str(ttl)))
         return self
 
-    def incr(self, key: str) -> "FakePipeline":
+    def incr(self, key: str) -> FakePipeline:
         self._ops.append(("incr", key))
         return self
 
-    def srem(self, key: str, *members: str) -> "FakePipeline":
+    def srem(self, key: str, *members: str) -> FakePipeline:
         self._ops.append(("srem", key, *members))
         return self
 
@@ -259,7 +259,7 @@ def _make_foreign_session(
     status: str = SessionStatus.CHALLENGES_GENERATED.value,
     **extra: Any,
 ) -> dict:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     base = {
         "session_id": session_id,
         "user_id": user_id,

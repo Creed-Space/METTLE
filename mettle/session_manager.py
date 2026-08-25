@@ -10,7 +10,7 @@ import json
 import logging
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from mettle.api_models import (
@@ -80,8 +80,8 @@ class SessionManager:
 
         # Generate session ID
         session_id = secrets.token_urlsafe(32)
-        now = datetime.now(tz=timezone.utc)
-        expires_at = datetime.fromtimestamp(now.timestamp() + ACTIVE_SESSION_TTL, tz=timezone.utc)
+        now = datetime.now(tz=UTC)
+        expires_at = datetime.fromtimestamp(now.timestamp() + ACTIVE_SESSION_TTL, tz=UTC)
 
         # Generate challenges for each suite
         client_challenges: dict[str, Any] = {}

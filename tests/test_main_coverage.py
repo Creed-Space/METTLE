@@ -15,7 +15,7 @@ Covers:
 """
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import jwt
@@ -86,7 +86,7 @@ def _make_badge_token(
     extra_claims=None,
 ):
     """Create a signed JWT badge token for testing."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if expired:
         exp = (now - timedelta(hours=1)).timestamp()
     else:
@@ -289,7 +289,7 @@ class TestBadgeRevocationFull:
         # Create token without jti
         payload = {
             "entity_id": "test",
-            "exp": (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp(),
+            "exp": (datetime.now(UTC) + timedelta(hours=1)).timestamp(),
         }
         token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
@@ -726,7 +726,7 @@ class TestRateTierDailyUsage:
 
         # Exhaust daily limit (10000 for pro)
         api_keys[key]["usage_count"] = 10000
-        api_keys[key]["usage_date"] = datetime.now(timezone.utc).date().isoformat()
+        api_keys[key]["usage_date"] = datetime.now(UTC).date().isoformat()
 
         allowed, message = RateTier.check_limit(key, "session")
 

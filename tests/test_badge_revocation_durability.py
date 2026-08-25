@@ -18,7 +18,7 @@ background. Properties locked down here:
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import jwt as jwt_lib
@@ -50,7 +50,7 @@ def _clean_revocation_state():
 
 def _badge(jti: str, ttl_hours: int = 24) -> str:
     """Mint a signed badge JWT the endpoints will accept."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return jwt_lib.encode(
         {
             "entity_id": "agent-under-test",
@@ -142,7 +142,7 @@ class TestReplicaLoadDurability:
         token = _badge("persisted")
         fake_db = MagicMock()
         fake_db.get_all_revoked_badges_strict.return_value = [
-            {"jti": "persisted", "revoked_at": datetime.now(timezone.utc).isoformat()}
+            {"jti": "persisted", "revoked_at": datetime.now(UTC).isoformat()}
         ]
 
         with patch("main.db", fake_db):
@@ -161,7 +161,7 @@ class TestReplicaLoadDurability:
         fake_db = MagicMock()
         # revoked_at now => conservative prune bound ~ now + badge_expiry (large).
         fake_db.get_all_revoked_badges_strict.return_value = [
-            {"jti": "j", "revoked_at": datetime.now(timezone.utc).isoformat()}
+            {"jti": "j", "revoked_at": datetime.now(UTC).isoformat()}
         ]
         with patch("main.db", fake_db):
             revoked_badges["j"] = float("inf")  # an exact local bound: keep forever
@@ -188,7 +188,7 @@ class TestNaiveTimestampIsUtc:
     def test_replica_bound_from_naive_revoked_at_is_not_tz_shifted(self) -> None:
         """The prune bound for a DB-loaded revocation must be revoked_at(UTC) + TTL."""
         keep = main.settings.badge_expiry_seconds
-        revoked_at_utc = datetime.now(timezone.utc)
+        revoked_at_utc = datetime.now(UTC)
         naive_str = revoked_at_utc.replace(tzinfo=None).isoformat()  # what SQLAlchemy emits
         fake_db = MagicMock()
         fake_db.get_all_revoked_badges_strict.return_value = [{"jti": "j", "revoked_at": naive_str}]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from mettle import cli
@@ -115,7 +115,7 @@ def test_interactive_piped_answers(capsys, monkeypatch):
         type=ChallengeType.SPEED_MATH,
         prompt="Calculate: 40 + 2",
         data={"expected_answer": 42, "a": 40, "b": 2, "op": "+"},
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
         time_limit_ms=60000,
     )
     monkeypatch.setattr(cli, "generate_challenge_set", lambda difficulty: [known])
@@ -137,7 +137,7 @@ def test_interactive_wrong_answer_fails(capsys, monkeypatch):
         type=ChallengeType.SPEED_MATH,
         prompt="Calculate: 40 + 2",
         data={"expected_answer": 42, "a": 40, "b": 2, "op": "+"},
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
         time_limit_ms=60000,
     )
     monkeypatch.setattr(cli, "generate_challenge_set", lambda difficulty: [known])
