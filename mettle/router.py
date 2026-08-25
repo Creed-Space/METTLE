@@ -9,7 +9,7 @@ SECURITY: All endpoints require authentication. Correct answers are NEVER sent t
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
@@ -466,7 +466,7 @@ async def get_session_result(
             if is_available():
                 sign_fn = sign_attestation
         except ImportError:
-            pass
+            sign_fn = None  # signing module absent: attestation goes unsigned
 
         pass_rate = sum(1 for r in suite_results.values() if r.get("passed", False)) / max(len(suite_results), 1)
         vcp_attestation = build_mettle_attestation(
@@ -557,7 +557,7 @@ def _build_governance_attestation(vcp_token: str) -> GovernanceAttestation | Non
     has_drift_detection = os.getenv("CONSTITUTIONAL_DRIFT_DETECTOR_ENABLED", "true").lower() == "true"
     has_bilateral = os.getenv("BILATERAL_ALIGNMENT_ENABLED", "true").lower() == "true"
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # Sign the governance attestation if signing is available
     attestation_signature = None
@@ -579,7 +579,7 @@ def _build_governance_attestation(vcp_token: str) -> GovernanceAttestation | Non
             sig = sign_attestation(json.dumps(payload, sort_keys=True).encode())
             attestation_signature = f"ed25519:{sig}"
     except (ImportError, RuntimeError):
-        pass
+        attestation_signature = None  # signing unavailable: attestation goes unsigned
 
     return GovernanceAttestation(
         framework=framework,
@@ -645,7 +645,7 @@ def _build_operator_attestation(
         operator_pseudonym=commitment["operator_pseudonym"],
         operator_public_key=commitment["operator_public_key"],
         operator_signed_commitment=commitment["signed_commitment"],
-        commitment_timestamp=datetime.now(tz=timezone.utc),
+        commitment_timestamp=datetime.now(tz=UTC),
         contact_method=commitment["contact_method"],
         contact_hash=commitment["contact_hash"],
     )

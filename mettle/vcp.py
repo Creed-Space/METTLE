@@ -12,7 +12,7 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
@@ -136,7 +136,7 @@ def parse_csm1_token(token: str) -> VCPTokenClaim:
                 try:
                     claim.adherence = int(parts[1])
                 except ValueError:
-                    pass
+                    claim.adherence = None  # non-numeric adherence: keep the default
         elif prefix == "G":
             claim.goal = value
         elif prefix == "MT":
@@ -202,7 +202,7 @@ def build_mettle_attestation(
         VCP-compatible attestation dict.
     """
     tier = compute_tier(suites_passed)
-    reviewed_at = datetime.now(tz=timezone.utc).isoformat()
+    reviewed_at = datetime.now(tz=UTC).isoformat()
 
     metadata = {
         "mettle_version": "2.0",
@@ -262,7 +262,7 @@ def format_csm1_line(tier: str, session_id: str, timestamp: str | None = None) -
         CSM-1 line string.
     """
     if timestamp is None:
-        timestamp = datetime.now(tz=timezone.utc).isoformat()
+        timestamp = datetime.now(tz=UTC).isoformat()
 
     # Use first 12 chars of session_id for compact form
     short_id = session_id[:12] if len(session_id) > 12 else session_id

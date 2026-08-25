@@ -333,6 +333,7 @@ class TestCallToolStartSession:
     async def test_start_session_success(self, mock_http) -> None:
         mock_http.post.return_value = _make_mock_response({
             "session_id": "sess-123",
+            "session_token": "tok-abc",
             "difficulty": "basic",
             "total_challenges": 3,
             "current_challenge": {
@@ -391,6 +392,7 @@ class TestCallToolAnswerChallenge:
             },
         })
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "sess-123",
             "challenge_id": "ch-1",
             "answer": "42",
@@ -410,6 +412,7 @@ class TestCallToolAnswerChallenge:
             "session_complete": True,
         })
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "sess-123",
             "challenge_id": "ch-3",
             "answer": "4|4|4",
@@ -428,6 +431,7 @@ class TestCallToolAnswerChallenge:
             "session_complete": True,
         })
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "sess-123",
             "challenge_id": "ch-1",
             "answer": "wrong",
@@ -440,6 +444,7 @@ class TestCallToolAnswerChallenge:
         mock_http.post.return_value = _make_mock_response({})
         mock_http.post.return_value.raise_for_status.side_effect = _make_http_status_error(400, "Invalid session")
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "bad",
             "challenge_id": "ch-1",
             "answer": "x",
@@ -451,6 +456,7 @@ class TestCallToolAnswerChallenge:
     async def test_answer_challenge_generic_error(self, mock_http) -> None:
         mock_http.post.side_effect = Exception("Timeout")
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "s",
             "challenge_id": "c",
             "answer": "a",
@@ -482,7 +488,7 @@ class TestCallToolGetResult:
                 {"challenge_type": "consistency", "passed": True, "response_time_ms": 80, "time_limit_ms": 15000},
             ],
         })
-        result = await call_tool("mettle_get_result", {"session_id": "sess-123"})
+        result = await call_tool("mettle_get_result", {"session_id": "sess-123", "session_token": "tok-abc"})
         text = result[0].text
         assert "VERIFIED" in text
         assert "Badge" in text
@@ -502,7 +508,7 @@ class TestCallToolGetResult:
                 {"challenge_type": "consistency", "passed": False, "response_time_ms": 100, "time_limit_ms": 15000},
             ],
         })
-        result = await call_tool("mettle_get_result", {"session_id": "sess-fail"})
+        result = await call_tool("mettle_get_result", {"session_id": "sess-fail", "session_token": "tok-abc"})
         text = result[0].text
         assert "NOT VERIFIED" in text
         assert "FAIL" in text
@@ -516,7 +522,7 @@ class TestCallToolGetResult:
             "pass_rate": 0.0,
             "results": [],
         })
-        result = await call_tool("mettle_get_result", {"session_id": "sess-x"})
+        result = await call_tool("mettle_get_result", {"session_id": "sess-x", "session_token": "tok-abc"})
         text = result[0].text
         assert "Badge" not in text
         assert "Entity" not in text
@@ -526,14 +532,14 @@ class TestCallToolGetResult:
         resp = _make_mock_response({})
         resp.raise_for_status.side_effect = _make_http_status_error(404, "Session not found")
         mock_http.get.return_value = resp
-        result = await call_tool("mettle_get_result", {"session_id": "bad"})
+        result = await call_tool("mettle_get_result", {"session_id": "bad", "session_token": "tok-abc"})
         text = result[0].text
         assert "Error getting result" in text
 
     @pytest.mark.asyncio
     async def test_get_result_generic_error(self, mock_http) -> None:
         mock_http.get.side_effect = Exception("Network error")
-        result = await call_tool("mettle_get_result", {"session_id": "s"})
+        result = await call_tool("mettle_get_result", {"session_id": "s", "session_token": "tok-abc"})
         text = result[0].text
         assert "Error" in text
 
@@ -551,6 +557,7 @@ class TestCallToolAutoVerify:
         # start_session response
         start_resp = _make_mock_response({
             "session_id": "sess-auto",
+            "session_token": "tok-abc",
             "current_challenge": {
                 "id": "ch-1",
                 "type": "speed_math",
@@ -589,6 +596,7 @@ class TestCallToolAutoVerify:
     async def test_auto_verify_multiple_challenges(self, mock_http) -> None:
         start_resp = _make_mock_response({
             "session_id": "sess-multi",
+            "session_token": "tok-abc",
             "current_challenge": {
                 "id": "ch-1",
                 "type": "speed_math",

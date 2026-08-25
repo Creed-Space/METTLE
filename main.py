@@ -11,8 +11,8 @@ import ipaddress
 import os
 import secrets
 import time
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -177,7 +177,7 @@ def _parse_iso_ts(value: str | None) -> float | None:
     except (ValueError, TypeError):
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.timestamp()
 
 
@@ -321,7 +321,7 @@ class RateTier:
 
         # Track usage
         if api_key and api_key in api_keys:
-            today = datetime.now(timezone.utc).date().isoformat()
+            today = datetime.now(UTC).date().isoformat()
             key_data = api_keys[api_key]
 
             if key_data.get("usage_date") != today:
@@ -345,7 +345,7 @@ class RateTier:
         key_data = {
             "tier": tier,
             "entity_id": entity_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "usage_date": None,
             "usage_count": 0,
         }
@@ -517,7 +517,7 @@ def verify_admin_key(provided_key: str | None, ip_address: str | None = None) ->
 
 
 # Track startup time
-startup_time: datetime = datetime.now(timezone.utc)
+startup_time: datetime = datetime.now(UTC)
 
 
 # === Security Headers Middleware ===
@@ -587,7 +587,7 @@ async def cleanup_expired_sessions():
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
     global startup_time
-    startup_time = datetime.now(timezone.utc)
+    startup_time = datetime.now(UTC)
 
     # Validate production config
     if settings.is_production and not settings.secret_key:
@@ -623,7 +623,7 @@ async def lifespan(app: FastAPI):
 
         init_signing()
     except ImportError:
-        pass
+        logger.warning("vcp_signing_unavailable")
 
     # Load the revocation replica before serving, then refresh it periodically. Until the
     # first successful load, verify_badge fails closed (zero revocation knowledge); after
@@ -647,10 +647,8 @@ async def lifespan(app: FastAPI):
     # Shutdown background tasks
     for task in (cleanup_task, revocation_task):
         task.cancel()
-        try:
+        with suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
     logger.info("mettle_shutdown")
 
 
@@ -872,7 +870,7 @@ async def api_root():
 )
 async def health():
     """Health check endpoint with detailed status."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     uptime = (now - startup_time).total_seconds()
 
     return {
@@ -1318,7 +1316,7 @@ def generate_signed_badge(
         - expires_at: ISO timestamp of expiry
         - freshness_nonce: Nonce for freshness verification
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now.timestamp() + settings.badge_expiry_seconds
     freshness_nonce = secrets.token_hex(8)
 
@@ -1354,7 +1352,7 @@ def generate_signed_badge(
     token = jwt.encode(payload, settings.secret_key, algorithm="HS256")
     return {
         "token": token,
-        "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
+        "expires_at": datetime.fromtimestamp(expires_at, tz=UTC).isoformat(),
         "freshness_nonce": freshness_nonce,
         "signed": True,
         "jti": payload["jti"],
@@ -1409,7 +1407,7 @@ async def verify_badge(request: Request, token: str):
         exp = payload.get("exp")
         expires_at = None
         if exp:
-            expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).isoformat()
+            expires_at = datetime.fromtimestamp(exp, tz=UTC).isoformat()
 
         return BadgeVerifyResponse(
             valid=True,
@@ -1548,7 +1546,7 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
 
     # Create audit record with memory limit
     audit_record = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "jti": jti,
         "entity_id": payload.get("entity_id"),
         "reason": body.reason,
@@ -1798,7 +1796,7 @@ class WebhookManager:
 
         webhook_payload = {
             "event": event,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "entity_id": entity_id,
             "data": payload,
         }
@@ -1845,7 +1843,7 @@ class WebhookManager:
                         return False
                 except (socket.gaierror, ValueError):
                     # DNS resolution failed or invalid IP - allow (external hostname)
-                    pass
+                    logger.debug("webhook_dns_unresolved", entity_id=entity_id, url=url[:50])
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(url, json=webhook_payload)
@@ -1872,7 +1870,7 @@ class WebhookManager:
             "url": url,
             "events": events_list,
             "secret": secret,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         add_with_limit(webhooks, entity_id, config, MAX_WEBHOOKS)
         # Persist to database if enabled
