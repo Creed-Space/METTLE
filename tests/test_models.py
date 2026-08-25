@@ -1,6 +1,6 @@
 """Tests for METTLE Pydantic models."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from mettle.models import (
@@ -54,7 +54,7 @@ class TestChallenge:
             type=ChallengeType.SPEED_MATH,
             prompt="Calculate: 2 + 2",
             data={"expected_answer": 4},
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=5000,
         )
         assert challenge.id == "mtl_abc123"
@@ -67,7 +67,7 @@ class TestChallenge:
             id="mtl_test",
             type=ChallengeType.SPEED_MATH,
             prompt="Test",
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=1000,
         )
         assert challenge.issued_at is not None
@@ -78,7 +78,7 @@ class TestChallenge:
             Challenge(
                 type=ChallengeType.SPEED_MATH,
                 prompt="Test",
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
                 time_limit_ms=1000,
             )
 
@@ -88,7 +88,7 @@ class TestChallenge:
             Challenge(
                 id="mtl_test",
                 type=ChallengeType.SPEED_MATH,
-                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
                 time_limit_ms=1000,
             )
 
@@ -98,7 +98,7 @@ class TestChallenge:
             id="mtl_test",
             type=ChallengeType.SPEED_MATH,
             prompt="Test",
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=1000,
         )
         assert challenge.data == {}

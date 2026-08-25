@@ -44,6 +44,15 @@ class Settings(BaseSettings):
         default=86400,
         description="Badge expiry time in seconds (default: 24 hours)",
     )
+    revocation_refresh_seconds: int = Field(
+        default=30,
+        description=(
+            "How often (seconds) to refresh the in-memory revocation replica from the "
+            "durable store. Also the upper bound on cross-instance revocation propagation "
+            "delay: a badge revoked on one instance is honoured by others within this "
+            "window. Lower = fresher but more DB load."
+        ),
+    )
 
     # API Key for admin operations
     admin_api_key: str = Field(

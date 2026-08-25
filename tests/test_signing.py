@@ -4,9 +4,8 @@ import base64
 import builtins
 from unittest.mock import patch
 
-import pytest
-
 import mettle.signing as signing
+import pytest
 
 
 @pytest.fixture(autouse=True)

@@ -105,10 +105,18 @@ METTLE provides a Model Context Protocol server so AI agents can verify themselv
 
 | Tool | Description |
 |------|-------------|
-| `mettle_start_session` | Start a verification session, returns challenges for all suites |
-| `mettle_answer_challenge` | Submit an answer to the current METTLE challenge. |
-| `mettle_get_result` | Get final result with credential tier and VCP attestation |
-| `mettle_auto_verify` | One-shot: create session, solve all challenges, return result |
+| `mettle_start_session` | MVP: start a verification session, returns the first challenge |
+| `mettle_answer_challenge` | MVP: submit an answer to the current challenge |
+| `mettle_get_result` | MVP: final result (80% threshold, badge) |
+| `mettle_auto_verify` | MVP one-shot: create session, solve all challenges, return result |
+| `mettle_list_suites` | v2: list the tiered verification suites |
+| `mettle_start_v2_session` | v2: start a session over chosen suites, returns challenge data |
+| `mettle_verify_suite` | v2: submit your answers for one suite, get pass/score |
+| `mettle_get_v2_result` | v2: overall pass, earned tier, and signed VCP attestation |
+
+The `v2` tools reach the tiered suites/tiers/attestation surface (`/api/mettle/*`) and
+require `METTLE_API_KEY`; the MVP `mettle_start_session` family uses the unauthenticated
+`/session/*` path.
 
 **Configuration:**
 
@@ -188,6 +196,7 @@ Sessions can include an operator commitment for Platinum-tier accountability:
     "operator_commitment": {
         "operator_pseudonym": "anon-42",
         "operator_public_key": "-----BEGIN PUBLIC KEY-----\n...",
+        "challenge_nonce": "<nonce from POST /api/mettle/operator/challenge>",
         "signed_commitment": "<base64 Ed25519 signature>",
         "contact_method": "email_hash",
         "contact_hash": "sha256:..."
@@ -195,7 +204,21 @@ Sessions can include an operator commitment for Platinum-tier accountability:
 }
 ```
 
-The signed commitment message must be exactly: `I accept accountability for agent {entity_id}`
+**The commitment is nonce-bound (proof of liveness).** First request a single-use challenge:
+
+```bash
+POST /api/mettle/operator/challenge   {"entity_id": "agent-xyz"}
+# -> { "nonce": "...", "expires_at": "...", "message_to_sign": "METTLE-OPERATOR-COMMITMENT-v1|<nonce>|agent-xyz|<expires_at>" }
+```
+
+Ed25519-sign `message_to_sign` **verbatim** and submit the signature as `signed_commitment`, along
+with the `challenge_nonce`. The nonce is **single-use**, bound to that `entity_id`, and expires.
+
+> **Changed (2026-07-12):** the old message was the *static* string
+> `I accept accountability for agent {entity_id}`. That made the commitment a **bearer artifact** —
+> a captured signature could be replayed on a new session forever, so it proved the operator's key
+> had signed once, ever, not that the operator was live. `entity_id` is now **required** whenever an
+> `operator_commitment` is supplied (a commitment must name the agent it vouches for).
 
 ### Response Attestations
 
@@ -216,6 +239,32 @@ METTLE tests what emerges from **being** AI, not from **using** AI:
 - Learning curves that reveal substrate
 
 The test doesn't ask "can you pass as human?" — it asks "can you demonstrate what only a mind like yours can do?"
+
+## Standards & positioning
+
+**Agentic Capability Verification Problem (ACVP).** METTLE's problem (decide whether an
+entity is a capable agent, not a human and not a script) is an instance of the **Agentic
+Capability Verification Problem (ACVP)** formalized by aCAPTCHA (Xu et al., "aCAPTCHA:
+Verifying That an Entity Is a Capable Agent via Asymmetric Hardness," arXiv:2603.07116).
+That work casts the question as a three-class taxonomy (Human / Script / Agent) over a
+capability vector, separated by a timing threshold that exploits the asymmetric hardness
+between human cognition and AI processing; METTLE's suites and tier ladder are a concrete
+instantiation. (Note: "ACVP" here is the *Agentic Capability Verification Problem*, coined
+by that paper; it is unrelated to NIST's Automated Cryptographic Validation Protocol.)
+
+**EU AI Act, Article 50.** Article 50 requires that people be informed when they are
+interacting with an AI system, and that generative output be marked as artificially
+generated in a machine-readable form (transparency obligations effective 2 August 2026;
+the May-2026 AI Omnibus allows pre-existing generative systems until 2 December 2026 for
+the machine-readable marking). Art. 50 mandates *disclosure* but specifies no way to
+*verify* it. METTLE is positioned as the attestation layer beneath that duty: a
+proof-of-agent credential plus VCP and operator attestation makes an "I am an AI" claim
+that a relying party can cryptographically check, not merely trust. This is a positioning
+claim about how METTLE complements Art. 50, not a claim that Art. 50 mandates substrate
+proof.
+
+Primary sources: the EU AI Act text (Article 50, artificialintelligenceact.eu) and
+arXiv:2603.07116.
 
 ## License
 

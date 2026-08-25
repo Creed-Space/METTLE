@@ -64,10 +64,8 @@ except ImportError:
     sys.modules["mcp.types"].Tool = _FakeTool
 
 import httpx  # noqa: E402
-
 import mcp_server  # noqa: E402
 from mcp_server import api_call, call_tool, list_tools, solve_challenge  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -83,7 +81,7 @@ def mock_http():
         yield mock
 
 
-def _make_mock_response(json_data: dict, status_code: int = 200) -> MagicMock:
+def _make_mock_response(json_data: dict | list, status_code: int = 200) -> MagicMock:
     """Create a mock httpx Response."""
     resp = MagicMock()
     resp.json.return_value = json_data
@@ -302,15 +300,24 @@ class TestListTools:
     """Tests for the list_tools function."""
 
     @pytest.mark.asyncio
-    async def test_list_tools_returns_four_tools(self) -> None:
+    async def test_list_tools_returns_eight_tools(self) -> None:
         tools = await list_tools()
-        assert len(tools) == 4
+        assert len(tools) == 8
 
     @pytest.mark.asyncio
     async def test_list_tools_names(self) -> None:
         tools = await list_tools()
         names = {t.name for t in tools}
-        expected = {"mettle_start_session", "mettle_answer_challenge", "mettle_get_result", "mettle_auto_verify"}
+        expected = {
+            "mettle_start_session",
+            "mettle_answer_challenge",
+            "mettle_get_result",
+            "mettle_auto_verify",
+            "mettle_list_suites",
+            "mettle_start_v2_session",
+            "mettle_verify_suite",
+            "mettle_get_v2_result",
+        }
         assert names == expected
 
 
@@ -326,6 +333,7 @@ class TestCallToolStartSession:
     async def test_start_session_success(self, mock_http) -> None:
         mock_http.post.return_value = _make_mock_response({
             "session_id": "sess-123",
+            "session_token": "tok-abc",
             "difficulty": "basic",
             "total_challenges": 3,
             "current_challenge": {
@@ -384,6 +392,7 @@ class TestCallToolAnswerChallenge:
             },
         })
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "sess-123",
             "challenge_id": "ch-1",
             "answer": "42",
@@ -403,6 +412,7 @@ class TestCallToolAnswerChallenge:
             "session_complete": True,
         })
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "sess-123",
             "challenge_id": "ch-3",
             "answer": "4|4|4",
@@ -421,6 +431,7 @@ class TestCallToolAnswerChallenge:
             "session_complete": True,
         })
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "sess-123",
             "challenge_id": "ch-1",
             "answer": "wrong",
@@ -433,6 +444,7 @@ class TestCallToolAnswerChallenge:
         mock_http.post.return_value = _make_mock_response({})
         mock_http.post.return_value.raise_for_status.side_effect = _make_http_status_error(400, "Invalid session")
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "bad",
             "challenge_id": "ch-1",
             "answer": "x",
@@ -444,6 +456,7 @@ class TestCallToolAnswerChallenge:
     async def test_answer_challenge_generic_error(self, mock_http) -> None:
         mock_http.post.side_effect = Exception("Timeout")
         result = await call_tool("mettle_answer_challenge", {
+            "session_token": "tok-abc",
             "session_id": "s",
             "challenge_id": "c",
             "answer": "a",
@@ -475,7 +488,7 @@ class TestCallToolGetResult:
                 {"challenge_type": "consistency", "passed": True, "response_time_ms": 80, "time_limit_ms": 15000},
             ],
         })
-        result = await call_tool("mettle_get_result", {"session_id": "sess-123"})
+        result = await call_tool("mettle_get_result", {"session_id": "sess-123", "session_token": "tok-abc"})
         text = result[0].text
         assert "VERIFIED" in text
         assert "Badge" in text
@@ -495,7 +508,7 @@ class TestCallToolGetResult:
                 {"challenge_type": "consistency", "passed": False, "response_time_ms": 100, "time_limit_ms": 15000},
             ],
         })
-        result = await call_tool("mettle_get_result", {"session_id": "sess-fail"})
+        result = await call_tool("mettle_get_result", {"session_id": "sess-fail", "session_token": "tok-abc"})
         text = result[0].text
         assert "NOT VERIFIED" in text
         assert "FAIL" in text
@@ -509,7 +522,7 @@ class TestCallToolGetResult:
             "pass_rate": 0.0,
             "results": [],
         })
-        result = await call_tool("mettle_get_result", {"session_id": "sess-x"})
+        result = await call_tool("mettle_get_result", {"session_id": "sess-x", "session_token": "tok-abc"})
         text = result[0].text
         assert "Badge" not in text
         assert "Entity" not in text
@@ -519,14 +532,14 @@ class TestCallToolGetResult:
         resp = _make_mock_response({})
         resp.raise_for_status.side_effect = _make_http_status_error(404, "Session not found")
         mock_http.get.return_value = resp
-        result = await call_tool("mettle_get_result", {"session_id": "bad"})
+        result = await call_tool("mettle_get_result", {"session_id": "bad", "session_token": "tok-abc"})
         text = result[0].text
         assert "Error getting result" in text
 
     @pytest.mark.asyncio
     async def test_get_result_generic_error(self, mock_http) -> None:
         mock_http.get.side_effect = Exception("Network error")
-        result = await call_tool("mettle_get_result", {"session_id": "s"})
+        result = await call_tool("mettle_get_result", {"session_id": "s", "session_token": "tok-abc"})
         text = result[0].text
         assert "Error" in text
 
@@ -544,6 +557,7 @@ class TestCallToolAutoVerify:
         # start_session response
         start_resp = _make_mock_response({
             "session_id": "sess-auto",
+            "session_token": "tok-abc",
             "current_challenge": {
                 "id": "ch-1",
                 "type": "speed_math",
@@ -582,6 +596,7 @@ class TestCallToolAutoVerify:
     async def test_auto_verify_multiple_challenges(self, mock_http) -> None:
         start_resp = _make_mock_response({
             "session_id": "sess-multi",
+            "session_token": "tok-abc",
             "current_challenge": {
                 "id": "ch-1",
                 "type": "speed_math",
@@ -654,3 +669,211 @@ class TestCallToolUnknown:
         text = result[0].text
         assert "Unknown tool" in text
         assert "mettle_nonexistent_tool" in text
+
+
+# ---------------------------------------------------------------------------
+# 24-25: api_call() Bearer auth (v2 endpoints)
+# ---------------------------------------------------------------------------
+
+
+class TestApiCallAuth:
+    """Tests for the Bearer-auth path of api_call (v2 /api/mettle/* endpoints)."""
+
+    @pytest.mark.asyncio
+    async def test_api_call_auth_without_key_raises(self, mock_http, monkeypatch) -> None:
+        monkeypatch.setattr(mcp_server, "API_KEY", None)
+        with pytest.raises(RuntimeError, match="METTLE_API_KEY"):
+            await api_call("/mettle/suites", auth=True)
+
+    @pytest.mark.asyncio
+    async def test_api_call_auth_sends_bearer_header(self, mock_http, monkeypatch) -> None:
+        monkeypatch.setattr(mcp_server, "API_KEY", "mtl_test_key")
+        mock_http.get.return_value = _make_mock_response([])
+        await api_call("/mettle/suites", auth=True)
+        _, kwargs = mock_http.get.call_args
+        assert kwargs["headers"]["Authorization"] == "Bearer mtl_test_key"
+
+    @pytest.mark.asyncio
+    async def test_api_call_no_auth_sends_no_bearer(self, mock_http, monkeypatch) -> None:
+        monkeypatch.setattr(mcp_server, "API_KEY", "mtl_test_key")
+        mock_http.get.return_value = _make_mock_response({"ok": True})
+        await api_call("/session/start")
+        _, kwargs = mock_http.get.call_args
+        assert "Authorization" not in kwargs["headers"]
+
+
+# ---------------------------------------------------------------------------
+# 26+: call_tool() — v2 suites / tiers / attestation tools
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def v2_key(monkeypatch):
+    """Provide a client API key so v2 (auth=True) tools can run."""
+    monkeypatch.setattr(mcp_server, "API_KEY", "mtl_test_key")
+
+
+class TestCallToolListSuites:
+    """Tests for call_tool with mettle_list_suites."""
+
+    @pytest.mark.asyncio
+    async def test_list_suites_success(self, mock_http, v2_key) -> None:
+        mock_http.get.return_value = _make_mock_response([
+            {"name": "speed", "display_name": "Speed", "description": "fast", "suite_number": 1,
+             "is_multi_round": False, "difficulty_levels": ["easy"], "available": True},
+            {"name": "novel-reasoning", "display_name": "Novel", "description": "hard", "suite_number": 10,
+             "is_multi_round": True, "difficulty_levels": ["hard"], "available": False},
+        ])
+        result = await call_tool("mettle_list_suites", {})
+        text = result[0].text
+        assert "speed" in text
+        assert "multi-round" in text
+        assert "unavailable" in text
+
+    @pytest.mark.asyncio
+    async def test_list_suites_missing_key_is_error(self, mock_http, monkeypatch) -> None:
+        monkeypatch.setattr(mcp_server, "API_KEY", None)
+        result = await call_tool("mettle_list_suites", {})
+        text = result[0].text
+        assert "Error" in text
+        assert "METTLE_API_KEY" in text
+
+    @pytest.mark.asyncio
+    async def test_list_suites_http_error(self, mock_http, v2_key) -> None:
+        resp = _make_mock_response([])
+        resp.raise_for_status.side_effect = _make_http_status_error(401, "Unauthorized")
+        mock_http.get.return_value = resp
+        result = await call_tool("mettle_list_suites", {})
+        assert "Error listing suites" in result[0].text
+
+
+class TestCallToolStartV2Session:
+    """Tests for call_tool with mettle_start_v2_session."""
+
+    @pytest.mark.asyncio
+    async def test_start_v2_success(self, mock_http, v2_key) -> None:
+        mock_http.post.return_value = _make_mock_response({
+            "session_id": "v2-sess",
+            "suites": ["speed", "memory"],
+            "time_budget_ms": 60000,
+            "expires_at": "2026-07-12T01:00:00Z",
+            "challenges": {"speed": {"prompt": "add 1+1"}, "memory": {"prompt": "recall"}},
+        })
+        result = await call_tool("mettle_start_v2_session", {
+            "suites": ["speed", "memory"], "difficulty": "hard", "entity_id": "a1", "vcp_token": "Z3+P",
+        })
+        text = result[0].text
+        assert "v2-sess" in text
+        assert "speed" in text
+
+    @pytest.mark.asyncio
+    async def test_start_v2_http_error(self, mock_http, v2_key) -> None:
+        resp = _make_mock_response({})
+        resp.raise_for_status.side_effect = _make_http_status_error(400, "bad suites")
+        mock_http.post.return_value = resp
+        result = await call_tool("mettle_start_v2_session", {"suites": ["nope"]})
+        assert "Error starting v2 session" in result[0].text
+
+
+class TestCallToolVerifySuite:
+    """Tests for call_tool with mettle_verify_suite."""
+
+    @pytest.mark.asyncio
+    async def test_verify_suite_passed(self, mock_http, v2_key) -> None:
+        mock_http.post.return_value = _make_mock_response({
+            "suite": "speed", "passed": True, "score": 0.95, "details": {"correct": 19},
+        })
+        result = await call_tool("mettle_verify_suite", {
+            "session_id": "s", "suite": "speed", "answers": {"q1": "2"},
+        })
+        text = result[0].text
+        assert "PASSED" in text
+        assert "0.95" in text
+
+    @pytest.mark.asyncio
+    async def test_verify_suite_failed(self, mock_http, v2_key) -> None:
+        mock_http.post.return_value = _make_mock_response({
+            "suite": "speed", "passed": False, "score": 0.2, "details": {},
+        })
+        result = await call_tool("mettle_verify_suite", {"session_id": "s", "suite": "speed", "answers": {}})
+        assert "FAILED" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_verify_suite_http_error(self, mock_http, v2_key) -> None:
+        resp = _make_mock_response({})
+        resp.raise_for_status.side_effect = _make_http_status_error(403, "not your session")
+        mock_http.post.return_value = resp
+        result = await call_tool("mettle_verify_suite", {"session_id": "s", "suite": "x", "answers": {}})
+        assert "Error verifying suite" in result[0].text
+
+
+class TestCallToolGetV2Result:
+    """Tests for call_tool with mettle_get_v2_result."""
+
+    @pytest.mark.asyncio
+    async def test_get_v2_result_with_attestation(self, mock_http, v2_key) -> None:
+        mock_http.get.return_value = _make_mock_response({
+            "session_id": "s", "status": "completed", "overall_passed": True, "tier": "gold",
+            "suites_completed": ["speed", "memory"],
+            "vcp_attestation": {"tier": "gold", "signature": "ed25519:abc"},
+            "governance_attestation": {"framework": "creed-space"},
+        })
+        result = await call_tool("mettle_get_v2_result", {"session_id": "s"})
+        text = result[0].text
+        assert "gold" in text
+        assert "PASSED" in text
+        assert "attestation" in text.lower()
+        assert "creed-space" in text
+        _, kwargs = mock_http.get.call_args
+        assert kwargs["params"]["include_vcp"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_get_v2_result_no_vcp(self, mock_http, v2_key) -> None:
+        mock_http.get.return_value = _make_mock_response({
+            "session_id": "s", "status": "completed", "overall_passed": False, "tier": None,
+            "suites_completed": [],
+        })
+        result = await call_tool("mettle_get_v2_result", {"session_id": "s", "include_vcp": False})
+        text = result[0].text
+        assert "NOT PASSED" in text
+        assert "none" in text
+        _, kwargs = mock_http.get.call_args
+        assert kwargs["params"]["include_vcp"] == "false"
+
+    @pytest.mark.asyncio
+    async def test_get_v2_result_http_error(self, mock_http, v2_key) -> None:
+        resp = _make_mock_response({})
+        resp.raise_for_status.side_effect = _make_http_status_error(404, "not completed")
+        mock_http.get.return_value = resp
+        result = await call_tool("mettle_get_v2_result", {"session_id": "s"})
+        assert "Error getting v2 result" in result[0].text
+
+
+class TestPathInjectionDefense:
+    """Agent-supplied identifiers must not be able to inject the request path."""
+
+    @pytest.mark.asyncio
+    async def test_verify_suite_rejects_bad_session_id(self, mock_http, v2_key) -> None:
+        result = await call_tool(
+            "mettle_verify_suite", {"session_id": "s/../admin", "suite": "speed", "answers": {}}
+        )
+        assert "invalid session_id" in result[0].text
+        mock_http.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_verify_suite_rejects_bad_suite(self, mock_http, v2_key) -> None:
+        result = await call_tool("mettle_verify_suite", {"session_id": "s", "suite": "a/b", "answers": {}})
+        assert "invalid suite" in result[0].text
+        mock_http.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_get_v2_result_rejects_traversal(self, mock_http, v2_key) -> None:
+        result = await call_tool("mettle_get_v2_result", {"session_id": "../../etc/passwd"})
+        assert "invalid session_id" in result[0].text
+        mock_http.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_mvp_get_result_rejects_bad_id(self, mock_http) -> None:
+        result = await call_tool("mettle_get_result", {"session_id": "a b"})
+        assert "invalid session_id" in result[0].text
+        mock_http.get.assert_not_awaited()

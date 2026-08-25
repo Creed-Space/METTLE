@@ -5,7 +5,7 @@ webhooks, and verification records using an isolated in-memory SQLite database.
 """
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -524,7 +524,7 @@ class TestGetRecentVerifications:
         db.save_verification_record("old-entity", "1.1.1.1", True)
         with db.get_db() as session:
             record = session.query(db.DBVerificationRecord).first()
-            record.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+            record.created_at = datetime.now(UTC) - timedelta(hours=3)
             session.commit()
 
         db.save_verification_record("new-entity", "2.2.2.2", True)
@@ -561,7 +561,7 @@ class TestGetEntityVerificationCount:
         # Make it old
         with db.get_db() as session:
             record = session.query(db.DBVerificationRecord).first()
-            record.created_at = datetime.now(timezone.utc) - timedelta(hours=5)
+            record.created_at = datetime.now(UTC) - timedelta(hours=5)
             session.commit()
 
         db.save_verification_record("entity-tw", "2.2.2.2", True)
@@ -597,7 +597,7 @@ class TestGetIpEntities:
         db.save_verification_record("old-ent", "10.0.0.1", True)
         with db.get_db() as session:
             record = session.query(db.DBVerificationRecord).first()
-            record.created_at = datetime.now(timezone.utc) - timedelta(hours=5)
+            record.created_at = datetime.now(UTC) - timedelta(hours=5)
             session.commit()
 
         db.save_verification_record("new-ent", "10.0.0.1", True)
@@ -672,7 +672,7 @@ class TestEdgeCases:
             type=ChallengeType.SPEED_MATH,
             prompt="Calculate: 2 + 3",
             data={"expected_answer": 5, "a": 2, "b": 3, "op": "+"},
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=5000,
         )
         result = db.save_session("pydantic-sess", "e1", "basic", [challenge])

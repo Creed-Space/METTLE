@@ -249,19 +249,26 @@ class TestBuildMettleAttestation:
         assert att["signature"] == "ed25519:fake-base64-signature"
         assert att["metadata"]["tier"] == "platinum"
 
-    def test_attestation_sign_failure_logs_warning(self):
+    def test_attestation_sign_failure_fails_closed(self):
+        """A signing failure must RAISE, never yield an unsigned attestation.
+
+        This test previously asserted ``att["signature"] is None`` -- i.e. it pinned a fail-OPEN:
+        when signing broke, an unsigned (forgeable) attestation was handed out as though it were
+        a valid credential. Refusing to issue is the only safe outcome, so the assertion is
+        inverted deliberately.
+        """
         def bad_sign_fn(data):
             raise RuntimeError("key error")
 
-        att = build_mettle_attestation(
-            session_id="ses-789",
-            difficulty="basic",
-            suites_passed=[],
-            suites_failed=[],
-            pass_rate=0.0,
-            sign_fn=bad_sign_fn,
-        )
-        assert att["signature"] is None
+        with pytest.raises(RuntimeError, match="forgeable"):
+            build_mettle_attestation(
+                session_id="ses-789",
+                difficulty="basic",
+                suites_passed=[],
+                suites_failed=[],
+                pass_rate=0.0,
+                sign_fn=bad_sign_fn,
+            )
 
     def test_attestation_custom_key_id(self):
         att = build_mettle_attestation(

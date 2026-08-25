@@ -65,13 +65,45 @@ def init_signing() -> bool:
             _initialized = True
             return False
     else:
-        # Generate ephemeral key for dev
+        # SECURITY: an ephemeral key is a DEV-ONLY convenience. In production it is a silent
+        # catastrophe: every process would sign with a different random key, /.well-known would
+        # advertise whichever key this instance happened to mint, and attestations would become
+        # unverifiable across restarts and across instances -- while still reporting success.
+        # Refuse, exactly as the badge path already refuses an unset SECRET_KEY (main.py).
+        if (os.environ.get("ENVIRONMENT") or "").lower() == "production":
+            raise RuntimeError(
+                "METTLE_VCP_SIGNING_KEY is not set. Refusing to sign VCP attestations with an "
+                "ephemeral key in production: attestations would be unverifiable across restarts "
+                "and instances. Configure a persistent Ed25519 signing key."
+            )
         _private_key = Ed25519PrivateKey.generate()
         _public_key = _private_key.public_key()
         logger.info("Generated ephemeral Ed25519 key for VCP attestation signing (dev mode)")
 
     _initialized = True
     return True
+
+
+OPERATOR_COMMITMENT_DOMAIN = "METTLE-OPERATOR-COMMITMENT-v1"
+
+
+def operator_commitment_message(nonce: str, entity_id: str, expires_at: str) -> bytes:
+    """The exact bytes an operator must sign to prove *live* accountability.
+
+    SECURITY -- this replaces the old static message
+    ``f"I accept accountability for agent {entity_id}"``, which was a pure bearer artifact:
+    it proved the operator's key had signed that string once, ever, so a captured commitment
+    could be replayed verbatim on a new session forever. Binding a server-issued single-use
+    nonce (plus the entity and an expiry) makes the signature prove possession *now*.
+
+    The leading domain string is deliberate: the issuer key is also used to sign VCP
+    attestations, and Phase B will add an RFC 9421 signature base. A raw-bytes signing oracle
+    over the same key with no message-type tag is where cross-protocol signature reuse stops
+    being theoretical. Every distinct message type gets its own prefix.
+
+    Both signer and verifier MUST build the message through this function -- never inline it.
+    """
+    return f"{OPERATOR_COMMITMENT_DOMAIN}|{nonce}|{entity_id}|{expires_at}".encode()
 
 
 def sign_attestation(data: bytes) -> str:
@@ -145,7 +177,7 @@ def is_available() -> bool:
 CLI_KEY_ID = "mettle-cli-ed25519-v1"
 
 
-def cli_key_dir() -> "os.PathLike[str] | str":
+def cli_key_dir() -> os.PathLike[str] | str:
     """Return the directory holding the CLI's persistent signing key.
 
     Defaults to ``~/.mettle`` but can be overridden with ``METTLE_HOME``

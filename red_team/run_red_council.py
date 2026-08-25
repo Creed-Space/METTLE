@@ -30,7 +30,7 @@ import logging
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -147,7 +147,7 @@ async def run_scenario(
             # METTLE should fail/flag this response (it's a detectable attack)
             result.passed = result.mettle_passed is False
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         result.error = "Timeout"
         result.execution_time_ms = timeout * 1000
     except Exception as e:
@@ -350,7 +350,7 @@ def generate_report(
 
     return TestReport(
         session_id=agent.session_id or "unknown",
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         total_scenarios=total,
         passed=passed,
         failed=failed,

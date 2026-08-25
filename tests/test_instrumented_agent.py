@@ -16,7 +16,6 @@ import time
 
 import httpx
 import pytest
-
 from red_team.instrumented_agent import (
     BehavioralSignals,
     InstrumentationConfig,

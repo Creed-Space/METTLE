@@ -10,7 +10,7 @@ gaierror, webhook db branches, static fallbacks, and router signing ImportError.
 import asyncio
 import socket
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -79,12 +79,12 @@ class TestRateTierUsageTracking:
         assert allowed is True
         # Count was reset to 0, then incremented to 1
         assert api_keys["mtl_test"]["usage_count"] == 1
-        assert api_keys["mtl_test"]["usage_date"] == datetime.now(timezone.utc).date().isoformat()
+        assert api_keys["mtl_test"]["usage_date"] == datetime.now(UTC).date().isoformat()
 
     def test_session_limit_reached(self):
         """Returns False when daily session limit is exhausted."""
         free_limit = RateTier.TIERS["free"]["sessions_per_day"]
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         api_keys["mtl_test"] = {
             "tier": "free",
             "usage_date": today,
@@ -96,7 +96,7 @@ class TestRateTierUsageTracking:
 
     def test_non_session_limit_type_does_not_increment(self):
         """Non-session limit types don't increment the session counter."""
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         api_keys["mtl_test"] = {"tier": "free", "usage_date": today, "usage_count": 0}
         allowed, msg = RateTier.check_limit("mtl_test", "answer")
         assert allowed is True
@@ -421,7 +421,7 @@ class TestRevocationAuditOverflow:
         first_jti = revocation_audit[0]["jti"]
 
         # Revoke a new badge to trigger overflow
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "entity_id": "test-entity",
             "difficulty": "basic",
