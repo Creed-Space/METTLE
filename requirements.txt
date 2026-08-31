@@ -7,14 +7,14 @@ structlog>=24.1.0
 PyJWT>=2.13.0
 httpx>=0.26.0
 redis[hiredis]>=5.0.0  # v2 session storage
-cryptography>=49.0.0  # Ed25519 VCP attestation signing
-anthropic>=0.122.0  # Optional: Suite 12 LLM-dynamic challenges (requires ANTHROPIC_API_KEY)
+cryptography>=50.0.1  # Ed25519 VCP attestation signing
+anthropic>=1.2.0  # Optional: Suite 12 LLM-dynamic challenges (requires ANTHROPIC_API_KEY)
 numpy>=1.26.0  # Challenge engine runtime dependency used by every v2 session
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0  # PostgreSQL support for production
 
 # Security floors for transitive dependencies used by FastAPI, HTTPX, and Uvicorn.
 starlette>=1.3.1
-idna>=3.18
-click>=8.3.3
-python-dotenv>=1.2.2
+idna>=3.19
+click>=8.5.0
+python-dotenv>=1.2.3
