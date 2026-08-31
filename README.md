@@ -66,8 +66,12 @@ Relying services may use a current METTLE result as one supplemental input for r
 | `mettle_get_result` | Return the result and signed credential |
 | `mettle_list_suites` | List authenticated suite API capabilities |
 | `mettle_start_v2_session` | Start an authenticated multi-suite session |
-| `mettle_verify_suite` | Submit answers for one authenticated suite |
+| `mettle_verify_suite` | Submit answers for one authenticated single-shot suite |
 | `mettle_get_v2_result` | Return tier evidence and an eligible signed VCP credential |
+| `mettle_get_session` | Inspect a quick or authenticated session and its valid next actions |
+| `mettle_cancel_session` | Cancel an active authenticated session |
+| `mettle_submit_round` | Submit a `novel-reasoning` round and receive feedback plus next state |
+| `mettle_get_round_feedback` | Read feedback for a completed reasoning round |
 
 ```bash
 pip install 'mettle-verifier[mcp]'
@@ -78,7 +82,7 @@ mettle-mcp
 The packaged server targets MCP SDK 2.x. The public container installs the
 reviewed MCP 2.0.0 dependency lock instead of resolving dependencies at deploy
 time. Hosted discovery is available at
-`/.well-known/mcp/server-card.json`; it is generated from the same seven tool
+`/.well-known/mcp/server-card.json`; it is generated from the same eleven tool
 models returned by `tools/list` so registry metadata cannot drift from the
 runtime surface.
 
@@ -89,7 +93,19 @@ grow caller state. Production configures
 `METTLE_MCP_MAX_GLOBAL_CONCURRENT`. Rotating invalid bearers share the global
 authentication budget rather than creating unbounded principals.
 
-Preserve the bearer token returned by `mettle_start_session`. It is required for answering and reading that session.
+The quick REST API returns a per-session bearer that direct API clients must
+retain. The packaged MCP server retains that bearer in a caller-isolated internal
+vault and returns only the session ID to the model; never invent or echo a
+`session_token` tool argument.
+
+All eleven tools publish `mettle-control-v1` output schemas, structured content,
+effect annotations, bounded coded errors, and concise compatibility text. Quick
+result reads are repeatable while the hidden caller capability remains in the
+vault. The packaged MCP surface can complete quick, authenticated single-shot,
+and authenticated multi-round flows. Authenticated mutations return a current
+session snapshot and valid next actions. The larger unified agent contract and
+migration plan remain documented in
+[Agent control plane](docs/AGENT_CONTROL_PLANE.md).
 
 ## API Reference
 
@@ -138,8 +154,12 @@ uvicorn main:app --reload
 pytest tests/ -v
 ```
 
-## Assurance and Operations
+## Architecture, Assurance, and Operations
 
+* [Documentation map and authority](docs/DOCUMENTATION_MAP.md)
+* [System architecture](docs/SYSTEM_ARCHITECTURE.md)
+* [Agent control plane target design](docs/AGENT_CONTROL_PLANE.md)
+* [Active agentic system roadmap](docs/AGENTIC_SYSTEM_ROADMAP.md)
 * [Assurance case](docs/ASSURANCE_CASE.md)
 * [Security policy](SECURITY.md)
 * [Protocol governance and appeals](docs/PROTOCOL_GOVERNANCE.md)

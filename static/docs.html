@@ -768,11 +768,27 @@ export METTLE_API_KEY=your_api_key</code></pre>
                             </tr>
                             <tr>
                                 <td><code>mettle_verify_suite</code></td>
-                                <td>Submit answers for one authenticated suite.</td>
+                                <td>Submit answers for one authenticated single-shot suite.</td>
                             </tr>
                             <tr>
                                 <td><code>mettle_get_v2_result</code></td>
                                 <td>Get tier evidence and any eligible signed VCP credential.</td>
+                            </tr>
+                            <tr>
+                                <td><code>mettle_get_session</code></td>
+                                <td>Inspect a quick or authenticated session and its valid next actions.</td>
+                            </tr>
+                            <tr>
+                                <td><code>mettle_cancel_session</code></td>
+                                <td>Cancel an active authenticated session.</td>
+                            </tr>
+                            <tr>
+                                <td><code>mettle_submit_round</code></td>
+                                <td>Submit one novel-reasoning round and receive feedback plus next state.</td>
+                            </tr>
+                            <tr>
+                                <td><code>mettle_get_round_feedback</code></td>
+                                <td>Read feedback for a completed novel-reasoning round.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -793,7 +809,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
 }</code></pre>
 
                     <h3>Usage</h3>
-                    <p>Use <code>mettle_start_session</code>, preserve both the returned session ID and bearer token, answer each challenge with <code>mettle_answer_challenge</code>, then call <code>mettle_get_result</code>. The deterministic reference solver is isolated from credential boundaries. A qualifying server session may return a signed, time-limited credential whose claims remain bounded by the assurance case.</p>
+                    <p>Use <code>mettle_start_session</code>, preserve the returned session ID, answer each challenge with <code>mettle_answer_challenge</code>, then call <code>mettle_get_result</code>. The MCP host retains the quick-session bearer outside model-visible content, so it must never be invented or supplied as a tool argument. Quick result reads are repeatable while that hidden capability remains available. The eleven-tool surface completes quick, authenticated single-shot, and authenticated multi-round flows. Every tool returns <code>mettle-control-v1</code> structured content, bounded errors, current state where applicable, and valid next actions alongside concise compatibility text. The deterministic reference solver is isolated from credential boundaries. A qualifying server session may return a signed, time-limited credential whose claims remain bounded by the assurance case.</p>
                 </section>
 
                 <section class="docs-section" id="error-codes">

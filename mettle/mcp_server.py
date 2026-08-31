@@ -18,7 +18,7 @@ Configuration (environment variables):
 
 import argparse
 import asyncio
-import json
+import json as jsonlib
 import os
 import re
 import time
@@ -33,11 +33,20 @@ from mcp.types import (
     ContentBlock,
     ListToolsResult,
     PaginatedRequestParams,
-    TextContent,
     Tool,
+    ToolAnnotations,
 )
 from mettle import __version__
 from mettle.mcp_context import caller_api_key, caller_principal, http_request_active
+from mettle.mcp_contract import (
+    CONTROL_OUTPUT_SCHEMA,
+    ToolResponse,
+    failure,
+    normalize_status,
+    receipt,
+    session_actions,
+    success,
+)
 
 # Configuration
 API_URL = os.getenv("METTLE_API_URL", "https://mettle.sh/api")
@@ -64,7 +73,7 @@ async def api_call(
     params: dict | None = None,
     auth: bool = False,
     session_token: str | None = None,
-) -> dict:
+) -> Any:
     """Make an API call to METTLE.
 
     Two independent credentials exist:
@@ -96,13 +105,19 @@ async def api_call(
 
     if method == "GET":
         response = await http_client.get(url, headers=headers, params=params)
-    else:
+    elif method == "POST":
         response = await http_client.post(
             url, json=json, headers=headers, params=params
         )
+    elif method == "DELETE":
+        response = await http_client.delete(url, headers=headers, params=params)
+    else:
+        raise ValueError("Unsupported HTTP method")
 
     response.raise_for_status()
-    return response.json()
+    return (
+        {} if response.status_code == 204 or not response.content else response.json()
+    )
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -121,6 +136,13 @@ def _safe_id(value: object, what: str) -> str:
     """
     if not isinstance(value, str) or not _ID_RE.fullmatch(value):
         raise ValueError(f"invalid {what}: must match [A-Za-z0-9_-] (1-64 chars)")
+    return value
+
+
+def _round_number(value: object) -> int:
+    """Validate a round before interpolating it into an authenticated URL."""
+    if type(value) is not int or not 1 <= value <= 5:
+        raise ValueError("invalid round_num: must be an integer from 1 to 5")
     return value
 
 
@@ -157,395 +179,510 @@ def _get_session_token(session_id: str, *, consume: bool = False) -> str:
 # === MCP Tools ===
 
 
+def _annotations(
+    *,
+    read_only: bool,
+    destructive: bool,
+    idempotent: bool,
+) -> ToolAnnotations:
+    """Declare control effects accurately for MCP hosts."""
+    return ToolAnnotations(
+        read_only_hint=read_only,
+        destructive_hint=destructive,
+        idempotent_hint=idempotent,
+        open_world_hint=True,
+    )
+
+
 async def list_tools() -> list[Tool]:
-    """List available METTLE tools."""
+    """List the compatibility tools and additive control-v1 operations."""
+    output = CONTROL_OUTPUT_SCHEMA
     return [
         Tool(
             name="mettle_start_session",
             description=(
-                "Start a METTLE verification session for a Becoming Mind. "
-                "Returns the first challenge to solve. Use difficulty='basic' for 3 challenges "
-                "(relaxed timing) or 'full' for 5 challenges (strict timing)."
+                "Start a quick METTLE session and return the first challenge. "
+                "The session bearer stays in a caller-isolated vault."
             ),
             input_schema={
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "difficulty": {
                         "type": "string",
                         "enum": ["basic", "full"],
-                        "description": "Verification difficulty level",
                         "default": "basic",
                     },
-                    "entity_id": {
-                        "type": "string",
-                        "description": "Optional identifier for this Becoming Mind",
-                    },
+                    "entity_id": {"type": "string", "maxLength": 128},
                 },
             },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=False, destructive=False, idempotent=False
+            ),
         ),
         Tool(
             name="mettle_answer_challenge",
             description=(
-                "Submit an answer to the current METTLE challenge. "
-                "Returns the verification result and next challenge (if any)."
+                "Submit the current quick challenge answer and return its receipt, "
+                "the next snapshot, and valid next actions."
             ),
             input_schema={
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
-                    "session_id": {
-                        "type": "string",
-                        "description": "Session ID from mettle_start_session",
-                    },
+                    "session_id": {"type": "string", "minLength": 1, "maxLength": 64},
                     "challenge_id": {
                         "type": "string",
-                        "description": "Challenge ID to answer",
+                        "minLength": 1,
+                        "maxLength": 64,
                     },
-                    "answer": {
-                        "type": "string",
-                        "description": "Your answer to the challenge",
-                    },
+                    "answer": {"type": "string", "maxLength": 1024},
                 },
                 "required": ["session_id", "challenge_id", "answer"],
             },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=False, destructive=True, idempotent=False
+            ),
         ),
         Tool(
             name="mettle_get_result",
             description=(
-                "Get the final verification result for a completed METTLE session. "
-                "Shows whether you passed (80% threshold) and your verification badge."
+                "Read a completed quick-session result. Reads are repeatable while "
+                "the hidden caller capability remains available."
             ),
             input_schema={
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
-                    "session_id": {
-                        "type": "string",
-                        "description": "Session ID to get results for",
-                    },
+                    "session_id": {"type": "string", "minLength": 1, "maxLength": 64}
                 },
                 "required": ["session_id"],
             },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=False, destructive=False, idempotent=True
+            ),
         ),
-        # --- v2 suites / tiers / VCP attestation (require METTLE_API_KEY) ---
         Tool(
             name="mettle_list_suites",
-            description=(
-                "List the METTLE v2 verification suites (the harder, tiered credential path). "
-                "Each suite probes a capability dimension; passing sets earn a tier "
-                "(bronze/silver/gold/platinum). Requires METTLE_API_KEY."
+            description="List authenticated METTLE suites and their availability.",
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {},
+            },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=True, destructive=False, idempotent=True
             ),
-            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="mettle_start_v2_session",
             description=(
-                "Start a METTLE v2 verification session over one or more suites and receive the "
-                "challenge data (never the answers). Answer each suite with mettle_verify_suite. "
-                "Requires METTLE_API_KEY."
+                "Start an authenticated suite session. Responses to llm-dynamic "
+                "leave METTLE only after explicit acknowledgement."
             ),
             input_schema={
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "suites": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Suite names, or ['all']",
+                        "minItems": 1,
+                        "maxItems": 12,
                         "default": ["all"],
                     },
                     "difficulty": {
                         "type": "string",
                         "enum": ["easy", "standard", "hard"],
-                        "description": "Difficulty level",
                         "default": "standard",
                     },
-                    "entity_id": {
-                        "type": "string",
-                        "description": "Optional identifier for this Becoming Mind",
-                    },
-                    "vcp_token": {
-                        "type": "string",
-                        "description": "Optional CSM-1 VCP token (enhanced Suite 9 / governance attestation)",
-                    },
-                    "allow_third_party_llm": {
-                        "type": "boolean",
-                        "description": (
-                            "Explicitly acknowledge that llm-dynamic responses are "
-                            "sent to Anthropic for evaluation"
-                        ),
-                        "default": False,
-                    },
+                    "entity_id": {"type": "string", "maxLength": 256},
+                    "vcp_token": {"type": "string", "maxLength": 32768},
+                    "allow_third_party_llm": {"type": "boolean", "default": False},
                 },
             },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=False, destructive=False, idempotent=False
+            ),
         ),
         Tool(
             name="mettle_verify_suite",
             description=(
-                "Submit your answers for one single-shot suite in a v2 session and get pass/score. "
-                "Requires METTLE_API_KEY."
+                "Submit one single-shot suite and return the result plus current "
+                "session snapshot. Multi-round suites use mettle_submit_round."
             ),
             input_schema={
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
-                    "session_id": {
-                        "type": "string",
-                        "description": "Session ID from mettle_start_v2_session",
-                    },
-                    "suite": {"type": "string", "description": "Suite name to verify"},
-                    "answers": {
-                        "type": "object",
-                        "description": "Suite-specific answers (your responses)",
-                    },
+                    "session_id": {"type": "string", "minLength": 1, "maxLength": 64},
+                    "suite": {"type": "string", "minLength": 1, "maxLength": 64},
+                    "answers": {"type": "object"},
                 },
                 "required": ["session_id", "suite", "answers"],
             },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=False, destructive=True, idempotent=False
+            ),
         ),
         Tool(
             name="mettle_get_v2_result",
             description=(
-                "Get the final v2 result for a session: overall pass, the earned tier, and (by "
-                "default) the signed VCP attestation you can present as a credential. Requires "
-                "METTLE_API_KEY."
+                "Read the terminal authenticated result and optional signed "
+                "credential or evidence receipt."
             ),
             input_schema={
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
-                    "session_id": {
+                    "session_id": {"type": "string", "minLength": 1, "maxLength": 64},
+                    "include_vcp": {"type": "boolean", "default": True},
+                },
+                "required": ["session_id"],
+            },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=False, destructive=False, idempotent=True
+            ),
+        ),
+        Tool(
+            name="mettle_get_session",
+            description=(
+                "Inspect a quick or authenticated session using its non-secret "
+                "handle. Defaults to the authenticated profile."
+            ),
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "session_id": {"type": "string", "minLength": 1, "maxLength": 64},
+                    "profile": {
                         "type": "string",
-                        "description": "Session ID to get results for",
-                    },
-                    "include_vcp": {
-                        "type": "boolean",
-                        "description": "Include the VCP-compatible attestation (tier + signature)",
-                        "default": True,
+                        "enum": ["quick", "authenticated"],
+                        "default": "authenticated",
                     },
                 },
                 "required": ["session_id"],
             },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=False, destructive=False, idempotent=True
+            ),
+        ),
+        Tool(
+            name="mettle_cancel_session",
+            description=(
+                "Cancel an active authenticated session and return its terminal "
+                "snapshot. Quick-session cancellation is not currently supported."
+            ),
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "session_id": {"type": "string", "minLength": 1, "maxLength": 64}
+                },
+                "required": ["session_id"],
+            },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=False, destructive=True, idempotent=False
+            ),
+        ),
+        Tool(
+            name="mettle_submit_round",
+            description=(
+                "Submit one novel-reasoning round and return bounded feedback, the "
+                "next round data, and the current session snapshot."
+            ),
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "session_id": {"type": "string", "minLength": 1, "maxLength": 64},
+                    "round_num": {"type": "integer", "minimum": 1, "maximum": 5},
+                    "answers": {"type": "object"},
+                },
+                "required": ["session_id", "round_num", "answers"],
+            },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=False, destructive=True, idempotent=False
+            ),
+        ),
+        Tool(
+            name="mettle_get_round_feedback",
+            description="Read the recorded feedback for one completed novel-reasoning round.",
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "session_id": {"type": "string", "minLength": 1, "maxLength": 64},
+                    "round_num": {"type": "integer", "minimum": 1, "maximum": 5},
+                },
+                "required": ["session_id", "round_num"],
+            },
+            output_schema=output,
+            annotations=_annotations(
+                read_only=True, destructive=False, idempotent=True
+            ),
         ),
     ]
 
 
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle tool calls."""
+def _quick_snapshot(
+    session_id: str,
+    *,
+    status: object,
+    current_challenge: dict[str, Any] | None = None,
+    **facts: Any,
+) -> dict[str, Any]:
+    control_status = normalize_status(status)
+    return {
+        "session_id": session_id,
+        "profile": "quick",
+        "status": control_status,
+        "terminal": control_status in {"completed", "expired", "cancelled"},
+        "current_challenge": current_challenge,
+        **facts,
+    }
 
-    if name == "mettle_start_session":
-        try:
-            difficulty = arguments.get("difficulty", "basic")
-            entity_id = arguments.get("entity_id")
 
+def _authenticated_snapshot(
+    data: dict[str, Any], session_id: str | None = None
+) -> dict[str, Any]:
+    control_status = normalize_status(data.get("status", "ready"))
+    return {
+        "session_id": session_id or str(data["session_id"]),
+        "profile": "authenticated",
+        "status": control_status,
+        "terminal": control_status in {"completed", "expired", "cancelled"},
+        "suites": list(data.get("suites", [])),
+        "suites_completed": list(data.get("suites_completed", [])),
+        "current_round": data.get("current_round"),
+        "created_at": data.get("created_at"),
+        "expires_at": data.get("expires_at"),
+        "elapsed_ms": data.get("elapsed_ms"),
+        "challenges": data.get("challenges"),
+    }
+
+
+async def _authenticated_status(session_id: str) -> dict[str, Any]:
+    return await api_call(f"/mettle/sessions/{session_id}", auth=True)
+
+
+async def call_tool(name: str, arguments: dict[str, Any]) -> ToolResponse:
+    """Handle one tool call with compatibility text and control-v1 content."""
+    try:
+        if name == "mettle_start_session":
             data = await api_call(
                 "/session/start",
                 "POST",
-                {"difficulty": difficulty, "entity_id": entity_id},
+                {
+                    "difficulty": arguments.get("difficulty", "basic"),
+                    "entity_id": arguments.get("entity_id"),
+                },
+            )
+            session_id = _safe_id(data["session_id"], "session_id")
+            _remember_session_token(session_id, data["session_token"])
+            challenge = data["current_challenge"]
+            snapshot = _quick_snapshot(
+                session_id,
+                status="ready",
+                current_challenge=challenge,
+                difficulty=data["difficulty"],
+                total_challenges=data["total_challenges"],
+                completed_challenges=0,
+            )
+            text = (
+                "METTLE session started.\n"
+                f"Session ID: {session_id}\n"
+                f"Difficulty: {data['difficulty']}\n"
+                f"Total challenges: {data['total_challenges']}\n"
+                f"First challenge: {challenge['prompt']}\n"
+                f"Challenge ID: {challenge['id']}\n"
+                f"Time limit: {challenge['time_limit_ms']}ms"
+            )
+            public_data = {
+                key: value for key, value in data.items() if key != "session_token"
+            }
+            return success(
+                name,
+                text,
+                data=public_data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
+                mutation_receipt=receipt(name, session_id=session_id),
             )
 
-            challenge = data["current_challenge"]
-            _remember_session_token(data["session_id"], data["session_token"])
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        f"METTLE session started!\n\n"
-                        f"Session ID: {data['session_id']}\n"
-                        f"Difficulty: {data['difficulty']}\n"
-                        f"Total challenges: {data['total_challenges']}\n\n"
-                        f"First Challenge:\n"
-                        f"  ID: {challenge['id']}\n"
-                        f"  Type: {challenge['type']}\n"
-                        f"  Prompt: {challenge['prompt']}\n"
-                        f"  Time limit: {challenge['time_limit_ms']}ms\n\n"
-                        f"Use mettle_answer_challenge to submit your answer."
-                    ),
-                )
-            ]
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text", text=f"Error starting session: {e.response.text}"
-                )
-            ]
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
-
-    elif name == "mettle_answer_challenge":
-        try:
+        if name == "mettle_answer_challenge":
+            session_id = _safe_id(arguments["session_id"], "session_id")
             data = await api_call(
                 "/session/answer",
                 "POST",
                 {
-                    "session_id": arguments["session_id"],
+                    "session_id": session_id,
                     "challenge_id": arguments["challenge_id"],
                     "answer": arguments["answer"],
                 },
-                session_token=_get_session_token(arguments["session_id"]),
+                session_token=_get_session_token(session_id),
             )
-
             result = data["result"]
-            passed_text = "PASSED" if result["passed"] else "FAILED"
-
-            response_text = (
-                f"Challenge Result: {passed_text}\n"
-                f"Response time: {result['response_time_ms']}ms (limit: {result['time_limit_ms']}ms)\n"
+            complete = bool(data["session_complete"])
+            snapshot = _quick_snapshot(
+                session_id,
+                status="completed" if complete else "in_progress",
+                current_challenge=data.get("next_challenge"),
+                challenges_remaining=data.get("challenges_remaining", 0),
+            )
+            verdict = "PASSED" if result["passed"] else "FAILED"
+            text = (
+                f"Challenge result: {verdict}\n"
+                f"Response time: {result['response_time_ms']}ms "
+                f"(limit: {result['time_limit_ms']}ms)\n"
+                f"Challenges remaining: {data.get('challenges_remaining', 0)}"
+            )
+            if data.get("next_challenge"):
+                text += (
+                    f"\nNext challenge: {data['next_challenge']['prompt']}"
+                    f"\nChallenge ID: {data['next_challenge']['id']}"
+                )
+            return success(
+                name,
+                text,
+                data=data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
+                mutation_receipt=receipt(
+                    name,
+                    session_id=session_id,
+                    challenge_id=arguments["challenge_id"],
+                    accepted=True,
+                ),
             )
 
-            if data["session_complete"]:
-                response_text += (
-                    "\nSession complete! Challenges remaining: 0\n"
-                    "Use mettle_get_result to see your final verification result."
-                )
-            else:
-                next_challenge = data["next_challenge"]
-                response_text += (
-                    f"\nChallenges remaining: {data['challenges_remaining']}\n\n"
-                    f"Next Challenge:\n"
-                    f"  ID: {next_challenge['id']}\n"
-                    f"  Type: {next_challenge['type']}\n"
-                    f"  Prompt: {next_challenge['prompt']}\n"
-                    f"  Time limit: {next_challenge['time_limit_ms']}ms"
-                )
-
-            return [TextContent(type="text", text=response_text)]
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text", text=f"Error submitting answer: {e.response.text}"
-                )
-            ]
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
-
-    elif name == "mettle_get_result":
-        try:
+        if name == "mettle_get_result":
             session_id = _safe_id(arguments["session_id"], "session_id")
             data = await api_call(
                 f"/session/{session_id}/result",
                 session_token=_get_session_token(session_id),
             )
-
-            verified_text = "VERIFIED" if data["verified"] else "NOT VERIFIED"
-
-            response_text = (
-                f"METTLE Verification Result\n"
-                f"{'=' * 30}\n\n"
-                f"Status: {verified_text}\n"
-                f"Passed: {data['passed']}/{data['total']} ({data['pass_rate'] * 100:.0f}%)\n"
+            snapshot = _quick_snapshot(
+                session_id,
+                status="completed",
+                verified=bool(data.get("verified")),
+                passed=data.get("passed"),
+                total=data.get("total"),
+                credential_eligible=data.get("credential_eligible"),
+            )
+            verdict = "VERIFIED" if data["verified"] else "NOT VERIFIED"
+            lines = [
+                "METTLE Verification Result",
+                f"Status: {verdict}",
+                f"Passed: {data['passed']}/{data['total']} "
+                f"({data['pass_rate'] * 100:.0f}%)",
+            ]
+            if data.get("badge"):
+                lines.append(f"Badge: {data['badge']}")
+            if data.get("entity_id"):
+                lines.append(f"Entity: {data['entity_id']}")
+            for item in data.get("results", []):
+                item_status = "PASS" if item["passed"] else "FAIL"
+                lines.append(f"{item['challenge_type']}: {item_status}")
+            return success(
+                name,
+                "\n".join(lines),
+                data=data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
             )
 
-            if data.get("badge"):
-                response_text += f"Badge: {data['badge']}\n"
-
-            if data.get("entity_id"):
-                response_text += f"Entity: {data['entity_id']}\n"
-
-            response_text += "\nChallenge Results:\n"
-            for r in data["results"]:
-                status = "PASS" if r["passed"] else "FAIL"
-                response_text += f"  - {r['challenge_type']}: {status} ({r['response_time_ms']}ms/{r['time_limit_ms']}ms)\n"
-
-            _get_session_token(session_id, consume=True)
-            return [TextContent(type="text", text=response_text)]
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text", text=f"Error getting result: {e.response.text}"
-                )
-            ]
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
-
-    elif name == "mettle_list_suites":
-        try:
-            suites = await api_call("/mettle/suites", auth=True)
-            lines = ["METTLE v2 verification suites:\n"]
-            for s in suites:
+        if name == "mettle_list_suites":
+            data = await api_call("/mettle/suites", auth=True)
+            lines = ["METTLE authenticated verification suites:"]
+            for suite in data:
                 flags = []
-                if s.get("is_multi_round"):
+                if suite.get("is_multi_round"):
                     flags.append("multi-round")
-                if not s.get("available", True):
+                if not suite.get("available", True):
                     flags.append("unavailable")
-                suffix = f"  [{', '.join(flags)}]" if flags else ""
+                suffix = f" [{', '.join(flags)}]" if flags else ""
                 lines.append(
-                    f"  {s.get('suite_number')}. {s.get('name')} ({s.get('display_name')}){suffix}"
+                    f"{suite.get('suite_number')}. {suite.get('name')} "
+                    f"({suite.get('display_name')}){suffix}"
                 )
-                lines.append(f"       {s.get('description', '')}")
-            lines.append("\nStart one with mettle_start_v2_session (suites=[...]).")
-            return [TextContent(type="text", text="\n".join(lines))]
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text", text=f"Error listing suites: {e.response.text}"
-                )
-            ]
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+            return success(name, "\n".join(lines), data=data)
 
-    elif name == "mettle_start_v2_session":
-        try:
+        if name == "mettle_start_v2_session":
             payload: dict[str, Any] = {
                 "suites": arguments.get("suites", ["all"]),
                 "difficulty": arguments.get("difficulty", "standard"),
             }
-            if arguments.get("entity_id"):
-                payload["entity_id"] = arguments["entity_id"]
-            if arguments.get("vcp_token"):
-                payload["vcp_token"] = arguments["vcp_token"]
+            for optional in ("entity_id", "vcp_token"):
+                if arguments.get(optional):
+                    payload[optional] = arguments[optional]
             if arguments.get("allow_third_party_llm") is True:
                 payload["allow_third_party_llm"] = True
-
             data = await api_call("/mettle/sessions", "POST", payload, auth=True)
-            challenges = data.get("challenges", {})
-            lines = [
-                "METTLE v2 session started.\n",
-                f"Session ID: {data.get('session_id')}",
-                f"Suites: {', '.join(data.get('suites', []))}",
-                f"Time budget: {data.get('time_budget_ms')}ms",
-                f"Expires: {data.get('expires_at')}",
-                "\nChallenges (answer each suite with mettle_verify_suite):",
-            ]
-            for suite_name, cdata in challenges.items():
-                lines.append(f"  {suite_name}:")
-                lines.append(f"    {json.dumps(cdata)}")
-            return [TextContent(type="text", text="\n".join(lines))]
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text", text=f"Error starting v2 session: {e.response.text}"
-                )
-            ]
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+            session_id = _safe_id(data["session_id"], "session_id")
+            snapshot = _authenticated_snapshot(data, session_id)
+            text = (
+                "METTLE authenticated session started.\n"
+                f"Session ID: {data['session_id']}\n"
+                f"Suites: {', '.join(data.get('suites', []))}\n"
+                f"Time budget: {data.get('time_budget_ms')}ms"
+            )
+            return success(
+                name,
+                text,
+                data=data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
+                mutation_receipt=receipt(name, session_id=session_id),
+            )
 
-    elif name == "mettle_verify_suite":
-        try:
+        if name == "mettle_verify_suite":
             session_id = _safe_id(arguments["session_id"], "session_id")
             suite = _safe_id(arguments["suite"], "suite")
+            status_data = await _authenticated_status(session_id)
             data = await api_call(
                 f"/mettle/sessions/{session_id}/verify",
                 "POST",
                 {"suite": suite, "answers": arguments["answers"]},
                 auth=True,
             )
-            passed = "PASSED" if data.get("passed") else "FAILED"
-            lines = [
-                f"Suite '{data.get('suite')}': {passed}",
-                f"Score: {data.get('score')}",
-            ]
+            completed = list(status_data.get("suites_completed", []))
+            if suite not in completed:
+                completed.append(suite)
+            status_data = {
+                **status_data,
+                "suites_completed": completed,
+                "status": (
+                    "completed"
+                    if set(completed) == set(status_data.get("suites", []))
+                    else "in_progress"
+                ),
+            }
+            snapshot = _authenticated_snapshot(status_data, session_id)
+            verdict = "PASSED" if data.get("passed") else "FAILED"
+            text = f"Suite '{data.get('suite')}': {verdict}\nScore: {data.get('score')}"
             if data.get("details"):
-                lines.append(f"Details: {json.dumps(data['details'])}")
-            lines.append(
-                "\nGet the final tier + attestation with mettle_get_v2_result."
+                text += f"\nDetails: {jsonlib.dumps(data['details'])}"
+            return success(
+                name,
+                text,
+                data=data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
+                mutation_receipt=receipt(name, session_id=session_id, suite=suite),
             )
-            return [TextContent(type="text", text="\n".join(lines))]
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text", text=f"Error verifying suite: {e.response.text}"
-                )
-            ]
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
 
-    elif name == "mettle_get_v2_result":
-        try:
+        if name == "mettle_get_v2_result":
             session_id = _safe_id(arguments["session_id"], "session_id")
             include_vcp = arguments.get("include_vcp", True)
             data = await api_call(
@@ -553,36 +690,145 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 params={"include_vcp": str(include_vcp).lower()},
                 auth=True,
             )
-            passed = "PASSED" if data.get("overall_passed") else "NOT PASSED"
-            lines = [
-                "METTLE v2 Result",
-                "=" * 30,
-                f"Status: {data.get('status')}",
-                f"Overall: {passed}",
-                f"Tier: {data.get('tier') or 'none'}",
-                f"Suites completed: {', '.join(data.get('suites_completed', []))}",
-            ]
-            attestation = data.get("vcp_attestation")
-            if attestation:
-                lines.append("\nVCP attestation (presentable credential):")
-                lines.append(json.dumps(attestation, indent=2))
-            gov = data.get("governance_attestation")
-            if gov:
-                lines.append(
-                    f"\nGovernance attestation: framework={gov.get('framework')}"
+            snapshot = _authenticated_snapshot(data, session_id)
+            verdict = "PASSED" if data.get("overall_passed") else "NOT PASSED"
+            text = (
+                "METTLE authenticated result\n"
+                f"Status: {data.get('status')}\n"
+                f"Overall: {verdict}\n"
+                f"Tier: {data.get('tier') or 'none'}"
+            )
+            if data.get("vcp_attestation"):
+                text += (
+                    "\nVCP attestation: "
+                    f"{jsonlib.dumps(data['vcp_attestation'], indent=2)}"
                 )
-            return [TextContent(type="text", text="\n".join(lines))]
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text", text=f"Error getting v2 result: {e.response.text}"
+            if data.get("governance_attestation"):
+                text += (
+                    "\nGovernance attestation: "
+                    f"framework={data['governance_attestation'].get('framework')}"
                 )
-            ]
-        except Exception as e:
-            return [TextContent(type="text", text=f"Error: {str(e)}")]
+            return success(
+                name,
+                text,
+                data=data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
+            )
 
-    else:
-        return [TextContent(type="text", text=f"Unknown tool: {name}")]
+        if name == "mettle_get_session":
+            session_id = _safe_id(arguments["session_id"], "session_id")
+            profile = arguments.get("profile", "authenticated")
+            if profile == "quick":
+                data = await api_call(
+                    f"/session/{session_id}",
+                    session_token=_get_session_token(session_id),
+                )
+                snapshot = _quick_snapshot(
+                    session_id,
+                    status=data.get("status"),
+                    completed_challenges=data.get("completed_challenges"),
+                    total_challenges=data.get("total_challenges"),
+                )
+            elif profile == "authenticated":
+                data = await _authenticated_status(session_id)
+                snapshot = _authenticated_snapshot(data, session_id)
+            else:
+                raise ValueError("Invalid session profile")
+            return success(
+                name,
+                f"Session {session_id}: {snapshot['status']}",
+                data=data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
+            )
+
+        if name == "mettle_cancel_session":
+            session_id = _safe_id(arguments["session_id"], "session_id")
+            await api_call(
+                f"/mettle/sessions/{session_id}",
+                "DELETE",
+                auth=True,
+            )
+            data = {
+                "session_id": session_id,
+                "status": "cancelled",
+                "suites": [],
+                "suites_completed": [],
+                "current_round": None,
+            }
+            snapshot = _authenticated_snapshot(data, session_id)
+            return success(
+                name,
+                f"Session {session_id}: {snapshot['status']}",
+                data=data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
+                mutation_receipt=receipt(name, session_id=session_id),
+            )
+
+        if name == "mettle_submit_round":
+            session_id = _safe_id(arguments["session_id"], "session_id")
+            round_num = _round_number(arguments["round_num"])
+            status_data = await _authenticated_status(session_id)
+            data = await api_call(
+                f"/mettle/sessions/{session_id}/rounds/{round_num}/answer",
+                "POST",
+                {"answers": arguments["answers"]},
+                auth=True,
+            )
+            completed = list(status_data.get("suites_completed", []))
+            if (
+                data.get("next_round_data") is None
+                and "novel-reasoning" not in completed
+            ):
+                completed.append("novel-reasoning")
+            status_data = {
+                **status_data,
+                "current_round": round_num,
+                "suites_completed": completed,
+                "status": (
+                    "completed"
+                    if set(completed) == set(status_data.get("suites", []))
+                    else "in_progress"
+                ),
+            }
+            snapshot = _authenticated_snapshot(status_data, session_id)
+            text = (
+                f"Round {data.get('round_num')}: accuracy {data.get('accuracy')}\n"
+                f"Time remaining: {data.get('time_remaining_ms')}ms"
+            )
+            return success(
+                name,
+                text,
+                data=data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
+                mutation_receipt=receipt(
+                    name, session_id=session_id, round_num=round_num
+                ),
+            )
+
+        if name == "mettle_get_round_feedback":
+            session_id = _safe_id(arguments["session_id"], "session_id")
+            round_num = _round_number(arguments["round_num"])
+            data = await api_call(
+                f"/mettle/sessions/{session_id}/rounds/{round_num}/feedback",
+                auth=True,
+            )
+            status_data = await _authenticated_status(session_id)
+            snapshot = _authenticated_snapshot(status_data, session_id)
+            return success(
+                name,
+                f"Feedback for round {round_num} is available.",
+                data=data,
+                snapshot=snapshot,
+                actions=session_actions(snapshot),
+            )
+
+        raise ValueError("Unknown MCP tool")
+    except Exception as exc:
+        return failure(name, exc)
 
 
 async def _handle_list_tools(
@@ -596,10 +842,13 @@ async def _handle_call_tool(
     _context: ServerRequestContext[Any], params: CallToolRequestParams
 ) -> CallToolResult:
     """Adapt an MCP 2 request model to the transport-independent tool handler."""
-    content: list[ContentBlock] = list(
-        await call_tool(params.name, params.arguments or {})
+    response = await call_tool(params.name, params.arguments or {})
+    content: list[ContentBlock] = list(response)
+    return CallToolResult(
+        content=content,
+        structured_content=response.structured_content,
+        is_error=response.is_error,
     )
-    return CallToolResult(content=content)
 
 
 # MCP 2 registers low-level handlers in the constructor. Keeping the core

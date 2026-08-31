@@ -33,3 +33,9 @@ exercise the boundary.
 Working if: representative 404, validation, rate-limit, and storage failures
 return stable codes; request IDs correlate logs; and no client body contains a
 stack trace, database URL, secret, raw answer, token, or internal exception text.
+
+The MCP adapter now implements the Phase 1 transport-neutral control error,
+retry, and current-state envelope specified in `docs/AGENT_CONTROL_PLANE.md`.
+Its retry guidance distinguishes repeatable reads from mutations with ambiguous
+commit state. The HTTP contract above remains authoritative for direct HTTP
+clients, while later cross-transport unification remains roadmap work.

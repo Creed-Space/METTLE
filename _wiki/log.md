@@ -1,5 +1,15 @@
 # METTLE — Wiki Log
 
+## [2026-08-31] update | MCP control-v1 Phase 1
+Pages updated: systems/mcp-server-and-api; systems/agent-control-and-evolution; flows/integration-and-deployment; systems/verification-suites; index
+Sources ingested: mettle/mcp_contract.py; mettle/mcp_server.py; tests/test_mcp_control_contract.py; docs/AGENTIC_SYSTEM_ROADMAP.md
+Key findings: The working tree now exposes eleven structured MCP tools, completes multi-round control, preserves repeat quick-result reads, and returns bounded errors plus next actions. Later cross-transport unification remains proposed.
+
+## [2026-08-31] expand | Agent control and system evolution
+Pages created: systems/agent-control-and-evolution
+Sources ingested: docs/SYSTEM_ARCHITECTURE.md; docs/AGENT_CONTROL_PLANE.md; docs/AGENTIC_SYSTEM_ROADMAP.md; docs/DOCUMENTATION_MAP.md; mettle/mcp_server.py; mettle/api_models.py
+Key findings: Runtime use and engineering evolution now share one proposed discover-plan-act-observe-verify-receipt loop; v0.4.8 multi-round MCP and structured-control gaps are explicit; target design remains separate from runtime proof.
+
 ## [2026-05-23] bootstrap | Initial wiki creation
 Pages created: verification-suites (systems), inverse-turing-concept (domain)
 Sources ingested: README.md, main.py, mcp_server.py, mettle/ directory listing

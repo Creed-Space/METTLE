@@ -1,6 +1,10 @@
 # Historical METTLE Verification System Design
 
-> **Status:** This is an archived design proposal. Its terms such as “genuine,” “free,” and “safe” name historical research hypotheses and are not validated properties. The current bounded contract is in `README.md`, `docs/ASSURANCE_CASE.md`, `docs/SECURITY_WHITEPAPER.md`, and `docs/SECURITY_SCAN_RECONCILIATION_2026-07-13.md`.
+> **Status:** This is an archived design proposal. Its terms such as “genuine,”
+> “free,” and “safe” name historical research hypotheses and are not validated
+> properties. Current document authority is mapped in
+> `docs/DOCUMENTATION_MAP.md`; the current and proposed architecture are separated
+> in `docs/SYSTEM_ARCHITECTURE.md`.
 
 METTLE v2: Machine Evaluation Through Turing-inverse Logic Examination
 

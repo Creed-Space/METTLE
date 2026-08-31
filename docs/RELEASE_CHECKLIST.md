@@ -29,7 +29,7 @@
 * [ ] Wheel and source distribution build, install, expose the CLI, and pass `twine check`.
 * [ ] Two clean Linux builders and one clean macOS builder produce byte-identical
   wheel and source-distribution hashes for the exact source SHA.
-* [ ] The public PyPI wheel passes a clean seven-tool MCP handshake and omits
+* [ ] The public PyPI wheel passes a clean eleven-tool MCP handshake and omits
   `mettle_auto_verify`; exact public names and hashes match independent
   source-built reproducibility evidence before any public wheel is installed or
   executed in an OIDC-authorized job.
@@ -54,7 +54,7 @@
 * [ ] Render auto-deploy remains disabled, and the tag-gated release workflow
   promotes the exact release SHA to the API and MCP services before attaching
   a successful provider receipt to the GitHub release.
-* [ ] The public MCP handshake exposes exactly seven tools and does not expose
+* [ ] The public MCP handshake exposes exactly eleven tools and does not expose
   `mettle_auto_verify`; no tool invocation is needed for this release check.
 * [ ] Rollback target and signing-key incident procedure are rehearsed.
 
@@ -66,6 +66,8 @@
 * [ ] Retention and deletion receipts cover application and provider systems.
 * [ ] Held-out fairness data is rights-cleared, privacy-minimal, sufficient, and reviewed.
 * [ ] Independent cryptography, adversarial ML, accessibility, privacy, and bilateral dispositions are complete.
+* [ ] A material agent-control change has an independent schema-only discovery,
+  recovery, authority, and resource-efficiency review disposition.
 * [ ] Publication authority has approved the exact claims and limitations.
 
 ## Release receipt

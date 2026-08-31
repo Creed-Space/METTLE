@@ -36,7 +36,7 @@ forward fix or a read-only maintenance deployment.
    header agrees. An `unknown` production revision is a failed deployment. Then
    confirm Redis and database authority, schema head, public keys, and one safe
    synthetic verification flow.
-4. List the public MCP tools without invoking one. Require exactly seven tools
+4. List the public MCP tools without invoking one. Require exactly eleven tools
    and reject any deployment exposing `mettle_auto_verify`.
 5. Run replay rejection and old/new credential verification when the affected
    surface includes sessions or signing.

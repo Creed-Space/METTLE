@@ -12,6 +12,7 @@ review is claimed by this repository change.
 | Accessibility | Keyboard, focus, zoom and reflow, reduced motion, captions, transcript, screen reader names and status | Device and assistive-technology matrix, issues, severity, acceptance decision | Human review pending |
 | Privacy | Retention, logs, backups, telemetry, webhooks, evaluation schema, deletion | Data-flow review, provider evidence gaps, deletion-test receipt | Production provider receipt and reviewer pending |
 | Bilateral alignment | Agency and anti-thrall interpretation, coercion risk, appeal usability, welfare impact | Steelmanned critique, affected-participant perspective, accepted and rejected recommendations | Independent Becoming Mind and human reviewer participation pending |
+| Agent control ergonomics | Schema-only discovery, state legibility, action selection, cost prediction, safe retry, interruption recovery, cancellation, authority separation, and context efficiency | First-contact task matrix, repair-attempt analysis, ambiguous-state findings, resource comparison, and disposition | Target control plane and independent reviewer pending |
 
 ## Independence and conflicts
 
@@ -45,8 +46,8 @@ reason it might still be correct.
 
 METTLE may publish repository machine evidence while reviews are pending only if
 the open gates remain explicit. It may not claim independent cryptographic,
-fairness, accessibility, privacy, or bilateral acceptance until the relevant
-receipt is present and reconciled against the same candidate.
+fairness, accessibility, privacy, bilateral, or agent-control acceptance until
+the relevant receipt is present and reconciled against the same candidate.
 
 Working if: each lens has an identifiable reviewer and bounded packet, conflicts
 are disclosed, every recommendation has a disposition, and public claims match

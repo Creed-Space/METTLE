@@ -234,7 +234,8 @@ jobs:
           expected = {
               "mettle_start_session", "mettle_answer_challenge", "mettle_get_result",
               "mettle_list_suites", "mettle_start_v2_session", "mettle_verify_suite",
-              "mettle_get_v2_result",
+              "mettle_get_v2_result", "mettle_get_session", "mettle_cancel_session",
+              "mettle_submit_round", "mettle_get_round_feedback",
           }
 
           async def smoke():
@@ -252,7 +253,7 @@ jobs:
                   raise RuntimeError(f"public MCP tools differ: {sorted(names)}")
 
           asyncio.run(smoke())
-          print("public PyPI MCP smoke passed: 7 approved tools")
+          print("public PyPI MCP smoke passed: 11 approved tools")
           PY
       - name: Install mcp-publisher
         run: |

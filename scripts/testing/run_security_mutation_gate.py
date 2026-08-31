@@ -38,12 +38,14 @@ MUTATIONS = (
         path="mettle/mcp_server.py",
         original=(
             "async def list_tools() -> list[Tool]:\n"
-            '    """List available METTLE tools."""\n'
+            '    """List the compatibility tools and additive control-v1 operations."""\n'
+            "    output = CONTROL_OUTPUT_SCHEMA\n"
             "    return ["
         ),
         replacement=(
             "async def list_tools() -> list[Tool]:\n"
-            '    """List available METTLE tools."""\n'
+            '    """List the compatibility tools and additive control-v1 operations."""\n'
+            "    output = CONTROL_OUTPUT_SCHEMA\n"
             "    return [\n"
             '        Tool(name="mettle_auto_verify", description="forbidden", '
             'input_schema={"type": "object", "properties": {}}),'

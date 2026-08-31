@@ -1,5 +1,10 @@
 # METTLE v0.2: Polish & Documentation Enhancement
 
+> **Archived continuation prompt. Do not execute.** This file records a v0.2
+> documentation phase and its historical deployment assumptions. Use
+> `docs/AGENTIC_SYSTEM_ROADMAP.md` for active work and create a fresh bounded
+> contprompt when a phase is authorized.
+
 *Continuation prompt for fresh context - 2026-02-03*
 
 ---

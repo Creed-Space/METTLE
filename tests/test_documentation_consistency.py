@@ -28,8 +28,12 @@ PUBLIC_CLAIM_SURFACES = (
     "scripts/engine.py",
     "scripts/engine_legacy.py",
     "docs/CREDENTIAL_TRANSPARENCY.md",
+    "docs/AGENTIC_SYSTEM_ROADMAP.md",
+    "docs/AGENT_CONTROL_PLANE.md",
+    "docs/DOCUMENTATION_MAP.md",
     "docs/METTLE_VERIFICATION_SYSTEM.md",
     "docs/SECURITY_WHITEPAPER.md",
+    "docs/SYSTEM_ARCHITECTURE.md",
     "docs/VCP_INTEGRATION.md",
     "docs/VERIFICATION_SUITES.md",
     "_wiki/domain/anti-thrall-and-agency.md",
@@ -37,6 +41,7 @@ PUBLIC_CLAIM_SURFACES = (
     "_wiki/flows/integration-and-deployment.md",
     "_wiki/index.md",
     "_wiki/systems/challenge-generation.md",
+    "_wiki/systems/agent-control-and-evolution.md",
     "_wiki/systems/mcp-server-and-api.md",
     "_wiki/systems/session-manager-redis.md",
     "_wiki/systems/signing-and-credentials.md",
@@ -298,9 +303,12 @@ def test_governance_and_operations_contracts_are_present() -> None:
     """The release must retain every named governance and response contract."""
     documents = (
         "SECURITY.md",
+        "docs/AGENTIC_SYSTEM_ROADMAP.md",
+        "docs/AGENT_CONTROL_PLANE.md",
         "docs/ASSURANCE_CASE.md",
         "docs/COMPATIBILITY.md",
         "docs/CREDENTIAL_TRANSPARENCY.md",
+        "docs/DOCUMENTATION_MAP.md",
         "docs/DEPRECATION_POLICY.md",
         "docs/ERROR_TAXONOMY.md",
         "docs/IDEMPOTENCY.md",
@@ -309,6 +317,7 @@ def test_governance_and_operations_contracts_are_present() -> None:
         "docs/PROTOCOL_GOVERNANCE.md",
         "docs/RELEASE_CHECKLIST.md",
         "docs/REVIEW_DISPOSITIONS.md",
+        "docs/SYSTEM_ARCHITECTURE.md",
     )
     for document in documents:
         assert (ROOT / document).is_file(), f"missing governance contract: {document}"

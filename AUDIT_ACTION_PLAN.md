@@ -1,6 +1,10 @@
 # METTLE Website Audit — Action Plan
 
-> Historical note (2026-07-13): `frontend/` was removed after this audit. `static/` is the canonical production frontend; Svelte path references below describe the original audit state only.
+> **Archived audit plan.** This file preserves the February 2026 audit mapping and
+> is not current execution authority. `frontend/` was removed after this audit;
+> `static/` is the canonical production frontend. Revalidate every finding
+> against the current tree before reopening it. Active forward work is governed by
+> `docs/AGENTIC_SYSTEM_ROADMAP.md`.
 
 **Source**: `1.0 mettle audit website feb '26-compressed.pdf` (14 pages)
 **Compiled**: 2026-02-19

@@ -1,7 +1,7 @@
 # METTLE Wiki Index
 
 <!-- wiki:scope = mettle -->
-<!-- wiki:updated = 2026-08-14 -->
+<!-- wiki:updated = 2026-08-31 -->
 
 ## Systems
 
@@ -10,7 +10,8 @@
 * [[mettle:systems/session-manager-redis]]: Redis state machine, atomic quotas, locks, and durable session authority (updated: 2026-08-14)
 * [[mettle:systems/verifier-functions]]: Quick and hosted verification paths with non-disclosing public results (updated: 2026-08-14)
 * [[mettle:systems/signing-and-credentials]]: Issuer-owned signing, versioned credentials, tier computation, and status checks (updated: 2026-08-14)
-* [[mettle:systems/mcp-server-and-api]]: FastAPI and seven-tool MCP surfaces with explicit caller boundaries (updated: 2026-08-14)
+* [[mettle:systems/mcp-server-and-api]]: FastAPI and eleven-tool MCP surfaces with structured control and explicit caller boundaries (updated: 2026-08-31)
+* [[mettle:systems/agent-control-and-evolution]]: Proposed shared control loop, typed state, adapter convergence, and evidence-accretive evolution (updated: 2026-08-31)
 
 ## Domain and Flows
 

@@ -2,11 +2,15 @@
 
 ## Notice and compatibility windows
 
-Public API, credential, and suite semantics use these minimum windows:
+Public API, MCP, WebMCP, CLI, credential, and suite semantics use these minimum
+windows:
 
 * an additive deprecation is announced in release notes and OpenAPI metadata;
 * a public HTTP operation remains available for at least 180 days and two minor
   releases after notice;
+* a renamed agent tool or required tool input retains a compatibility alias for at
+  least 180 days and two minor releases after notice, unless the old surface would
+  violate a security invariant;
 * a credential schema or suite policy remains verifiable through the longest
   signed lifetime plus rotation overlap, even after new issuance stops;
 * urgent security removal may use a shorter window only with an incident record,
@@ -35,8 +39,8 @@ headers, IP addresses for product analytics, stable subject IDs, or request
 bodies merely to count clients.
 
 Low observed volume is decision input, not proof that no consumer exists.
-Maintainers must also inspect public examples, fixtures, MCP tools, documentation,
-and known integrations.
+Maintainers must also inspect public examples, fixtures, MCP and WebMCP tools, CLI
+help, skills, server metadata, documentation, and known integrations.
 
 ## Removal checklist
 
@@ -45,7 +49,8 @@ and known integrations.
 3. Confirm both minimum windows have elapsed.
 4. Review aggregate telemetry and known integrations.
 5. Mark the OpenAPI break intentional and version the protocol if semantics move.
-6. Remove implementation, tests, examples, and documentation together.
+6. Remove implementation, transport aliases, tests, examples, skills, server
+   metadata, and documentation together.
 7. Publish the exact removal SHA and rollback plan.
 
 Working if: active deprecations are visible in schema and release notes,

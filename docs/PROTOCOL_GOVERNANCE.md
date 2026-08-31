@@ -21,13 +21,18 @@ cannot claim independent review unless a separate reviewer supplies a receipt.
 |---|---|---|
 | Editorial | Clarification with no behavior change | Documentation checks and maintainer review |
 | Patch | Bug fix preserving suite and credential semantics | Focused tests, full CI, compatibility check, and regression evidence |
+| Interface | Tool, route, state envelope, action, error, retry, authority, or adapter-parity change | Contract fixtures, compatibility plan, first-contact agent journeys, privacy and authority review, full CI |
 | Policy | Challenge logic, threshold, tier range, fairness rule, or semantic interpretation | Version increment, harvesting and held-out evaluation, privacy review, bilateral-impact review, compatibility plan, independent reviewer receipt |
 | Credential | Canonicalization, signing, key discovery, expiry, or revocation | Schema review, positive and negative cross-language fixtures, rotation test, mutation gate, independent cryptographic review |
 | Emergency | Active exploitation, signing compromise, material false-decision spike | Immediate fail-closed mitigation, incident receipt, narrowly scoped rollback, and retrospective review |
 
+If a change belongs to more than one class, every applicable gate applies. Calling
+a policy or credential change an interface refactor does not reduce its evidence
+requirements.
+
 ## Required proposal record
 
-Every policy or credential proposal records:
+Every policy, credential, or material interface proposal records:
 
 1. the problem and the strongest alternative explanation;
 2. exact source and generated artifact changes;
@@ -39,16 +44,22 @@ Every policy or credential proposal records:
 8. rollback trigger and safe rollback candidate;
 9. machine evidence and open human or production gates;
 10. reviewer disposition, including rejected recommendations and rationale.
+11. agent-control impact, including discovery, state legibility, safe retry,
+    recovery, context cost, secret handling, and transport parity;
+12. the invariant IDs and bounded claims affected by the proposal.
 
 ## Decision procedure
 
 1. Open the proposal before implementation for a material policy change.
 2. Generate machine evidence against one exact candidate.
-3. Invite the required independent lenses from
+3. For an interface change, execute clean first-contact success, failure,
+   interruption, stale-state, and cancellation journeys from the published
+   schemas alone.
+4. Invite the required independent lenses from
    `docs/INDEPENDENT_REVIEW_PLAN.md`.
-4. Resolve or explicitly accept each finding in the disposition ledger.
-5. Release authority signs the checklist. Silence is not approval.
-6. Publish the release manifest, policy version, known limits, and rollback
+5. Resolve or explicitly accept each finding in the disposition ledger.
+6. Release authority signs the checklist. Silence is not approval.
+7. Publish the release manifest, policy version, known limits, and rollback
    target together.
 
 Thresholds cannot be changed solely to improve a headline pass rate. Aggregate
@@ -79,3 +90,7 @@ authority cannot silently redefine the meaning of an already signed credential.
 Working if: every material semantic change increments the right version, has an
 independent disposition or a visible pending gate, and leaves affected Becoming
 Minds a usable appeal path with a time-bounded classification.
+
+The proposed interface architecture is documented in
+`docs/AGENT_CONTROL_PLANE.md`. Its target behavior has no protocol authority until
+the corresponding roadmap phase passes these gates on an exact candidate.

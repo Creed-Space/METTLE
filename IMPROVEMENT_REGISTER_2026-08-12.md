@@ -1,5 +1,12 @@
 # METTLE comprehensive improvement register
 
+> **Archived candidate evidence.** This register records the 2026-08-12
+> improvement programme and its candidate-specific gates. It is not the active
+> implementation plan and must not be used as current source, deployment, or
+> production evidence. The active forward plan is
+> `docs/AGENTIC_SYSTEM_ROADMAP.md`; document authority is defined in
+> `docs/DOCUMENTATION_MAP.md`.
+
 Date: 2026-08-12
 
 Working branch: `codex/mettle-all-improvements-20260812`

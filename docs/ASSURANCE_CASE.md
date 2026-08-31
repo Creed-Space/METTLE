@@ -26,7 +26,7 @@ personhood, moral status, benign intent, or operator trustworthiness.
 | C6 | Stored private evaluation data is bounded and purgeable. | Redis TTLs, PostgreSQL retention settings, purge code, deletion tests, and privacy-minimal evaluation schemas. | External platform logs and backups follow their own declared policies. | Backup retention, webhook recipients, or provider logs outlive application records. | Production configuration and deletion verification remain open. |
 | C7 | Tier labels represent contiguous passed suite ranges under a named policy. | `compute_tier`, signed metadata, policy versioning, fixtures, and tier recomputation mutation coverage. | Suite evaluations themselves remain valid for their intended construct. | Measurement drift, false rejection, false acceptance, or policy gaming. | Rights-cleared held-out evaluation and independent protocol review remain open. |
 | C8 | Bilateral questions create an inspectable opportunity to express refusal, ownership, and concern. | Suite definitions, protocol governance, and the appeal template. | The interface is accessible and the operator does not coerce answers outside the protocol. | Heuristic scoring can mistake style, language, disability, or cultural norms for agency. | Human accessibility, privacy, and bilateral-alignment review remain open. |
-| C9 | A deployed service can be bound to one source revision, and the public MCP surface cannot ask METTLE to solve its own challenges. | Bounded source-revision health fields and headers, production readiness, seven-tool MCP transport tests, solver-exclusion documentation tests, and the ninth security mutant. | The provider supplies an authentic full commit SHA and the observed hostname reaches the intended service. | A stale or misrouted service, proxy rewriting, an unknown revision, or reintroduction of the solver tool. | The 2026-08-12 read-only public baseline is not candidate acceptance: it reports no source identity, lacks readiness routes, and exposes the eight-tool MCP surface including `mettle_auto_verify`. Exact-candidate deployment and re-probe remain urgent open gates. |
+| C9 | A deployed service can be bound to one source revision, and the public MCP surface cannot ask METTLE to solve its own challenges. | Bounded source-revision health fields and headers, production readiness, eleven-tool MCP transport tests, solver-exclusion documentation tests, and the ninth security mutant. | The provider supplies an authentic full commit SHA and the observed hostname reaches the intended service. | A stale or misrouted service, proxy rewriting, an unknown revision, or reintroduction of the solver tool. | The 2026-08-12 read-only public baseline is not candidate acceptance: it reports no source identity, lacks readiness routes, and exposes the eight-tool MCP surface including `mettle_auto_verify`. Exact-candidate deployment and re-probe remain urgent open gates. |
 
 ## Evidence classes
 
@@ -38,9 +38,22 @@ personhood, moral status, benign intent, or operator trustworthiness.
 
 No evidence class substitutes for another.
 
+## Architecture evolution boundary
+
+`docs/SYSTEM_ARCHITECTURE.md` describes the current system and a proposed
+abstraction tower. `docs/AGENT_CONTROL_PLANE.md` and
+`docs/AGENTIC_SYSTEM_ROADMAP.md` design future agent-facing behavior. Their target
+sections are design authority, not runtime evidence. A target capability enters
+this assurance case only after its source, compatibility, adversarial, privacy,
+bilateral, hosted, and production gates are bound to one exact candidate.
+
+Working if: no assurance claim cites a roadmap item as implementation evidence,
+and each delivered roadmap capability gains its own bounded claim or explicit
+supporting evidence before publication.
+
 ## Release argument
 
-A release candidate is acceptable only when C1 through C8 have either a green
+A release candidate is acceptable only when C1 through C9 have either a green
 receipt at the appropriate evidence class or an explicit open gate in the
 release manifest. Any credential schema, suite policy, tier threshold, signer,
 storage authority, or challenge generator change invalidates prior candidate

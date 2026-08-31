@@ -15,6 +15,10 @@ EXPECTED_TOOLS = {
     "mettle_start_v2_session",
     "mettle_verify_suite",
     "mettle_get_v2_result",
+    "mettle_get_session",
+    "mettle_cancel_session",
+    "mettle_submit_round",
+    "mettle_get_round_feedback",
 }
 
 
@@ -39,7 +43,7 @@ async def smoke() -> None:
         )
     if "mettle_auto_verify" in names:
         raise RuntimeError("forbidden automatic solver is present")
-    print("installed MCP smoke passed: 7 approved tools")
+    print("installed MCP smoke passed: 11 approved tools")
 
 
 if __name__ == "__main__":

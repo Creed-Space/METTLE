@@ -1,6 +1,9 @@
 # METTLE Audit — Remaining Fixes
 
-> Historical note (2026-07-13): `frontend/` was removed after this audit. `static/` is the canonical production frontend; Svelte path references below describe the original audit state only.
+> **Archived continuation prompt. Do not execute.** This file preserves a February
+> 2026 task state. Its paths, counts, and status are superseded. Use
+> `docs/AGENTIC_SYSTEM_ROADMAP.md` for active work and create a fresh dated
+> contprompt for any reopened phase.
 
 **Source**: `1.0 mettle audit website feb '26-compressed.pdf` (14 pages)
 **Previous session**: 2026-02-19 — Implemented 19 of 25 audit items

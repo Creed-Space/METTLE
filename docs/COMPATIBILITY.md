@@ -62,6 +62,22 @@ failed compatibility check.
 5. Update examples in Python, JavaScript, and Rust together.
 6. Record the change and limitations in the release manifest.
 
+## Agent interface compatibility
+
+The current REST, MCP, WebMCP, and CLI surfaces are separately authored and checked
+by focused consistency tests. The target architecture replaces repeated semantic
+definitions with one capability manifest while preserving checked-in public
+artefacts and compatibility aliases. See `docs/AGENT_CONTROL_PLANE.md`.
+
+An agent-interface change must preserve or deliberately version operation meaning,
+input and output schema, authority, state vocabulary, errors, retry behavior,
+annotations, and bounded interpretation. A text-compatible response that changes a
+structured field's meaning is a breaking change.
+
+First-contact clients that know only the published schemas are compatibility
+consumers. Their quick, single-shot, multi-round, recovery, cancellation, and
+credential-verification journeys must pass before a compatibility alias is removed.
+
 Working if: all language consumers reach identical verdicts on every fixture,
 the schema-derived client reaches the current application, and an intentional
 break cannot ship through an unreviewed snapshot overwrite.

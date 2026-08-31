@@ -38,7 +38,7 @@ The hosted API implements two related paths:
 | Quick session API | Starts a bounded three or five challenge session, requires its bearer token for subsequent operations, and can issue a stable signed legacy badge after a passing result. |
 | Authenticated suite API | Runs selected suites, requires a complete contiguous policy range for a tier, and returns either an eligible Ed25519 credential or an unsigned evidence receipt when requested. |
 | Legacy research CLI | Runs the historical ten-suite local research engine and emits unsigned local results. It is not the current twelve-suite hosted registry. |
-| MCP server | Exposes seven interactive and authenticated suite tools. It does not expose an automatic solver. |
+| MCP server | Exposes eleven structured interactive and authenticated suite tools, including multi-round control. It does not expose an automatic solver. |
 
 Sources: `main.py`, `mettle/router.py`, `mettle/vcp.py`, `mettle/cli.py`, and `mettle/mcp_server.py`.
 

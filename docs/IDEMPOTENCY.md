@@ -26,3 +26,9 @@ single-winner credential caching.
 Working if: duplicate answer and presentation tests fail closed, concurrent
 credential reads return byte-equivalent envelopes, cancellation restores quota,
 and operational retries never create untracked keys, sessions, or deploys.
+
+The target control plane adds operation IDs, request-digest-bound idempotency keys,
+resource revisions, and server-issued action IDs. See
+`docs/AGENT_CONTROL_PLANE.md` and Phase 2 of
+`docs/AGENTIC_SYSTEM_ROADMAP.md`. Until implemented, clients must follow the
+operation-specific current rules above.

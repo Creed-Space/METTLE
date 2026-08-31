@@ -19,7 +19,7 @@ Sources: `main.py`, `mettle/challenge_adapter.py`, `mettle/session_manager.py`, 
 
 ## MCP and CLI Boundaries
 
-The MCP surface exposes seven interactive and authenticated suite tools. It has no automatic solver. Quick answer and result operations require the session bearer token; authenticated suite operations require the configured API bearer key (`mettle/mcp_server.py`).
+The MCP surface exposes eleven interactive and authenticated suite tools. It has no automatic solver. Quick answer and result operations use a caller-isolated hidden session bearer; authenticated suite operations require the configured API bearer key (`mettle/mcp_server.py`; `mettle/mcp_contract.py`).
 
 The local CLI runs an unsigned research flow. Portable credentials come only from a server-owned issuer. The reference solver is confined to `scripts/testing/solver.py`; it is excluded from the package, not imported by the MCP server, and cannot be selected through its tool list (`mettle/cli.py`; `pyproject.toml`; `README.md`).
 
@@ -27,7 +27,7 @@ The local CLI runs an unsigned research flow. Portable credentials come only fro
 
 The repository declares Render through `render.yaml` with `autoDeploy: false`. GitHub workflows validate, package, publish release evidence, and monitor provider drift. A release operator explicitly deploys the reviewed commit after the required gates; branch updates cannot independently publish the API, MCP service, or holder (`render.yaml`; `deploy/holder/render.yaml`; `.github/workflows`).
 
-Local validation proves source and machine behavior only. Release acceptance still requires hosted CI on an immutable committed SHA, one observed provider deployment for that SHA, deployed health and safe-flow receipts, and rollback evidence. The API reports the provider commit through `source_revision` and `X-METTLE-Source-Revision`; production readiness fails when that identity is absent or malformed. The public MCP receipt must list exactly seven tools and exclude the automatic solver (`main.py`; `docs/RELEASE_CHECKLIST.md`; `docs/runbooks/DEPLOYMENT_ROLLBACK.md`).
+Local validation proves source and machine behavior only. Release acceptance still requires hosted CI on an immutable committed SHA, one observed provider deployment for that SHA, deployed health and safe-flow receipts, and rollback evidence. The API reports the provider commit through `source_revision` and `X-METTLE-Source-Revision`; production readiness fails when that identity is absent or malformed. The public MCP receipt must list exactly eleven tools and exclude the automatic solver (`main.py`; `docs/RELEASE_CHECKLIST.md`; `docs/runbooks/DEPLOYMENT_ROLLBACK.md`).
 
 ## Operational Trust Boundary
 

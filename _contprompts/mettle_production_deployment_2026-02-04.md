@@ -1,5 +1,10 @@
 # METTLE: Production Deployment & Remaining Hardening
 
+> **Archived continuation prompt. Do not execute.** This file records the v0.2
+> deployment plan and contains superseded topology, configuration, routes, counts,
+> and readiness claims. Use `docs/AGENTIC_SYSTEM_ROADMAP.md`,
+> `docs/RELEASE_CHECKLIST.md`, and the current runbooks for new work.
+
 *Continuation prompt for fresh context - 2026-02-04*
 
 ---

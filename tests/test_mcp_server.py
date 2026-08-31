@@ -42,6 +42,10 @@ EXPECTED_TOOLS = {
     "mettle_start_v2_session",
     "mettle_verify_suite",
     "mettle_get_v2_result",
+    "mettle_get_session",
+    "mettle_cancel_session",
+    "mettle_submit_round",
+    "mettle_get_round_feedback",
 }
 
 
@@ -285,8 +289,7 @@ async def test_get_result_renders_badge_and_per_challenge_rows():
     assert "mettle:bronze" in text
     assert "agent-7" in text
     assert "speed_math" in text
-    with pytest.raises(ValueError, match="Unknown or expired"):
-        mcp_server._get_session_token("ses_1")
+    assert mcp_server._get_session_token("ses_1") == "tok_1"
 
 
 @pytest.mark.asyncio
@@ -371,14 +374,30 @@ async def test_start_v2_session_passes_optional_fields():
 async def test_verify_suite_reports_score_and_details():
     payload = {"suite": "speed", "passed": True, "score": 0.91, "details": {"n": 4}}
     post = AsyncMock(return_value=_mock_response(payload))
+    get = AsyncMock(
+        return_value=_mock_response(
+            {
+                "session_id": "ses_v2",
+                "status": "in_progress",
+                "suites": ["speed"],
+                "suites_completed": ["speed"],
+                "current_round": 0,
+            }
+        )
+    )
     with patch.object(mcp_server, "API_KEY", "mtl_test"):
         with patch.object(mcp_server.http_client, "post", post):
-            text = _text(
-                await mcp_server.call_tool(
-                    "mettle_verify_suite",
-                    {"session_id": "ses_v2", "suite": "speed", "answers": {"a": 1}},
+            with patch.object(mcp_server.http_client, "get", get):
+                text = _text(
+                    await mcp_server.call_tool(
+                        "mettle_verify_suite",
+                        {
+                            "session_id": "ses_v2",
+                            "suite": "speed",
+                            "answers": {"a": 1},
+                        },
+                    )
                 )
-            )
 
     assert "PASSED" in text
     assert "0.91" in text
@@ -415,8 +434,9 @@ async def test_get_v2_result_renders_attestations():
 
 @pytest.mark.asyncio
 async def test_unknown_tool_is_reported():
-    text = _text(await mcp_server.call_tool("mettle_nope", {}))
-    assert "Unknown tool" in text
+    result = await mcp_server.call_tool("mettle_nope", {})
+    assert result.is_error
+    assert result.structured_content["error"]["code"] == "invalid_request"
 
 
 @pytest.mark.asyncio
@@ -425,8 +445,8 @@ async def test_auto_solver_is_not_exposed():
     assert "mettle_auto_verify" not in {
         tool.name for tool in await mcp_server.list_tools()
     }
-    text = _text(await mcp_server.call_tool("mettle_auto_verify", {}))
-    assert "Unknown tool" in text
+    result = await mcp_server.call_tool("mettle_auto_verify", {})
+    assert result.is_error
 
 
 @pytest.mark.asyncio
@@ -439,7 +459,8 @@ async def test_mcp2_call_adapter_returns_protocol_content():
     )
     assert len(result.content) == 1
     assert result.content[0].type == "text"
-    assert "Unknown tool" in result.content[0].text
+    assert result.is_error
+    assert result.structured_content["error"]["code"] == "invalid_request"
 
 
 # Every tool surfaces both an HTTP error and an unexpected error as text rather
@@ -477,8 +498,8 @@ async def test_tools_report_http_errors_as_text(tool, args, verb):
         with patch.object(mcp_server.http_client, verb, mock):
             text = _text(await mcp_server.call_tool(tool, args))
 
-    assert "Error" in text
-    assert "boom" in text
+    assert "control error" in text
+    assert "boom" not in text
 
 
 @pytest.mark.asyncio
@@ -491,13 +512,12 @@ async def test_tools_report_unexpected_errors_as_text(tool, args, verb):
         with patch.object(mcp_server.http_client, verb, mock):
             text = _text(await mcp_server.call_tool(tool, args))
 
-    assert "Error" in text
-    assert "kaboom" in text
+    assert "control error" in text
+    assert "kaboom" not in text
 
 
 @pytest.mark.asyncio
 async def test_get_result_rejects_injected_session_id():
-    text = _text(
-        await mcp_server.call_tool("mettle_get_result", {"session_id": "../admin"})
-    )
-    assert "invalid session_id" in text
+    result = await mcp_server.call_tool("mettle_get_result", {"session_id": "../admin"})
+    assert result.is_error
+    assert result.structured_content["error"]["code"] == "invalid_request"

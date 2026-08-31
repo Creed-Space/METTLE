@@ -2,7 +2,7 @@
 
 Covers:
 - A real over-the-wire handshake: bind a live uvicorn server, run the MCP
-  initialize + tools/list round-trip, and assert the same seven tools the stdio
+  initialize + tools/list round-trip, and assert the same eleven tools the stdio
   arm advertises.
 - The hardening branches, which are the reason this module exists: POST-only
   (405), malformed body (clean -32700, no stack trace), oversize body (413),
@@ -122,7 +122,7 @@ async def test_http_handshake_lists_tools():
 
     names = {t.name for t in result.tools}
     assert names == EXPECTED_TOOLS
-    assert len(names) == 7
+    assert len(names) == 11
 
 
 async def test_health_endpoint():
@@ -154,7 +154,7 @@ async def test_server_card_matches_canonical_tool_surface():
     assert card_tools == canonical_tools
     names = {tool["name"] for tool in card_tools}
     assert names == EXPECTED_TOOLS
-    assert len(names) == 7
+    assert len(names) == 11
     assert "mettle_auto_verify" not in names
 
 
