@@ -1,5 +1,63 @@
 # METTLE release notes
 
+## [0.5.0]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged. This
+release changes the agent control surface and does not alter credential scoring,
+tier eligibility, signature verification, or portable credential acceptance.
+
+### Suite policy
+
+Challenge generation, scoring, and tier semantics remain unchanged from `0.4.8`.
+The MCP adapter can now complete authenticated multi-round novel-reasoning
+sessions through explicit round submission and feedback operations.
+
+### Public key changes
+
+No signing key, discovery format, or verification-key rotation is included.
+Production key identity remains independently verifiable through the published
+discovery surface and deployment receipts.
+
+### Compatibility
+
+* Publish `mettle-control-v1` output schemas, structured content, typed session
+  snapshots, valid next actions, mutation receipts, and bounded structured errors.
+* Add session inspection, authenticated cancellation, novel-reasoning round
+  submission, and completed-round feedback. The original seven MCP tool names
+  remain available, giving eleven reviewed public tools in total.
+* Preserve concise text fallback for older MCP hosts and keep the quick-session
+  bearer in a caller-isolated capability vault. Repeat result reads remain
+  available for the capability lifetime.
+* Preserve the prohibition on an automatic challenge solver. Callers still
+  supply their own answers.
+* Continue Python 3.10 through 3.14 compatibility.
+
+### Safety and recovery
+
+* Map upstream failures to fixed, non-reflective error codes without returning
+  raw response bodies, exception strings, participant content, or credentials.
+* Distinguish repeatable reads from mutations with ambiguous commit state.
+  Session mutations require refresh before retry; ambiguous resource creation
+  requires operator action.
+* Validate session, suite, challenge, and round identifiers before constructing
+  credentialed request paths.
+* Return post-action state without introducing a follow-up read whose failure
+  could misrepresent a successfully committed mutation.
+
+### Known limitations
+
+METTLE produces probabilistic behavioral evidence. A passing result does not
+prove identity, substrate, consciousness, freedom, agency, safety, governance,
+operator identity, or authorization suitability. Relays, source-aware solvers,
+model-assisted humans, evaluator error, and imitation remain possible. Human
+accessibility, rights-cleared fairness evaluation, independent protocol and
+cryptographic review, independent agent-control review, and destructive recovery
+drills retain their separate evidence and authority requirements. Later control
+plans, revisions, idempotency keys, budgets, and cross-transport semantic
+generation remain roadmap work.
+
 ## [0.4.8]
 
 ### Credential schema
