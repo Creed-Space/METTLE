@@ -16,6 +16,21 @@ from scripts.update_footer_year import copyright_label, update_file
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_icon_usage_includes_javascript(tmp_path, monkeypatch) -> None:
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text('<i class="fa-brands fa-github"></i>')
+    (static / "app.js").write_text(
+        "setResultIcon('fa-solid fa-circle-check');"
+        "setResultIcon('fa-solid fa-circle-xmark');"
+    )
+    monkeypatch.setattr(vendor_fontawesome, "ROOT", tmp_path)
+    assert vendor_fontawesome._used_icons() == {
+        "brands": {"github"},
+        "solid": {"circle-check", "circle-xmark"},
+    }
+
+
 @pytest.mark.parametrize(
     ("year", "expected"),
     [

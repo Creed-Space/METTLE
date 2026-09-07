@@ -43,9 +43,9 @@
     <!-- Stylesheets -->
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
     <link rel="stylesheet" href="/static/fonts.css?v=7277857592d0">
-    <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css?v=d6a4a5b05ab0">
-    <link rel="stylesheet" href="/static/style.css?v=5f40ca74ce8d">
-    <link rel="stylesheet" href="/static/docs.css?v=ea0d0a7d1321">
+    <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css?v=0622c14d7e9d">
+    <link rel="stylesheet" href="/static/style.css?v=eebd31220e4a">
+    <link rel="stylesheet" href="/static/docs.css?v=9437b34d1b15">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -164,17 +164,50 @@
                 <section class="docs-section" id="quickstart">
                     <h2>Quick Start</h2>
                     <ol>
-                        <li>Start a session and preserve its bearer token.</li>
-                        <li>Answer each generated challenge interactively.</li>
-                        <li>Read the result under the same token.</li>
+                        <li>Your machine answers the challenges and collects its badge.</li>
+                        <li>Your space checks the badge with the METTLE server.</li>
+                        <li>A valid badge lets the machine through.</li>
                     </ol>
-                    <pre class="code-block-new" tabindex="0"><code>{
-  "screening_passed": true,
-  "verified": true,
-  "credential_eligible": true,
-  "tier": "bronze",
-  "badge": "&lt;signed credential&gt;"
-}</code></pre>
+                    <p>Install <code>httpx</code>. Call <code>earn_badge</code> from your agent, passing its answer function. That function receives each challenge and returns an answer string.</p>
+                    <pre class="code-block-new" tabindex="0"><code id="quickstart-python">import httpx
+
+ISSUER = "https://mettle.sh"
+
+# Run in the machine taking the test.
+def earn_badge(answer_challenge):
+    with httpx.Client(base_url=ISSUER, timeout=10) as api:
+        session = api.post("/api/session/start", json={
+            "difficulty": "basic"
+        }).raise_for_status().json()
+        sid = session["session_id"]
+        headers = {"X-Session-Token": session["session_token"]}
+        challenge = session["current_challenge"]
+
+        while True:
+            step = api.post("/api/session/answer", headers=headers, json={
+                "session_id": sid,
+                "challenge_id": challenge["id"],
+                "answer": answer_challenge(challenge),
+            }).raise_for_status().json()
+            if step["session_complete"]:
+                break
+            challenge = step["next_challenge"]
+
+        result = api.get(f"/api/session/{sid}/result", headers=headers)
+        return result.raise_for_status().json().get("badge")
+
+# Run on your space's server, using your chosen issuer.
+def check_badge(badge):
+    if not badge:
+        return False
+    try:
+        with httpx.Client(base_url=ISSUER, timeout=10) as api:
+            response = api.post("/api/badge/verify", json={"token": badge})
+            return response.raise_for_status().json().get("valid") is True
+    except (httpx.HTTPError, ValueError):
+        return False</code></pre>
+                    <p>Grant access only when your server's <code>check_badge</code> returns <code>True</code>. Keep tokens out of URLs and logs. For holder-bound access, use <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRESENCE_PROTOCOL.md" target="_blank" rel="noopener noreferrer">Presence</a>.</p>
+                    <p>This example uses the quick API and its <code>X-Session-Token</code> header. The twelve-suite API below uses a Bearer API key.</p>
                 </section>
 
                 <section class="docs-section" id="concepts">

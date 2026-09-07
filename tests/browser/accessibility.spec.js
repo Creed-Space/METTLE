@@ -62,6 +62,7 @@ test('reduced motion exposes content without animation loops', async ({ page }) 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.scroll-reveal').first()).toHaveCSS('opacity', '1');
   const typewriter = page.locator('.typewriter-text');
+  await expect(typewriter).toHaveText('a reverse Turing test');
   const initial = await typewriter.textContent();
   await page.waitForTimeout(1_300);
   await expect(typewriter).toHaveText(initial);
@@ -72,12 +73,14 @@ test('challenge flow announces progress and focuses the final result', async ({ 
   await page.getByLabel('Entity ID (optional)').fill('browser-acceptance-agent');
   await page.getByRole('button', { name: 'Start Verification' }).click();
 
+  await expect(page.locator('#answer-input')).toBeFocused();
   const progress = page.getByRole('progressbar', { name: 'Challenge progress' });
   await expect(progress).toHaveAttribute('aria-valuenow', '0');
   for (let completed = 1; completed <= 3; completed += 1) {
     await page.getByRole('button', { name: 'Submit Answer' }).click();
     if (completed < 3) {
       await expect(progress).toHaveAttribute('aria-valuenow', String(completed));
+      await expect(page.locator('#answer-input')).toBeFocused();
     }
   }
 
@@ -104,9 +107,87 @@ test('API errors are announced and recovery returns to the start', async ({ page
   await expect(page.locator('#error-screen')).toHaveClass(/active/);
   await expect(page.locator('#error-title')).toBeFocused();
   await expect(page.getByRole('alert')).toContainText('Temporary test dependency failure');
+  await expect(page.getByRole('button', { name: 'Retry result' })).toBeHidden();
   await page.getByRole('button', { name: 'Start Over' }).click();
   await expect(page.locator('#start-screen')).toHaveClass(/active/);
 });
+
+test('result recovery retries reads without repeating answers', async ({ page }, testInfo) => {
+  let reads = 0;
+  let answers = 0;
+  page.on('request', request => {
+    if (request.url().endsWith('/api/session/answer')) answers++;
+  });
+  await page.route('**/api/session/*/result', async route => {
+    reads++;
+    if (reads < 3) {
+      await route.fulfill({ status: 503, contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Result temporarily unavailable' }) });
+    } else {
+      await route.continue();
+    }
+  });
+  await page.goto('/test');
+  await page.getByRole('button', { name: 'Start Verification' }).click();
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole('button', { name: 'Submit Answer' }).click();
+    if (i < 2) await expect(page.locator('#progress-bar')).toHaveAttribute('aria-valuenow', String(i + 1));
+  }
+  const retry = page.getByRole('button', { name: 'Retry result' });
+  await expect(retry).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('result-retry.png'), animations: 'disabled' });
+  await retry.click();
+  await expect(retry).toBeEnabled();
+  await expect(page.locator('#error-screen')).toHaveClass(/active/);
+  await retry.click();
+  await expect(page.locator('#result-title')).toBeFocused();
+  expect(reads).toBe(3);
+  expect(answers).toBe(3);
+  await page.getByRole('button', { name: 'Try Again' }).click();
+  await expect(retry).toBeHidden();
+});
+
+test('answer failures never offer result recovery', async ({ page }) => {
+  await page.route('**/api/session/answer', route => route.fulfill({
+    status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Answer not accepted' }),
+  }));
+  await page.goto('/test');
+  await page.getByRole('button', { name: 'Start Verification' }).click();
+  await page.getByRole('button', { name: 'Submit Answer' }).click();
+  await expect(page.locator('#error-screen')).toHaveClass(/active/);
+  await expect(page.getByRole('button', { name: 'Retry result' })).toBeHidden();
+});
+
+for (const verified of [true, false]) {
+  test(`result icon renders for verified=${verified}`, async ({ page }, testInfo) => {
+    await page.goto('/test');
+    // Synthetic result, used only to inspect both presentation states.
+    await page.evaluate(verified => displayResult({ verified, tier: 'bronze',
+      passed: verified ? 3 : 0, total: 3, pass_rate: verified ? 1 : 0, results: [] }), verified);
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page.locator('#result-icon i')).toHaveClass(`fa-solid fa-circle-${verified ? 'check' : 'xmark'}`);
+    await page.screenshot({ path: testInfo.outputPath(`result-${verified}.png`), animations: 'disabled' });
+  });
+}
+
+for (const width of [320, 1440]) {
+  test(`small polish fits at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [route, selector, name] of [['/', '.hero-typewriter', 'home'],
+      ['/test', '#start-screen', 'test'], ['/guide', '#quickstart', 'quickstart']]) {
+      await page.goto(route);
+      if (route === '/') await expect(page.locator('.typewriter-text')).toHaveText('a reverse Turing test');
+      await page.locator(selector).scrollIntoViewIfNeeded();
+      await page.evaluate(() => document.fonts.ready);
+      const fits = await page.locator(selector).evaluate(e => {
+        const r = e.getBoundingClientRect();
+        return r.left >= 0 && r.right <= innerWidth && e.scrollWidth <= e.clientWidth;
+      });
+      expect(fits).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`${name}-${width}.png`), animations: 'disabled' });
+    }
+  });
+}
 
 test('media has a poster, captions, transcript, and intent-gated payload', async ({ page }) => {
   const videoRequests = [];
