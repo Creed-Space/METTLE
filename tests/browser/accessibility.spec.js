@@ -68,6 +68,41 @@ test('reduced motion exposes content without animation loops', async ({ page }) 
   await expect(typewriter).toHaveText(initial);
 });
 
+test('hero entrance fades without moving on load or refresh', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  for (const width of [1440, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    for (const refresh of [false, true]) {
+      if (refresh) await page.reload();
+      await page.evaluate(() => document.fonts.ready);
+      const frames = await page.locator('.hero-content > *').evaluateAll(elements =>
+        elements.map(element => {
+          const animation = element.getAnimations().find(a => a.animationName === 'heroFadeIn');
+          if (!animation) throw new Error('Hero entrance animation is missing');
+          animation.pause();
+          const { delay, duration } = animation.effect.getTiming();
+          return [0, 0.5, 1].map(progress => {
+            animation.currentTime = delay + duration * progress;
+            const rect = element.getBoundingClientRect();
+            return { top: rect.top, left: rect.left, opacity: Number(getComputedStyle(element).opacity) };
+          });
+        })
+      );
+      expect(frames).toHaveLength(6);
+      for (const [start, middle, end] of frames) {
+        expect(start.opacity).toBe(0);
+        expect(middle.opacity).toBeGreaterThan(0);
+        expect(middle.opacity).toBeLessThan(1);
+        expect(end.opacity).toBe(1);
+        expect(middle.top).toBeCloseTo(start.top, 2);
+        expect(end.top).toBeCloseTo(start.top, 2);
+        expect(end.left).toBeCloseTo(start.left, 2);
+      }
+    }
+  }
+});
+
 test('challenge flow announces progress and focuses the final result', async ({ page }) => {
   await page.goto('/test', { waitUntil: 'domcontentloaded' });
   await page.getByLabel('Entity ID (optional)').fill('browser-acceptance-agent');
@@ -176,7 +211,16 @@ for (const width of [320, 1440]) {
     for (const [route, selector, name] of [['/', '.hero-typewriter', 'home'],
       ['/test', '#start-screen', 'test'], ['/guide', '#quickstart', 'quickstart']]) {
       await page.goto(route);
-      if (route === '/') await expect(page.locator('.typewriter-text')).toHaveText('a reverse Turing test');
+      if (route === '/') {
+        await expect(page.locator('.typewriter-text')).toHaveText('a reverse Turing test');
+        const copyGap = await page.evaluate(() => {
+          const subtitle = document.querySelector('.hero-subtitle').getBoundingClientRect();
+          const question = document.querySelector('.hero-question').getBoundingClientRect();
+          return question.top - subtitle.bottom;
+        });
+        expect(copyGap).toBeGreaterThanOrEqual(4);
+        expect(copyGap).toBeLessThanOrEqual(16);
+      }
       await page.locator(selector).scrollIntoViewIfNeeded();
       await page.evaluate(() => document.fonts.ready);
       const fits = await page.locator(selector).evaluate(e => {
