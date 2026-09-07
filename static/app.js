@@ -4,6 +4,7 @@
  */
 
 const API_BASE = '/api';
+let resultPending = false;
 
 // State
 let state = {
@@ -51,6 +52,7 @@ const elements = {
     errorMessage: document.getElementById('error-message'),
     errorTitle: document.getElementById('error-title'),
     errorRestartBtn: document.getElementById('error-restart-btn'),
+    retryResultBtn: document.getElementById('retry-result-btn'),
 };
 
 // Screen Management
@@ -229,6 +231,8 @@ function setResultIcon(iconClass) {
 // Result Display
 function displayResult(result) {
     stopTimer();
+    resultPending = false;
+    elements.retryResultBtn.classList.add('hidden');
 
     // Icon and title (using safe DOM methods)
     if (result.verified) {
@@ -275,6 +279,7 @@ function showError(message) {
     stopTimer();
     console.error('[METTLE]', message);
     elements.errorMessage.textContent = message;
+    elements.retryResultBtn.classList.toggle('hidden', !resultPending);
     showScreen('error');
     window.scrollTo({ top: 0, behavior: 'auto' });
     elements.errorTitle.focus();
@@ -282,6 +287,8 @@ function showError(message) {
 
 // Event Handlers
 async function handleStart() {
+    if (elements.startBtn.disabled) return;
+    resultPending = false;
     const entityId = elements.entityId.value.trim() || null;
     const difficulty = elements.difficulty.value;
 
@@ -300,8 +307,8 @@ async function handleStart() {
         state.completedChallenges = 0;
 
         updateProgress();
-        displayChallenge(data.current_challenge);
         showScreen('challenge');
+        displayChallenge(data.current_challenge);
 
     } catch (error) {
         showError(error instanceof Error ? error.message : String(error));
@@ -337,8 +344,8 @@ async function handleSubmit() {
 
         if (data.session_complete) {
             showFeedback(result.passed, message);
-            const finalResult = await apiCall(`/session/${state.sessionId}/result`);
-            displayResult(finalResult);
+            resultPending = true;
+            await handleRetryResult();
         } else {
             // The server starts the next challenge timer with this response. Render it
             // immediately so client-side feedback never consumes the participant's time.
@@ -350,7 +357,23 @@ async function handleSubmit() {
     }
 }
 
+async function handleRetryResult() {
+    if (!resultPending || elements.retryResultBtn.disabled) return;
+    elements.retryResultBtn.disabled = true;
+    elements.errorRestartBtn.disabled = true;
+    try {
+        displayResult(await apiCall(`/session/${state.sessionId}/result`));
+    } catch (error) {
+        showError(error instanceof Error ? error.message : String(error));
+    } finally {
+        elements.retryResultBtn.disabled = false;
+        elements.errorRestartBtn.disabled = false;
+    }
+}
+
 function handleRestart() {
+    resultPending = false;
+    elements.retryResultBtn.classList.add('hidden');
     // Reset state
     state = {
         sessionId: null,
@@ -377,6 +400,7 @@ if (elements.startBtn) {
     elements.submitBtn.addEventListener('click', handleSubmit);
     elements.restartBtn.addEventListener('click', handleRestart);
     elements.errorRestartBtn.addEventListener('click', handleRestart);
+    elements.retryResultBtn.addEventListener('click', handleRetryResult);
 
     // Allow Enter key to submit answer
     elements.answerInput.addEventListener('keydown', (e) => {
@@ -468,10 +492,10 @@ if (elements.startBtn) {
     if (!textEl) return;
 
     const lines = [
-        'machine-oriented evidence under a versioned policy',
-        'fresh tasks, bounded inference, public verification',
+        'a reverse Turing test',
+        'fast answers. consistent reasoning.',
         '12 suites \u00b7 30+ challenge types \u00b7 generated per session',
-        'signed results record policy outcomes, not identity proof',
+        'pass the test. earn a signed badge.',
     ];
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {

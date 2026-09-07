@@ -1545,6 +1545,9 @@ a:hover {
     text-align: center;
 }
 
+#retry-result-btn { margin-bottom: 0.75rem; }
+#retry-result-btn.hidden { display: none; }
+
 .error-icon {
     font-size: 4rem;
     margin-bottom: 1rem;

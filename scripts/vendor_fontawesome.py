@@ -50,7 +50,9 @@ def _digest(path: Path) -> str:
 
 def _used_icons() -> dict[str, set[str]]:
     used: dict[str, set[str]] = {family: set() for family in FONT_FILES}
-    for page in sorted((ROOT / "static").glob("*.html")):
+    # Include icons selected by JavaScript, such as the pass/fail result icons.
+    sources = [*(ROOT / "static").glob("*.html"), *(ROOT / "static").glob("*.js")]
+    for page in sorted(sources):
         for family, name in ICON_CLASS.findall(page.read_text(encoding="utf-8")):
             used[family].add(name)
     if not all(used.values()):
