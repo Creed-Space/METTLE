@@ -1,5 +1,45 @@
 # METTLE release notes
 
+## [0.5.1]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged.
+Credential issuance, scoring, and verification are unchanged.
+
+### Suite policy
+
+Challenge generation, response windows, and tier eligibility remain unchanged
+from `0.5.0`.
+
+### Public key changes
+
+No signing key, discovery format, or verification-key rotation is included.
+
+### Compatibility
+
+Python 3.10 through 3.14, the eleven public MCP tools, and existing API contracts
+remain compatible. This patch updates the website and its integration guidance.
+
+### Website fixes
+
+* Clarify the reverse Turing test framing and show accurate challenge counts.
+* Focus the active challenge input and recover failed result reads without
+  resubmitting answers.
+* Include dynamically selected pass and fail icons in the vendored font subset.
+* Keep documentation tables within narrow screens.
+* Provide an executable badge-admission example and an isolated, test-only HTTP
+  trial covering acceptance, failure, tampering, revocation, expiry, and outage.
+
+### Known limitations
+
+Passing records performance in a challenge session and does not prove identity,
+substrate, or suitability for access. Quick badges are bearer credentials;
+holder-bound access uses Presence. The local admission trial uses a reference
+client and does not establish human-versus-model discrimination. Independent
+review, human accessibility, rights-cleared fairness, and operational recovery
+retain their separate evidence requirements.
+
 ## [0.5.0]
 
 ### Credential schema
