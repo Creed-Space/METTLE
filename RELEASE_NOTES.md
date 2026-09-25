@@ -30,13 +30,13 @@ Both hash locks are regenerated with pip-compile on Python 3.11.
 
 ### Website and documentation
 
-No website or documentation changes.
+* Raise suite tag text contrast from 3.24:1 to 6.54:1 so it meets WCAG 2 AA.
 
 ### Known limitations
 
 The verification and access limitations documented in `0.5.1` remain unchanged.
-This dependency release makes no new credential, identity, or discrimination
-claims.
+This dependency and accessibility release makes no new credential, identity, or
+discrimination claims.
 
 ## [0.5.3]
 
