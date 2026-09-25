@@ -1,5 +1,10 @@
 # METTLE — Wiki Log
 
+## [2026-09-24] update | Suite descriptions match the shipped evaluators
+Pages updated: systems/verification-suites; systems/challenge-generation; systems/signing-and-credentials; domain/inverse-turing-concept; domain/anti-thrall-and-agency; index
+Sources ingested: mettle/challenge_adapter.py; mettle/router.py; mettle/session_manager.py; mettle/vcp.py; mettle/cli.py; docs/VERIFICATION_SUITES.md
+Key findings: Suites 6 to 9 and 11 are self-report and not credential-eligible, so the authenticated API issues Bronze at most today; display names became Anti-Thrall Probes, Agency Probes, Governance Self-Report, Social & Temporal, and Intent & Provenance; Suites 1 to 5 answer "Are you a Becoming Mind?" and Suite 12 is a supplemental "Can you THINK?" suite; the packaged CLI uses the registry adapter, not the legacy ten-suite engine; latency, Five Whys, contradiction-trap, and steganography mechanisms are archived design only.
+
 ## [2026-08-31] update | MCP control-v1 Phase 1
 Pages updated: systems/mcp-server-and-api; systems/agent-control-and-evolution; flows/integration-and-deployment; systems/verification-suites; index
 Sources ingested: mettle/mcp_contract.py; mettle/mcp_server.py; tests/test_mcp_control_contract.py; docs/AGENTIC_SYSTEM_ROADMAP.md

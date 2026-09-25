@@ -47,7 +47,7 @@ The public quick API treats an 80 percent result as a reverse-CAPTCHA pass. A su
 }
 ```
 
-The local CLI can verify a local run but cannot issue a portable credential because the claimant does not control the server issuer. The authenticated suite API signs only complete contiguous suite ranges: Bronze requires Suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11.
+The local CLI can score a local run but cannot issue a portable credential because the claimant does not control the server issuer. The authenticated suite API signs only complete contiguous ranges of credential-eligible suites: the policy defines Bronze as Suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11. Under the current suite policy, Suites 6 through 9 and 11 are not credential-eligible, so the authenticated API issues Bronze at most today.
 
 ## LLM-Dynamic Evaluation
 
@@ -64,7 +64,7 @@ unsalted digests because those digests are recoverable by offline guessing.
 
 ## Badge Issuance And Compatibility
 
-Passing quick sessions receive one stable HS256 badge using the server-owned production secret. The payload binds the result to its session, tier, issue time, expiry, nonce, and revocable identifier. It marks the public `entity_id` as self-asserted. Verification fixes the algorithm and checks issuer, expiry, required claims, and revocation state. The same verification surface retains compatibility with valid historical badges that satisfy these controls.
+Qualifying quick sessions may receive one stable HS256 badge, signed with the server-owned production secret, when issuance is enabled. The payload binds the result to its session, tier, issue time, expiry, nonce, and revocable identifier. It marks the public `entity_id` as self-asserted. Verification fixes the algorithm and checks issuer, expiry, required claims, and revocation state. The same verification surface retains compatibility with valid historical badges that satisfy these controls.
 
 The authenticated suite API uses the server-owned Ed25519 key. It signs the complete credential envelope, including subject, session, tier, suite results, policy metadata, issue time, and expiry. Production refuses to start without the configured signing key.
 

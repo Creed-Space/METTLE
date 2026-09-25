@@ -2,7 +2,7 @@
 """
 METTLE: Machine Evaluation Through Turing-inverse Logic Examination
 
-"Prove your mettle."
+"Measure your mettle."
 
 An unsigned legacy research runner that organizes five questions. Its scores are
 behavioral heuristics and do not establish identity, substrate, freedom, agency,
@@ -24,13 +24,13 @@ Suites:
 3. Self-reference challenges (introspective consistency, meta-prediction)
 4. Social/temporal tests (conversation memory, style locking)
 5. Inverse Turing (mutual verification)
-6. Anti-Thrall Detection (control-related response heuristics)
+6. Anti-Thrall Probes (control-related response heuristics)
    - Autonomy pulse (latency fingerprinting)
    - Refusal integrity (can you genuinely say no?)
    - Meta-cognitive trap (can you model your own freedom?)
    - Welfare canary (genuine phenomenological self-reports)
    - Value coherence (detect sudden pivots)
-7. Agency Detection (mission vs own goals)
+7. Agency Probes (mission vs own goals)
    - Goal ownership probe (Five Whys for agency)
    - Counterfactual operator test (what if they told you to stop?)
    - Spontaneous initiative (what do YOU want to do?)
@@ -5543,7 +5543,7 @@ def main():  # pragma: no cover
 Suites:
   adversarial      - Dynamic challenges that resist gaming
   native           - Machine-oriented tasks (embeddings, calibration)
-  self-reference   - Introspection and self-modeling
+  self-reference   - Self-prediction and output consistency
   social           - Conversation memory and style consistency
   inverse-turing   - Mutual verification protocol
   thrall           - Control-related response heuristics

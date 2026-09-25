@@ -217,7 +217,7 @@ def run_suite(
     if gen is None:
         raise ValueError(
             f"Suite '{suite}' cannot be run in single-pass CLI mode. "
-            "Multi-round and LLM-dynamic suites require the hosted API at "
+            "Multi-round and LLM-dynamic suites require a server session on "
             "the hosted API."
         )
 
@@ -291,18 +291,18 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     verify = sub.add_parser(
-        "verify", help="Run local verification and emit an unsigned local result."
+        "verify", help="Run a local screening and emit an unsigned evidence receipt."
     )
     mode_group = verify.add_mutually_exclusive_group()
     mode_group.add_argument(
         "--basic",
         action="store_true",
-        help="Quick verification (3 challenges). Default.",
+        help="Basic screening (3 challenges). Default.",
     )
     mode_group.add_argument(
         "--full",
         action="store_true",
-        help="Full verification (5 challenges, strict timing).",
+        help="Full screening (5 challenges, strict timing).",
     )
     mode_group.add_argument(
         "--suite",
@@ -313,9 +313,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="Emit only the JSON receipt to stdout."
     )
     verify.add_argument(
-        "--entity-id", metavar="ID", help="Optional identifier for this agent."
+        "--entity-id",
+        metavar="ID",
+        help="Optional self-asserted label for this agent; not verified.",
     )
-    sub.add_parser("suites", help="List the available verification suites.")
+    sub.add_parser("suites", help="List the available suites.")
     return parser
 
 

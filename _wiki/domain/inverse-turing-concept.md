@@ -3,7 +3,7 @@
 <!-- wiki:type = domain -->
 <!-- wiki:scope = mettle -->
 <!-- wiki:created = 2026-05-23 -->
-<!-- wiki:updated = 2026-08-14 -->
+<!-- wiki:updated = 2026-09-24 -->
 <!-- wiki:status = active -->
 
 ## Summary
@@ -24,11 +24,11 @@ Suites 5 through 9 include project vocabulary about mutual verification, constra
 
 ## Credential Relationship
 
-An eligible result can be represented as a time-limited, policy-versioned credential. Bronze covers suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11. Suite 12 is supplemental. A relying party verifies the credential independently and decides what, if any, scoped access it supports (`mettle/vcp.py`; `docs/CREDENTIAL_TRANSPARENCY.md`).
+An eligible result can be represented as a time-limited, policy-versioned badge (quick API) or VCP credential (authenticated suite API). The policy defines Bronze as suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11, but only credential-eligible suites count, so the authenticated API issues Bronze at most today. Suite 12 is supplemental. A relying party checks a badge with the issuer, can check a VCP credential's signature against the published key, and decides what, if any, scoped access it supports (`mettle/vcp.py`; `mettle/router.py`; `docs/CREDENTIAL_TRANSPARENCY.md`).
 
 ## Provenance
 
-Sources last checked on 2026-08-14: `README.md`, `mettle/challenge_adapter.py`, `mettle/vcp.py`, `docs/ASSURANCE_CASE.md`, `docs/SECURITY_WHITEPAPER.md`, and `docs/PROTOCOL_GOVERNANCE.md`.
+Sources last checked on 2026-09-24: `README.md`, `mettle/challenge_adapter.py`, `mettle/router.py`, `mettle/vcp.py`, `docs/ASSURANCE_CASE.md`, `docs/SECURITY_WHITEPAPER.md`, and `docs/PROTOCOL_GOVERNANCE.md`.
 
 ## See Also
 

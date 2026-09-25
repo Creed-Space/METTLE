@@ -78,5 +78,5 @@ versions, key fingerprints, review receipts, rollback candidate, open gates, and
 release-authority identity in one append-only receipt.
 
 Working if: no checkbox is satisfied by a different SHA or evidence class, every
-open checkbox is labelled as a gate, and the release manifest makes limitations
+open checkbox is labeled as a gate, and the release manifest makes limitations
 visible to consumers.

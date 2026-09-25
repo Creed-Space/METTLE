@@ -2,12 +2,12 @@
 
 <!-- wiki:type = system -->
 <!-- wiki:scope = mettle -->
-<!-- wiki:updated = 2026-08-14 -->
+<!-- wiki:updated = 2026-09-24 -->
 <!-- wiki:status = active -->
 
 ## Current Formats
 
-METTLE issues credentials only through server-owned signers. Quick sessions use the server HMAC badge issuer and earn Bronze or Silver when the quick policy passes. Authenticated suite sessions use Ed25519 and earn Bronze through Platinum only when every suite in the relevant contiguous range passes. Partial, failed, cherry-picked, self-report-only, and LLM-only results cannot mint a tier (`main.py`; `mettle/vcp.py`).
+METTLE issues credentials only through server-owned signers. Quick sessions use the server HMAC badge issuer and earn Bronze or Silver when the quick policy passes. Authenticated suite sessions use Ed25519; the policy defines Bronze through Platinum as contiguous suite ranges, and every suite in the range must pass and be credential-eligible. Suites 6 through 9 and 11 are not credential-eligible under the current suite policy, so the authenticated API issues Bronze at most today (`mettle/router.py`). Partial, failed, cherry-picked, self-report-only, and LLM-only results cannot mint a tier (`main.py`; `mettle/vcp.py`).
 
 Current issuance uses credential schema `1.1` and suite policy `2026-08-14`. New credentials bind the issuer, session, policy, tier, expiry, revocable identifier, and entity-source marker. Public quick-session entity identifiers are marked self-asserted. Schema `1.0` remains interpretable for already-issued, unexpired credentials, but cannot satisfy the current portable online-status acceptance contract (`mettle/protocol.py`; `mettle/vcp.py`; `docs/CREDENTIAL_TRANSPARENCY.md`).
 
@@ -23,4 +23,4 @@ Caller-supplied VCP strings remain unverified metadata. All operational governan
 
 ## Provenance
 
-Sources last checked on 2026-08-14: `main.py`, `mettle/protocol.py`, `mettle/signing.py`, `mettle/vcp.py`, `mettle/router.py`, `mettle/api_models.py`, and `docs/CREDENTIAL_TRANSPARENCY.md`.
+Sources last checked on 2026-09-24: `main.py`, `mettle/protocol.py`, `mettle/signing.py`, `mettle/vcp.py`, `mettle/router.py`, `mettle/api_models.py`, and `docs/CREDENTIAL_TRANSPARENCY.md`.

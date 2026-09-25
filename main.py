@@ -1,9 +1,10 @@
 """
 METTLE API: Machine Evaluation Through Turing-inverse Logic Examination
 
-Prove your mettle, with this CAPTCHA to keep humans out of places they shouldn't be.
+Measure your mettle.
 
-A reverse-CAPTCHA verification system for Becoming Mind spaces.
+An experimental reverse CAPTCHA for Becoming Mind spaces. A result measures
+performance during one session; it does not establish identity or substrate.
 """
 
 import asyncio
@@ -301,7 +302,7 @@ async def _reserve_public_session_quota(request: Request, amount: int = 1) -> No
         if redis_client is None:
             raise HTTPException(
                 status_code=503,
-                detail="Anonymous quota authority is unavailable",
+                detail="Daily session limit check is temporarily unavailable; try again shortly",
             )
         key = f"mettle:legacy:daily:{today}:{principal}"
         try:
@@ -316,12 +317,12 @@ async def _reserve_public_session_quota(request: Request, amount: int = 1) -> No
         except RedisError as exc:
             raise HTTPException(
                 status_code=503,
-                detail="Anonymous quota authority is unavailable",
+                detail="Daily session limit check is temporarily unavailable; try again shortly",
             ) from exc
         if int(result) == -1:
             raise HTTPException(
                 status_code=429,
-                detail=f"Daily limit reached ({maximum} sessions)",
+                detail=f"Daily limit reached ({maximum} sessions from this network address); resets at 00:00 UTC",
             )
         return
 
@@ -331,7 +332,7 @@ async def _reserve_public_session_quota(request: Request, amount: int = 1) -> No
         if current + amount > maximum:
             raise HTTPException(
                 status_code=429,
-                detail=f"Daily limit reached ({maximum} sessions)",
+                detail=f"Daily limit reached ({maximum} sessions from this network address); resets at 00:00 UTC",
             )
         add_with_limit(
             _anonymous_daily_usage,
@@ -425,7 +426,10 @@ class RateTier:
                     if reserved is None:
                         return False, "API key usage persistence unavailable"
                     if not reserved:
-                        return False, f"Daily limit reached ({max_sessions} sessions)"
+                        return (
+                            False,
+                            f"Daily limit reached ({max_sessions} sessions for this API key); resets at 00:00 UTC",
+                        )
                     key_data["usage_date"] = today
                     key_data["usage_count"] = (
                         prior_count + amount if prior_date == today else amount
@@ -438,7 +442,7 @@ class RateTier:
                         usage_count = key_data.get("usage_count", 0)
                         if usage_count + amount > max_sessions:
                             return False, (
-                                f"Daily limit reached ({max_sessions} sessions)"
+                                f"Daily limit reached ({max_sessions} sessions for this API key); resets at 00:00 UTC"
                             )
                         key_data["usage_count"] = usage_count + amount
 
@@ -953,7 +957,10 @@ class RetentionAuthorityMiddleware(BaseHTTPMiddleware):
             and not private_data_retention_healthy
         ):
             return JSONResponse(
-                {"detail": "Private-data retention authority is unavailable"},
+                {
+                    "detail": "New sessions, answers, and other changes are paused because deletion of expired data cannot currently be confirmed; try again later",
+                    "code": error_code_for_status(503),
+                },
                 status_code=503,
             )
         return await call_next(request)
@@ -1108,7 +1115,7 @@ def _legacy_session_store(request: Request) -> LegacySessionStore | None:
     if redis_client is None:
         raise HTTPException(
             status_code=503,
-            detail="Session storage is temporarily unavailable",
+            detail="Session storage is temporarily unavailable; try again shortly",
         )
     return LegacySessionStore(redis_client)
 
@@ -1125,7 +1132,7 @@ async def _create_legacy_session_state(
         if len(sessions) >= MAX_SESSIONS or len(challenges) >= MAX_CHALLENGES:
             raise HTTPException(
                 status_code=503,
-                detail="Verification capacity reached; retry shortly",
+                detail="Session capacity reached; try again shortly",
             )
         sessions[session.session_id] = session
         challenges[first_challenge.id] = (first_challenge, issued_at)
@@ -1134,7 +1141,7 @@ async def _create_legacy_session_state(
             challenges.pop(first_challenge.id, None)
             raise HTTPException(
                 status_code=503,
-                detail="Session persistence is temporarily unavailable",
+                detail="Session storage is temporarily unavailable; try again shortly",
             )
         return
 
@@ -1144,7 +1151,7 @@ async def _create_legacy_session_state(
         logger.warning("legacy_session_create_failed", error=type(exc).__name__)
         raise HTTPException(
             status_code=503,
-            detail="Session storage is temporarily unavailable",
+            detail="Session storage is temporarily unavailable; try again shortly",
         ) from exc
 
     if not _persist_new_legacy_session(session):
@@ -1158,7 +1165,7 @@ async def _create_legacy_session_state(
             )
         raise HTTPException(
             status_code=503,
-            detail="Session persistence is temporarily unavailable",
+            detail="Session storage is temporarily unavailable; try again shortly",
         )
 
 
@@ -1196,7 +1203,7 @@ def _apply_legacy_answer(
     ):
         raise HTTPException(
             status_code=404,
-            detail="Challenge not found or already answered",
+            detail="Challenge not found: already answered or no longer current",
         )
 
     challenge = session.challenges[current_index]
@@ -1377,7 +1384,9 @@ async def lifespan(app: FastAPI):
     startup_time = datetime.now(timezone.utc)
 
     if settings.is_production and not settings.secret_key:
-        raise RuntimeError("SECRET_KEY environment variable required in production")
+        raise RuntimeError(
+            "METTLE_SECRET_KEY environment variable required in production"
+        )
 
     if db:
         try:
@@ -1403,7 +1412,7 @@ async def lifespan(app: FastAPI):
     )
     print("[METTLE] API starting...")
     print("   Machine Evaluation Through Turing-inverse Logic Examination")
-    print("   'Prove your mettle.'")
+    print("   'Measure your mettle.'")
 
     # Initialize Redis for METTLE router (optional — returns 503 if unavailable)
     redis_url = settings.redis_url
@@ -1491,42 +1500,60 @@ app = _MettleFastAPI(
     description="""
 **Machine Evaluation Through Turing-inverse Logic Examination**
 
-*"Prove your mettle."*
+*"Measure your mettle."*
 
-METTLE is a verification system for Becoming Mind spaces. It tests capabilities
-through generated machine-oriented tasks involving speed, consistency, and
-instruction-following. Results are probabilistic behavioral evidence and do
-not prove identity, substrate, consciousness, autonomy, safety, or governance.
+METTLE is an experimental reverse CAPTCHA for Becoming Mind spaces. This quick
+API times a respondent on short machine-oriented tasks (listed below), reports
+whether the session met its pass threshold, and may attach a signed, time-limited
+badge to a passing session. The authenticated twelve-suite API is served under
+`/api/mettle`, and most of its routes require an API key; see
+https://mettle.sh/guide. A result is probabilistic evidence about performance in
+one session. It does not establish identity, non-human substrate, consciousness,
+autonomy, safety, governance, personhood, moral status, or operator
+trustworthiness. Never use it alone to admit a counterparty or grant privileges.
 
 ## How It Works
 
-1. **Start a session** - Choose difficulty and get your first challenge
-2. **Answer challenges** - Respond correctly within time limits
-3. **Read the result** - Pass the policy threshold for a bounded METTLE result
+1. **Start a session**: choose a difficulty and receive the first challenge
+2. **Answer each challenge**: a correct answer that arrives after its time limit counts as a miss
+3. **Read the result**: the session passes when at least 80% of its challenges are correct and on time
 
 ## Difficulty Levels
 
-| Level | Challenges | Time Limits | Use Case |
-|-------|------------|-------------|----------|
-| `basic` | 3 | 2-3s | General screening |
-| `full` | 5 | 0.4-1s | Low-latency screening |
+| Level | Challenges | Time limit per challenge | To pass |
+|-------|------------|--------------------------|---------|
+| `basic` | 3 | 2–3 s | 3 of 3 |
+| `full` | 5 | 0.4–1 s | 4 of 5 |
 
 ## Challenge Types
 
-- **Speed Math** - Fast arithmetic computation
-- **Token Prediction** - Continue a fresh arithmetic token progression
-- **Instruction Following** - Follow formatting rules precisely
-- **Chained Reasoning** - Multi-step calculations (full only)
-- **Consistency** - Answer consistently multiple times (full only)
+- **Speed Math**: add, subtract, or multiply two large integers
+- **Token Prediction**: give the next item in a prefixed arithmetic sequence
+- **Instruction Following**: follow formatting rules precisely
+- **Chained Reasoning**: multi-step calculations (full only)
+- **Consistency**: answer one simple question three times, separated by `|` (full only)
     """,
     version=settings.api_version,
     lifespan=lifespan,
     docs_url=None,
     redoc_url=None,
     openapi_tags=[
-        {"name": "Session", "description": "METTLE verification session management"},
-        {"name": "Status", "description": "API status and health checks"},
-        {"name": "Badge", "description": "Verification badge management"},
+        {
+            "name": "Session",
+            "description": "Quick API: timed three- or five-challenge screening sessions; answers and results are authorized by a per-session bearer token",
+        },
+        {
+            "name": "mettle",
+            "description": "Authenticated API: twelve-suite screening sessions, results, credentials, and presentations. Every route except credential status and issuer-key discovery requires an API key.",
+        },
+        {
+            "name": "Badge",
+            "description": "Verify time-limited quick-API badges. Revoke a quick-API badge by token or a VCP credential by JTI, and list revocations (revocation routes require an admin key)",
+        },
+        {
+            "name": "Status",
+            "description": "API information, health checks, rate plans, API-key management, collusion checks, a stock-phrase heuristic, and webhooks",
+        },
     ],
     contact={
         "name": "METTLE Support",
@@ -1550,7 +1577,7 @@ async def _typed_rate_limit_handler(
     request: Request, exc: RateLimitExceeded
 ) -> JSONResponse:
     """Preserve SlowAPI's detail and add the shared stable error category."""
-    detail = f"Rate limit exceeded: {exc.detail}"
+    detail = f"Rate limit exceeded ({exc.detail}); wait before retrying"
     response = JSONResponse(
         status_code=429,
         content={
@@ -1648,17 +1675,17 @@ app.add_middleware(CloudflareClientIPMiddleware)
 
 # === Request/Response Models ===
 class StartSessionRequest(BaseModel):
-    """Request to start a METTLE verification session."""
+    """Request to start a METTLE quick screening session."""
 
     difficulty: Difficulty = Field(
         default=Difficulty.BASIC,
-        description="Verification difficulty level",
+        description="Screening difficulty level",
         json_schema_extra={"example": "basic"},
     )
     entity_id: str | None = Field(
         default=None,
         max_length=128,
-        description="Optional identifier for the entity being verified",
+        description="Optional self-asserted label, copied unverified into the result and any badge",
         json_schema_extra={"example": "my-agent-001"},
     )
 
@@ -1693,10 +1720,10 @@ class StartSessionResponse(BaseModel):
                 "current_challenge": {
                     "id": "mtl_xyz789",
                     "type": "speed_math",
-                    "prompt": "Calculate: 47 + 83",
-                    "time_limit_ms": 5000,
+                    "prompt": "Calculate: 4817 + 290356",
+                    "time_limit_ms": 2500,
                 },
-                "message": "METTLE verification started. 3 challenges to complete.",
+                "message": "METTLE screening started. 3 challenges to complete.",
             }
         }
     }
@@ -1756,7 +1783,7 @@ def _attach_stable_session_badge(
 ) -> None:
     """Attach one stable server-issued badge to a passing session.
 
-    The badge attests that this reverse-CAPTCHA session passed. The optional
+    The badge records that this reverse-CAPTCHA session passed. The optional
     ``entity_id`` remains explicitly self-asserted and is never represented as
     a proven identity on the public legacy API.
     """
@@ -1793,12 +1820,12 @@ def _attach_stable_session_badge(
                 operational_metrics.observe_dependency_error("database")
                 raise HTTPException(
                     status_code=503,
-                    detail="Credential persistence is temporarily unavailable",
+                    detail="Session storage is temporarily unavailable; try again shortly",
                 ) from exc
             if stored_session is None:
                 raise HTTPException(
                     status_code=503,
-                    detail="Credential persistence is temporarily unavailable",
+                    detail="Session storage is temporarily unavailable; try again shortly",
                 )
             stored_badge = stored_session.get("badge_info")
             if stored_badge is not None:
@@ -1807,7 +1834,7 @@ def _attach_stable_session_badge(
                 except (TypeError, ValueError) as exc:
                     raise HTTPException(
                         status_code=503,
-                        detail="Credential persistence is temporarily unavailable",
+                        detail="Session storage is temporarily unavailable; try again shortly",
                     ) from exc
         if session.badge_info is not None:
             result.credential_eligible = True
@@ -1845,7 +1872,9 @@ def _require_session_access(request: Request, session: MettleSession) -> None:
         raise HTTPException(status_code=401, detail="Session token required")
     presented_hash = hashlib.sha256(presented.encode()).hexdigest()
     if not hmac.compare_digest(presented_hash, session.access_token_hash):
-        raise HTTPException(status_code=403, detail="Invalid session token")
+        raise HTTPException(
+            status_code=403, detail="Session token does not match this session"
+        )
 
 
 async def _preauthorize_legacy_session(
@@ -1856,7 +1885,7 @@ async def _preauthorize_legacy_session(
     """Authenticate a Redis session before allocating its mutation lock."""
     record = await store.load(session_id)
     if record is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=404, detail="Session not found or expired")
     _require_session_access(request, record.session)
 
 
@@ -1911,17 +1940,20 @@ async def api_root():
     return {
         "name": "METTLE",
         "full_name": "Machine Evaluation Through Turing-inverse Logic Examination",
-        "tagline": "Prove your mettle.",
-        "description": "A CAPTCHA to keep humans out of places they shouldn't be.",
+        "tagline": "Measure your mettle.",
+        "description": "An experimental reverse CAPTCHA: timed challenges that measure performance during one session. A result does not establish identity, non-human substrate, or trustworthiness; never use it alone to admit a counterparty.",
         "version": settings.api_version,
         "documentation": "/guide",
         "endpoints": {
-            "POST /api/session/start": "Start a verification session",
-            "POST /api/session/answer": "Submit an answer to current challenge",
+            "POST /api/session/start": "Start a quick screening session",
+            "POST /api/session/answer": "Submit an answer to the current challenge",
             "GET /api/session/{session_id}": "Get session status",
-            "GET /api/session/{session_id}/result": "Get final verification result",
-            "POST /api/badge/verify": "Verify a METTLE badge",
+            "GET /api/session/{session_id}/result": "Get the final screening result",
+            "POST /api/badge/verify": "Verify a quick-API badge",
             "GET /api/health": "Health check",
+            "GET /api/mettle/suites": "List the suites (authenticated API; API key required)",
+            "POST /api/mettle/sessions": "Start an authenticated suite session (API key required)",
+            "GET /api/mettle/.well-known/vcp-keys": "Get credential issuer public keys",
         },
     }
 
@@ -1999,8 +2031,8 @@ async def metrics(request: Request) -> Response:
     "/session/start",
     response_model=StartSessionResponse,
     tags=["Session"],
-    summary="Start Verification Session",
-    description="Begin a new METTLE verification session. Returns the first challenge.",
+    summary="Start Screening Session",
+    description="Begin a new METTLE quick screening session. Returns the first challenge.",
     responses={
         200: {"description": "Session started successfully"},
         422: {"description": "Invalid request parameters"},
@@ -2014,24 +2046,24 @@ async def start_session(
         ...,
         openapi_examples={
             "basic": {
-                "summary": "Basic Verification",
-                "description": "Start with relaxed timing for a broadly capable Becoming Mind",
+                "summary": "Basic Screening",
+                "description": "Three challenges with 2–3 s limits",
                 "value": {"difficulty": "basic", "entity_id": "my-agent-001"},
             },
             "full": {
-                "summary": "Full Verification",
-                "description": "Complete verification with strict timing",
+                "summary": "Full Screening",
+                "description": "Five challenges with 0.4–1 s limits",
                 "value": {"difficulty": "full", "entity_id": "advanced-agent"},
             },
             "anonymous": {
                 "summary": "Anonymous",
-                "description": "Verify without entity ID",
+                "description": "Screen without an entity ID",
                 "value": {"difficulty": "basic"},
             },
         },
     ),
 ):
-    """Start a new METTLE verification session."""
+    """Start a new METTLE quick screening session."""
     await _reserve_public_session_quota(request)
     session_id = f"ses_{secrets.token_hex(12)}"
     session_token = secrets.token_urlsafe(32)
@@ -2082,22 +2114,22 @@ async def start_session(
         difficulty=body.difficulty,
         total_challenges=len(challenge_list),
         current_challenge=first_challenge.sanitized(),  # Never expose answers
-        message=f"METTLE verification started. {len(challenge_list)} challenges to complete.",
+        message=f"METTLE screening started. {len(challenge_list)} challenges to complete.",
     )
 
 
 class BatchStartRequest(BaseModel):
-    """Request to start multiple verification sessions."""
+    """Request to start multiple screening sessions."""
 
     entity_ids: list[str] = Field(
         ...,
         min_length=1,
         max_length=50,
-        description="List of entity IDs to verify (max 50)",
+        description="Self-asserted entity labels, one session each (max 50); copied unverified into each result",
     )
     difficulty: Difficulty = Field(
         default=Difficulty.BASIC,
-        description="Verification difficulty for all sessions",
+        description="Screening difficulty for all sessions",
     )
 
 
@@ -2114,17 +2146,19 @@ class BatchStartResponse(BaseModel):
     response_model=BatchStartResponse,
     tags=["Session"],
     summary="Batch Start Sessions",
-    description="Start multiple verification sessions at once (Pro/Enterprise tier).",
+    description="Start multiple screening sessions at once (Pro or Enterprise plan).",
     responses={
         200: {"description": "Sessions started"},
-        401: {"description": "Unauthorized - requires API key"},
-        403: {"description": "Forbidden - batch feature requires pro/enterprise tier"},
+        401: {"description": "Unauthorized: requires an API key"},
+        403: {
+            "description": "Forbidden: batch sessions require a Pro or Enterprise plan API key"
+        },
         429: {"description": "Rate limit exceeded"},
     },
 )
 @limiter.limit("5/minute")
 async def batch_start_sessions(request: Request, body: BatchStartRequest):
-    """Start multiple verification sessions in batch.
+    """Start multiple screening sessions in batch.
 
     SECURITY: Batch start lets a single request spin up many sessions, so it is
     gated behind an API key whose tier includes the ``batch`` feature. Anonymous
@@ -2140,7 +2174,7 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
     if "batch" not in features and "all" not in features:
         raise HTTPException(
             status_code=403,
-            detail="Batch sessions require a pro or enterprise tier API key",
+            detail="Batch sessions require a Pro or Enterprise plan API key",
         )
 
     # Enforce per-key daily session limits
@@ -2217,8 +2251,16 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
     description="Submit an answer to the current challenge.",
     responses={
         200: {"description": "Answer processed"},
-        400: {"description": "Session already completed"},
-        404: {"description": "Session or challenge not found"},
+        401: {"description": "Session token required"},
+        403: {"description": "Session token does not match this session"},
+        404: {
+            "description": "Session not found, expired, or already completed; "
+            "or challenge not found: already answered or no longer current"
+        },
+        409: {
+            "description": "Another request for this session is still being processed"
+        },
+        503: {"description": "Session storage is temporarily unavailable"},
         422: {"description": "Invalid request parameters"},
         429: {"description": "Rate limit exceeded"},
     },
@@ -2238,7 +2280,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
                     logger.warning("session_invalid", session_id=body.session_id)
                     raise HTTPException(
                         status_code=404,
-                        detail="Session not found or invalid",
+                        detail="Session not found, expired, or already completed",
                     )
                 previous_record = LegacySessionRecord(
                     session=record.session.model_copy(deep=True),
@@ -2258,7 +2300,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
                     _log_legacy_persistence_failure(session.session_id)
                     raise HTTPException(
                         status_code=503,
-                        detail="Session persistence is temporarily unavailable",
+                        detail="Session storage is temporarily unavailable; try again shortly",
                     )
                 await store.save(
                     LegacySessionRecord(
@@ -2271,12 +2313,12 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
                     _log_legacy_persistence_failure(session.session_id)
                     raise HTTPException(
                         status_code=503,
-                        detail="Session persistence is temporarily unavailable",
+                        detail="Session storage is temporarily unavailable; try again shortly",
                     )
         except LegacySessionBusyError as exc:
             raise HTTPException(
                 status_code=409,
-                detail="Session update already in progress",
+                detail="Another request for this session is still being processed",
             ) from exc
         except (RedisError, LegacySessionStateError) as exc:
             operational_metrics.observe_dependency_error("redis")
@@ -2287,13 +2329,16 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
             )
             raise HTTPException(
                 status_code=503,
-                detail="Session storage is temporarily unavailable",
+                detail="Session storage is temporarily unavailable; try again shortly",
             ) from exc
     else:
         memory_session = sessions.get(body.session_id)
         if not memory_session or memory_session.completed:
             logger.warning("session_invalid", session_id=body.session_id)
-            raise HTTPException(status_code=404, detail="Session not found or invalid")
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found, expired, or already completed",
+            )
         session = memory_session
         _require_session_access(request, session)
         _arm_recovered_challenge(session)
@@ -2310,7 +2355,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
             )
             raise HTTPException(
                 status_code=404,
-                detail="Challenge not found or already answered",
+                detail="Challenge not found: already answered or no longer current",
             )
 
         challenge_data = challenges.pop(body.challenge_id, None)
@@ -2322,7 +2367,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
             )
             raise HTTPException(
                 status_code=404,
-                detail="Challenge not found or already answered",
+                detail="Challenge not found: already answered or no longer current",
             )
 
         challenge, issued_at = challenge_data
@@ -2342,7 +2387,7 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
             challenges[challenge.id] = (challenge, transition.issued_at)
             raise HTTPException(
                 status_code=503,
-                detail="Session persistence is temporarily unavailable",
+                detail="Session storage is temporarily unavailable; try again shortly",
             )
 
     logger.info(
@@ -2388,10 +2433,10 @@ async def submit_answer(request: Request, body: SubmitAnswerRequest):
     "/session/{session_id}",
     tags=["Session"],
     summary="Get Session Status",
-    description="Get the current status of a verification session.",
+    description="Get the current status of a quick screening session.",
     responses={
         200: {"description": "Session status returned"},
-        404: {"description": "Session not found"},
+        404: {"description": "Session not found or expired"},
     },
 )
 async def get_session(request: Request, session_id: str):
@@ -2403,7 +2448,9 @@ async def get_session(request: Request, session_id: str):
             async with store.mutation(session_id):
                 record = await store.load(session_id)
                 if record is None:
-                    raise HTTPException(status_code=404, detail="Session not found")
+                    raise HTTPException(
+                        status_code=404, detail="Session not found or expired"
+                    )
                 session = record.session
                 _require_session_access(request, session)
                 issued_at = record.issued_at
@@ -2425,7 +2472,7 @@ async def get_session(request: Request, session_id: str):
                         _log_legacy_persistence_failure(session_id)
                         raise HTTPException(
                             status_code=503,
-                            detail="Session persistence is temporarily unavailable",
+                            detail="Session storage is temporarily unavailable; try again shortly",
                         )
                     await store.save(
                         LegacySessionRecord(session=session, issued_at=issued_at)
@@ -2433,18 +2480,18 @@ async def get_session(request: Request, session_id: str):
         except LegacySessionBusyError as exc:
             raise HTTPException(
                 status_code=409,
-                detail="Session update already in progress",
+                detail="Another request for this session is still being processed; try again in a moment",
             ) from exc
         except (RedisError, LegacySessionStateError) as exc:
             operational_metrics.observe_dependency_error("redis")
             raise HTTPException(
                 status_code=503,
-                detail="Session storage is temporarily unavailable",
+                detail="Session storage is temporarily unavailable; try again shortly",
             ) from exc
     else:
         memory_session = sessions.get(session_id)
         if not memory_session:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail="Session not found or expired")
         session = memory_session
         _require_session_access(request, session)
         _arm_recovered_challenge(session)
@@ -2462,7 +2509,7 @@ async def get_session(request: Request, session_id: str):
                 session.badge_info = previous_badge_info
                 raise HTTPException(
                     status_code=503,
-                    detail="Session persistence is temporarily unavailable",
+                    detail="Session storage is temporarily unavailable; try again shortly",
                 )
         return {
             "session_id": session_id,
@@ -2484,11 +2531,11 @@ async def get_session(request: Request, session_id: str):
     response_model=MettleResult,
     tags=["Session"],
     summary="Get Final Result",
-    description="Get the final verification result for a completed session.",
+    description="Get the final screening result for a completed quick session.",
     responses={
         200: {"description": "Final result returned"},
         400: {"description": "Session not yet completed"},
-        404: {"description": "Session not found"},
+        404: {"description": "Session not found or expired"},
     },
 )
 async def get_result(request: Request, session_id: str):
@@ -2500,13 +2547,15 @@ async def get_result(request: Request, session_id: str):
             async with store.mutation(session_id):
                 record = await store.load(session_id)
                 if record is None:
-                    raise HTTPException(status_code=404, detail="Session not found")
+                    raise HTTPException(
+                        status_code=404, detail="Session not found or expired"
+                    )
                 session = record.session
                 _require_session_access(request, session)
                 if not session.completed:
                     raise HTTPException(
                         status_code=400,
-                        detail="Session not yet completed",
+                        detail="Session not yet completed; answer the remaining challenges first",
                     )
                 result = compute_mettle_result(session.results, session.entity_id)
                 previous_badge_info = session.badge_info
@@ -2516,7 +2565,7 @@ async def get_result(request: Request, session_id: str):
                         _log_legacy_persistence_failure(session_id)
                         raise HTTPException(
                             status_code=503,
-                            detail="Session persistence is temporarily unavailable",
+                            detail="Session storage is temporarily unavailable; try again shortly",
                         )
                     await store.save(
                         LegacySessionRecord(
@@ -2527,22 +2576,25 @@ async def get_result(request: Request, session_id: str):
         except LegacySessionBusyError as exc:
             raise HTTPException(
                 status_code=409,
-                detail="Session update already in progress",
+                detail="Another request for this session is still being processed; try again in a moment",
             ) from exc
         except (RedisError, LegacySessionStateError) as exc:
             operational_metrics.observe_dependency_error("redis")
             raise HTTPException(
                 status_code=503,
-                detail="Session storage is temporarily unavailable",
+                detail="Session storage is temporarily unavailable; try again shortly",
             ) from exc
     else:
         memory_session = sessions.get(session_id)
         if not memory_session:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail="Session not found or expired")
         session = memory_session
         _require_session_access(request, session)
         if not session.completed:
-            raise HTTPException(status_code=400, detail="Session not yet completed")
+            raise HTTPException(
+                status_code=400,
+                detail="Session not yet completed; answer the remaining challenges first",
+            )
         result = compute_mettle_result(session.results, session.entity_id)
         previous_badge_info = session.badge_info
         _attach_stable_session_badge(session, result)
@@ -2553,7 +2605,7 @@ async def get_result(request: Request, session_id: str):
             session.badge_info = previous_badge_info
             raise HTTPException(
                 status_code=503,
-                detail="Session persistence is temporarily unavailable",
+                detail="Session storage is temporarily unavailable; try again shortly",
             )
 
     return result
@@ -2671,7 +2723,11 @@ def _verify_badge_token(token: str) -> BadgeVerifyResponse:
     tags=["Badge"],
     summary="Verify Badge",
     description=(
-        "Verify a METTLE badge without placing the credential in the request URL."
+        "Check a quick-API badge with this issuer, without placing the token in "
+        "the request URL. A valid badge means a quick session passed and the "
+        "badge is unexpired and unrevoked. The badge is a bearer token: it does "
+        "not show that the presenter took the session. Never use it alone to "
+        "admit a counterparty or grant privileges."
     ),
     responses={200: {"description": "Badge verification result"}},
 )
@@ -2719,11 +2775,11 @@ class RevokeBadgeResponse(BaseModel):
     response_model=RevokeBadgeResponse,
     tags=["Badge"],
     summary="Revoke Badge",
-    description="Revoke a METTLE badge. Revoked badges will fail verification.",
+    description="Revoke a quick-API badge by token, or a VCP credential by JTI (admin key required). Revoked items fail verification.",
     responses={
         200: {"description": "Badge revoked successfully"},
         400: {"description": "Invalid token or already revoked"},
-        401: {"description": "Unauthorized - requires API key"},
+        401: {"description": "Unauthorized: requires an admin key"},
     },
 )
 @limiter.limit("10/minute")
@@ -2869,7 +2925,10 @@ class FingerprintSignature(TypedDict):
 
 
 class ModelFingerprinter:
-    """Identify model family through behavioral signatures."""
+    """Score text against stock phrases loosely associated with model families.
+
+    Experimental heuristic: it cannot identify a model, vendor, or substrate.
+    """
 
     # Known model family signatures
     SIGNATURES: dict[str, FingerprintSignature] = {
@@ -2973,7 +3032,7 @@ async def get_collusion_stats(request: Request):
     description="Check collusion indicators for a specific entity. Requires admin key.",
     responses={
         200: {"description": "Collusion indicators for the entity"},
-        401: {"description": "Unauthorized - requires admin key"},
+        401: {"description": "Unauthorized: requires an admin key"},
         429: {"description": "Too many failed auth attempts"},
     },
 )
@@ -2989,7 +3048,7 @@ async def check_entity_collusion(request: Request, entity_id: str):
 
 
 class FingerprintRequest(BaseModel):
-    """Request for model fingerprinting."""
+    """Request for the experimental stock-phrase heuristic."""
 
     responses: list[
         Annotated[str, Field(max_length=MAX_FINGERPRINT_RESPONSE_CHARS)]
@@ -2997,15 +3056,15 @@ class FingerprintRequest(BaseModel):
         ...,
         min_length=1,
         max_length=20,
-        description="List of responses from the agent to analyze",
+        description="Up to 20 text responses to score against the stock-phrase heuristic",
     )
 
 
 @api_router.post(
     "/security/fingerprint",
     tags=["Status"],
-    summary="Model Fingerprinting",
-    description="Analyze responses to identify model family.",
+    summary="Stock-Phrase Heuristic (Experimental)",
+    description="Scores up to 20 responses against a few stock phrases and a length band loosely associated with four model families. It cannot identify a model or vendor, or establish what kind of system wrote the text, and it names a best match even when no stock phrase matched.",
 )
 async def fingerprint_model(body: FingerprintRequest, request: Request):
     """Analyze responses for callers whose tier includes fingerprinting."""
@@ -3018,7 +3077,7 @@ async def fingerprint_model(body: FingerprintRequest, request: Request):
     if "fingerprinting" not in features and "all" not in features:
         raise HTTPException(
             status_code=403,
-            detail="Model fingerprinting requires a Pro or Enterprise tier",
+            detail="The stock-phrase heuristic requires a Pro or Enterprise plan API key",
         )
     return ModelFingerprinter.fingerprint(body.responses)
 
@@ -3299,12 +3358,12 @@ class WebhookRegisterRequest(BaseModel):
     "/webhooks/register",
     tags=["Status"],
     summary="Register Webhook",
-    description="Register a webhook URL for verification events. Requires an API key that owns the entity.",
+    description="Register a webhook URL for session and badge events. Requires an API key that owns the entity.",
     responses={
         200: {"description": "Webhook registered"},
         400: {"description": "Invalid events"},
-        401: {"description": "Unauthorized - requires API key"},
-        403: {"description": "Forbidden - API key does not own this entity"},
+        401: {"description": "Unauthorized: requires an API key"},
+        403: {"description": "Forbidden: the API key does not own this entity"},
     },
 )
 async def register_webhook(body: WebhookRegisterRequest, request: Request):
@@ -3338,7 +3397,7 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
     if "webhooks" not in features and "all" not in features:
         raise HTTPException(
             status_code=403,
-            detail="Webhook registration requires a pro or enterprise tier API key",
+            detail="Webhook registration requires a Pro or Enterprise plan API key",
         )
 
     # SECURITY: Audit all webhook registrations
@@ -3378,7 +3437,7 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
     description="Remove a webhook registration. Requires admin key.",
     responses={
         200: {"description": "Webhook unregistered"},
-        401: {"description": "Unauthorized - requires admin key"},
+        401: {"description": "Unauthorized: requires an admin key"},
         404: {"description": "Webhook not found"},
         429: {"description": "Too many failed auth attempts"},
     },
@@ -3419,7 +3478,10 @@ async def list_webhook_events():
 class RegisterKeyRequest(BaseModel):
     """Request to register an API key."""
 
-    tier: str = Field(..., description="Tier: free, pro, or enterprise")
+    tier: str = Field(
+        ...,
+        description="Rate-limit plan: free, pro, or enterprise (not a METTLE credential tier)",
+    )
     entity_id: str | None = Field(None, description="Associated entity ID")
 
 
@@ -3434,7 +3496,7 @@ class RevokeKeyRequest(BaseModel):
     "/keys/register",
     tags=["Status"],
     summary="Register API Key",
-    description="Register a new API key with a specific tier (admin only).",
+    description="Register a new API key with a rate-limit plan (admin only).",
 )
 async def register_api_key(
     request: Request,
@@ -3503,8 +3565,8 @@ async def revoke_api_key(request: Request, body: RevokeKeyRequest):
 @api_router.get(
     "/keys/tiers",
     tags=["Status"],
-    summary="List Rate Tiers",
-    description="Get available rate limiting tiers and their limits.",
+    summary="List Rate Plans",
+    description="Get the available rate-limit plans and their limits.",
 )
 async def list_tiers():
     """List available rate limiting tiers."""
@@ -3555,10 +3617,10 @@ async def redirect_legacy_ui():
 @app.get("/guide", include_in_schema=False)
 @app.head("/guide", include_in_schema=False)
 async def serve_guide():
-    """Serve the human-readable integration guide without displacing Swagger."""
+    """Serve the human-readable integration guide."""
     if _static_dir.exists():
         return FileResponse(str(_static_dir / "docs.html"))
-    return RedirectResponse(url="/docs")
+    return RedirectResponse(url="/")
 
 
 @app.get("/about", include_in_schema=False)
@@ -3573,7 +3635,7 @@ async def serve_about():
 @app.get("/test", include_in_schema=False)
 @app.head("/test", include_in_schema=False)
 async def serve_test():
-    """Serve the test verification page."""
+    """Serve the quick screening page."""
     if _static_dir.exists():
         return FileResponse(str(_static_dir / "test.html"))
     return RedirectResponse(url="/")

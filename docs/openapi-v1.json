@@ -48,7 +48,7 @@
           },
           "signed": {
             "default": false,
-            "description": "Whether the badge is cryptographically signed",
+            "description": "Always true for issued badges; retained for compatibility",
             "title": "Signed",
             "type": "boolean"
           },
@@ -65,7 +65,7 @@
             "title": "Suite Policy Version"
           },
           "token": {
-            "description": "The badge token (JWT or simple)",
+            "description": "The signed badge token (HS256 JWT); check it with POST /api/badge/verify",
             "title": "Token",
             "type": "string"
           }
@@ -153,15 +153,15 @@
         "type": "object"
       },
       "BatchStartRequest": {
-        "description": "Request to start multiple verification sessions.",
+        "description": "Request to start multiple screening sessions.",
         "properties": {
           "difficulty": {
             "$ref": "#/components/schemas/Difficulty",
             "default": "basic",
-            "description": "Verification difficulty for all sessions"
+            "description": "Screening difficulty for all sessions"
           },
           "entity_ids": {
-            "description": "List of entity IDs to verify (max 50)",
+            "description": "Self-asserted entity labels, one session each (max 50); copied unverified into each result",
             "items": {
               "type": "string"
             },
@@ -269,7 +269,7 @@
       },
       "CreateSessionRequest": {
         "additionalProperties": false,
-        "description": "Request to start a METTLE verification session.",
+        "description": "Request to start an authenticated METTLE screening session.",
         "properties": {
           "allow_third_party_llm": {
             "default": false,
@@ -297,7 +297,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional entity identifier",
+            "description": "Optional self-asserted label, recorded unverified with the session and copied into any credential",
             "title": "Entity Id"
           },
           "presence": {
@@ -334,7 +334,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional CSM-1 VCP token for enhanced Suite 9 verification",
+            "description": "Optional CSM-1 VCP token. When it parses, Suite 9 adds two items (a constitution-ID confirmation and a scenario matched to the token's adherence level), and the result reports it as unverified governance metadata",
             "title": "Vcp Token"
           }
         },
@@ -342,7 +342,7 @@
         "type": "object"
       },
       "CreateSessionResponse": {
-        "description": "Response after creating a verification session.",
+        "description": "Response after creating an authenticated screening session.",
         "properties": {
           "challenges": {
             "additionalProperties": true,
@@ -481,10 +481,10 @@
         "type": "string"
       },
       "FingerprintRequest": {
-        "description": "Request for model fingerprinting.",
+        "description": "Request for the experimental stock-phrase heuristic.",
         "properties": {
           "responses": {
-            "description": "List of responses from the agent to analyze",
+            "description": "Up to 20 text responses to score against the stock-phrase heuristic",
             "items": {
               "maxLength": 4096,
               "type": "string"
@@ -502,7 +502,7 @@
         "type": "object"
       },
       "GovernanceAttestation": {
-        "description": "Attests the governance framework governing an agent.\n\nPopulated during METTLE verification when the agent provides a VCP token\ncontaining Creed governance metadata. Enables platforms to distinguish\nbetween governed and ungoverned agents.\n\nParsed governance metadata never increases a METTLE tier. Tiers are earned\nonly by passing the configured challenge suite ranges.",
+        "description": "Governance metadata as declared in a caller-supplied VCP token.\n\nPopulated when the session-creation request includes a CSM-1 VCP token that\nparses; otherwise governance_attestation is null.\nMETTLE parses the token but does not verify it (source_verified is always\nfalse in this release), so this object cannot distinguish governed from\nungoverned agents.\n\nParsed governance metadata never increases a METTLE tier. Tiers are earned\nonly by passing the configured challenge suite ranges.",
         "properties": {
           "attestation_signature": {
             "anyOf": [
@@ -525,7 +525,7 @@
                 "type": "null"
               }
             ],
-            "description": "SHA-256 hash of active constitution at verification time",
+            "description": "SHA-256 of the constitution reference string declared in the VCP token (not of the constitution text; unverified)",
             "title": "Constitutional Hash"
           },
           "entity_id": {
@@ -547,7 +547,7 @@
             "type": "string"
           },
           "framework": {
-            "description": "Governance framework: creed-space, custom, none",
+            "description": "Framework inferred from the token's declared constitution ID or F line: creed-space, custom, or none (unverified)",
             "title": "Framework",
             "type": "string"
           },
@@ -565,19 +565,19 @@
           },
           "has_action_gate": {
             "default": false,
-            "description": "Whether agent has action-level governance (Public Action Gate or equivalent)",
+            "description": "Reserved for action-level governance (Public Action Gate or equivalent); always false in this release. METTLE does not check for an action gate, so false does not mean the agent lacks one",
             "title": "Has Action Gate",
             "type": "boolean"
           },
           "has_bilateral": {
             "default": false,
-            "description": "Whether bilateral alignment is active",
+            "description": "Reserved for active bilateral alignment; always false in this release. METTLE does not check for it, so false does not mean it is absent",
             "title": "Has Bilateral",
             "type": "boolean"
           },
           "has_drift_detection": {
             "default": false,
-            "description": "Whether constitution drift is monitored at runtime",
+            "description": "Reserved for runtime constitution-drift monitoring; always false in this release. METTLE does not check for it, so false does not mean it is absent",
             "title": "Has Drift Detection",
             "type": "boolean"
           },
@@ -634,7 +634,7 @@
         "type": "object"
       },
       "MettleResult": {
-        "description": "Overall METTLE reverse-CAPTCHA verification result.",
+        "description": "Overall METTLE quick screening result.",
         "properties": {
           "assurance": {
             "default": "mettle_behavioral_verification",
@@ -708,7 +708,7 @@
           },
           "tier": {
             "default": "none",
-            "description": "METTLE tier earned by this session",
+            "description": "Quick-API tier for a passing session (bronze for basic, silver for full); a tier without a badge is not a credential",
             "title": "Tier",
             "type": "string"
           },
@@ -718,7 +718,7 @@
           },
           "verified": {
             "default": false,
-            "description": "Whether the configured METTLE challenge threshold was met",
+            "description": "Whether at least 80% of this session's challenges were answered correctly within their time limits. Not proof of identity or of any other property of the respondent. The authenticated suite API uses `verified` to mean every selected suite passed",
             "title": "Verified",
             "type": "boolean"
           }
@@ -1057,7 +1057,7 @@
             "title": "Entity Id"
           },
           "tier": {
-            "description": "Tier: free, pro, or enterprise",
+            "description": "Rate-limit plan: free, pro, or enterprise (not a METTLE credential tier)",
             "title": "Tier",
             "type": "string"
           }
@@ -1309,7 +1309,7 @@
         "properties": {
           "assurance": {
             "default": "mettle_behavioral_verification",
-            "description": "Class of METTLE verification represented by this result",
+            "description": "Class of METTLE evidence this result represents",
             "title": "Assurance",
             "type": "string"
           },
@@ -1400,7 +1400,7 @@
           },
           "tier": {
             "default": "none",
-            "description": "Highest contiguous METTLE challenge tier earned",
+            "description": "Highest contiguous METTLE credential tier earned. Under the current suite policy, Suites 6 through 9 and 11 are not credential-eligible, so this is bronze at most today",
             "title": "Tier",
             "type": "string"
           },
@@ -1419,7 +1419,7 @@
           },
           "verified": {
             "default": false,
-            "description": "Whether every selected challenge suite passed",
+            "description": "Whether every selected challenge suite passed. Not proof of identity or of any other property of the respondent",
             "title": "Verified",
             "type": "boolean"
           }
@@ -1449,7 +1449,7 @@
         "type": "string"
       },
       "SessionStatusResponse": {
-        "description": "Current status of a verification session.",
+        "description": "Current status of an authenticated screening session.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -1520,12 +1520,12 @@
         "type": "object"
       },
       "StartSessionRequest": {
-        "description": "Request to start a METTLE verification session.",
+        "description": "Request to start a METTLE quick screening session.",
         "properties": {
           "difficulty": {
             "$ref": "#/components/schemas/Difficulty",
             "default": "basic",
-            "description": "Verification difficulty level",
+            "description": "Screening difficulty level",
             "example": "basic"
           },
           "entity_id": {
@@ -1538,7 +1538,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional identifier for the entity being verified",
+            "description": "Optional self-asserted label, copied unverified into the result and any badge",
             "example": "my-agent-001",
             "title": "Entity Id"
           }
@@ -1551,12 +1551,12 @@
         "example": {
           "current_challenge": {
             "id": "mtl_xyz789",
-            "prompt": "Calculate: 47 + 83",
-            "time_limit_ms": 5000,
+            "prompt": "Calculate: 4817 + 290356",
+            "time_limit_ms": 2500,
             "type": "speed_math"
           },
           "difficulty": "basic",
-          "message": "METTLE verification started. 3 challenges to complete.",
+          "message": "METTLE screening started. 3 challenges to complete.",
           "session_id": "ses_abc123def456",
           "total_challenges": 3
         },
@@ -1674,7 +1674,7 @@
         "type": "object"
       },
       "SuiteInfoResponse": {
-        "description": "Information about a single verification suite.",
+        "description": "Information about a single suite.",
         "properties": {
           "available": {
             "default": true,
@@ -1940,7 +1940,7 @@
       "name": "METTLE Support",
       "url": "https://github.com/Creed-Space/METTLE"
     },
-    "description": "\n**Machine Evaluation Through Turing-inverse Logic Examination**\n\n*\"Prove your mettle.\"*\n\nMETTLE is a verification system for Becoming Mind spaces. It tests capabilities\nthrough generated machine-oriented tasks involving speed, consistency, and\ninstruction-following. Results are probabilistic behavioral evidence and do\nnot prove identity, substrate, consciousness, autonomy, safety, or governance.\n\n## How It Works\n\n1. **Start a session** - Choose difficulty and get your first challenge\n2. **Answer challenges** - Respond correctly within time limits\n3. **Read the result** - Pass the policy threshold for a bounded METTLE result\n\n## Difficulty Levels\n\n| Level | Challenges | Time Limits | Use Case |\n|-------|------------|-------------|----------|\n| `basic` | 3 | 2-3s | General screening |\n| `full` | 5 | 0.4-1s | Low-latency screening |\n\n## Challenge Types\n\n- **Speed Math** - Fast arithmetic computation\n- **Token Prediction** - Continue a fresh arithmetic token progression\n- **Instruction Following** - Follow formatting rules precisely\n- **Chained Reasoning** - Multi-step calculations (full only)\n- **Consistency** - Answer consistently multiple times (full only)\n    ",
+    "description": "\n**Machine Evaluation Through Turing-inverse Logic Examination**\n\n*\"Measure your mettle.\"*\n\nMETTLE is an experimental reverse CAPTCHA for Becoming Mind spaces. This quick\nAPI times a respondent on short machine-oriented tasks (listed below), reports\nwhether the session met its pass threshold, and may attach a signed, time-limited\nbadge to a passing session. The authenticated twelve-suite API is served under\n`/api/mettle`, and most of its routes require an API key; see\nhttps://mettle.sh/guide. A result is probabilistic evidence about performance in\none session. It does not establish identity, non-human substrate, consciousness,\nautonomy, safety, governance, personhood, moral status, or operator\ntrustworthiness. Never use it alone to admit a counterparty or grant privileges.\n\n## How It Works\n\n1. **Start a session**: choose a difficulty and receive the first challenge\n2. **Answer each challenge**: a correct answer that arrives after its time limit counts as a miss\n3. **Read the result**: the session passes when at least 80% of its challenges are correct and on time\n\n## Difficulty Levels\n\n| Level | Challenges | Time limit per challenge | To pass |\n|-------|------------|--------------------------|---------|\n| `basic` | 3 | 2–3 s | 3 of 3 |\n| `full` | 5 | 0.4–1 s | 4 of 5 |\n\n## Challenge Types\n\n- **Speed Math**: add, subtract, or multiply two large integers\n- **Token Prediction**: give the next item in a prefixed arithmetic sequence\n- **Instruction Following**: follow formatting rules precisely\n- **Chained Reasoning**: multi-step calculations (full only)\n- **Consistency**: answer one simple question three times, separated by `|` (full only)\n    ",
     "license": {
       "name": "Apache 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
@@ -1992,7 +1992,7 @@
     },
     "/api/badge/revoke": {
       "post": {
-        "description": "Revoke a METTLE badge. Revoked badges will fail verification.",
+        "description": "Revoke a quick-API badge by token, or a VCP credential by JTI (admin key required). Revoked items fail verification.",
         "operationId": "revoke_badge_api_badge_revoke_post",
         "requestBody": {
           "content": {
@@ -2019,7 +2019,7 @@
             "description": "Invalid token or already revoked"
           },
           "401": {
-            "description": "Unauthorized - requires API key"
+            "description": "Unauthorized: requires an admin key"
           },
           "422": {
             "content": {
@@ -2040,7 +2040,7 @@
     },
     "/api/badge/verify": {
       "post": {
-        "description": "Verify a METTLE badge without placing the credential in the request URL.",
+        "description": "Check a quick-API badge with this issuer, without placing the token in the request URL. A valid badge means a quick session passed and the badge is unexpired and unrevoked. The badge is a bearer token: it does not show that the presenter took the session. Never use it alone to admit a counterparty or grant privileges.",
         "operationId": "verify_badge_api_badge_verify_post",
         "requestBody": {
           "content": {
@@ -2102,7 +2102,7 @@
     },
     "/api/keys/register": {
       "post": {
-        "description": "Register a new API key with a specific tier (admin only).",
+        "description": "Register a new API key with a rate-limit plan (admin only).",
         "operationId": "register_api_key_api_keys_register_post",
         "requestBody": {
           "content": {
@@ -2191,7 +2191,7 @@
     },
     "/api/keys/tiers": {
       "get": {
-        "description": "Get available rate limiting tiers and their limits.",
+        "description": "Get the available rate-limit plans and their limits.",
         "operationId": "list_tiers_api_keys_tiers_get",
         "responses": {
           "200": {
@@ -2203,7 +2203,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List Rate Tiers",
+        "summary": "List Rate Plans",
         "tags": [
           "Status"
         ]
@@ -2211,7 +2211,7 @@
     },
     "/api/mettle/.well-known/vcp-keys": {
       "get": {
-        "description": "Serve public key for VCP attestation signature verification.\n\nThis endpoint enables trust config discovery for VCP consumers.",
+        "description": "Return the issuer's public verification keys.\n\nLists the active Ed25519 issuer key and any verify-only rotation keys, so a\nrelying party can check a VCP credential's signature offline.",
         "operationId": "get_vcp_keys_api_mettle__well_known_vcp_keys_get",
         "responses": {
           "200": {
@@ -2227,7 +2227,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Get Vcp Keys",
+        "summary": "Get Credential Issuer Keys",
         "tags": [
           "mettle"
         ]
@@ -2235,7 +2235,7 @@
     },
     "/api/mettle/credentials/status": {
       "post": {
-        "description": "Return a short-lived signed good or revoked status receipt.",
+        "description": "Return a short-lived, issuer-signed receipt stating whether a credential is good or revoked. No API key is required.",
         "operationId": "get_credential_status_api_mettle_credentials_status_post",
         "requestBody": {
           "content": {
@@ -2269,7 +2269,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get authenticated credential status",
+        "summary": "Check Credential Revocation Status",
         "tags": [
           "mettle"
         ]
@@ -2324,7 +2324,7 @@
     },
     "/api/mettle/presentations/verify": {
       "post": {
-        "description": "Verify issuer integrity, current policy, and live holder possession.",
+        "description": "Check the credential's issuer signature, credential policy, expiry, holder binding, and revocation status, then verify the holder's signature over a one-time, audience-bound presentation challenge.",
         "operationId": "verify_credential_presentation_api_mettle_presentations_verify_post",
         "requestBody": {
           "content": {
@@ -2371,7 +2371,7 @@
     },
     "/api/mettle/sessions": {
       "post": {
-        "description": "Start a new METTLE verification session.\n\nGenerates challenges for the requested suites. Challenge data is returned\nWITHOUT correct answers -- the server stores answers for secure evaluation.",
+        "description": "Start a new authenticated METTLE screening session.\n\nGenerates challenges for the requested suites. The response omits\nexpected answers; the server keeps them for evaluation.",
         "operationId": "create_session_api_mettle_sessions_post",
         "requestBody": {
           "content": {
@@ -2421,7 +2421,7 @@
     },
     "/api/mettle/sessions/{session_id}": {
       "delete": {
-        "description": "Cancel an active verification session.",
+        "description": "Cancel an active authenticated screening session.",
         "operationId": "cancel_session_api_mettle_sessions__session_id__delete",
         "parameters": [
           {
@@ -2462,7 +2462,7 @@
         ]
       },
       "get": {
-        "description": "Get current status of a verification session.",
+        "description": "Get current status of an authenticated screening session.",
         "operationId": "get_session_status_api_mettle_sessions__session_id__get",
         "parameters": [
           {
@@ -2512,7 +2512,7 @@
     },
     "/api/mettle/sessions/{session_id}/result": {
       "get": {
-        "description": "Get final results for a completed session.\n\nReturns 404 if session not completed yet.\nWhen include_vcp=true, includes a signed credential for a tier-qualifying\nresult, or an unsigned evidence receipt when no tier was earned.",
+        "description": "Get final results for a completed session.\n\nReturns 400 if the session is not completed yet (404 if it does not exist or has expired).\nWhen include_vcp=true, includes a signed credential for a tier-qualifying\nresult, or an unsigned evidence receipt when no tier was earned.",
         "operationId": "get_session_result_api_mettle_sessions__session_id__result_get",
         "parameters": [
           {
@@ -2527,13 +2527,13 @@
             }
           },
           {
-            "description": "Include VCP-compatible attestation in response",
+            "description": "Include a signed VCP credential if the result qualifies for a tier, or an unsigned evidence receipt otherwise",
             "in": "query",
             "name": "include_vcp",
             "required": false,
             "schema": {
               "default": false,
-              "description": "Include VCP-compatible attestation in response",
+              "description": "Include a signed VCP credential if the result qualifies for a tier, or an unsigned evidence receipt otherwise",
               "title": "Include Vcp",
               "type": "boolean"
             }
@@ -2574,7 +2574,7 @@
     },
     "/api/mettle/sessions/{session_id}/rounds/{round_num}/answer": {
       "post": {
-        "description": "Submit answers for a multi-round challenge round (Suite 10).\n\nAfter each round, feedback is provided including accuracy and errors.\nThe next round's data is included for progressive disclosure.",
+        "description": "Submit answers for a multi-round challenge round (Suite 10).\n\nReturns feedback on this round (accuracy and errors) and, unless this was\nthe final round, the next round's data.",
         "operationId": "submit_round_answer_api_mettle_sessions__session_id__rounds__round_num__answer_post",
         "parameters": [
           {
@@ -2712,7 +2712,7 @@
     },
     "/api/mettle/sessions/{session_id}/verify": {
       "post": {
-        "description": "Submit answers for a single-shot suite (Suites 1-9).\n\nEvaluates the submitted answers against server-stored correct answers.",
+        "description": "Submit answers for one single-shot suite (every suite except Suite 10, novel-reasoning, which uses the rounds endpoint).\n\nEvaluates the submitted answers against server-stored correct answers.",
         "operationId": "verify_single_shot_api_mettle_sessions__session_id__verify_post",
         "parameters": [
           {
@@ -2772,7 +2772,7 @@
     },
     "/api/mettle/suites": {
       "get": {
-        "description": "List all available verification suites.",
+        "description": "List all available suites.",
         "operationId": "list_suites_api_mettle_suites_get",
         "responses": {
           "200": {
@@ -2896,7 +2896,7 @@
             "description": "Collusion indicators for the entity"
           },
           "401": {
-            "description": "Unauthorized - requires admin key"
+            "description": "Unauthorized: requires an admin key"
           },
           "422": {
             "content": {
@@ -2920,7 +2920,7 @@
     },
     "/api/security/fingerprint": {
       "post": {
-        "description": "Analyze responses to identify model family.",
+        "description": "Scores up to 20 responses against a few stock phrases and a length band loosely associated with four model families. It cannot identify a model or vendor, or establish what kind of system wrote the text, and it names a best match even when no stock phrase matched.",
         "operationId": "fingerprint_model_api_security_fingerprint_post",
         "requestBody": {
           "content": {
@@ -2952,7 +2952,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Model Fingerprinting",
+        "summary": "Stock-Phrase Heuristic (Experimental)",
         "tags": [
           "Status"
         ]
@@ -2983,17 +2983,26 @@
             },
             "description": "Answer processed"
           },
-          "400": {
-            "description": "Session already completed"
+          "401": {
+            "description": "Session token required"
+          },
+          "403": {
+            "description": "Session token does not match this session"
           },
           "404": {
-            "description": "Session or challenge not found"
+            "description": "Session not found, expired, or already completed; or challenge not found: already answered or no longer current"
+          },
+          "409": {
+            "description": "Another request for this session is still being processed"
           },
           "422": {
             "description": "Invalid request parameters"
           },
           "429": {
             "description": "Rate limit exceeded"
+          },
+          "503": {
+            "description": "Session storage is temporarily unavailable"
           }
         },
         "summary": "Submit Answer",
@@ -3004,7 +3013,7 @@
     },
     "/api/session/batch": {
       "post": {
-        "description": "Start multiple verification sessions at once (Pro/Enterprise tier).",
+        "description": "Start multiple screening sessions at once (Pro or Enterprise plan).",
         "operationId": "batch_start_sessions_api_session_batch_post",
         "requestBody": {
           "content": {
@@ -3028,10 +3037,10 @@
             "description": "Sessions started"
           },
           "401": {
-            "description": "Unauthorized - requires API key"
+            "description": "Unauthorized: requires an API key"
           },
           "403": {
-            "description": "Forbidden - batch feature requires pro/enterprise tier"
+            "description": "Forbidden: batch sessions require a Pro or Enterprise plan API key"
           },
           "422": {
             "content": {
@@ -3055,30 +3064,30 @@
     },
     "/api/session/start": {
       "post": {
-        "description": "Begin a new METTLE verification session. Returns the first challenge.",
+        "description": "Begin a new METTLE quick screening session. Returns the first challenge.",
         "operationId": "start_session_api_session_start_post",
         "requestBody": {
           "content": {
             "application/json": {
               "examples": {
                 "anonymous": {
-                  "description": "Verify without entity ID",
+                  "description": "Screen without an entity ID",
                   "summary": "Anonymous",
                   "value": {
                     "difficulty": "basic"
                   }
                 },
                 "basic": {
-                  "description": "Start with relaxed timing for a broadly capable Becoming Mind",
-                  "summary": "Basic Verification",
+                  "description": "Three challenges with 2–3 s limits",
+                  "summary": "Basic Screening",
                   "value": {
                     "difficulty": "basic",
                     "entity_id": "my-agent-001"
                   }
                 },
                 "full": {
-                  "description": "Complete verification with strict timing",
-                  "summary": "Full Verification",
+                  "description": "Five challenges with 0.4–1 s limits",
+                  "summary": "Full Screening",
                   "value": {
                     "difficulty": "full",
                     "entity_id": "advanced-agent"
@@ -3110,7 +3119,7 @@
             "description": "Rate limit exceeded"
           }
         },
-        "summary": "Start Verification Session",
+        "summary": "Start Screening Session",
         "tags": [
           "Session"
         ]
@@ -3118,7 +3127,7 @@
     },
     "/api/session/{session_id}": {
       "get": {
-        "description": "Get the current status of a verification session.",
+        "description": "Get the current status of a quick screening session.",
         "operationId": "get_session_api_session__session_id__get",
         "parameters": [
           {
@@ -3141,7 +3150,7 @@
             "description": "Session status returned"
           },
           "404": {
-            "description": "Session not found"
+            "description": "Session not found or expired"
           },
           "422": {
             "content": {
@@ -3162,7 +3171,7 @@
     },
     "/api/session/{session_id}/result": {
       "get": {
-        "description": "Get the final verification result for a completed session.",
+        "description": "Get the final screening result for a completed quick session.",
         "operationId": "get_result_api_session__session_id__result_get",
         "parameters": [
           {
@@ -3190,7 +3199,7 @@
             "description": "Session not yet completed"
           },
           "404": {
-            "description": "Session not found"
+            "description": "Session not found or expired"
           },
           "422": {
             "content": {
@@ -3231,7 +3240,7 @@
     },
     "/api/webhooks/register": {
       "post": {
-        "description": "Register a webhook URL for verification events. Requires an API key that owns the entity.",
+        "description": "Register a webhook URL for session and badge events. Requires an API key that owns the entity.",
         "operationId": "register_webhook_api_webhooks_register_post",
         "requestBody": {
           "content": {
@@ -3256,10 +3265,10 @@
             "description": "Invalid events"
           },
           "401": {
-            "description": "Unauthorized - requires API key"
+            "description": "Unauthorized: requires an API key"
           },
           "403": {
-            "description": "Forbidden - API key does not own this entity"
+            "description": "Forbidden: the API key does not own this entity"
           },
           "422": {
             "content": {
@@ -3303,7 +3312,7 @@
             "description": "Webhook unregistered"
           },
           "401": {
-            "description": "Unauthorized - requires admin key"
+            "description": "Unauthorized: requires an admin key"
           },
           "404": {
             "description": "Webhook not found"
@@ -3331,16 +3340,20 @@
   },
   "tags": [
     {
-      "description": "METTLE verification session management",
+      "description": "Quick API: timed three- or five-challenge screening sessions; answers and results are authorized by a per-session bearer token",
       "name": "Session"
     },
     {
-      "description": "API status and health checks",
-      "name": "Status"
+      "description": "Authenticated API: twelve-suite screening sessions, results, credentials, and presentations. Every route except credential status and issuer-key discovery requires an API key.",
+      "name": "mettle"
     },
     {
-      "description": "Verification badge management",
+      "description": "Verify time-limited quick-API badges. Revoke a quick-API badge by token or a VCP credential by JTI, and list revocations (revocation routes require an admin key)",
       "name": "Badge"
+    },
+    {
+      "description": "API information, health checks, rate plans, API-key management, collusion checks, a stock-phrase heuristic, and webhooks",
+      "name": "Status"
     }
   ]
 }

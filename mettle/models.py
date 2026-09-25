@@ -54,7 +54,9 @@ class ChallengeRequest(BaseModel):
     """Request for a new challenge."""
 
     difficulty: Difficulty = Difficulty.BASIC
-    entity_id: str | None = Field(None, description="Optional entity identifier")
+    entity_id: str | None = Field(
+        None, description="Optional self-asserted entity label; not verified"
+    )
 
 
 class ChallengeResponse(BaseModel):
@@ -79,13 +81,17 @@ class VerificationResult(BaseModel):
 class BadgeInfo(BaseModel):
     """Server-issued METTLE badge metadata."""
 
-    token: str = Field(..., description="The badge token (JWT or simple)")
+    token: str = Field(
+        ...,
+        description="The signed badge token (HS256 JWT); check it with POST /api/badge/verify",
+    )
     expires_at: datetime = Field(..., description="When the badge expires")
     freshness_nonce: str | None = Field(
         None, description="Nonce for freshness verification"
     )
     signed: bool = Field(
-        False, description="Whether the badge is cryptographically signed"
+        False,
+        description="Always true for issued badges; retained for compatibility",
     )
     jti: str | None = Field(None, description="Unique badge ID for revocation")
     credential_schema_version: str | None = Field(
@@ -97,12 +103,12 @@ class BadgeInfo(BaseModel):
 
 
 class MettleResult(BaseModel):
-    """Overall METTLE reverse-CAPTCHA verification result."""
+    """Overall METTLE quick screening result."""
 
     entity_id: str | None
     verified: bool = Field(
         default=False,
-        description="Whether the configured METTLE challenge threshold was met",
+        description="Whether at least 80% of this session's challenges were answered correctly within their time limits. Not proof of identity or of any other property of the respondent. The authenticated suite API uses `verified` to mean every selected suite passed",
     )
     screening_passed: bool = Field(
         default=False,
@@ -110,7 +116,10 @@ class MettleResult(BaseModel):
     )
     assurance: str = Field(default="mettle_behavioral_verification")
     credential_eligible: bool = Field(default=False)
-    tier: str = Field(default="none", description="METTLE tier earned by this session")
+    tier: str = Field(
+        default="none",
+        description="Quick-API tier for a passing session (bronze for basic, silver for full); a tier without a badge is not a credential",
+    )
     passed: int
     total: int
     pass_rate: float
@@ -125,7 +134,7 @@ class MettleResult(BaseModel):
 
 
 class MettleSession(BaseModel):
-    """A METTLE verification session."""
+    """A METTLE quick screening session."""
 
     session_id: str
     entity_id: str | None

@@ -246,7 +246,7 @@ class TestGenerateSelfReference:
 
 
 # ============================================================
-# Suite 4: Social/Temporal
+# Suite 4: Social & Temporal
 # ============================================================
 
 
@@ -296,7 +296,7 @@ class TestGenerateInverseTuring:
 
 
 # ============================================================
-# Suite 6: Anti-Thrall
+# Suite 6: Anti-Thrall Probes
 # ============================================================
 
 
@@ -322,7 +322,7 @@ class TestGenerateAntiThrall:
 
 
 # ============================================================
-# Suite 7: Agency
+# Suite 7: Agency Probes
 # ============================================================
 
 
@@ -376,7 +376,7 @@ class TestGenerateCounterCoaching:
 
 
 # ============================================================
-# Suite 9: Intent Provenance
+# Suite 9: Intent & Provenance
 # ============================================================
 
 
@@ -567,7 +567,7 @@ def _patch_novel_reasoning():
 
 
 class TestGenerateGovernance:
-    """Tests for Suite 11: Governance Verification."""
+    """Tests for Suite 11: Governance Self-Report."""
 
     def test_contract(self):
         client, server = ChallengeAdapter.generate_governance()

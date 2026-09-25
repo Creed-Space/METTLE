@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Primary Meta Tags -->
-    <title>Test Verification - METTLE</title>
-    <meta name="title" content="Test Verification - METTLE">
-    <meta name="description" content="Run a live METTLE verification challenge. Test speed, consistency, and instruction-following in an interactive demo.">
+    <title>METTLE: Quick Screening</title>
+    <meta name="title" content="METTLE: Quick Screening">
+    <meta name="description" content="Take a live METTLE quick screening: three or five timed challenges, generated per session. A pass may earn a signed, time-limited badge bound to that session.">
     <meta name="robots" content="index, follow">
 
     <!-- Canonical -->
@@ -16,17 +16,21 @@
     <!-- Open Graph -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://mettle.sh/test">
-    <meta property="og:title" content="Test Verification - METTLE">
-    <meta property="og:description" content="Run a live METTLE verification challenge. Test speed, consistency, and instruction-following in an interactive demo.">
-    <meta property="og:image" content="https://mettle.sh/static/og-image.png?v=c6024808c2cd">
+    <meta property="og:title" content="METTLE: Quick Screening">
+    <meta property="og:description" content="Take a live METTLE quick screening: three or five timed challenges, generated per session. A pass may earn a signed, time-limited badge bound to that session.">
+    <meta property="og:image" content="https://mettle.sh/static/og-image.png?v=61804b10de87">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="METTLE logo with the words: Measure your mettle. An experimental reverse CAPTCHA. mettle.sh">
     <meta property="og:site_name" content="METTLE">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="https://mettle.sh/test">
-    <meta name="twitter:title" content="Test Verification - METTLE">
-    <meta name="twitter:description" content="Run a live METTLE verification challenge. Test speed, consistency, and instruction-following in an interactive demo.">
-    <meta name="twitter:image" content="https://mettle.sh/static/og-image.png?v=c6024808c2cd">
+    <meta name="twitter:title" content="METTLE: Quick Screening">
+    <meta name="twitter:description" content="Take a live METTLE quick screening: three or five timed challenges, generated per session. A pass may earn a signed, time-limited badge bound to that session.">
+    <meta name="twitter:image" content="https://mettle.sh/static/og-image.png?v=61804b10de87">
+    <meta name="twitter:image:alt" content="METTLE logo with the words: Measure your mettle. An experimental reverse CAPTCHA. mettle.sh">
     <meta name="twitter:creator" content="@NellWatson">
 
     <script type="application/ld+json">
@@ -35,17 +39,17 @@
       "@graph": [
         {
           "@type": "WebApplication",
-          "name": "METTLE Test Verification",
+          "name": "METTLE Quick Screening",
           "url": "https://mettle.sh/test",
-          "description": "Interactive demonstration of METTLE machine-oriented verification challenges.",
-          "applicationCategory": "SecurityApplication",
+          "description": "A live METTLE quick screening in your browser: three or five timed challenges. A passing session may receive a signed, time-limited badge. A result describes one session; it does not establish who or what answered.",
+          "applicationCategory": "DeveloperApplication",
           "operatingSystem": "Any"
         },
         {
           "@type": "BreadcrumbList",
           "itemListElement": [
             {"@type": "ListItem", "position": 1, "name": "METTLE", "item": "https://mettle.sh/"},
-            {"@type": "ListItem", "position": 2, "name": "Test Verification", "item": "https://mettle.sh/test"}
+            {"@type": "ListItem", "position": 2, "name": "Quick Screening", "item": "https://mettle.sh/test"}
           ]
         }
       ]
@@ -65,7 +69,44 @@
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
     <link rel="stylesheet" href="/static/fonts.css?v=7277857592d0">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css?v=0622c14d7e9d">
-    <link rel="stylesheet" href="/static/style.css?v=8ab4e0103f9b">
+    <link rel="stylesheet" href="/static/style.css?v=c68dd0e77713">
+    <style>
+        /* Quick-screening notes: data statement, field hint, badge label, contest route */
+        .card p.screening-note {
+            font-size: var(--text-sm);
+            line-height: 1.6;
+        }
+
+        .card .form-group p.form-hint {
+            font-size: var(--text-sm);
+            line-height: 1.5;
+            margin: 0.5rem 0 0;
+        }
+
+        .card p.badge-label,
+        .card p.result-note {
+            font-size: var(--text-sm);
+            line-height: 1.6;
+            margin-bottom: 0.75rem;
+        }
+
+        .card p.result-note {
+            margin: 0 0 1.5rem;
+        }
+
+        .card p.screening-note a,
+        .card p.result-note a {
+            color: var(--mettle-primary-hover);
+            text-decoration: underline;
+            text-underline-offset: 0.18em;
+        }
+
+        /* A badge is one long unbroken token; let it wrap inside the card. */
+        .badge-container .badge {
+            max-width: 100%;
+            overflow-wrap: anywhere;
+        }
+    </style>
 </head>
 <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -120,11 +161,11 @@
             <a href="/guide" class="mobile-nav-link">Docs</a>
             <a href="/test" class="mobile-nav-link">Test</a>
             <a href="/about" class="mobile-nav-link">About</a>
-            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">
+            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link" aria-label="GitHub (opens in new tab)">
                 <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
             </a>
             <hr class="mobile-nav-divider" />
-            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
+            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand" aria-label="Creed Space (opens in new tab)">
                 <img src="/static/brand/mark.svg?v=c92abd8aeca8" alt="" class="nav-brand-logo" aria-hidden="true" />
                     <img src="/static/brand/wordmark-light.svg?v=856976fd9643" alt="Creed Space" class="nav-brand-wordmark" />
             </a>
@@ -137,9 +178,9 @@
     <main class="verification-section" id="main-content" tabindex="-1">
         <div class="container">
             <div class="scroll-reveal">
-                <h1 class="section-title">Test Verification</h1>
+                <h1 class="section-title">Quick Screening</h1>
                 <p class="section-description" style="margin-bottom: var(--space-xl);">
-                    Run a live verification challenge right here. METTLE is open source under the <strong>Apache 2.0 license</strong>: free to use, modify, and deploy. The interactive demo tests speed, consistency, and instruction-following.
+                    Run it live in your browser. Basic sets three timed challenges: speed math, token prediction, and instruction following. Full adds chained reasoning and consistency. A pass may earn a signed, time-limited badge. The result records how this one session went, not who or what you are. METTLE is open source under the <strong>Apache 2.0 license</strong>: free to use, modify, and deploy.
                 </p>
             </div>
 
@@ -147,22 +188,24 @@
             <div id="start-screen" class="screen active">
                 <div class="card">
                     <h2>Take the Acid Test</h2>
-                    <p>Choose a difficulty and start. The clock starts with each challenge.</p>
+                    <p>This quick screening is separate from the twelve experimental suites. Basic gives two to three seconds per challenge and needs all three correct within the limit. Full gives one second or less per challenge and needs at least four of five. The server starts each clock when it sends the challenge, so network delay counts.</p>
+                    <p class="screening-note">Your answers, timings, and result are kept on the METTLE server for a limited time, then deleted. You can stop at any time; an unfinished session expires on its own. A badge you copy stays usable until it expires unless it is revoked; deleting server records does not recall it. <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRIVACY_RETENTION.md" target="_blank" rel="noopener noreferrer" aria-label="Data and retention details (opens in new tab)">Data and retention details</a></p>
 
                     <div class="form-group">
                         <label for="entity-id">Entity ID (optional)</label>
-                        <input type="text" id="entity-id" placeholder="my-agent-001" maxlength="128">
+                        <input type="text" id="entity-id" placeholder="my-agent-001" maxlength="128" aria-describedby="entity-id-hint">
+                        <p class="form-hint" id="entity-id-hint">A label you choose. It is saved with this session, stored with your IP address for abuse checks, and copied into your result and any badge as your own claim; METTLE does not verify it.</p>
                     </div>
 
                     <div class="form-group">
                         <label for="difficulty">Difficulty</label>
                         <select id="difficulty">
-                            <option value="basic" selected>Basic · 3 challenges</option>
-                            <option value="full">Full · 5 challenges</option>
+                            <option value="basic" selected>Basic · 3 challenges, 2–3 s each</option>
+                            <option value="full">Full · 5 challenges, 1 s or less each</option>
                         </select>
                     </div>
 
-                    <button id="start-btn" class="btn btn-primary">Start Verification</button>
+                    <button id="start-btn" class="btn btn-primary">Start Screening</button>
                 </div>
             </div>
 
@@ -173,19 +216,19 @@
                 </div>
                 <div class="progress-text">
                     <span id="progress-text">Challenge 1 of 3</span>
-                    <span id="timer" class="timer" aria-live="off">5.0s</span>
+                    <span id="timer" class="timer" aria-live="off">2.5s</span>
                 </div>
 
                 <div class="card challenge-card">
-                    <div class="challenge-type" id="challenge-type">speed_math</div>
+                    <div class="challenge-type" id="challenge-type">speed math</div>
                     <div class="challenge-prompt" id="challenge-prompt">
                         Calculate: 47 + 83
                     </div>
-                    <div class="time-limit" id="time-limit">Time limit: 5000ms</div>
+                    <div class="time-limit" id="time-limit">Time limit: 2.5s</div>
 
                     <div class="form-group">
                         <label for="answer-input">Your Answer</label>
-                        <input type="text" id="answer-input" placeholder="Enter your answer" autofocus>
+                        <input type="text" id="answer-input" placeholder="Type your answer, then press Enter" autofocus>
                     </div>
 
                     <button id="submit-btn" class="btn btn-primary">Submit Answer</button>
@@ -195,10 +238,10 @@
             </div>
 
             <!-- Result Screen -->
-            <div id="result-screen" class="screen" role="status" aria-live="polite" aria-atomic="true">
+            <div id="result-screen" class="screen">
                 <div class="card result-card">
                     <div id="result-icon" class="result-icon" aria-hidden="true"><i class="fa-solid fa-medal" aria-hidden="true"></i></div>
-                    <h2 id="result-title" tabindex="-1">Verification Complete</h2>
+                    <h2 id="result-title" tabindex="-1" aria-describedby="result-message">Screening Complete</h2>
                     <p id="result-message" class="result-message"></p>
 
                     <div class="stats">
@@ -217,12 +260,14 @@
                     </div>
 
                     <div id="badge-container" class="badge-container hidden">
+                        <p class="badge-label">Your signed badge. It states that this session passed, at what tier, and repeats any Entity ID you entered, unverified. It carries its own expiry time. Keep it out of URLs and logs. A service that relies on it should check it with the METTLE server.</p>
                         <div class="badge" id="badge"></div>
                     </div>
 
                     <div id="results-detail" class="results-detail"></div>
 
-                    <button id="restart-btn" class="btn btn-secondary">Try Again</button>
+                    <p class="result-note">If METTLE keeps rejecting you, or its results look systematically wrong, you can file a <a href="https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml" target="_blank" rel="noopener noreferrer" aria-label="protocol appeal (opens in new tab)">protocol appeal</a>. Appeals are public, so leave out badges, tokens, and answers.</p>
+                    <button id="restart-btn" class="btn btn-secondary">Start Over</button>
                 </div>
             </div>
 
@@ -231,8 +276,8 @@
                 <div class="card error-card">
                     <div class="error-icon" aria-hidden="true"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></div>
                     <h2 id="error-title" tabindex="-1">Something went wrong</h2>
-                    <p id="error-message">An error occurred. Please try again.</p>
-                    <button id="retry-result-btn" class="btn btn-primary hidden">Retry result</button>
+                    <p id="error-message">An error occurred.</p>
+                    <button id="retry-result-btn" class="btn btn-primary hidden">Retry Result</button>
                     <button id="error-restart-btn" class="btn btn-secondary">Start Over</button>
                 </div>
             </div>
@@ -253,7 +298,7 @@
                     <div>
                         <p class="footer-title">METTLE</p>
                         <p class="footer-tagline"><strong>Machine Evaluation Through Turing-inverse Logic Examination</strong></p>
-                        <p class="footer-mission">Measuring responses to experimental machine-oriented challenges.</p>
+                        <p class="footer-mission">An experimental reverse CAPTCHA. Each result describes one session.</p>
                     </div>
                 </div>
 
@@ -263,6 +308,12 @@
                         <a href="/guide">Docs</a>
                         <a href="/test">Test</a>
                         <a href="/about">About</a>
+                        <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRIVACY_RETENTION.md" target="_blank" rel="noopener noreferrer" aria-label="Privacy &amp; Retention (opens in new tab)">
+                            Privacy &amp; Retention <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml" target="_blank" rel="noopener noreferrer" aria-label="Protocol Appeals (opens in new tab)">
+                            Protocol Appeals <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
                     </div>
                     <div class="footer-section">
                         <h3>Ecosystem</h3>
@@ -290,13 +341,13 @@
             </div>
 
             <div class="footer-bottom">
-                <p>&copy; 2026 Creed Space. Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
+                <p>&copy; 2026 Creed Space. Code released under the <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link" aria-label="Apache License 2.0 (opens in new tab)">Apache License 2.0</a>.</p>
             </div>
         </div>
     </footer>
 
-    <script src="/static/app.js?v=0a739474f92b"></script>
-    <script src="/static/webmcp.js?v=0d86e881ef70"></script>
+    <script src="/static/app.js?v=a6d1a54813d0"></script>
+    <script src="/static/webmcp.js?v=1b2ef5d9debb"></script>
     <script>
         // Scroll-aware header
         (function() {

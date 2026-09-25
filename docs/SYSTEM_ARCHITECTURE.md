@@ -1,7 +1,7 @@
 # METTLE system architecture
 
 Status: canonical current-state map and proposed target architecture. Sections
-labelled **Current** describe implemented behavior. Sections labelled **Target**
+labeled **Current** describe implemented behavior. Sections labeled **Target**
 describe the destination and must not be represented as shipped capability.
 
 ## Purpose and boundary
@@ -316,7 +316,7 @@ alone is not a reason to move code.
 
 ## State, action, and evidence graph
 
-The resource snapshot is the centre of the target system:
+The resource snapshot is the center of the target system:
 
 ```text
 capability manifest

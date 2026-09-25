@@ -163,7 +163,8 @@
     margin-bottom: var(--space-md);
 }
 
-.docs-section p a {
+.docs-section p a,
+.docs-section li a {
     color: var(--mettle-primary-hover);
     text-decoration: underline;
     text-underline-offset: 0.18em;
@@ -667,6 +668,21 @@
 @media (max-width: 480px) {
     .code-block-new { font-size: 0.75rem; padding: var(--space-md); }
     .quickstart-steps { gap: var(--space-xs); }
+    /* Narrow screens: tighter cells, and a table that still overflows scrolls
+       inside itself instead of clipping its last column. */
+    .docs-content-new th,
+    .docs-content-new td { padding: 0.5rem 0.625rem; }
+    .docs-content-new table { display: block; overflow-x: auto; }
+    /* Configuration: three columns cannot share 272px, so each variable
+       becomes a stacked block of name, default, and description. */
+    #configuration table thead { display: none; }
+    #configuration table,
+    #configuration table tbody,
+    #configuration table tr,
+    #configuration table td { display: block; width: auto; }
+    #configuration table tr { padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+    #configuration table td { border: 0; padding: 0.25rem 0.625rem; }
+    #configuration table td:nth-child(2)::before { content: "Default: "; color: var(--text-muted); }
 }
 
 

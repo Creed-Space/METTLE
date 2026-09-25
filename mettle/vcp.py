@@ -40,7 +40,7 @@ SUITE_ORDER: dict[str, int] = {
     "counter-coaching": 8,
     "intent-provenance": 9,
     "novel-reasoning": 10,
-    "governance": 11,  # Suite 11: Governance verification
+    "governance": 11,  # Suite 11: Governance self-report
     "llm-dynamic": 12,  # Suite 12: LLM-dynamic (supplemental, not in tier ranges)
 }
 

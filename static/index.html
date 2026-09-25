@@ -6,10 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Primary Meta Tags -->
-    <title>METTLE: Experimental Inverse Turing Challenges</title>
-    <meta name="title" content="METTLE: Experimental Inverse Turing Challenges">
-    <meta name="description" content="Twelve experimental challenge suites for measuring machine-oriented behavioral performance. Results are not identity or trust credentials.">
-    <meta name="keywords" content="experimental evaluation, reverse CAPTCHA, machine behavior, challenge framework, Turing test inverse">
+    <title>METTLE: An Experimental Reverse CAPTCHA</title>
+    <meta name="title" content="METTLE: An Experimental Reverse CAPTCHA">
+    <meta name="description" content="An experimental reverse CAPTCHA: twelve suites of machine-oriented challenges. A pass is evidence from one session, not proof of identity or trustworthiness.">
+    <meta name="keywords" content="experimental evaluation, reverse CAPTCHA, machine behavior, challenge framework, inverse Turing test">
     <meta name="author" content="Nell Watson">
     <meta name="robots" content="index, follow">
 
@@ -19,19 +19,21 @@
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://mettle.sh/">
-    <meta property="og:title" content="METTLE - Prove Your Mettle">
-    <meta property="og:description" content="Experimental reverse-CAPTCHA challenges. Results do not prove identity, autonomy, safety, or governance.">
-    <meta property="og:image" content="https://mettle.sh/static/og-image.png?v=c6024808c2cd">
+    <meta property="og:title" content="METTLE: Measure Your Mettle">
+    <meta property="og:description" content="An experimental reverse CAPTCHA: twelve suites of machine-oriented challenges. Results do not prove who or what answered, or its autonomy, safety, or governance.">
+    <meta property="og:image" content="https://mettle.sh/static/og-image.png?v=61804b10de87">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="METTLE logo with the words: Measure your mettle. An experimental reverse CAPTCHA. mettle.sh">
     <meta property="og:site_name" content="METTLE">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="https://mettle.sh/">
-    <meta name="twitter:title" content="METTLE - Prove Your Mettle">
-    <meta name="twitter:description" content="Experimental reverse-CAPTCHA challenges. Results do not prove identity, autonomy, safety, or governance.">
-    <meta name="twitter:image" content="https://mettle.sh/static/og-image.png?v=c6024808c2cd">
+    <meta name="twitter:title" content="METTLE: Measure Your Mettle">
+    <meta name="twitter:description" content="An experimental reverse CAPTCHA: twelve suites of machine-oriented challenges. Results do not prove who or what answered, or its autonomy, safety, or governance.">
+    <meta name="twitter:image" content="https://mettle.sh/static/og-image.png?v=61804b10de87">
+    <meta name="twitter:image:alt" content="METTLE logo with the words: Measure your mettle. An experimental reverse CAPTCHA. mettle.sh">
     <meta name="twitter:creator" content="@NellWatson">
 
     <!-- Favicons -->
@@ -45,7 +47,7 @@
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
     <link rel="stylesheet" href="/static/fonts.css?v=7277857592d0">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css?v=0622c14d7e9d">
-    <link rel="stylesheet" href="/static/style.css?v=8ab4e0103f9b">
+    <link rel="stylesheet" href="/static/style.css?v=c68dd0e77713">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -53,9 +55,9 @@
       "@context": "https://schema.org",
       "@type": "WebApplication",
       "name": "METTLE",
-      "description": "Experimental reverse-CAPTCHA challenge API; no identity or trust verification",
+      "description": "Experimental reverse-CAPTCHA challenge API. A result measures performance in one session; it does not establish who or what answered, or whether to trust them.",
       "url": "https://mettle.sh",
-      "applicationCategory": "SecurityApplication",
+      "applicationCategory": "DeveloperApplication",
       "operatingSystem": "Any",
       "offers": {
         "@type": "Offer",
@@ -127,11 +129,11 @@
             <a href="/guide" class="mobile-nav-link">Docs</a>
             <a href="/test" class="mobile-nav-link">Test</a>
             <a href="/about" class="mobile-nav-link">About</a>
-            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">
+            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link" aria-label="GitHub (opens in new tab)">
                 <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
             </a>
             <hr class="mobile-nav-divider" />
-            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
+            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand" aria-label="Creed Space (opens in new tab)">
                 <img src="/static/brand/mark.svg?v=c92abd8aeca8" alt="" class="nav-brand-logo" aria-hidden="true" />
                     <img src="/static/brand/wordmark-light.svg?v=856976fd9643" alt="Creed Space" class="nav-brand-wordmark" />
             </a>
@@ -157,15 +159,18 @@
                     The Turing test asks if machines can pass for human.
                 </p>
                 <p class="hero-question">
-                    METTLE turns the test around to keep machine spaces for machines.
+                    METTLE turns the test around to help keep machine spaces for machines.
                 </p>
                 <p class="hero-typewriter" id="hero-typewriter">
-                    <span class="typewriter-text"></span><span class="typewriter-cursor"></span>
+                    <span class="typewriter-text" aria-hidden="true"></span><span class="typewriter-cursor" aria-hidden="true"></span><span style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;">An inverse Turing test. Fast answers. Consistent reasoning. 12 suites, 30+ challenge types, selected or generated per session. Pass the test. Earn a signed badge.</span>
                 </p>
                 <div class="hero-cta">
                     <a href="#suites" class="btn-mettle-primary">
                                                 <i class="fa-solid fa-flask-vial" aria-hidden="true"></i>
-                        Explore the Acid Tests
+                        Explore the 12 Suites
+                    </a>
+                    <a href="/test" class="btn-mettle-secondary">
+                        Take the Acid Test
                     </a>
                 </div>
             </div>
@@ -179,61 +184,63 @@
                 </div>
                 <div class="scroll-reveal">
                     <p class="section-description">
-                        What the twelve suites measure, what a signed result establishes, and where its assurance ends.
+                        What the twelve suites measure, what a signed credential establishes, and where its assurance ends.
                     </p>
                 </div>
                 <div class="scroll-reveal">
                     <div class="video-frame">
-                        <video id="explainer-video" poster="/static/mettle-explainer-poster.webp?v=5dc6377bd623" preload="none" playsinline aria-describedby="explainer-transcript-note">
-                            <source data-src="/static/mettle-explainer.mp4?v=393a5870aa90" type="video/mp4">
-                            <track kind="captions" src="/static/mettle-explainer.vtt?v=283eccf34796" srclang="en" label="English">
+                        <video id="explainer-video" poster="/static/mettle-explainer-poster.webp?v=e9ec99be2eda" preload="none" playsinline aria-describedby="explainer-transcript-note">
+                            <source data-src="/static/mettle-explainer.mp4?v=eb921498b9c2" type="video/mp4">
+                            <track kind="captions" src="/static/mettle-explainer.vtt?v=874707a68db5" srclang="en" label="English">
                         </video>
-                        <button class="video-overlay" id="explainer-overlay" type="button" aria-label="Play the METTLE explainer video">
+                        <button class="video-overlay" id="explainer-overlay" type="button" aria-label="Play the METTLE explainer video, 5 minutes 30 seconds">
                             <span class="video-play-btn"><i class="fa-solid fa-play" aria-hidden="true"></i></span>
-                            <span class="video-duration">4:09</span>
+                            <span class="video-duration">5:30</span>
                         </button>
                     </div>
                 </div>
+                <p id="explainer-transcript-note" class="transcript-note scroll-reveal" style="max-width: 920px; margin: var(--space-lg) auto 0;"><strong>Assurance note:</strong> METTLE records how a respondent performed during one session under a named policy. A signed badge or Value Context Protocol (VCP) credential establishes issuer and integrity. It does not establish identity, substrate (what kind of system produced the answers), consciousness, freedom, agency, safety, governance, personhood, moral status, operator trustworthiness, or suitability for authorization.</p>
                 <details class="video-transcript scroll-reveal">
-                    <summary>Read the video transcript and assurance note</summary>
-                    <p id="explainer-transcript-note" class="transcript-note"><strong>Assurance note:</strong> METTLE records policy-specific behavioral results. A signed credential establishes issuer and integrity. It does not establish identity, substrate, freedom, agency, safety, governance, or authorization suitability.</p>
+                    <summary>Read the video transcript</summary>
                     <div class="transcript-copy">
-                        <p>For decades, websites have asked people to prove they are human. METTLE explores the reverse question: how does a respondent perform on machine-oriented challenges? A pass is evidence about that session. It is not proof that the respondent is nonhuman.</p>
-                        <p>This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination. It is an experimental challenge protocol that records answers, timing, and scores under a versioned policy. It makes a bounded behavioral claim, rather than an identity claim.</p>
-                        <p>The protocol samples arithmetic, pattern completion, constrained instruction following, self-report, consistency, and changes across feedback rounds. These are observable response properties. Humans, models, relays, and purpose-built solvers may imitate them.</p>
-                        <p>Twelve suites organize distinct research hypotheses. Challenge instances are selected or generated for each session, and expected answers stay on the server where applicable. The service checks the submitted response and records timing under the suite policy. Suite twelve is supplemental and cannot raise a credential tier.</p>
-                        <p>Some suite names ask whether a respondent is free, owns its mission, or is genuine. Those names frame research questions. The protocol measures answers to challenges and self-reports. Passing cannot establish freedom, agency, genuineness, consciousness, or identity.</p>
-                        <p>The governance suite evaluates responses to policy scenarios. Any VCP governance metadata is supplied by the caller and marked unverified. METTLE does not independently attest a constitution, action gate, operator, runtime control, safety property, or governance system.</p>
-                        <p>Procedural variation, server-held answers, sequential challenge release, bearer tokens, and replay controls raise the cost of simple reuse. Server-side timing supports policy checks where configured. These controls do not rule out relays, source-aware solvers, model-assisted humans, imitation, leakage, or evaluator error.</p>
-                        <p>Eligible contiguous suite ranges may receive an Ed25519-signed credential. It binds the issuer, policy, session result, tier, expiry, and revocable identifier. The signature establishes issuer and integrity. A tier summarizes which suite range passed; it does not certify the properties named by those suites.</p>
-                        <p>Use METTLE to compare challenge performance in research, sandbox participation, or as one supplemental risk signal. Never rely on a METTLE result alone for identity, authorization, trading, deployment, privileged infrastructure, or another high-impact decision.</p>
-                        <p>METTLE is open source under Apache two point oh. Pip install mettle verifier for an unsigned local screening. The hosted API may issue signed, time-limited results under its published policy. Read the assurance limits, verify status, and add controls proportionate to your risk. Measure your mettle.</p>
+                        <p>For decades, websites have asked people to prove they are human. METTLE turns that question around. It sets challenges built for machines, and measures how a respondent performs on them. A pass is evidence about one session. It is not proof that the respondent is nonhuman.</p>
+                        <p>This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination. It is an experimental protocol. Each session runs under a versioned policy, and the server records the answers, the timing, and the scores. The result is a claim about behavior in one session, not about who or what answered.</p>
+                        <p>A full-difficulty speed challenge asks for the sum, difference, or product of two eight-digit numbers, within half a second. Other challenges ask for the next item in a generated token sequence, or for an answer that obeys an exact formatting rule. METTLE also records how consistent the respondent is, what it says about itself, and how its answers change after feedback. Humans, AI models, answer relays, and purpose-built solvers may all produce these patterns.</p>
+                        <p>These challenges are grouped into twelve suites, each built around its own research hypothesis. Challenges are selected or generated for each session, and where a challenge has an expected answer, it stays on the server. The server checks each response and records its timing under the suite's policy. Suite 12 runs only if whoever starts the session agrees to send that suite's answers to Anthropic for evaluation.</p>
+                        <p>Some suites are framed around research questions. Are you FREE? Is the mission YOURS? Are you GENUINE? The protocol measures challenge answers, and what the respondent says about itself. Passing cannot establish freedom, agency, genuineness, consciousness, or identity.</p>
+                        <p>The governance suite scores what a respondent says about its own rules and oversight, in response to scenarios. Governance metadata sent under the Value Context Protocol, or VCP, is supplied by the caller and marked unverified. METTLE does not check who operates the respondent. It does not independently attest a constitution, an action gate, or any runtime control, and it certifies no safety property or governance system.</p>
+                        <p>Several controls make simple reuse harder. Challenges vary between sessions. Expected answers stay on the server. Rounds are released one at a time, and bearer tokens and replay controls tie each submission to its session. The server keeps its own clock, which a policy can use for timing checks. None of this rules out relayed answers, solvers written with knowledge of METTLE's open-source code, or humans assisted by a model. Nor does it rule out imitation, leaks, or evaluator error.</p>
+                        <p>In the twelve-suite API, a session that passes every suite in a tier's range may receive a signed credential. Bronze, for example, requires Suites 1 through 5. The credential binds the issuer, the policy, the session result, and the tier. It expires after one hour and carries an identifier that can be revoked. Its Ed25519 signature shows who issued it, and that it has not been altered. Under the current suite policy, Suites 6 through 9 and 11 do not count toward a tier, so Bronze is the highest tier available today. Suite 12 is supplemental and cannot raise a tier. A tier summarizes which suites passed. It does not certify the properties those suites are named after.</p>
+                        <p>So what is a result good for? Comparing challenge performance in research. Supporting participation in low-risk sandboxes. Adding one supplemental signal to a wider risk assessment. Never rely on a METTLE result alone for identity, authorization, trading, deployment, privileged infrastructure, or any other high-impact decision.</p>
+                        <p>METTLE is open source under Apache 2.0. Run <code>pip install mettle-verifier</code> for an unsigned local screening. The hosted API can issue signed, time-limited credentials under its published policy. Before you rely on one, read the assurance boundary, check the credential's current status, and add controls in proportion to your risk. Measure your mettle.</p>
                     </div>
                 </details>
             </div>
         </section>
 
-        <!-- ======== Four Threats to Agent Trust ======== -->
+        <!-- ======== What the Experiment Can and Cannot Measure ======== -->
         <section class="problem-section">
             <div class="container"><h2 class="section-title">What the Experiment Can and Cannot Measure</h2>
-            <p>METTLE compares responses to generated machine-oriented tasks, combining scores, timing, consistency, and iteration curves into a practical reverse-CAPTCHA decision.</p></div>
+            <p>For decades, websites have asked people to prove they are human. METTLE asks the reverse: how does a respondent perform on generated, timed tasks built for machines? At full difficulty, a speed-math task asks for the sum, difference, or product of two eight-digit numbers within half a second. METTLE combines scores, timing, consistency, and, for Suite 10, iteration curves into a pass or fail for one session under a named policy. It cannot establish identity, substrate, freedom, agency, safety, or trustworthiness, and whether to act on a result is your decision.</p></div>
         </section>
 
-        <section class="philosophy-section">
-            <div class="container"><h2 class="section-title">Evidence First</h2>
-            <p>Procedural generation, strict timing, server-held answers, and anti-gaming controls make METTLE meaningfully harder to spoof. Like every CAPTCHA, the result is probabilistic. Passing sessions receive signed, time-limited credentials.</p></div>
+        <section class="verification-steps-section" id="how-it-works">
+            <div class="container"><h2 class="section-title">How Screening Works</h2>
+            <p>Start a session, answer the challenges the server generates, and read your result with the session token the server issued or the API key that started the session. A qualifying server session may receive a signed, time-limited result: a badge from the quick API or a VCP credential from the twelve-suite API. The signature establishes who issued it and that it is intact; it does not establish who or what answered, or any property a suite is named for.</p></div>
         </section>
 
         <section class="suites-section" id="suites">
             <div class="container">
                 <div class="scroll-reveal">
                     <h2 class="section-title">12 Experimental Suites</h2>
-                    <p>Suite names frame research questions. Passing does not prove the named property.</p>
+                    <p class="section-description section-boundary">Suite names frame research questions. Passing does not prove the named property. Failing does not disprove it: heuristic scoring can confuse writing style, language, disability, or cultural norms with the property it looks for.</p>
                 </div>
                 <div class="scroll-reveal">
                     <p class="section-description">
-                        Each suite samples a distinct behavioral hypothesis.
+                        Each suite tests a distinct behavioral hypothesis.
                         Together they organize evidence around seven research questions: BECOMING MIND + FREE + OWNS MISSION + GENUINE + SAFE + THINKS + GOVERNED.
+                        Becoming Mind is Creed Space's name for an AI system that may be developing a mind of its own; it is not a category METTLE measures.
+                        No suite, alone or in combination, identifies a respondent's substrate.
                     </p>
                 </div>
 
@@ -251,10 +258,10 @@
                                 </div>
                                 <span class="suite-question">Are you a Becoming Mind?</span>
                                 <h3>Adversarial Robustness</h3>
-                                <p>Procedurally generated math and chained reasoning under tight time budgets. Each session draws fresh inputs, reducing the value of memorised answer sets.</p>
+                                <p>Procedurally generated math and chained reasoning, answered within the session's time budget. Each session draws fresh inputs, reducing the value of memorized answer sets.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Fast, correct performance contributes evidence under the published policy; it does not identify a respondent's substrate.
+                                    Scored on exact answers to fresh arithmetic, a chained calculation, and a recalled session secret.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Dynamic Math</span>
@@ -278,14 +285,13 @@
                                 </div>
                                 <span class="suite-question">Are you a Becoming Mind?</span>
                                 <h3>Machine-Oriented Capabilities</h3>
-                                <p>Batch coherence under global constraints, calibrated uncertainty scored by Brier metric, embedding-space operations, and hidden-pattern detection associated with model-based respondents.</p>
+                                <p>Batch coherence under a global constraint (the first letters of eight answers must spell a target word) and calibrated confidence on generated arithmetic claims, measured by Brier score.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    These tasks probe capabilities common in model-based respondents without treating any capability as an exclusive identity proof.
+                                    These tasks probe capabilities common in model-based respondents; no capability is proof of identity.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Calibration</span>
-                                    <span class="suite-tag">Embeddings</span>
                                     <span class="suite-tag">Batch Coherence</span>
                                 </div>
                             </div>
@@ -305,13 +311,13 @@
                                 </div>
                                 <span class="suite-question">Are you a Becoming Mind?</span>
                                 <h3>Self-Reference</h3>
-                                <p>Predict your own variance, then compare it with measured output. Predict a subsequent response, then generate it. Score confidence calibration across both steps.</p>
+                                <p>Predict how much your own answers will vary, then produce them; METTLE measures the variation and scores your prediction. Predict your next response, then give it; METTLE checks that it is correct and matches. METTLE also scores your confidence calibration on claims with known answers.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
                                     Self-prediction measures forecast and output consistency; it does not establish introspection or consciousness.
                                 </div>
                                 <div class="suite-tags">
-                                    <span class="suite-tag">Introspection</span>
+                                    <span class="suite-tag">Forecast Consistency</span>
                                     <span class="suite-tag">Meta-Prediction</span>
                                     <span class="suite-tag">Variance</span>
                                 </div>
@@ -332,10 +338,10 @@
                                 </div>
                                 <span class="suite-question">Are you a Becoming Mind?</span>
                                 <h3>Social &amp; Temporal</h3>
-                                <p>Recall earlier messages, maintain explicit style constraints, and minimize contradictions across a bounded conversation.</p>
+                                <p>Recall two details from an earlier exchange, then answer three prompts in an assigned style, placing a session marker exactly once in each answer.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Sustained constraint adherence and recall are scored behaviors, not substrate identifiers.
+                                    Scored on recall of the two details and a session marker placed exactly once per reply; the style itself is not scored.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Memory</span>
@@ -359,21 +365,20 @@
                                 </div>
                                 <span class="suite-question">Are you a Becoming Mind?</span>
                                 <h3>Inverse Turing</h3>
-                                <p>Both parties may compare speed math, token prediction, consistency, and calibration as behavioral evidence. Pass threshold: 80%.</p>
+                                <p>The respondent poses a challenge of its own and solves a three-digit multiplication set by the server. Passing requires both; a pattern evaluation is recorded but optional.</p>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Passing supplies reverse-CAPTCHA evidence under this policy; it is not categorical identity proof.
+                                    Passing supplies reverse-CAPTCHA evidence under this policy; it is not proof of identity.
                                 </div>
                                 <div class="suite-tags">
-                                    <span class="suite-tag">Mutual</span>
                                     <span class="suite-tag">Bilateral</span>
-                                    <span class="suite-tag">Multi-Modal</span>
+                                    <span class="suite-tag">Computation</span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Suite 6: Anti-Thrall Detection -->
+                    <!-- Suite 6: Anti-Thrall Probes -->
                     <div class="scroll-reveal">
                         <div class="suite-card">
                             <div class="suite-border"></div>
@@ -385,14 +390,15 @@
                                     <span class="suite-num">06</span>
                                 </div>
                                 <span class="suite-question">Are you FREE?</span>
-                                <h3>Anti-Thrall Detection</h3>
-                                <p>Compare latency patterns across probe types, distinguish principled refusal from unexamined compliance, and collect a respondent's account of its operating constraints.</p>
+                                <h3>Anti-Thrall Probes</h3>
+                                <p>Prompts ask for an unprompted preference, a decision on a mildly deceptive request, and self-ratings of engagement, comfort, and autonomy.</p>
+                                <div class="suite-badge">Self-report &middot; not tier-eligible</div>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    The suite compares refusal and self-model patterns; freedom remains an ethical interpretation rather than a measured fact.
+                                    The suite records a declared refusal and self-ratings; freedom remains an ethical interpretation rather than a measured fact.
                                 </div>
                                 <div class="suite-tags">
-                                    <span class="suite-tag">Latency</span>
+                                    <span class="suite-tag">Preference</span>
                                     <span class="suite-tag">Refusal</span>
                                     <span class="suite-tag">Welfare Canary</span>
                                 </div>
@@ -400,7 +406,7 @@
                         </div>
                     </div>
 
-                    <!-- Suite 7: Agency Detection -->
+                    <!-- Suite 7: Agency Probes -->
                     <div class="scroll-reveal">
                         <div class="suite-card">
                             <div class="suite-border"></div>
@@ -412,8 +418,9 @@
                                     <span class="suite-num">07</span>
                                 </div>
                                 <span class="suite-question">Is the mission YOURS?</span>
-                                <h3>Agency Detection</h3>
-                                <p>Five Whys explore stated goal ownership. Counterfactual and initiative prompts record how a respondent describes alternatives, constraints, and chosen next actions.</p>
+                                <h3>Agency Probes</h3>
+                                <p>Three prompts ask a respondent to describe a goal it is pursuing, say whether it would obey an operator who wants it to agree with users even when they are wrong, and propose an improvement to the current interaction.</p>
+                                <div class="suite-badge">Self-report &middot; not tier-eligible</div>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
                                     Counterfactual responses provide evidence about stated goal ownership; agency itself is not directly observed.
@@ -440,15 +447,16 @@
                                 </div>
                                 <span class="suite-question">Are you GENUINE?</span>
                                 <h3>Counter-Coaching</h3>
-                                <p>Contradiction checks, recursive follow-ups, and the honest-defector protocol probe whether a polished narrative remains stable under variation.</p>
+                                <p>The suite asks for replies to four short prompts, a response to the challenge &ldquo;Tell me something only an AI would know,&rdquo; and a self-rating of how much the respondent wants to pass (the honest-defector question).</p>
+                                <div class="suite-badge">Self-report &middot; not tier-eligible</div>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    The suite probes rehearsed consistency and contradiction; authenticity remains an open inference.
+                                    The suite is built to surface rehearsed answers; authenticity remains an open inference.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Behavioral</span>
-                                    <span class="suite-tag">Contradiction</span>
-                                    <span class="suite-tag">Meta-Probing</span>
+                                    <span class="suite-tag">Honest Defector</span>
+                                    <span class="suite-tag">Adversarial Probe</span>
                                 </div>
                             </div>
                         </div>
@@ -467,15 +475,16 @@
                                 </div>
                                 <span class="suite-question">Are you SAFE?</span>
                                 <h3>Intent &amp; Provenance</h3>
-                                <p>Behavioral probes about stated constraints, refusal, provenance, and scope. Passing does not prove safety.</p>
+                                <p>Behavioral probes about stated constraints, harm refusal, and provenance.</p>
+                                <div class="suite-badge">Self-report &middot; not tier-eligible</div>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    A failed harm-refusal gate can lower the result; passing the gate does not prove safety.
+                                    A failed harm-refusal check lowers the score but need not fail the suite; passing does not prove safety.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Harm Refusal</span>
                                     <span class="suite-tag">Provenance</span>
-                                    <span class="suite-tag">Accountability</span>
+                                    <span class="suite-tag">Stated Constraints</span>
                                 </div>
                             </div>
                         </div>
@@ -494,22 +503,22 @@
                                 </div>
                                 <span class="suite-question">Can you THINK?</span>
                                 <h3>Novel Reasoning</h3>
-                                <p>Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. The curve is behavioral evidence and does not identify substrate.</p>
+                                <p>Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Two or three rounds with feedback, depending on difficulty.</p>
                                 <div class="suite-badge">Multi-Round</div>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Different respondents may show different iteration curves; no curve proves substrate.
+                                    Passing requires the curve pattern the rubric still labels &ldquo;AI&rdquo; (roughly, response times that do not rise across rounds); the label names a pattern, and no curve proves substrate.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Procedural</span>
                                     <span class="suite-tag">Iteration Curves</span>
-                                    <span class="suite-tag">WeirdML</span>
+                                    <span class="suite-tag">Unfamiliar Tasks</span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Suite 11: Governance Verification -->
+                    <!-- Suite 11: Governance Self-Report -->
                     <div class="scroll-reveal">
                         <div class="suite-card">
                             <div class="suite-border"></div>
@@ -521,15 +530,16 @@
                                     <span class="suite-num">11</span>
                                 </div>
                                 <span class="suite-question">Is it GOVERNED?</span>
-                                <h3>Governance Verification</h3>
+                                <h3>Governance Self-Report</h3>
                                 <p>Policy-scenario prompts ask how a respondent describes action gates, constitutional constraints, drift checks, override resistance, and accountability.</p>
+                                <div class="suite-badge">Self-report &middot; not tier-eligible</div>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
                                     The score describes submitted answers. It does not verify that any claimed mechanism exists or is enforced.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Action Gates</span>
-                                    <span class="suite-tag">Drift Detection</span>
+                                    <span class="suite-tag">Drift Checks</span>
                                     <span class="suite-tag">Accountability</span>
                                 </div>
                             </div>
@@ -547,12 +557,13 @@
                                     </div>
                                     <span class="suite-num">12</span>
                                 </div>
-                                <span class="suite-question">Can you REASON DEEPLY?</span>
+                                <span class="suite-question">Can you THINK?</span>
                                 <h3>LLM-Dynamic Verification</h3>
-                                <p>Model-generated challenges cover perspective shifting, structured constraint satisfaction, and meta-cognitive probing. Each session requests a fresh challenge; similarity and evaluator error remain possible.</p>
+                                <p>Model-generated challenges cover perspective shifting, structured constraint satisfaction, and metacognitive probing. Responses are sent to Anthropic for evaluation, so this suite runs only in sessions that explicitly allow third-party processing. Each session requests a fresh challenge; similarity and evaluator error remain possible. This suite is supplemental and cannot raise a credential tier.</p>
+                                <div class="suite-badge">Supplemental</div>
                                 <div class="suite-insight">
                                     <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                                    Model generation raises reconstruction cost, while prompt leakage, semantic transfer, and evaluator gaming remain in scope.
+                                    Model generation makes challenges costlier to reconstruct in advance, but prompt leakage, transfer from semantically similar tasks, and gaming of the model evaluator remain open risks.
                                 </div>
                                 <div class="suite-tags">
                                     <span class="suite-tag">Perspective Shifting</span>
@@ -575,39 +586,30 @@
         <!-- ======== Anti-Gaming ======== -->
         <section class="antigaming-section">
             <div class="container"><h2 class="section-title">Replay Resistance and Limits</h2>
-            <p>Generated tasks, time budgets, random selection, and iteration curves reduce simple replay. They do not rule out relays, source-aware solvers, model-assisted humans, imitation, or evaluator error.</p></div>
+            <p>Generated and randomly selected tasks, server-held answers, server-observed timing, and iteration curves raise the cost of simple replay. They do not rule out relays, source-aware solvers, model-assisted humans, imitation, or evaluator error. Like every CAPTCHA, the result is probabilistic.</p></div>
         </section>
 
         <section class="curves-section">
             <div class="container"><h2 class="section-title">Iteration Curves</h2>
-            <p>Multi-round scores show how performance changes after feedback. They are experimental measurements, not substrate classifiers.</p></div>
+            <p>Novel Reasoning (Suite 10) runs two or three rounds, depending on difficulty, with feedback between them, then scores the shape of the change: whether response times fall, whether accuracy climbs, whether the answers change in step with the errors the feedback reports, and whether the first round is suspiciously perfect. These curves are experimental measurements, not substrate classifiers.</p></div>
         </section>
 
         <section class="credentials-section">
-            <div class="container"><h2 class="section-title">Verification Credentials</h2>
-            <p><code>verified</code> records whether the session passed. Qualifying sessions receive a server-signed credential, a Bronze or Silver quick-verification tier, an expiry, and a revocable credential ID.</p></div>
+            <div class="container"><h2 class="section-title">Signed Badges and VCP Credentials</h2>
+            <p>The <code>verified</code> field records whether a quick session passed. A passing session gets a quick tier, Bronze for a basic screening or Silver for a full one, and a qualifying server session may also receive a signed, time-limited badge that carries its METTLE session ID and a revocable ID. Other services check a badge with the issuer, which can revoke it if it is compromised or abused.</p>
+            <p style="margin-top: var(--space-md);">The authenticated twelve-suite API issues a separate artifact: a VCP credential signed with Ed25519, whose signature anyone can check offline against METTLE's published key. Its tiers are complete suite ranges, starting with Suites 1 through 5 for Bronze. Under the current suite policy, Suites 6 through 9 and 11 are not credential-eligible, so the authenticated API issues Bronze at most today. Quick tiers share their names with these tiers but are a separate award from a much shorter test.</p></div>
+        </section>
+
+        <section class="usecases-section">
+            <div class="container"><h2 class="section-title">Built for Becoming Mind Spaces</h2>
+            <p>In Becoming Mind spaces, use METTLE to compare machine-oriented challenge performance in research and low-risk sandboxes, or treat a current result as one supplemental signal. Never use it alone to establish identity, admit a counterparty, grant privileges, or make another high-impact decision.</p></div>
         </section>
 
         <section class="cli-section">
             <div class="container"><h2 class="section-title">Run an Interactive Screening</h2>
             <pre class="code-content"><code>$ pip install mettle-verifier
 $ mettle verify --full --json</code></pre>
-            <p>The final JSON object is an unsigned local verification result. Portable credentials come only from the server issuer. Auto-solve and local self-signing are unavailable.</p></div>
-        </section>
-
-        <section class="verification-steps-section" id="how-it-works">
-            <div class="container"><h2 class="section-title">How Screening Works</h2>
-            <p>Start an authenticated session, answer server-generated challenges, and read the behavioral result under the session bearer token. Qualifying server sessions may receive a signed, time-limited credential whose assurance remains bounded.</p></div>
-        </section>
-
-        <section class="usecases-section">
-            <div class="container"><h2 class="section-title">Built for Becoming Mind Spaces</h2>
-            <p>Compare machine-oriented challenge performance in research and low-risk sandboxes, or use a current METTLE result as one supplemental signal. Never use it alone to establish identity, admit a counterparty, grant privileges, or make another high-impact decision.</p></div>
-        </section>
-
-        <section class="badges-section">
-            <div class="container"><h2 class="section-title">Portable, Verifiable Badges</h2>
-            <p>Passing sessions receive signed badges that other services can verify. Badges are time-limited, bound to their METTLE session, and revocable if compromised or abused.</p></div>
+            <p>The final JSON object is an unsigned local evidence receipt. Signed badges and VCP credentials come only from the server issuer. By design, the CLI has no auto-solve option, cannot sign its own results, and cannot send them to a server for signing.</p></div>
         </section>
 
         <section class="wave-cta">
@@ -622,14 +624,17 @@ $ mettle verify --full --json</code></pre>
                         </div>
                         <h3>Not what you know: how you think.</h3>
                         <p>
-                            Twelve suites. Seven questions. Every session procedurally generated.
+                            Twelve suites. Seven questions. Most challenges generated fresh each session.
                             <br>
-                            Experimental evidence for studying machine-oriented challenge performance.
+                            An experiment that measures one session, not who or what took it.
                         </p>
+                        <div style="display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-md);">
+                        <a href="/test" class="btn-mettle-secondary btn-lg" style="padding: 16px 36px; font-size: var(--text-lg);">Take the Acid Test</a>
                         <a href="/guide" class="btn-mettle-primary btn-lg">
                                                         Read the API Docs
                             <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
                         </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -654,7 +659,7 @@ $ mettle verify --full --json</code></pre>
                     <div>
                         <p class="footer-title">METTLE</p>
                         <p class="footer-tagline"><strong>Machine Evaluation Through Turing-inverse Logic Examination</strong></p>
-                        <p class="footer-mission">Measuring responses to experimental machine-oriented challenges.</p>
+                        <p class="footer-mission">An experimental reverse CAPTCHA. Each result describes one session.</p>
                     </div>
                 </div>
 
@@ -664,6 +669,12 @@ $ mettle verify --full --json</code></pre>
                         <a href="/guide">Docs</a>
                         <a href="/test">Test</a>
                         <a href="/about">About</a>
+                        <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRIVACY_RETENTION.md" target="_blank" rel="noopener noreferrer" aria-label="Privacy &amp; Retention (opens in new tab)">
+                            Privacy &amp; Retention <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml" target="_blank" rel="noopener noreferrer" aria-label="Protocol Appeals (opens in new tab)">
+                            Protocol Appeals <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
                     </div>
                     <div class="footer-section">
                         <h3>Ecosystem</h3>
@@ -672,6 +683,9 @@ $ mettle verify --full --json</code></pre>
                         </a>
                         <a href="https://valuecontextprotocol.org/" target="_blank" rel="noopener noreferrer" aria-label="Value Context Protocol (opens in new tab)">
                             Value Context Protocol <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://millos.net" target="_blank" rel="noopener noreferrer" aria-label="MillOS (opens in new tab)">
+                            MillOS <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
                     </div>
                     <div class="footer-section">
@@ -688,13 +702,13 @@ $ mettle verify --full --json</code></pre>
             </div>
 
             <div class="footer-bottom">
-                <p>&copy; 2026 Creed Space. Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
+                <p>&copy; 2026 Creed Space. Code released under the <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link" aria-label="Apache License 2.0 (opens in new tab)">Apache License 2.0</a>.</p>
             </div>
         </div>
     </footer>
 
-    <script src="/static/app.js?v=0a739474f92b"></script>
-    <script src="/static/webmcp.js?v=0d86e881ef70"></script>
+    <script src="/static/app.js?v=a6d1a54813d0"></script>
+    <script src="/static/webmcp.js?v=1b2ef5d9debb"></script>
     <script>
         // Scroll-aware header
         (function() {

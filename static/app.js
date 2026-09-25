@@ -1,6 +1,6 @@
 /**
  * METTLE - Web UI Application
- * Interactive AI verification interface
+ * Interactive quick-screening interface
  */
 
 const API_BASE = '/api';
@@ -77,12 +77,23 @@ async function apiCall(endpoint, method = 'GET', body = null) {
         options.body = JSON.stringify(body);
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, options);
-    const data = await response.json();
+    let response;
+    try {
+        response = await fetch(`${API_BASE}${endpoint}`, options);
+    } catch {
+        throw new Error('Could not reach the METTLE server. Check your connection.');
+    }
+
+    let data = null;
+    try {
+        data = await response.json();
+    } catch {
+        if (response.ok) throw new Error('The METTLE server sent a response this page could not read.');
+    }
 
     if (!response.ok) {
         // Handle various error response formats (FastAPI returns arrays for validation errors)
-        let errorMessage = 'API request failed';
+        let errorMessage = `The server returned an error (HTTP ${response.status}).`;
         if (data && typeof data === 'object') {
             if (typeof data.detail === 'string') {
                 errorMessage = data.detail;
@@ -95,7 +106,10 @@ async function apiCall(endpoint, method = 'GET', body = null) {
                 errorMessage = data.message;
             }
         }
-        throw new Error(errorMessage);
+        // Keep the HTTP status so the error screen can name the right next step.
+        const error = new Error(errorMessage);
+        error.status = response.status;
+        throw error;
     }
 
     return data;
@@ -124,7 +138,7 @@ function startTimer(timeLimitMs) {
         if (remaining <= 0) {
             clearInterval(state.timerInterval);
             state.timerInterval = null;
-            elements.timer.textContent = 'Expired';
+            elements.timer.textContent = 'Time\u2019s up';
         }
     };
 
@@ -193,6 +207,11 @@ function showFeedback(passed, message) {
     elements.feedback.className = `feedback ${passed ? 'success' : 'error'}`;
 }
 
+// Show times in seconds, the unit the live timer and time limit already use
+function formatSeconds(ms, digits) {
+    return `${(ms / 1000).toFixed(digits)}s`;
+}
+
 // Create a result item element safely using DOM methods
 function createResultItem(result) {
     const item = document.createElement('div');
@@ -204,7 +223,7 @@ function createResultItem(result) {
 
     const timeSpan = document.createElement('span');
     timeSpan.className = 'time';
-    timeSpan.textContent = `${result.response_time_ms}ms / ${result.time_limit_ms}ms`;
+    timeSpan.textContent = `${formatSeconds(result.response_time_ms, 2)} / ${formatSeconds(result.time_limit_ms, 1)}`;
 
     const statusSpan = document.createElement('span');
     statusSpan.className = `status ${result.passed ? 'pass' : 'fail'}`;
@@ -237,12 +256,17 @@ function displayResult(result) {
     // Icon and title (using safe DOM methods)
     if (result.verified) {
         setResultIcon('fa-solid fa-circle-check');
-        elements.resultTitle.textContent = 'METTLE Verified';
-        elements.resultMessage.textContent = `Reverse-CAPTCHA passed at ${result.tier || 'verified'} tier.`;
+        elements.resultTitle.textContent = 'Screening Passed';
+        const tierName = result.tier
+            ? result.tier.charAt(0).toUpperCase() + result.tier.slice(1)
+            : null;
+        elements.resultMessage.textContent = `Reverse CAPTCHA passed${tierName ? ` at ${tierName} tier` : ''}. `
+            + 'This result does not establish identity, who or what answered, or trustworthiness.';
     } else {
         setResultIcon('fa-solid fa-circle-xmark');
-        elements.resultTitle.textContent = 'Verification Not Passed';
-        elements.resultMessage.textContent = 'The responses did not meet the 80% verification threshold.';
+        elements.resultTitle.textContent = 'Screening Not Passed';
+        elements.resultMessage.textContent = 'A pass needs at least 80% of challenges: all 3 in Basic, or 4 of 5 in Full. '
+            + 'One session is a small sample, and this result does not establish who or what answered.';
     }
 
     // Stats
@@ -274,10 +298,60 @@ function displayResult(result) {
     elements.resultTitle.focus();
 }
 
+// Error copy: say what happened, then what the respondent can do next.
+// Only this page knows which step failed (start, answer, or result), so the
+// next step is chosen here. The server's own detail stays visible.
+function describeError(phase, error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const status = error instanceof Error ? error.status : undefined;
+    // The server may end its detail with generic advice; this page names a
+    // phase-specific next step instead, so drop that trailing clause.
+    const reason = detail.replace(/;\s*(?:try again|retry|wait)\b[^;]*$/i, '');
+    const happened = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+    const title = status === 429 ? 'Limit reached'
+        : status === 503 ? 'Temporarily unavailable'
+        : 'Something went wrong';
+    let nextStep;
+
+    if (status === 401 || status === 403) {
+        nextStep = 'This page lost track of its session. Start over to begin a new session.';
+    } else if (status === 429) {
+        nextStep = detail.startsWith('Daily limit reached')
+            ? (detail.includes('00:00 UTC')
+                ? 'Try again after that.'
+                : 'The limit resets at 00:00 UTC; try again after that.')
+            : phase === 'result'
+                ? 'Wait a minute, then select Retry Result.'
+                : 'Wait a minute, then start over.';
+    } else if (phase === 'answer') {
+        if (status === undefined || status === 503) {
+            nextStep = 'Your last answer may not have been saved, so this session cannot continue here. Wait a minute, then start over.';
+        } else {
+            nextStep = 'Start over to begin a new session.';
+        }
+    } else if (phase === 'result') {
+        if (status === 404) {
+            nextStep = 'This session has expired. Start over to begin a new session.';
+        } else if (status === undefined || status === 409 || status === 503) {
+            nextStep = 'Your answers are recorded, but the result could not be loaded. Select Retry Result.';
+        } else {
+            nextStep = 'Select Retry Result, or start over to begin a new session.';
+        }
+    } else {
+        nextStep = status === 503
+            ? 'METTLE cannot start a session right now. Wait a minute, then start over.'
+            : 'Start over to try again.';
+    }
+
+    return { title, message: `${happened} ${nextStep}` };
+}
+
 // Error Display
-function showError(message) {
+function showError(phase, error) {
     stopTimer();
+    const { title, message } = describeError(phase, error);
     console.error('[METTLE]', message);
+    elements.errorTitle.textContent = title;
     elements.errorMessage.textContent = message;
     elements.retryResultBtn.classList.toggle('hidden', !resultPending);
     showScreen('error');
@@ -311,7 +385,7 @@ async function handleStart() {
         displayChallenge(data.current_challenge);
 
     } catch (error) {
-        showError(error instanceof Error ? error.message : String(error));
+        showError('start', error);
     } finally {
         elements.startBtn.disabled = false;
         elements.startBtn.classList.remove('loading');
@@ -335,9 +409,14 @@ async function handleSubmit() {
         });
 
         const result = data.result;
+        // A pass needs a correct answer within the limit. An expired challenge
+        // reports no time_ok, so it reads as over the limit.
+        const timeOk = Boolean(result.details && result.details.time_ok);
         const message = result.passed
-            ? `Correct! (${result.response_time_ms}ms)`
-            : `Incorrect. ${result.details.time_ok ? '' : 'Too slow!'}`;
+            ? `Previous answer: correct (${formatSeconds(result.response_time_ms, 2)}).`
+            : timeOk
+                ? 'Previous answer: incorrect.'
+                : 'Previous answer: over the time limit.';
 
         state.completedChallenges++;
         updateProgress();
@@ -353,7 +432,7 @@ async function handleSubmit() {
         }
 
     } catch (error) {
-        showError(error instanceof Error ? error.message : String(error));
+        showError('answer', error);
     }
 }
 
@@ -364,7 +443,11 @@ async function handleRetryResult() {
     try {
         displayResult(await apiCall(`/session/${state.sessionId}/result`));
     } catch (error) {
-        showError(error instanceof Error ? error.message : String(error));
+        // Retrying cannot recover a session that is gone or no longer this page's.
+        if (error instanceof Error && [401, 403, 404].includes(error.status)) {
+            resultPending = false;
+        }
+        showError('result', error);
     } finally {
         elements.retryResultBtn.disabled = false;
         elements.errorRestartBtn.disabled = false;
@@ -492,9 +575,9 @@ if (elements.startBtn) {
     if (!textEl) return;
 
     const lines = [
-        'a reverse Turing test',
+        'an inverse Turing test',
         'fast answers. consistent reasoning.',
-        '12 suites \u00b7 30+ challenge types \u00b7 generated per session',
+        '12 suites \u00b7 30+ challenge types \u00b7 selected or generated per session',
         'pass the test. earn a signed badge.',
     ];
 

@@ -20,7 +20,7 @@ contract is the same signed fixture corpus used by Python.
 5. an explicit unsupported suite policy.
 
 The deterministic fixture private seed exists only inside the generator and is
-labelled test-only. It must never be configured as an issuer key.
+labeled test-only. It must never be configured as an issuer key.
 
 Run:
 
@@ -67,7 +67,7 @@ failed compatibility check.
 The current REST, MCP, WebMCP, and CLI surfaces are separately authored and checked
 by focused consistency tests. The target architecture replaces repeated semantic
 definitions with one capability manifest while preserving checked-in public
-artefacts and compatibility aliases. See `docs/AGENT_CONTROL_PLANE.md`.
+artifacts and compatibility aliases. See `docs/AGENT_CONTROL_PLANE.md`.
 
 An agent-interface change must preserve or deliberately version operation meaning,
 input and output schema, authority, state vocabulary, errors, retry behavior,

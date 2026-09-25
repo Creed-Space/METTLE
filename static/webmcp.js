@@ -21,8 +21,18 @@
     return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }], isError: true };
   }
 
+  // Network and parser failures become a plain cause; the model never sees
+  // browser exception text. The server's own public detail still passes through.
+  async function fetchOrExplain(path, options) {
+    try {
+      return await fetch(path, options);
+    } catch (_) {
+      throw new Error('METTLE could not be reached');
+    }
+  }
+
   async function postJSON(path, body, sessionToken) {
-    var response = await fetch(path, {
+    var response = await fetchOrExplain(path, {
       method: 'POST',
       headers: Object.assign(
         { 'Content-Type': 'application/json' },
@@ -35,11 +45,11 @@
       try { errBody = await response.json(); } catch (_) { errBody = { detail: response.statusText }; }
       throw new Error(errBody.detail || errBody.error || ('HTTP ' + response.status));
     }
-    return response.json();
+    try { return await response.json(); } catch (_) { throw new Error('METTLE returned a response this page could not read'); }
   }
 
   async function getJSON(path, sessionToken) {
-    var response = await fetch(path, {
+    var response = await fetchOrExplain(path, {
       headers: sessionToken ? { 'X-Session-Token': sessionToken } : {}
     });
     if (!response.ok) {
@@ -47,7 +57,7 @@
       try { errBody = await response.json(); } catch (_) { errBody = { detail: response.statusText }; }
       throw new Error(errBody.detail || errBody.error || ('HTTP ' + response.status));
     }
-    return response.json();
+    try { return await response.json(); } catch (_) { throw new Error('METTLE returned a response this page could not read'); }
   }
 
   /**
@@ -73,7 +83,7 @@
 
   function rememberSessionToken(sessionId, token) {
     if (typeof sessionId !== 'string' || typeof token !== 'string' || !token) {
-      throw new Error('Session authority did not return a usable token');
+      throw new Error('the response had no session ID or token. Retry mettle_start_verification once; if this repeats, stop and report the error.');
     }
     var now = Date.now();
     sessionTokens.forEach(function(record, key) {
@@ -89,7 +99,7 @@
     var record = sessionTokens.get(sessionId);
     if (!record || record.expiresAt <= Date.now()) {
       sessionTokens.delete(sessionId);
-      throw new Error('Unknown or expired session for this page');
+      throw new Error('No active session with that ID on this page. It may have expired, or its result was already read. Start a new session with mettle_start_verification.');
     }
     if (consume) sessionTokens.delete(sessionId);
     return record.token;
@@ -100,21 +110,21 @@
   // ---------------------------------------------------------------------------
 
   var tools = [
-    // Tool 1: Start verification session
+    // Tool 1: Start a quick screening session (the tool name is a stable contract)
     {
       name: 'mettle_start_verification',
-      description: 'Start a new METTLE verification session. Returns the first challenge to answer.',
+      description: 'Start a quick METTLE screening session on this page: a short run of timed challenges that the server scores against a pass threshold. Returns the first challenge. Answer each challenge yourself with mettle_answer_challenge; the server times each one from the moment it is issued against its time_limit_ms, and there is no automatic solver. The session token stays with this page and is never shown to you. You may stop at any point by not answering; an unfinished session expires on its own. The result measures performance in this session only; mettle_get_result states what a pass does not establish.',
       inputSchema: {
         type: 'object',
         properties: {
           difficulty: {
             type: 'string',
             enum: ['basic', 'full'],
-            description: 'basic = relaxed timing, full = comprehensive profiling'
+            description: 'basic: 3 challenges with 2 to 3 second limits; a pass needs all 3 and is recorded at Bronze tier. full: 5 challenges with 0.4 to 1 second limits; a pass needs 4 of 5 and is recorded at Silver tier.'
           },
           entity_id: {
             type: 'string',
-            description: 'Optional identifier for the entity being verified'
+            description: 'Optional self-asserted label for the entity taking the test (up to 128 characters). Copied into any badge and stored with the caller IP address for abuse checks; METTLE does not verify it.'
           }
         },
         required: ['difficulty']
@@ -156,7 +166,7 @@
     // Tool 2: Answer a challenge
     {
       name: 'mettle_answer_challenge',
-      description: 'Submit an answer to the current METTLE challenge. Returns result and next challenge if any.',
+      description: 'Submit your answer to the current challenge. Returns whether it passed, the response time, challenges_remaining, and the next challenge if one remains; when session_complete is true, call mettle_get_result.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -166,11 +176,11 @@
           },
           challenge_id: {
             type: 'string',
-            description: 'The challenge ID to answer'
+            description: 'The id of the current challenge (current_challenge.id or next_challenge.id)'
           },
           answer: {
             type: 'string',
-            description: 'Your answer to the challenge'
+            description: 'Your answer as plain text, in the exact format the challenge prompt asks for'
           }
         },
         required: ['session_id', 'challenge_id', 'answer']
@@ -225,18 +235,19 @@
     // Tool 3: Get session result
     {
       name: 'mettle_get_result',
-      description: 'Get the METTLE verification result and signed credential for a completed session.',
+      description: 'Get the result of a completed METTLE quick session. Call once, after mettle_answer_challenge reports session_complete: true; after one successful read this page releases the session. Returns whether the session met the timed-challenge pass threshold (verified), the pass rate, the tier, and a signed, time-limited badge if one was issued. badge is null when none was issued, and a tier without a badge is not a credential. The result measures performance in this session only. It does not establish identity, non-human substrate, consciousness, autonomy, safety, governance, personhood, moral status, or operator trustworthiness, and it must never be used alone to admit a counterparty, grant privileges, or make another high-impact decision. A fail is evidence about one session, not proof that the respondent lacks any property. To contest systematic false rejection, use https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml; issues are public, so include no tokens, badges, or challenge answers.',
       inputSchema: {
         type: 'object',
         properties: {
           session_id: {
             type: 'string',
-            description: 'The session ID to get results for'
+            description: 'The session ID from mettle_start_verification'
           },
         },
         required: ['session_id']
       },
-      annotations: { readOnlyHint: true },
+      // Not read-only: a successful read releases the page-held session token.
+      annotations: { readOnlyHint: false },
       execute: async function(params) {
         if (!params || !params.session_id) {
           return errorResult('session_id is required');
@@ -270,7 +281,7 @@
     // Tool 4: Verify a badge
     {
       name: 'mettle_verify_badge',
-      description: 'Verify an existing METTLE badge token. Any entity identifier is self-asserted provenance, not verified identity. Returns validity, signed identity provenance, and expiry.',
+      description: 'Verify a METTLE badge token (JWT) with this METTLE server. A valid badge means a METTLE session passed and the badge is unexpired and unrevoked. The badge is a bearer token: it does not show that the presenter took that session, and it must never be used alone to admit a counterparty, grant privileges, or make another high-impact decision. Any entity identifier is self-asserted provenance, not verified identity. Returns validity, issue and expiry times, revocation status, and any entity identifier with its entity_id_verified flag and identity_binding.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -302,8 +313,11 @@
             result.entity_id_verified = payload.entity_id_verified === true;
             result.identity_binding = payload.identity_binding || 'self_asserted';
           }
+          // Current badges carry the issue time as `iat` (seconds); older badges used `verified_at`.
           if (payload.verified_at) {
             result.issued_at = payload.verified_at;
+          } else if (typeof payload.iat === 'number') {
+            result.issued_at = new Date(payload.iat * 1000).toISOString();
           }
           if (data.expires_at) {
             result.expires_at = data.expires_at;

@@ -62,7 +62,7 @@ test('reduced motion exposes content without animation loops', async ({ page }) 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.scroll-reveal').first()).toHaveCSS('opacity', '1');
   const typewriter = page.locator('.typewriter-text');
-  await expect(typewriter).toHaveText('a reverse Turing test');
+  await expect(typewriter).toHaveText('an inverse Turing test');
   const initial = await typewriter.textContent();
   await page.waitForTimeout(1_300);
   await expect(typewriter).toHaveText(initial);
@@ -106,7 +106,7 @@ test('hero entrance fades without moving on load or refresh', async ({ page }) =
 test('challenge flow announces progress and focuses the final result', async ({ page }) => {
   await page.goto('/test', { waitUntil: 'domcontentloaded' });
   await page.getByLabel('Entity ID (optional)').fill('browser-acceptance-agent');
-  await page.getByRole('button', { name: 'Start Verification' }).click();
+  await page.getByRole('button', { name: 'Start Screening' }).click();
 
   await expect(page.locator('#answer-input')).toBeFocused();
   const progress = page.getByRole('progressbar', { name: 'Challenge progress' });
@@ -123,7 +123,7 @@ test('challenge flow announces progress and focuses the final result', async ({ 
   await expect(page.locator('#result-title')).toBeFocused();
   await expect(page.locator('#stat-total')).toHaveText('3');
 
-  await page.getByRole('button', { name: 'Try Again' }).click();
+  await page.getByRole('button', { name: 'Start Over' }).click();
   await expect(page.locator('#start-screen')).toHaveClass(/active/);
   await expect(page.getByLabel('Entity ID (optional)')).toBeFocused();
 });
@@ -137,12 +137,12 @@ test('API errors are announced and recovery returns to the start', async ({ page
     }),
   );
   await page.goto('/test', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Start Verification' }).click();
+  await page.getByRole('button', { name: 'Start Screening' }).click();
 
   await expect(page.locator('#error-screen')).toHaveClass(/active/);
   await expect(page.locator('#error-title')).toBeFocused();
   await expect(page.getByRole('alert')).toContainText('Temporary test dependency failure');
-  await expect(page.getByRole('button', { name: 'Retry result' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Retry Result' })).toBeHidden();
   await page.getByRole('button', { name: 'Start Over' }).click();
   await expect(page.locator('#start-screen')).toHaveClass(/active/);
 });
@@ -163,12 +163,12 @@ test('result recovery retries reads without repeating answers', async ({ page },
     }
   });
   await page.goto('/test');
-  await page.getByRole('button', { name: 'Start Verification' }).click();
+  await page.getByRole('button', { name: 'Start Screening' }).click();
   for (let i = 0; i < 3; i++) {
     await page.getByRole('button', { name: 'Submit Answer' }).click();
     if (i < 2) await expect(page.locator('#progress-bar')).toHaveAttribute('aria-valuenow', String(i + 1));
   }
-  const retry = page.getByRole('button', { name: 'Retry result' });
+  const retry = page.getByRole('button', { name: 'Retry Result' });
   await expect(retry).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('result-retry.png'), animations: 'disabled' });
   await retry.click();
@@ -178,7 +178,7 @@ test('result recovery retries reads without repeating answers', async ({ page },
   await expect(page.locator('#result-title')).toBeFocused();
   expect(reads).toBe(3);
   expect(answers).toBe(3);
-  await page.getByRole('button', { name: 'Try Again' }).click();
+  await page.getByRole('button', { name: 'Start Over' }).click();
   await expect(retry).toBeHidden();
 });
 
@@ -187,10 +187,10 @@ test('answer failures never offer result recovery', async ({ page }) => {
     status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Answer not accepted' }),
   }));
   await page.goto('/test');
-  await page.getByRole('button', { name: 'Start Verification' }).click();
+  await page.getByRole('button', { name: 'Start Screening' }).click();
   await page.getByRole('button', { name: 'Submit Answer' }).click();
   await expect(page.locator('#error-screen')).toHaveClass(/active/);
-  await expect(page.getByRole('button', { name: 'Retry result' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Retry Result' })).toBeHidden();
 });
 
 for (const verified of [true, false]) {
@@ -212,7 +212,7 @@ for (const width of [320, 1440]) {
       ['/test', '#start-screen', 'test'], ['/guide', '#quickstart', 'quickstart']]) {
       await page.goto(route);
       if (route === '/') {
-        await expect(page.locator('.typewriter-text')).toHaveText('a reverse Turing test');
+        await expect(page.locator('.typewriter-text')).toHaveText('an inverse Turing test');
         const copyGap = await page.evaluate(() => {
           const subtitle = document.querySelector('.hero-subtitle').getBoundingClientRect();
           const question = document.querySelector('.hero-question').getBoundingClientRect();
@@ -246,7 +246,7 @@ test('media has a poster, captions, transcript, and intent-gated payload', async
   await expect(video.locator('track[kind="captions"]')).toHaveAttribute('src', /\.vtt\?v=/);
   await expect(source).not.toHaveAttribute('src', /.+/);
   await expect(source).toHaveAttribute('data-src', /mettle-explainer\.mp4\?v=/);
-  await expect(page.getByText('Read the video transcript and assurance note')).toBeVisible();
+  await expect(page.getByText('Read the video transcript')).toBeVisible();
   await page.waitForTimeout(3000);
   expect(videoRequests).toHaveLength(0);
 

@@ -1,9 +1,10 @@
 """METTLE API Router - Machine Evaluation Through Turing-inverse Logic Examination.
 
-Exposes all 12 METTLE verification suites via REST API endpoints.
+Exposes all 12 METTLE suites via REST API endpoints.
 Suite 10 (Novel Reasoning) supports multi-round sessions with feedback.
 
-SECURITY: All endpoints require authentication. Correct answers are NEVER sent to clients.
+SECURITY: Every endpoint except credential status and issuer-key discovery requires
+authentication. Expected answers are never sent to clients.
 """
 
 import logging
@@ -112,7 +113,7 @@ MettleManager = Annotated[SessionManager, Depends(get_session_manager)]
 
 @router.get("/suites", response_model=list[SuiteInfoResponse])
 async def list_suites(_user: AuthUser) -> list[SuiteInfoResponse]:
-    """List all available verification suites."""
+    """List all available suites."""
     suites = []
     for name, (display_name, description, suite_num) in SUITE_REGISTRY.items():
         # llm-dynamic requires API key + anthropic package
@@ -171,10 +172,10 @@ async def get_suite_info(
 async def create_session(
     request: CreateSessionRequest, user: AuthUser, mgr: MettleManager
 ) -> CreateSessionResponse:
-    """Start a new METTLE verification session.
+    """Start a new authenticated METTLE screening session.
 
-    Generates challenges for the requested suites. Challenge data is returned
-    WITHOUT correct answers -- the server stores answers for secure evaluation.
+    Generates challenges for the requested suites. The response omits
+    expected answers; the server keeps them for evaluation.
     """
     try:
         session_id, challenges, meta = await mgr.create_session(
@@ -242,7 +243,7 @@ async def create_session(
 async def get_session_status(
     user: AuthUser, mgr: MettleManager, session_id: str = Path(description="Session ID")
 ) -> SessionStatusResponse:
-    """Get current status of a verification session."""
+    """Get current status of an authenticated screening session."""
     session = await mgr.get_session(session_id)
 
     if session is None:
@@ -288,7 +289,7 @@ async def get_session_status(
 async def cancel_session(
     user: AuthUser, mgr: MettleManager, session_id: str = Path(description="Session ID")
 ) -> None:
-    """Cancel an active verification session."""
+    """Cancel an active authenticated screening session."""
     success = await mgr.cancel_session(session_id, user.user_id)
 
     if not success:
@@ -303,7 +304,7 @@ async def cancel_session(
     )
 
 
-# ---- Single-Shot Verification (Suites 1-9) ----
+# ---- Single-Shot Suites (every suite except Suite 10) ----
 
 
 @router.post("/sessions/{session_id}/verify", response_model=VerifyResponse)
@@ -313,7 +314,7 @@ async def verify_single_shot(
     mgr: MettleManager,
     session_id: str = Path(description="Session ID"),
 ) -> VerifyResponse:
-    """Submit answers for a single-shot suite (Suites 1-9).
+    """Submit answers for one single-shot suite (every suite except Suite 10, novel-reasoning, which uses the rounds endpoint).
 
     Evaluates the submitted answers against server-stored correct answers.
     """
@@ -391,8 +392,8 @@ async def submit_round_answer(
 ) -> RoundFeedbackResponse:
     """Submit answers for a multi-round challenge round (Suite 10).
 
-    After each round, feedback is provided including accuracy and errors.
-    The next round's data is included for progressive disclosure.
+    Returns feedback on this round (accuracy and errors) and, unless this was
+    the final round, the next round's data.
     """
     try:
         # Verify session ownership
@@ -479,14 +480,14 @@ async def get_round_feedback(
 @router.post(
     "/credentials/status",
     response_model=CredentialStatusResponse,
-    summary="Get authenticated credential status",
+    summary="Check Credential Revocation Status",
 )
 @limiter.limit(CREDENTIAL_STATUS_RATE_LIMIT)
 async def get_credential_status(
     request: Request,
     body: CredentialStatusRequest = Body(...),
 ) -> CredentialStatusResponse:
-    """Return a short-lived signed good or revoked status receipt."""
+    """Return a short-lived, issuer-signed receipt stating whether a credential is good or revoked. No API key is required."""
     checker = getattr(request.app.state, "credential_revocation_checker", None)
     if not callable(checker):
         raise HTTPException(
@@ -525,12 +526,13 @@ async def get_session_result(
     raw_request: Request,
     session_id: str = Path(description="Session ID"),
     include_vcp: bool = Query(
-        default=False, description="Include VCP-compatible attestation in response"
+        default=False,
+        description="Include a signed VCP credential if the result qualifies for a tier, or an unsigned evidence receipt otherwise",
     ),
 ) -> SessionResultResponse:
     """Get final results for a completed session.
 
-    Returns 404 if session not completed yet.
+    Returns 400 if the session is not completed yet (404 if it does not exist or has expired).
     When include_vcp=true, includes a signed credential for a tier-qualifying
     result, or an unsigned evidence receipt when no tier was earned.
     """
@@ -685,7 +687,7 @@ async def verify_credential_presentation(
     user: AuthUser,
     mgr: MettleManager,
 ) -> PresentationVerifyResponse:
-    """Verify issuer integrity, current policy, and live holder possession."""
+    """Check the credential's issuer signature, credential policy, expiry, holder binding, and revocation status, then verify the holder's signature over a one-time, audience-bound presentation challenge."""
     from mettle.signing import get_public_keyring
     from mettle.vcp import verify_mettle_attestation_with_keyring
 
@@ -777,11 +779,12 @@ async def verify_credential_presentation(
     )
 
 
-@router.get("/.well-known/vcp-keys")
+@router.get("/.well-known/vcp-keys", summary="Get Credential Issuer Keys")
 async def get_vcp_keys() -> dict:
-    """Serve public key for VCP attestation signature verification.
+    """Return the issuer's public verification keys.
 
-    This endpoint enables trust config discovery for VCP consumers.
+    Lists the active Ed25519 issuer key and any verify-only rotation keys, so a
+    relying party can check a VCP credential's signature offline.
     """
     try:
         from mettle.signing import get_public_key_info

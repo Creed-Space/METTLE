@@ -159,7 +159,11 @@ def test_retention_authority_failure_blocks_new_private_writes(
 
     assert response.status_code == 503
     assert response.json() == {
-        "detail": "Private-data retention authority is unavailable"
+        "detail": (
+            "New sessions, answers, and other changes are paused because deletion "
+            "of expired data cannot currently be confirmed; try again later"
+        ),
+        "code": "dependency_unavailable",
     }
 
 
