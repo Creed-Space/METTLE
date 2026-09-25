@@ -134,10 +134,12 @@ class TestInitDb:
             assert {"access_token_hash", "badge_info_json"} <= columns
             assert db.get_schema_version() == db.LATEST_SCHEMA_VERSION
             with legacy_engine.connect() as connection:
-                versions = connection.execute(
-                    text("SELECT version FROM schema_migrations ORDER BY version")
-                ).scalars()
-                assert list(versions) == [1, 2, 3]
+                versions: list[int] = list(
+                    connection.execute(
+                        text("SELECT version FROM schema_migrations ORDER BY version")
+                    ).scalars()
+                )
+                assert versions == [1, 2, 3]
         legacy_engine.dispose()
 
     def test_sqlite_backup_restores_sessions_and_revocations(

@@ -198,7 +198,7 @@ def _upgrade_session_recovery_columns(connection) -> None:
     existing = {
         column["name"] for column in inspect(connection).get_columns("sessions")
     }
-    additions = [
+    additions: list[tuple[str, str]] = [
         (DBSession.access_token_hash.name, "VARCHAR(64)"),
         (DBSession.badge_info_json.name, "TEXT"),
     ]
