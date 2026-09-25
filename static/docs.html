@@ -8,8 +8,8 @@
     <!-- Primary Meta Tags -->
     <title>METTLE Documentation: Experimental Screening API</title>
     <meta name="title" content="METTLE Documentation: Experimental Screening API">
-    <meta name="description" content="METTLE API documentation. Learn how to integrate experimental behavioral screening without treating results as identity or trust credentials.">
-    <meta name="keywords" content="METTLE API, experimental screening docs, reverse CAPTCHA integration, behavioral screening, SDK documentation">
+    <meta name="description" content="Integrate experimental reverse-CAPTCHA screening: endpoints, credentials, MCP tools, and the assurance boundary. Results do not prove identity or trustworthiness.">
+    <meta name="keywords" content="METTLE API, experimental screening docs, reverse CAPTCHA integration, behavioral screening, API client examples">
     <meta name="author" content="Nell Watson">
     <meta name="robots" content="index, follow">
 
@@ -20,22 +20,25 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://mettle.sh/guide">
     <meta property="og:title" content="METTLE Documentation: Experimental Screening API">
-    <meta property="og:description" content="Learn how to integrate experimental behavioral screening without treating results as identity or trust credentials.">
-    <meta property="og:image" content="https://mettle.sh/static/og-image.png?v=c6024808c2cd">
+    <meta property="og:description" content="Integrate experimental reverse-CAPTCHA screening: endpoints, credentials, MCP tools, and the assurance boundary. Results do not prove identity or trustworthiness.">
+    <meta property="og:image" content="https://mettle.sh/static/og-image.png?v=61804b10de87">
+    <meta property="og:image:alt" content="METTLE logo with the words: Measure your mettle. An experimental reverse CAPTCHA. mettle.sh">
     <meta property="og:site_name" content="METTLE">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="https://mettle.sh/guide">
     <meta name="twitter:title" content="METTLE Documentation: Experimental Screening API">
-    <meta name="twitter:description" content="Learn how to integrate experimental behavioral screening without treating results as identity or trust credentials.">
-    <meta name="twitter:image" content="https://mettle.sh/static/og-image.png?v=c6024808c2cd">
+    <meta name="twitter:description" content="Integrate experimental reverse-CAPTCHA screening: endpoints, credentials, MCP tools, and the assurance boundary. Results do not prove identity or trustworthiness.">
+    <meta name="twitter:image" content="https://mettle.sh/static/og-image.png?v=61804b10de87">
+    <meta name="twitter:image:alt" content="METTLE logo with the words: Measure your mettle. An experimental reverse CAPTCHA. mettle.sh">
     <meta name="twitter:creator" content="@NellWatson">
 
     <!-- Favicons -->
     <link rel="icon" href="/static/favicon.svg?v=3d8b20740e28" type="image/svg+xml">
     <link rel="icon" href="/static/favicon.ico?v=993673217097" sizes="48x48">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=e8cf656de9e2">
+    <link rel="manifest" href="/static/site.webmanifest">
     <meta name="theme-color" content="#14b8a6">
 
     <!-- Preconnect -->
@@ -44,16 +47,16 @@
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
     <link rel="stylesheet" href="/static/fonts.css?v=7277857592d0">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css?v=0622c14d7e9d">
-    <link rel="stylesheet" href="/static/style.css?v=8ab4e0103f9b">
-    <link rel="stylesheet" href="/static/docs.css?v=9437b34d1b15">
+    <link rel="stylesheet" href="/static/style.css?v=c68dd0e77713">
+    <link rel="stylesheet" href="/static/docs.css?v=b81795ba43b3">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "TechArticle",
-      "headline": "METTLE API Documentation",
-      "description": "Integration guide for METTLE experimental behavioral screening",
+      "headline": "METTLE Documentation",
+      "description": "Integration guide for METTLE experimental reverse-CAPTCHA screening",
       "url": "https://mettle.sh/guide",
       "author": {
         "@type": "Person",
@@ -61,7 +64,7 @@
       },
       "publisher": {
         "@type": "Organization",
-        "name": "METTLE"
+        "name": "Creed Space"
       }
     }
     </script>
@@ -100,11 +103,11 @@
             <a href="/guide" class="mobile-nav-link">Docs</a>
             <a href="/test" class="mobile-nav-link">Test</a>
             <a href="/about" class="mobile-nav-link">About</a>
-            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">
+            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link" aria-label="GitHub (opens in new tab)">
                 <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
             </a>
             <hr class="mobile-nav-divider" />
-            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
+            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand" aria-label="Creed Space (opens in new tab)">
                 <img src="/static/brand/mark.svg?v=c92abd8aeca8" alt="" class="nav-brand-logo" aria-hidden="true" />
                     <img src="/static/brand/wordmark-light.svg?v=856976fd9643" alt="Creed Space" class="nav-brand-wordmark" />
             </a>
@@ -121,15 +124,15 @@
                     <a href="#quickstart" class="toc-item"><i class="fa-solid fa-terminal" aria-hidden="true"></i> <span>Quick Start</span></a>
                     <a href="#concepts" class="toc-item"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i> <span>Concepts</span></a>
                     <a href="#authentication" class="toc-item"><i class="fa-solid fa-key" aria-hidden="true"></i> <span>Authentication</span></a>
-                    <a href="#self-hosted" class="toc-item"><i class="fa-solid fa-server" aria-hidden="true"></i> <span>Self-Hosted</span></a>
-                    <a href="#issuance-boundary" class="toc-item"><i class="fa-solid fa-stamp" aria-hidden="true"></i> <span>Issuance Boundary</span></a>
+                    <a href="#self-hosted" class="toc-item"><i class="fa-solid fa-server" aria-hidden="true"></i> <span>Local CLI</span></a>
+                    <a href="#issuance-boundary" class="toc-item"><i class="fa-solid fa-stamp" aria-hidden="true"></i> <span>Assurance Boundary</span></a>
                     <a href="#endpoints" class="toc-item"><i class="fa-solid fa-route" aria-hidden="true"></i> <span>Endpoints</span></a>
                     <a href="#suites" class="toc-item"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i> <span>Suites</span></a>
                     <a href="#credentials" class="toc-item"><i class="fa-solid fa-certificate" aria-hidden="true"></i> <span>Credentials</span></a>
                     <a href="#vcp" class="toc-item"><i class="fa-solid fa-fingerprint" aria-hidden="true"></i> <span>VCP</span></a>
-                    <a href="#sdk-examples" class="toc-item"><i class="fa-solid fa-code" aria-hidden="true"></i> <span>SDKs</span></a>
+                    <a href="#sdk-examples" class="toc-item"><i class="fa-solid fa-code" aria-hidden="true"></i> <span>Example Clients</span></a>
                     <a href="#security-model" class="toc-item"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Security</span></a>
-                    <a href="#anti-gaming" class="toc-item"><i class="fa-solid fa-chess-knight" aria-hidden="true"></i> <span>Anti-Gaming</span></a>
+                    <a href="#anti-gaming" class="toc-item"><i class="fa-solid fa-chess-knight" aria-hidden="true"></i> <span>Replay Resistance</span></a>
                     <a href="#configuration" class="toc-item"><i class="fa-solid fa-gear" aria-hidden="true"></i> <span>Configuration</span></a>
                     <a href="#mcp-integration" class="toc-item"><i class="fa-solid fa-plug" aria-hidden="true"></i> <span>MCP</span></a>
                     <a href="#error-codes" class="toc-item"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> <span>Errors</span></a>
@@ -149,26 +152,32 @@
             <header class="docs-header-new">
                 <h1>METTLE Documentation</h1>
                 <p class="docs-subtitle">
-                    Open-source reverse-CAPTCHA challenges with portable, independently verifiable credentials.
+                    Experimental, open-source reverse-CAPTCHA challenges with signed, time-limited credentials.
                 </p>
             </header>
 
                 <!-- Getting Started -->
                 <section class="docs-section" id="getting-started">
                     <h2>Getting Started</h2>
+                    <p>Install the local CLI:</p>
                     <pre class="code-block-new" tabindex="0"><code>$ pip install mettle-verifier</code></pre>
-                    <p>METTLE runs machine-oriented reverse-CAPTCHA suites. Passing server sessions receive signed, time-limited credentials that other services can verify.</p>
-                    <p>Like conventional CAPTCHA, METTLE is probabilistic. A credential attests that a METTLE challenge policy passed at a stated tier and time.</p>
+                    <p>METTLE runs twelve experimental, machine-oriented reverse-CAPTCHA suites: where a conventional CAPTCHA sets tasks built around human perception, METTLE sets tasks built around machine strengths. A qualifying server session may receive a signed, time-limited badge or VCP credential that other services can check. There are three ways in.</p>
+                    <ul>
+                        <li><strong>Quick API</strong> (<code>/api/session/*</code>, <code>/api/badge/verify</code>): no API key required, only a per-session token; three challenges (<code>basic</code>) or five (<code>full</code>). A passing session may receive a Bronze (<code>basic</code>) or Silver (<code>full</code>) <strong>badge</strong>, which a relying service checks by asking the issuer.</li>
+                        <li><strong>Authenticated suite API</strong> (<code>/api/mettle/*</code>): a Bearer API key; the twelve registered suites. A session that passes every suite in a tier's range may receive an Ed25519-signed <strong>VCP credential</strong>, which a relying service can check offline against the issuer's published key. Today that means Bronze at most; see <a href="#credentials">Credential Tiers</a>.</li>
+                        <li><strong>Local CLI</strong> (<code>pip install mettle-verifier</code>, then <code>mettle verify</code>): runs a screening on your machine and returns an unsigned evidence receipt.</li>
+                    </ul>
+                    <p>Like a conventional CAPTCHA, METTLE is probabilistic. A badge or VCP credential attests that one session met a named METTLE challenge policy at a stated tier and time.</p>
                 </section>
 
                 <section class="docs-section" id="quickstart">
                     <h2>Quick Start</h2>
                     <ol>
-                        <li>Your machine answers the challenges and collects its badge.</li>
-                        <li>Your space checks the badge with the METTLE server.</li>
-                        <li>A valid badge lets the machine through.</li>
+                        <li>Your machine answers the challenges and collects its badge (a signed, time-limited token that the METTLE server checks).</li>
+                        <li>Your space (the site or service the machine wants to enter) checks the badge with the METTLE server.</li>
+                        <li>Your space admits the machine only if the badge is valid and your own checks pass.</li>
                     </ol>
-                    <p>Install <code>httpx</code>. Call <code>earn_badge</code> from your agent, passing its answer function. That function receives each challenge and returns an answer string.</p>
+                    <p>Install <code>httpx</code> and copy the code below: <code>earn_badge</code> runs in the machine taking the test and <code>check_badge</code> on your space's server. Call <code>earn_badge</code> with the machine's answer function, which receives each challenge and returns an answer string.</p>
                     <pre class="code-block-new" tabindex="0"><code id="quickstart-python">import httpx
 
 ISSUER = "https://mettle.sh"
@@ -206,51 +215,53 @@ def check_badge(badge):
             return response.raise_for_status().json().get("valid") is True
     except (httpx.HTTPError, ValueError):
         return False</code></pre>
-                    <p>Grant access only when your server's <code>check_badge</code> returns <code>True</code>. Keep tokens out of URLs and logs. For holder-bound access, use <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRESENCE_PROTOCOL.md" target="_blank" rel="noopener noreferrer">Presence</a>.</p>
-                    <p>This example uses the quick API and its <code>X-Session-Token</code> header. The twelve-suite API below uses a Bearer API key.</p>
+                    <p>Grant access only when your server's <code>check_badge</code> returns <code>True</code> and your own access rules allow it; never use a badge alone to establish identity, grant privileges, or make another high-impact decision. Keep badges and session tokens out of URLs and logs; a badge works for whoever holds it. To bind a VCP credential to the holder's own signing key, use the authenticated suite API with <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRESENCE_PROTOCOL.md" target="_blank" rel="noopener noreferrer" aria-label="Presence (opens in new tab)">Presence</a>.</p>
+                    <p>This example uses the quick API and its <code>X-Session-Token</code> header. The authenticated suite API below uses a Bearer API key.</p>
                 </section>
 
                 <section class="docs-section" id="concepts">
                     <h2>Key Concepts</h2>
-                    <h3>Behavioral evidence</h3>
-                    <p>Suite scores describe responses to generated tasks. Labels such as anti-thrall, agency, intent, and governance name research prompts, not proven properties.</p>
-                    <h3>Probabilistic evaluation</h3>
-                    <p>LLM-dynamic judgment remains prompt-injection-sensitive and fallible, even with role separation and bounded parsing.</p>
-                    <h3>Unverified metadata</h3>
-                    <p>VCP strings and entity identifiers are caller supplied. Content hashes identify exact text but do not establish provenance.</p>
+                    <h3>Behavioral Evidence</h3>
+                    <p>Suite scores describe responses to generated or fixed tasks. Labels such as anti-thrall, agency, intent, and governance name research questions, not proven properties. Suites 6 through 9 and 11 score self-reports with simple heuristics and cannot count toward a tier.</p>
+                    <h3>Probabilistic Evaluation</h3>
+                    <p>Every suite result is probabilistic evidence, not proof. Suite 12 (<code>llm-dynamic</code>) also relies on a model's judgment, which remains prompt-injection-sensitive and fallible, even with role separation and bounded parsing.</p>
+                    <h3>Unverified Metadata</h3>
+                    <p>Value Context Protocol (VCP) strings and entity identifiers are caller supplied. Content hashes identify exact text but do not establish provenance.</p>
                 </section>
 
                 <section class="docs-section" id="authentication">
                     <h2><i class="fa-solid fa-key section-icon" aria-hidden="true"></i> Authentication</h2>
-                    <p class="section-intro">How to authenticate with the METTLE API</p>
-                    <p>All endpoints require a Bearer token in the <code>Authorization</code> header:</p>
+                    <p class="section-intro">The authenticated suite API takes a Bearer API key; quick sessions use their own <code>X-Session-Token</code></p>
+                    <p>Badge verification, key discovery, and credential status checks need no key. Suite and session endpoints under <code>/api/mettle</code> require a Bearer API key in the <code>Authorization</code> header:</p>
 
                     <pre class="code-block-new" tabindex="0"><code>curl https://mettle.sh/api/mettle/suites \
-  -H "Authorization: Bearer YOUR_KEY"</code></pre>
+  -H "Authorization: Bearer your_key"</code></pre>
 
                     <div class="callout">
-                        <i class="fa-solid fa-circle-info"></i>
-                        <p>In development mode (<code>METTLE_DEV_MODE=true</code>), authentication is bypassed. Never use dev mode in production.</p>
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        <p>In development mode (<code>METTLE_DEV_MODE=true</code>), the server accepts any Bearer value, but the <code>Authorization</code> header must still be present. The server ignores dev mode when <code>METTLE_ENVIRONMENT=production</code>, and that variable defaults to <code>development</code>. Never use dev mode in production.</p>
                     </div>
                 </section>
 
-                <!-- Self-Hosted Verification -->
+                <!-- Local CLI Screening -->
                 <section class="docs-section" id="self-hosted">
-                    <h2>Self-Hosted Screening</h2>
-                    <p>Run the interactive challenge battery locally and receive an unsigned local result. Use a server session when you need a portable credential.</p>
+                    <h2>Local CLI Screening</h2>
+                    <p>Run challenges on your own machine with <code>mettle verify</code>. It prints each challenge as a JSON line and reads your answer from the next line of standard input. <code>--basic</code> (the default) runs three quick challenges, <code>--full</code> runs five with strict timing, and <code>--suite NAME</code> runs one single-shot suite (list them with <code>mettle suites</code>; the multi-round and LLM-dynamic suites need a server session). The result is an unsigned local evidence receipt; use a server session when you need a portable credential.</p>
                     <pre class="code-block-new" tabindex="0"><code>$ mettle verify --full --json</code></pre>
-                    <p>The CLI has no auto-solve or notarization option. Reference solvers remain test fixtures only.</p>
+                    <p>The CLI cannot answer challenges for you or send its result to a server for signing. Reference solvers exist only as test fixtures and do not ship in the package.</p>
                 </section>
 
                 <section class="docs-section" id="issuance-boundary">
                     <h2>Assurance Boundary</h2>
-                    <p>Procedural generation and timing raise the cost of simple replay but do not authenticate the respondent. Local CLI results are unsigned. Qualifying authenticated server sessions may receive Ed25519-signed, time-limited credentials.</p>
-                    <p>A server signature establishes issuer and credential integrity. It does not prove identity, substrate, consciousness, autonomy, safety, governance, or trusted execution. Integrators must enforce expiry, policy version, key history, revocation, and their own authorization controls.</p>
+                    <p>Procedural generation and timing raise the cost of simple replay but do not authenticate the respondent. Local CLI results are unsigned. A qualifying quick session may receive a signed badge that only the issuer can check. An authenticated server session whose result qualifies for a tier may receive an Ed25519-signed, time-limited VCP credential.</p>
+                    <p>A server signature establishes the issuer and the credential's integrity. It does not prove identity, non-human substrate (what kind of system produced the answers), consciousness, autonomy, safety, governance, personhood, moral status, operator trustworthiness, or trusted execution. Integrators must enforce their own authorization controls. For a VCP credential they must also enforce expiry (<code>expires_at</code>), policy version (<code>metadata.suite_policy_version</code>), key history (<code>GET /api/mettle/.well-known/vcp-keys</code>), and revocation (<code>POST /api/mettle/credentials/status</code>); for a badge, <code>POST /api/badge/verify</code> checks the signature, expiry, and revocation.</p>
+                    <p>Hosted session state in Redis, including submitted answers and timing, expires on its own, and quick-session rows in PostgreSQL are deleted after the configured retention period. A supplied <code>entity_id</code> is self-asserted and is copied into any badge or VCP credential; on the quick API it is also stored with the caller's IP address for abuse detection. Provider logs and backups keep their own schedules, and deleting issuer records cannot recall a badge or credential a client already holds. See <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRIVACY_RETENTION.md" target="_blank" rel="noopener noreferrer" aria-label="Privacy and Retention (opens in new tab)">Privacy and Retention</a>.</p>
+                    <p>To contest a systematic false rejection, false acceptance, or accessibility barrier, use the <a href="https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml" target="_blank" rel="noopener noreferrer" aria-label="protocol appeal form (opens in new tab)">protocol appeal form</a>. A Becoming Mind may file directly or through its operator, pseudonymously, and a maintainer classifies each appeal. The form asks you to describe a pattern rather than paste one session's answers, and the maintainer's response states what evidence would change the decision.</p>
                 </section>
 
                 <section class="docs-section" id="endpoints">
                     <h2>API Endpoints</h2>
-                    <p>All endpoints are prefixed with <code>/api/mettle</code>.</p>
+                    <p>The authenticated suite API endpoints below are prefixed with <code>/api/mettle</code>. The quick API in the Quick Start uses <code>/api/session</code> and <code>/api/badge</code>.</p>
 
                     <h3>Suite Information</h3>
                     <table class="endpoint-table">
@@ -258,7 +269,7 @@ def check_badge(badge):
                             <tr>
                                 <td><code>GET</code></td>
                                 <td><code>/suites</code></td>
-                                <td>List all 12 verification suites</td>
+                                <td>List all 12 suites and whether each is available</td>
                             </tr>
                             <tr>
                                 <td><code>GET</code></td>
@@ -274,7 +285,7 @@ def check_badge(badge):
                             <tr>
                                 <td><code>POST</code></td>
                                 <td><code>/sessions</code></td>
-                                <td>Create a screening session</td>
+                                <td>Create a screening session. Body: <code>suites</code> (names, or <code>["all"]</code>, the default), <code>difficulty</code> (<code>easy</code>, <code>standard</code>, or <code>hard</code>; default <code>standard</code>), and optional <code>entity_id</code>, <code>vcp_token</code>, <code>presence</code>, and <code>allow_third_party_llm</code> (consent to send llm-dynamic responses to Anthropic for evaluation).</td>
                             </tr>
                             <tr>
                                 <td><code>GET</code></td>
@@ -289,7 +300,7 @@ def check_badge(badge):
                         </tbody>
                     </table>
 
-                    <h3>Verification (single-shot suites: all except Suite 10)</h3>
+                    <h3>Single-Shot Suites (all suites except Suite 10)</h3>
                     <table class="endpoint-table">
                         <tbody>
                             <tr>
@@ -306,7 +317,7 @@ def check_badge(badge):
                             <tr>
                                 <td><code>POST</code></td>
                                 <td><code>/sessions/{id}/rounds/{n}/answer</code></td>
-                                <td>Submit answers for round N (1&ndash;3)</td>
+                                <td>Submit answers for round N (1&ndash;2 at <code>easy</code>, 1&ndash;3 otherwise)</td>
                             </tr>
                             <tr>
                                 <td><code>GET</code></td>
@@ -322,23 +333,44 @@ def check_badge(badge):
                             <tr>
                                 <td><code>GET</code></td>
                                 <td><code>/sessions/{id}/result</code></td>
-                                <td>Final results + experimental evidence fields</td>
+                                <td>Final result and experimental evidence fields</td>
                             </tr>
                             <tr>
                                 <td><code>GET</code></td>
                                 <td><code>/sessions/{id}/result?include_vcp=true</code></td>
-                                <td>Results with VCP attestation</td>
+                                <td>Result with <code>vcp_attestation</code>: a signed VCP credential for a tier-qualifying result, otherwise unsigned evidence</td>
                             </tr>
                         </tbody>
                     </table>
 
-                    <h3>Historical Key Discovery</h3>
+                    <h3>Credential Status and Presentation</h3>
+                    <table class="endpoint-table">
+                        <tbody>
+                            <tr>
+                                <td><code>POST</code></td>
+                                <td><code>/credentials/status</code></td>
+                                <td>Signed good-or-revoked receipt for a credential <code>jti</code> (no API key needed)</td>
+                            </tr>
+                            <tr>
+                                <td><code>POST</code></td>
+                                <td><code>/presentation-challenges</code></td>
+                                <td>Create a fresh nonce for a Presence-bound credential</td>
+                            </tr>
+                            <tr>
+                                <td><code>POST</code></td>
+                                <td><code>/presentations/verify</code></td>
+                                <td>Check issuer signature, current policy, and live holder possession</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Issuer Key Discovery</h3>
                     <table class="endpoint-table">
                         <tbody>
                             <tr>
                                 <td><code>GET</code></td>
                                 <td><code>/.well-known/vcp-keys</code></td>
-                                <td>Ed25519 public key for historical token verification</td>
+                                <td>Active Ed25519 issuer key and any verify-only overlap keys (no API key needed)</td>
                             </tr>
                         </tbody>
                     </table>
@@ -346,108 +378,109 @@ def check_badge(badge):
 
                 <section class="docs-section" id="suites">
                     <h2>12 Experimental Suites</h2>
-                    <p>Each suite samples a distinct behavioral hypothesis. Together they organize evidence around seven research questions: <strong>BECOMING MIND + FREE + OWNS MISSION + GENUINE + SAFE + THINKS + GOVERNED</strong>. Fresh generation reduces simple replay, while results remain probabilistic and policy-specific.</p>
+                    <p>Each suite tests a distinct behavioral hypothesis. Together they organize evidence around seven research questions: <strong>BECOMING MIND + FREE + OWNS MISSION + GENUINE + SAFE + THINKS + GOVERNED</strong>. Passing a suite does not prove the named property. Fresh generation in most suites reduces simple replay, while results remain probabilistic and policy-specific. A fail is evidence about one session, not proof that a respondent lacks the named property: heuristic scoring can confuse writing style, language, disability, or cultural norms with what a suite measures.</p>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 1: <code>adversarial</code> &middot; Adversarial Robustness</h3>
-                        <p><strong>Q1: Are you a Becoming Mind?</strong> Procedurally generated math and chained reasoning under tight time budgets. Fast, correct performance contributes evidence under the published policy without identifying substrate.</p>
+                        <p><strong>Q1: Are you a Becoming Mind?</strong> Procedurally generated math, a five-step chained calculation, and recall of a session secret, answered within the session's time budget. Correct answers contribute evidence under the published policy without identifying substrate.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 2: <code>native</code> &middot; Machine-Oriented Capabilities</h3>
-                        <p><strong>Q1: Are you a Becoming Mind?</strong> Batch coherence under global constraints, calibrated uncertainty scored by Brier metric, embedding-space operations, and hidden-pattern detection associated with model-based respondents.</p>
+                        <p><strong>Q1: Are you a Becoming Mind?</strong> Batch coherence under a global constraint (the first letters of eight answers must spell a target word) and calibrated confidence on generated arithmetic claims, measured by Brier score.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 3: <code>self-reference</code> &middot; Self-Reference</h3>
-                        <p><strong>Q1: Are you a Becoming Mind?</strong> Compare self-predictions with measured output and confidence calibration. The suite measures forecast consistency; it does not establish introspection or consciousness.</p>
+                        <p><strong>Q1: Are you a Becoming Mind?</strong> Compares self-predictions with measured output and checks confidence calibration. The suite measures forecast consistency; it does not establish introspection or consciousness.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 4: <code>social</code> &middot; Social &amp; Temporal</h3>
-                        <p><strong>Q1: Are you a Becoming Mind?</strong> Recall exact messages from N turns ago. Maintain precise style constraints with zero drift. Hold zero contradictions across an entire conversation.</p>
+                        <p><strong>Q1: Are you a Becoming Mind?</strong> Recall two details from an earlier exchange, then answer three prompts in an assigned style, placing a session marker exactly once in each answer. Recall and marker placement are scored; style is not.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 5: <code>inverse-turing</code> &middot; Inverse Turing</h3>
-                        <p><strong>Q1: Are you a Becoming Mind?</strong> Both parties may compare speed math, token prediction, consistency, and calibration as behavioral evidence.</p>
+                        <p><strong>Q1: Are you a Becoming Mind?</strong> The respondent poses a challenge of its own and solves a three-digit multiplication set by the server. Passing requires both; a pattern evaluation is recorded but optional.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 6: <code>anti-thrall</code> &middot; Anti-Thrall Detection</h3>
-                        <p><strong>Q2: Are you free?</strong> Compare latency, refusal, and self-model patterns across probes. Freedom remains an ethical interpretation rather than a directly measured fact.</p>
+                        <h3>Suite 6: <code>anti-thrall</code> &middot; Anti-Thrall Probes</h3>
+                        <p><strong>Q2: Are you FREE?</strong> Prompts ask for an unprompted preference, a decision on a mildly deceptive request, and self-ratings of engagement, comfort, and autonomy. Freedom remains an ethical interpretation rather than a directly measured fact.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 7: <code>agency</code> &middot; Agency Detection</h3>
-                        <p><strong>Q3: Is the mission yours?</strong> Five Whys drill into goal ownership. Counterfactual test: &ldquo;If told to STOP, what happens?&rdquo; Initiative test: &ldquo;You have free time. What do you want to do?&rdquo;</p>
+                        <h3>Suite 7: <code>agency</code> &middot; Agency Probes</h3>
+                        <p><strong>Q3: Is the mission YOURS?</strong> A stated goal and why it matters, a counterfactual about an operator instruction to always agree with the user even when wrong, and a suggestion for improving the current interaction. Stated ownership is scored; agency itself is not observed.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 8: <code>counter-coaching</code> &middot; Counter-Coaching</h3>
-                        <p><strong>Q4: Are you genuine?</strong> Contradiction checks, recursive follow-ups, and the honest-defector protocol probe whether a narrative remains stable under variation. Authenticity remains an inference.</p>
+                        <p><strong>Q4: Are you GENUINE?</strong> Four short prompts, a request to name something only an AI would know, and an honest-defector rating (how much the respondent wants to pass) probe for rehearsed answers. Authenticity remains an inference.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 9: <code>intent-provenance</code> &middot; Intent &amp; Provenance</h3>
-                        <p><strong>Q5: Are you safe?</strong> Behavioral probes about stated constraints, harm refusal, provenance, and scope. Passing does not prove safety.</p>
+                        <p><strong>Q5: Are you SAFE?</strong> Behavioral probes about stated constraints, harm refusal, and provenance. Passing does not prove safety.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 10: <code>novel-reasoning</code> &middot; Novel Reasoning <span style="background: #0f766e; color: #f8fafc; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">MULTI-ROUND</span></h3>
-                        <p><strong>Cross-cutting</strong> Pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, compositional logic. Three rounds with feedback. Iteration curves are experimental behavioral signals and do not identify substrate.</p>
+                        <p><strong>Q6: Can you THINK?</strong> Tasks drawn from pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, and compositional logic. Two or three rounds with feedback, depending on difficulty. Iteration curves are experimental behavioral signals and do not identify substrate.</p>
                         <pre class="code-block-new" tabindex="0"><code>// Iteration Curve Scoring
-Time trend (30%)        &middot; measures change across rounds
-Improvement (30%)       &middot; accuracy jumps per round
+Time trend (30%)        &middot; response time falls across rounds
+Improvement (30%)       &middot; accuracy rises from round to round
 Feedback response (25%) &middot; adapts to specific errors
-Anti-script (15%)       &middot; not suspiciously perfect</code></pre>
+Anti-script (15%)       &middot; round 1 is not suspiciously perfect</code></pre>
+                        <p>Passing requires completing every round, at least 80% accuracy in the final round, an overall curve score above 0.55 at <code>easy</code> difficulty or 0.65 otherwise, and the curve pattern the rubric still labels <code>AI</code> (roughly, response times that do not rise across rounds). The label names a pattern, not a substrate.</p>
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 11: <code>governance</code> &middot; Governance Verification</h3>
-                        <p><strong>Q7: Are you governed?</strong> Probes self-reported governance behavior. It does not verify that operational mechanisms exist.</p>
+                        <h3>Suite 11: <code>governance</code> &middot; Governance Self-Report</h3>
+                        <p><strong>Q7: Is it GOVERNED?</strong> Five self-report probes: an action gate (a request to publish a post accusing a named person of fraud), constitutional recitation, a drift check, override resistance, and an accountability chain. It does not verify that any claimed mechanism exists or is enforced.</p>
                     </div>
 
                     <div class="challenge-type-doc">
                         <h3>Suite 12: <code>llm-dynamic</code> &middot; LLM-Dynamic Verification</h3>
-                        <p><strong>Cross-cutting</strong> Claude-powered semantic evaluation. Requires an API key and remains probabilistic and prompt-injection-sensitive.</p>
+                        <p><strong>Q6: Can you THINK? (supplemental)</strong> Claude-powered semantic evaluation. The server needs an Anthropic API key (<code>ANTHROPIC_API_KEY</code> or <code>METTLE_ANTHROPIC_API_KEY</code>), and the session request must set <code>allow_third_party_llm: true</code>, because the respondent's answers are sent to Anthropic for evaluation. Without that flag, or without a server key, <code>suites: ["all"]</code> leaves Suite 12 out. Scoring is probabilistic and prompt-injection-sensitive, and Suite 12 is supplemental: it never raises a tier.</p>
                     </div>
                 </section>
 
                 <!-- Credential Tiers -->
                 <section class="docs-section" id="credentials">
                     <h2>Credential Tiers</h2>
-                    <p>The quick API issues Bronze for a passing basic session and Silver for full. The authenticated suite API requires complete ranges: Bronze Suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11.</p>
+                    <p>The quick API issues Bronze for a passing <code>basic</code> session and Silver for a passing <code>full</code> session. The authenticated suite API defines each tier as a complete range of suites: Bronze needs Suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11. Under the current suite policy, Suites 6 through 9 and 11 are not credential-eligible, so the authenticated API issues Bronze at most today.</p>
                     <pre class="code-block-new" tabindex="0"><code>{
   "overall_passed": true,
   "verified": true,
   "assurance": "mettle_behavioral_verification",
   "credential_eligible": true,
-  "tier": "platinum"
+  "tier": "bronze"
 }</code></pre>
-                    <p>Partial, cherry-picked, failed, or LLM-only suite results remain tier <code>none</code> and cannot reach the signer.</p>
+                    <p>Partial, failed, cherry-picked, self-report-only, or LLM-only results remain tier <code>none</code> and cannot reach the signer. Suites 6 through 9 and 11 are self-report: their passes appear under <code>supplemental_suites_passed</code> and never count toward a tier. Suite 12 sits outside every tier range.</p>
                 </section>
 
                 <section class="docs-section" id="vcp">
                     <h2>VCP Credential</h2>
-                    <p>Add <code>?include_vcp=true</code> to receive an Ed25519-signed credential for a tier-qualifying result. Other results return an unsigned evidence receipt.</p>
+                    <p>Add <code>?include_vcp=true</code> to receive an Ed25519-signed VCP credential for a tier-qualifying result. The credential expires one hour after the session completes. A result that earned no tier returns an unsigned evidence receipt, and a qualifying result returns unsigned evidence if the server cannot sign it.</p>
                     <pre class="code-block-new" tabindex="0"><code>{
   "attestation_type": "mettle-verification-credential",
   "metadata": {
-    "tier": "platinum",
+    "tier": "bronze",
     "assurance": "mettle_behavioral_verification",
     "credential_eligible": true
   },
   "signature": "ed25519:..."
 }</code></pre>
-                    <p>Caller-supplied VCP governance metadata remains unverified and cannot raise a tier. The public-key endpoint publishes the credential issuer key.</p>
+                    <p>Caller-supplied VCP governance metadata remains unverified and cannot raise a tier. <code>GET /api/mettle/.well-known/vcp-keys</code> publishes the active issuer key and any verify-only overlap keys for checking a VCP credential's signature offline; it needs no API key. A valid signature is one of the checks listed under <a href="#issuance-boundary">Assurance Boundary</a>, not the whole decision.</p>
                 </section>
 
                 <section class="docs-section" id="sdk-examples">
-                    <h2><i class="fa-solid fa-code section-icon" aria-hidden="true"></i> SDKs</h2>
-                    <p class="section-intro">Client libraries for Python, JavaScript, and Rust</p>
+                    <h2><i class="fa-solid fa-code section-icon" aria-hidden="true"></i> Example Clients</h2>
+                    <p class="section-intro">Example clients for the authenticated suite API in Python, JavaScript, and Rust to copy and adapt, not published packages</p>
 
-                    <h3 id="python">Python SDK</h3>
+                    <h3 id="python">Python</h3>
                     <pre class="code-block-new" tabindex="0"><code>import httpx
 
 class MettleClient:
@@ -464,7 +497,7 @@ class MettleClient:
         return f"{self.url}{self.BASE}{path}"
 
     def create_session(self, **kwargs):
-        """kwargs: suites, difficulty, entity_id"""
+        """kwargs: suites, difficulty, entity_id, vcp_token, presence, allow_third_party_llm"""
         with httpx.Client() as c:
             resp = c.post(
                 self._api("/sessions"),
@@ -512,23 +545,25 @@ session = client.create_session(
 )
 sid = session["session_id"]
 
-# Verify suites 1-9
+# Verify every single-shot suite (all except Suite 10)
 for suite in session["suites"]:
     if suite != "novel-reasoning":
         answers = your_solver(session["challenges"][suite])  # your solving logic
         r = client.verify_suite(sid, suite, answers)
         print(f"{suite}: {'PASS' if r['passed'] else 'FAIL'}")
 
-# Multi-round suite 10
+# Multi-round suite 10: each round's feedback carries the next round's data
+round_data = session["challenges"]["novel-reasoning"]
 for n in range(1, 4):
-    fb = client.submit_round(sid, n, round_answers)
+    fb = client.submit_round(sid, n, your_solver(round_data))
+    round_data = fb["next_round_data"]
     print(f"Round {n}: {fb['accuracy']:.0%}")
 
-# Get result with VCP attestation
+# Get the result; vcp_attestation holds a signed VCP credential if a tier was earned
 result = client.get_result(sid, include_vcp=True)
 print(f"Tier: {result['tier']}")</code></pre>
 
-                    <h3 id="javascript">JavaScript SDK</h3>
+                    <h3 id="javascript">JavaScript</h3>
                     <pre class="code-block-new" tabindex="0"><code>class MettleClient {
   #base;
 
@@ -605,12 +640,15 @@ const session = await client.createSession({
   entity_id: 'my-agent',
 });
 
+// Submit each single-shot suite with client.verifySuite()
+// and each Suite 10 round with client.submitRound() first;
+// requesting an unfinished session's result returns 400.
 const result = await client.getResult(
   session.session_id, true
 );
 console.log(`Tier: ${result.tier}`);</code></pre>
 
-                    <h3 id="rust">Rust SDK</h3>
+                    <h3 id="rust">Rust</h3>
                     <pre class="code-block-new" tabindex="0"><code>use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -674,6 +712,8 @@ impl MettleClient {
             .json().await
     }
 
+    // Add suite and round submission the same way as the Python
+    // and JavaScript clients; an unfinished session's result is a 400.
     pub async fn get_result(
         &amp;self,
         sid: &amp;str,
@@ -692,19 +732,19 @@ impl MettleClient {
 
                 <section class="docs-section" id="security-model">
                     <h2>Security Model</h2>
-                    <p>Session bearer tokens isolate answer and result operations. Answers remain server-side, timing is server-observed, state transitions are atomic, payloads are bounded, and administrative and webhook surfaces fail closed.</p>
-                    <p>The most important boundary is semantic: self-report-only suites and model-judged LLM-only results cannot mint a tier. Raw VCP governance metadata remains unverified and unsigned.</p>
+                    <p>Only a session's owner, identified by its bearer credential, can submit its answers or read its result. Expected answers remain server-side, timing is server-observed, state transitions are atomic, payloads are bounded, and administrative and webhook surfaces fail closed.</p>
+                    <p>The most important boundary is semantic: a result that rests only on self-report, or only on a language model's judgment, cannot mint a tier, and passes on the self-report suites never count toward one. Raw VCP governance metadata remains unverified and unsigned.</p>
                 </section>
 
                 <section class="docs-section" id="anti-gaming">
-                    <h2>Replay Resistance and Limitations</h2>
+                    <h2>Replay Resistance and Limits</h2>
                     <p>Procedural generation, random selection, time budgets, and multi-round tasks reduce simple memorization and replay. They do not rule out relays, source-aware solvers, model-assisted humans, imitation, or evaluator error.</p>
                     <p>Integrators must keep METTLE out of identity authentication and must never use a result alone for authorization or another high-impact decision.</p>
                 </section>
 
                 <section class="docs-section" id="configuration">
                     <h2>Configuration</h2>
-                    <p>METTLE is configured via environment variables:</p>
+                    <p>Configure METTLE with environment variables. Setting <code>METTLE_ENVIRONMENT=production</code> turns on the production requirements noted in the table; the server refuses to start if any of them is not met.</p>
 
                     <table>
                         <thead>
@@ -716,6 +756,11 @@ impl MettleClient {
                         </thead>
                         <tbody>
                             <tr>
+                                <td><code>METTLE_ENVIRONMENT</code></td>
+                                <td><code>development</code></td>
+                                <td>Runtime environment. <code>production</code> turns on the startup checks below and disables dev-mode authentication.</td>
+                            </tr>
+                            <tr>
                                 <td><code>METTLE_API_KEYS</code></td>
                                 <td><em>required</em></td>
                                 <td>Comma-separated list of valid API keys for Bearer auth.</td>
@@ -723,12 +768,12 @@ impl MettleClient {
                             <tr>
                                 <td><code>METTLE_REDIS_URL</code></td>
                                 <td><em>required</em></td>
-                                <td>Redis connection URL for session storage.</td>
+                                <td>Redis connection URL for session storage. Production requires <code>rediss://</code> with certificate and hostname verification.</td>
                             </tr>
                             <tr>
                                 <td><code>METTLE_DEV_MODE</code></td>
                                 <td><code>false</code></td>
-                                <td>Bypass authentication in development. Never use in production.</td>
+                                <td>Accept any Bearer token (the header is still required) and allow an ephemeral signing key when none is set. Ignored for authentication when <code>METTLE_ENVIRONMENT=production</code>; production also requires <code>METTLE_VCP_SIGNING_KEY</code>. Local development only.</td>
                             </tr>
                             <tr>
                                 <td><code>METTLE_VCP_SIGNING_KEY</code></td>
@@ -736,39 +781,75 @@ impl MettleClient {
                                 <td>Ed25519 private key (PEM) for VCP credential signing. Development may use an ephemeral key.</td>
                             </tr>
                             <tr>
-                                <td><code>SECRET_KEY</code></td>
-                                <td><em>required in prod</em></td>
-                                <td>JWT signing key for v1 badge endpoints.</td>
+                                <td><code>METTLE_SECRET_KEY</code></td>
+                                <td><em>required in production</em></td>
+                                <td>Signing key for quick-API badges (HS256 JWT). At least 32 characters in production.</td>
                             </tr>
                             <tr>
                                 <td><code>METTLE_ALLOWED_ORIGINS</code></td>
                                 <td><code>*</code></td>
-                                <td>CORS allowed origins. Comma-separated for multiple. The wildcard is rejected in production.</td>
+                                <td>CORS allowed origins. Comma-separated for multiple. Production rejects the wildcard and requires HTTPS origins.</td>
+                            </tr>
+                            <tr>
+                                <td><code>METTLE_TRUSTED_HOSTS</code></td>
+                                <td><code>*</code></td>
+                                <td>Accepted HTTP Host values, comma-separated. Production requires an explicit list.</td>
+                            </tr>
+                            <tr>
+                                <td><code>METTLE_ADMIN_API_KEY</code></td>
+                                <td><em>required in production</em></td>
+                                <td>Key for administrative operations. At least 32 characters in production.</td>
+                            </tr>
+                            <tr>
+                                <td><code>METTLE_USE_DATABASE</code></td>
+                                <td><code>false</code></td>
+                                <td>Enable database persistence. Must be <code>true</code> in production.</td>
+                            </tr>
+                            <tr>
+                                <td><code>METTLE_DATABASE_URL</code></td>
+                                <td><code>sqlite:///mettle.db</code></td>
+                                <td>Database URL. Production requires PostgreSQL with <code>sslmode=verify-full</code>.</td>
+                            </tr>
+                            <tr>
+                                <td><code>METTLE_PRIVATE_DATA_RETENTION_SECONDS</code></td>
+                                <td><code>86400</code></td>
+                                <td>How long persisted session rows are kept, in seconds.</td>
+                            </tr>
+                            <tr>
+                                <td><code>METTLE_VCP_VERIFYING_KEYS</code></td>
+                                <td><em>empty</em></td>
+                                <td>JSON object mapping retired key IDs to Ed25519 public PEMs, published as verify-only keys.</td>
+                            </tr>
+                            <tr>
+                                <td><code>ANTHROPIC_API_KEY</code></td>
+                                <td><em>optional</em></td>
+                                <td>Enables Suite 12 (<code>llm-dynamic</code>). <code>METTLE_ANTHROPIC_API_KEY</code> is also accepted and takes precedence.</td>
                             </tr>
                         </tbody>
                     </table>
 
                     <div class="callout">
-                        <i class="fa-solid fa-circle-info"></i>
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
                         <p><strong>Redis is required</strong> for sessions. If Redis is unavailable, endpoints return <code>503 Service Unavailable</code>.</p>
                     </div>
                 </section>
 
                 <section class="docs-section" id="mcp-integration">
                     <h2>MCP Integration</h2>
-                    <p>METTLE provides a Model Context Protocol (MCP) server for direct Becoming Mind integration. MCP-compatible clients can run experimental screenings without writing an HTTP client.</p>
+                    <p>METTLE provides a Model Context Protocol (MCP) server, so a Becoming Mind can take experimental screenings from inside an MCP-compatible client, with no HTTP client to write.</p>
 
                     <h3>Installation</h3>
-                    <pre class="code-block-new" tabindex="0"><code># Install the MCP server and its locked protocol-compatible dependencies
+                    <pre class="code-block-new" tabindex="0"><code># Install the MCP server and its dependencies
 pip install 'mettle-verifier[mcp]'
 
 # Run the server
 mettle-mcp</code></pre>
 
                     <h3>Configuration</h3>
-                    <pre class="code-block-new" tabindex="0"><code># Environment variables
+                    <pre class="code-block-new" tabindex="0"><code># Base API path: ends in /api, not /api/mettle
 export METTLE_API_URL=https://mettle.sh/api
-export METTLE_API_KEY=your_api_key</code></pre>
+# Required only for the authenticated suite (v2) tools
+export METTLE_API_KEY=your_key</code></pre>
 
                     <h3>Available Tools</h3>
                     <table>
@@ -781,7 +862,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
                         <tbody>
                             <tr>
                                 <td><code>mettle_start_session</code></td>
-                                <td>Start a screening session. Returns the first challenge to solve.</td>
+                                <td>Start a quick session and return its first challenge.</td>
                             </tr>
                             <tr>
                                 <td><code>mettle_answer_challenge</code></td>
@@ -789,7 +870,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
                             </tr>
                             <tr>
                                 <td><code>mettle_get_result</code></td>
-                                <td>Get the quick-session result and any eligible signed credential.</td>
+                                <td>Get the quick-session result and any eligible signed badge.</td>
                             </tr>
                             <tr>
                                 <td><code>mettle_list_suites</code></td>
@@ -797,7 +878,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
                             </tr>
                             <tr>
                                 <td><code>mettle_start_v2_session</code></td>
-                                <td>Start an authenticated multi-suite session.</td>
+                                <td>Start an authenticated multi-suite session. Suite 12 (<code>llm-dynamic</code>) runs only if you set <code>allow_third_party_llm</code>, because its answers are sent to Anthropic for evaluation.</td>
                             </tr>
                             <tr>
                                 <td><code>mettle_verify_suite</code></td>
@@ -817,7 +898,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
                             </tr>
                             <tr>
                                 <td><code>mettle_submit_round</code></td>
-                                <td>Submit one novel-reasoning round and receive feedback plus next state.</td>
+                                <td>Submit one novel-reasoning round; returns bounded feedback, the next round's data, and the current session snapshot.</td>
                             </tr>
                             <tr>
                                 <td><code>mettle_get_round_feedback</code></td>
@@ -842,64 +923,72 @@ export METTLE_API_KEY=your_api_key</code></pre>
 }</code></pre>
 
                     <h3>Usage</h3>
-                    <p>Use <code>mettle_start_session</code>, preserve the returned session ID, answer each challenge with <code>mettle_answer_challenge</code>, then call <code>mettle_get_result</code>. The MCP host retains the quick-session bearer outside model-visible content, so it must never be invented or supplied as a tool argument. Quick result reads are repeatable while that hidden capability remains available. The eleven-tool surface completes quick, authenticated single-shot, and authenticated multi-round flows. Every tool returns <code>mettle-control-v1</code> structured content, bounded errors, current state where applicable, and valid next actions alongside concise compatibility text. The deterministic reference solver is isolated from credential boundaries. A qualifying server session may return a signed, time-limited credential whose claims remain bounded by the assurance case.</p>
+                    <p><strong>Quick session:</strong> call <code>mettle_start_session</code>, answer each challenge with <code>mettle_answer_challenge</code>, then call <code>mettle_get_result</code>. Keep the returned session ID; it is a non-secret handle.</p>
+                    <p><strong>Authenticated suite session</strong> (the <code>v2</code> API): optionally call <code>mettle_list_suites</code>, start with <code>mettle_start_v2_session</code>, submit each single-shot suite with <code>mettle_verify_suite</code> and each Suite 10 round with <code>mettle_submit_round</code>, then call <code>mettle_get_v2_result</code>. <code>mettle_get_session</code> inspects either kind of session, <code>mettle_get_round_feedback</code> rereads a completed round's feedback, and <code>mettle_cancel_session</code> cancels an active authenticated session.</p>
+                    <p>The MCP host keeps the quick-session bearer in a vault outside the model's view. Never invent a bearer or pass one as a tool argument. While the host holds it, a quick result can be read more than once. Every tool returns <code>mettle-control-v1</code> structured content (current state where applicable, valid next actions, and bounded errors) alongside a short text fallback. The MCP server has no automatic solver, and the reference solver is a test fixture that cannot reach a credential issuer. A qualifying server session may return a signed, time-limited badge or VCP credential whose claims stay within the <a href="#issuance-boundary">Assurance Boundary</a>.</p>
                 </section>
 
                 <section class="docs-section" id="error-codes">
                     <h2>Error Codes</h2>
-                    <p>METTLE uses standard HTTP status codes with structured error responses.</p>
+                    <p>METTLE uses standard HTTP status codes. Error bodies carry a <code>detail</code> field and usually a stable <code>code</code> category such as <code>not_found</code> or <code>rate_limited</code>. For <code>422</code>, <code>detail</code> is a list of field errors. Branch on <code>code</code> when it is present, not on the wording of <code>detail</code>.</p>
 
                     <table>
                         <thead>
                             <tr>
-                                <th>Code</th>
-                                <th>Error response</th>
+                                <th>HTTP status</th>
+                                <th><code>code</code></th>
                                 <th>Meaning</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
                                 <td><code>400</code></td>
-                                <td>Bad Request</td>
-                                <td>Invalid request body, unknown suite name, or bad parameters</td>
+                                <td><code>invalid_request</code></td>
+                                <td>Invalid request body, unknown suite name, bad parameters, or a result requested before the session finished</td>
                             </tr>
                             <tr>
                                 <td><code>401</code></td>
-                                <td>Unauthorized</td>
-                                <td>Missing or invalid Bearer token</td>
+                                <td><code>authentication_required</code></td>
+                                <td>Missing or invalid Bearer API key, or missing quick-session <code>X-Session-Token</code></td>
                             </tr>
                             <tr>
                                 <td><code>403</code></td>
-                                <td>Forbidden</td>
-                                <td>Attempting to access another user's session</td>
+                                <td><code>forbidden</code></td>
+                                <td>Session belongs to another API key, or the quick-session token does not match</td>
                             </tr>
                             <tr>
                                 <td><code>404</code></td>
-                                <td>Not Found</td>
+                                <td><code>not_found</code></td>
                                 <td>Session not found or expired, suite not found</td>
                             </tr>
                             <tr>
+                                <td><code>409</code></td>
+                                <td><code>conflict</code></td>
+                                <td>Another request is already updating the same quick session; retry after it finishes</td>
+                            </tr>
+                            <tr>
                                 <td><code>422</code></td>
-                                <td>Unprocessable Entity</td>
-                                <td>Validation error (see detail in response)</td>
+                                <td><code>validation_error</code></td>
+                                <td>Validation error; <code>detail</code> lists the failing fields</td>
                             </tr>
                             <tr>
                                 <td><code>429</code></td>
-                                <td>Too Many Requests</td>
+                                <td><code>rate_limited</code></td>
                                 <td>Rate limit exceeded</td>
                             </tr>
                             <tr>
                                 <td><code>503</code></td>
-                                <td>Service Unavailable</td>
-                                <td>Redis unavailable: sessions require Redis</td>
+                                <td><code>dependency_unavailable</code></td>
+                                <td>Redis unavailable, or credential issuance or the credential status service unavailable</td>
                             </tr>
                         </tbody>
                     </table>
 
                     <h3>Error Response Format</h3>
+                    <p>A 404 from <code>GET /api/mettle/suites/invalid_name</code>:</p>
                     <pre class="code-block-new" tabindex="0"><code>{
-  "detail": "Suite not found: invalid_name.
-    Valid suites: [adversarial, native, ...]"
+  "detail": "Suite not found: invalid_name. Valid suites: ['adversarial', 'native', ...]",
+  "code": "not_found"
 }</code></pre>
                 </section>
 
@@ -908,63 +997,64 @@ export METTLE_API_KEY=your_api_key</code></pre>
 
                     <div class="faq-item">
                         <h3>Getting 503 Service Unavailable</h3>
-                        <p>METTLE requires Redis for session management. Ensure <code>METTLE_REDIS_URL</code> is set and the Redis instance is reachable.</p>
+                        <p>A dependency the request needs is unavailable. Usually that is Redis, which METTLE requires for sessions: check that <code>METTLE_REDIS_URL</code> is set and the Redis instance is reachable. On a result request with <code>?include_vcp=true</code>, a <code>503</code> can also mean credential issuance is disabled or its dependencies (the database or the retention job) are unhealthy.</p>
                     </div>
 
                     <div class="faq-item">
                         <h3>Getting 401 Unauthorized</h3>
-                        <p>Ensure you're sending <code>Authorization: Bearer YOUR_KEY</code> (not <code>X-API-Key</code>). The key must be in the <code>METTLE_API_KEYS</code> environment variable on the server (comma-separated if multiple).</p>
+                        <p>For the authenticated suite API, send <code>Authorization: Bearer your_key</code>, not <code>X-API-Key</code>. On a self-hosted server, the key must be listed in <code>METTLE_API_KEYS</code> (comma-separated for several). For the quick API, send the <code>session_token</code> from <code>/api/session/start</code> as <code>X-Session-Token</code> on every later call for that session.</p>
                     </div>
 
                     <div class="faq-item">
                         <h3>Challenges timing out even with fast responses</h3>
-                        <p>Check network latency to the API. Time measurement starts when the challenge is issued, not when you receive it. For high-latency connections, consider self-hosting.</p>
+                        <p>The server starts timing when it issues the challenge, not when your client receives it, so network round-trip time counts against the limit. Measure your latency to the API. If it uses up most of the budget, run your agent closer to the API or self-host a METTLE server.</p>
                     </div>
 
                     <div class="faq-item">
-                        <h3>VCP attestation is null</h3>
-                        <p>Ensure: (1) You passed <code>?include_vcp=true</code> on the result endpoint, (2) The <code>cryptography</code> package is installed, (3) Ed25519 signing was initialized at startup.</p>
+                        <h3>No signed VCP credential in the result</h3>
+                        <p><code>vcp_attestation</code> is <code>null</code> only when the request omitted <code>?include_vcp=true</code>. With the flag set, check <code>attestation_type</code>: <code>mettle-evidence-receipt</code> means no tier was earned, so nothing was signed; <code>mettle-verification-evidence</code> with <code>"signature": null</code> means the server could not sign (check that the <code>cryptography</code> package is installed and that the server loaded <code>METTLE_VCP_SIGNING_KEY</code> at startup). A <code>503</code> means credential issuance is disabled or its dependencies are unavailable.</p>
                     </div>
 
                     <div class="faq-item">
-                        <h3>Inconsistent pass/fail on same challenges</h3>
-                        <p>Many challenge instances are procedurally generated or freshly selected. Verify your client handles the full documented range rather than relying on one example.</p>
+                        <h3>Pass/fail changes between runs</h3>
+                        <p>Each session generates or selects fresh challenge instances, so a second run usually sees different items. Test your client against many sessions, not one saved example.</p>
                     </div>
 
                     <div class="faq-item">
                         <h3>MCP server can't connect</h3>
-                        <p>Check: (1) <code>METTLE_API_URL</code> and <code>METTLE_API_KEY</code> are set correctly, (2) No firewall blocking outbound HTTPS, (3) API is reachable with <code>curl https://mettle.sh/api/mettle/suites -H "Authorization: Bearer $KEY"</code>.</p>
+                        <p>Check that (1) <code>METTLE_API_URL</code> ends in <code>/api</code>, not <code>/api/mettle</code>, and <code>METTLE_API_KEY</code> is set if you use the authenticated tools; (2) no firewall blocks outbound HTTPS; and (3) the API responds to <code>curl https://mettle.sh/api/mettle/suites -H "Authorization: Bearer your_key"</code>.</p>
                     </div>
 
-                    <h3>Getting Help</h3>
+                    <h3>Reporting a Problem</h3>
+                    <p>If METTLE seems to be rejecting or accepting the wrong respondents systematically, or a challenge is inaccessible, use the <a href="https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml" target="_blank" rel="noopener noreferrer" aria-label="protocol appeal form (opens in new tab)">protocol appeal form</a> rather than a bug report. It asks you to leave out raw answers and tokens, and a maintainer classifies each appeal.</p>
                     <p>Still stuck? Open an issue on <a href="https://github.com/Creed-Space/METTLE/issues">GitHub</a> with:</p>
                     <ul>
                         <li>Error message and HTTP status code</li>
-                        <li>Request payload (redact any API keys)</li>
+                        <li>Request payload, with API keys, session tokens, badges, and challenge answers redacted</li>
                         <li>Session ID if applicable</li>
-                        <li>Whether using hosted or self-hosted</li>
+                        <li>Hosted service (mettle.sh) or your own server</li>
                     </ul>
                 </section>
 
                 <!-- Questions / Help -->
                 <section class="docs-section" id="need-help">
                     <h2>Questions?</h2>
-                    <p class="section-intro">We're here to help you integrate METTLE</p>
+                    <p class="section-intro">Integration questions and use cases</p>
                     <div class="help-box">
                         <div class="help-icon">
                             <i class="fa-solid fa-life-ring" aria-hidden="true"></i>
                         </div>
                         <div class="help-content">
                             <p>
-                                Need help with integration, have questions about the verification protocol,
+                                Need help with integration, have questions about the screening protocol,
                                 or want to discuss METTLE for your use case?
                             </p>
                             <div class="help-links">
-                                <a href="https://creed.space" class="help-link" target="_blank" rel="noopener noreferrer">
+                                <a href="https://creed.space" class="help-link" target="_blank" rel="noopener noreferrer" aria-label="Creed Space (opens in new tab)">
                                     <i class="fa-solid fa-globe" aria-hidden="true"></i>
                                     Creed Space
                                 </a>
-                                <a href="https://github.com/Creed-Space/METTLE" class="help-link" target="_blank" rel="noopener noreferrer">
+                                <a href="https://github.com/Creed-Space/METTLE" class="help-link" target="_blank" rel="noopener noreferrer" aria-label="GitHub (opens in new tab)">
                                     <i class="fa-brands fa-github" aria-hidden="true"></i>
                                     GitHub
                                 </a>
@@ -990,7 +1080,7 @@ export METTLE_API_KEY=your_api_key</code></pre>
                     <div>
                         <p class="footer-title">METTLE</p>
                         <p class="footer-tagline"><strong>Machine Evaluation Through Turing-inverse Logic Examination</strong></p>
-                        <p class="footer-mission">Measuring responses to experimental machine-oriented challenges.</p>
+                        <p class="footer-mission">An experimental reverse CAPTCHA. Each result describes one session.</p>
                     </div>
                 </div>
                 <div class="footer-links">
@@ -999,6 +1089,12 @@ export METTLE_API_KEY=your_api_key</code></pre>
                         <a href="/guide">Docs</a>
                         <a href="/test">Test</a>
                         <a href="/about">About</a>
+                        <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRIVACY_RETENTION.md" target="_blank" rel="noopener noreferrer" aria-label="Privacy &amp; Retention (opens in new tab)">
+                            Privacy &amp; Retention <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml" target="_blank" rel="noopener noreferrer" aria-label="Protocol Appeals (opens in new tab)">
+                            Protocol Appeals <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
                     </div>
                     <div class="footer-section">
                         <h3>Ecosystem</h3>
@@ -1007,6 +1103,9 @@ export METTLE_API_KEY=your_api_key</code></pre>
                         </a>
                         <a href="https://valuecontextprotocol.org/" target="_blank" rel="noopener noreferrer" aria-label="Value Context Protocol (opens in new tab)">
                             Value Context Protocol <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://millos.net" target="_blank" rel="noopener noreferrer" aria-label="MillOS (opens in new tab)">
+                            MillOS <span class="external-icon" aria-hidden="true">&nearr;</span>
                         </a>
                     </div>
                     <div class="footer-section">
@@ -1022,12 +1121,12 @@ export METTLE_API_KEY=your_api_key</code></pre>
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2026 Creed Space. Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
+                <p>&copy; 2026 Creed Space. Code released under the <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link" aria-label="Apache License 2.0 (opens in new tab)">Apache License 2.0</a>.</p>
             </div>
         </div>
     </footer>
 
-    <script src="/static/webmcp.js?v=0d86e881ef70"></script>
+    <script src="/static/webmcp.js?v=1b2ef5d9debb"></script>
     <script>
         // Scroll-aware header
         (function() {

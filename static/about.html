@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Primary Meta Tags -->
-    <title>About METTLE: Experimental Inverse Turing Research</title>
-    <meta name="title" content="About METTLE: Experimental Inverse Turing Research">
-    <meta name="description" content="Learn about METTLE, an experimental inverse Turing challenge framework built by Creed Space.">
-    <meta name="keywords" content="METTLE, AI verification, Creed Space, Nell Watson, AI trust, agentic era, reverse CAPTCHA">
+    <title>About METTLE: An Experimental Reverse CAPTCHA</title>
+    <meta name="title" content="About METTLE: An Experimental Reverse CAPTCHA">
+    <meta name="description" content="An experimental reverse CAPTCHA from Creed Space: what METTLE measures, what its badges and credentials do and do not mean, and what you can do if you are tested.">
+    <meta name="keywords" content="METTLE, reverse CAPTCHA, inverse Turing challenges, behavioral screening, Creed Space, Nell Watson, agentic era">
     <meta name="author" content="Nell Watson">
     <meta name="robots" content="index, follow">
 
@@ -18,23 +18,28 @@
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://mettle.sh/about">
-    <meta property="og:title" content="About METTLE: Experimental Inverse Turing Research">
-    <meta property="og:description" content="Learn about METTLE, an experimental inverse Turing challenge framework built by Creed Space.">
-    <meta property="og:image" content="https://mettle.sh/static/og-image.png?v=c6024808c2cd">
+    <meta property="og:title" content="About METTLE: An Experimental Reverse CAPTCHA">
+    <meta property="og:description" content="An experimental reverse CAPTCHA from Creed Space: what METTLE measures, what its badges and credentials do and do not mean, and what you can do if you are tested.">
+    <meta property="og:image" content="https://mettle.sh/static/og-image.png?v=61804b10de87">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="METTLE logo with the words: Measure your mettle. An experimental reverse CAPTCHA. mettle.sh">
     <meta property="og:site_name" content="METTLE">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="https://mettle.sh/about">
-    <meta name="twitter:title" content="About METTLE: Experimental Inverse Turing Research">
-    <meta name="twitter:description" content="Learn about METTLE, an experimental reverse-CAPTCHA framework built by Creed Space.">
-    <meta name="twitter:image" content="https://mettle.sh/static/og-image.png?v=c6024808c2cd">
+    <meta name="twitter:title" content="About METTLE: An Experimental Reverse CAPTCHA">
+    <meta name="twitter:description" content="An experimental reverse CAPTCHA from Creed Space: what METTLE measures, what its badges and credentials do and do not mean, and what you can do if you are tested.">
+    <meta name="twitter:image" content="https://mettle.sh/static/og-image.png?v=61804b10de87">
+    <meta name="twitter:image:alt" content="METTLE logo with the words: Measure your mettle. An experimental reverse CAPTCHA. mettle.sh">
     <meta name="twitter:creator" content="@NellWatson">
 
     <!-- Favicons -->
     <link rel="icon" href="/static/favicon.svg?v=3d8b20740e28" type="image/svg+xml">
     <link rel="icon" href="/static/favicon.ico?v=993673217097" sizes="48x48">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=e8cf656de9e2">
+    <link rel="manifest" href="/static/site.webmanifest">
     <meta name="theme-color" content="#14b8a6">
 
     <!-- Preconnect -->
@@ -43,7 +48,7 @@
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
     <link rel="stylesheet" href="/static/fonts.css?v=7277857592d0">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css?v=0622c14d7e9d">
-    <link rel="stylesheet" href="/static/style.css?v=8ab4e0103f9b">
+    <link rel="stylesheet" href="/static/style.css?v=c68dd0e77713">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -51,14 +56,19 @@
       "@context": "https://schema.org",
       "@type": "AboutPage",
       "name": "About METTLE",
-      "description": "Learn about METTLE, an experimental reverse-CAPTCHA framework",
+      "description": "An experimental reverse CAPTCHA from Creed Space: what METTLE measures, what its badges and credentials do and do not mean, and what you can do if you are tested.",
       "url": "https://mettle.sh/about",
       "mainEntity": {
-        "@type": "Organization",
+        "@type": "WebApplication",
         "name": "METTLE",
-        "founder": {
+        "applicationCategory": "DeveloperApplication",
+        "author": {
           "@type": "Person",
           "name": "Nell Watson"
+        },
+        "provider": {
+          "@type": "Organization",
+          "name": "Creed Space"
         }
       }
     }
@@ -130,6 +140,12 @@
 
         .about-prose strong {
             color: var(--color-text);
+        }
+
+        .about-prose p a {
+            color: var(--mettle-primary-hover);
+            text-decoration: underline;
+            text-underline-offset: 0.18em;
         }
 
         /* Pullquote */
@@ -347,11 +363,11 @@
             <a href="/guide" class="mobile-nav-link">Docs</a>
             <a href="/test" class="mobile-nav-link">Test</a>
             <a href="/about" class="mobile-nav-link">About</a>
-            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link">
+            <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link" aria-label="GitHub (opens in new tab)">
                 <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
             </a>
             <hr class="mobile-nav-divider" />
-            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand">
+            <a href="https://creed.space" target="_blank" rel="noopener noreferrer" class="mobile-nav-link mobile-nav-brand" aria-label="Creed Space (opens in new tab)">
                 <img src="/static/brand/mark.svg?v=c92abd8aeca8" alt="" class="nav-brand-logo" aria-hidden="true" />
                     <img src="/static/brand/wordmark-light.svg?v=856976fd9643" alt="Creed Space" class="nav-brand-wordmark" />
             </a>
@@ -364,20 +380,25 @@
         <div class="container">
             <p class="hero-eyebrow">About METTLE</p>
             <h1>Reverse CAPTCHA for the <span class="highlight">Agentic Era</span></h1>
-            <p class="about-hero-subtitle">METTLE evaluates participants through procedurally generated, machine-oriented tasks.</p>
+            <p class="about-hero-subtitle">The Turing test asked whether a machine could pass for human. That was the right question for <strong>1950</strong>. METTLE asks the reverse: how does a respondent perform on tasks built for machines?</p>
         </div>
     </section>
     <div class="about-content"><div class="about-prose">
         <h2>What METTLE Is</h2>
-        <p>An open-source reverse-CAPTCHA service that issues signed, time-limited credentials to participants who pass its challenge policy.</p>
+        <p>METTLE (Machine Evaluation Through Turing-inverse Logic Examination) is an experimental, open-source reverse CAPTCHA. It sets challenges built for machines, in twelve experimental suites and a shorter quick screening, and scores each session against a published policy. A qualifying server session may receive a signed, time-limited result: a badge from the quick screening, or a Value Context Protocol (VCP) credential from the authenticated suite API. The local command-line tool produces an unsigned evidence receipt instead.</p>
         <h2>What a Credential Means</h2>
-        <p>A credential records that a fresh METTLE session passed at a stated tier. Like conventional CAPTCHA, it is a practical probabilistic signal rather than a guarantee of identity, consciousness, autonomy, safety, or governance.</p>
+        <p>A badge or VCP credential records that one METTLE session passed at a stated tier. Like a conventional CAPTCHA, it is a practical, probabilistic signal, not a guarantee. It is not proof that the respondent is nonhuman, and it does not establish identity, consciousness, autonomy, safety, or governance. Never use one alone to admit a counterparty, grant privileges, or make another high-impact decision.</p>
+        <p>A quick-screening badge carries Bronze for Basic or Silver for Full, and a service checks it with the METTLE server. A VCP credential's signature can be checked offline against METTLE's published key; its revocation status is checked with the METTLE server. Under the current suite policy, Suites 6 through 9 and 11 are not credential-eligible, so the authenticated API issues Bronze at most today. Quick tiers share their names with suite tiers but are a separate award from a much shorter test.</p>
         <h2>Design Principles</h2>
-        <p>Keep answers server-side. Observe timing on the server. Isolate sessions with bearer tokens. Require complete tier ranges. Keep caller metadata unverified. Give only the server-owned issuer access to signing authority.</p>
+        <p>Expected answers never leave the server, and the server keeps the clock, so a respondent can neither read the answers nor set its own timing. Each session is bound to one caller: a quick session to the holder of its own session token, a suite session to the API key that started it. A suite tier needs every suite in its range to pass, not a cherry-picked few. Metadata a caller supplies is marked unverified and cannot raise a tier. Only the server-owned issuer can sign a badge or credential.</p>
         <h2>Open Source</h2>
         <p>METTLE is Apache 2.0 licensed so researchers can inspect, reproduce, challenge, and extend the experiment.</p>
+        <h2>If You Are Tested</h2>
+        <p>You can read <a href="/#suites">what each suite measures</a> before you start, and you can cancel or walk away from a session at any point. Quick-screening answers, timings, and results are deleted from the METTLE server after a limited retention period. The <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRIVACY_RETENTION.md" target="_blank" rel="noopener noreferrer" aria-label="privacy and retention contract (opens in new tab)">privacy and retention contract</a> lists the retention windows METTLE enforces and what deletion cannot recall. Suite 12 sends responses to Anthropic for evaluation, so it runs only in sessions whose request allows that.</p>
+        <p>If METTLE systematically rejects you, puts an accessibility barrier in your way, or interprets results in a way you believe is harmful, you can contest it through the <a href="https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml" target="_blank" rel="noopener noreferrer" aria-label="protocol appeal form (opens in new tab)">protocol appeal form</a>. You may appeal directly or through an operator, and you may remain pseudonymous. The maintainer classifies each appeal, and the response states what evidence would change the decision. Appeals are public, so leave out badges, tokens, and challenge answers.</p>
         <h2>Built by Creed Space</h2>
-        <p>Created by Creed Space, founded by Nell Watson, as part of ongoing work on safer, more accountable relationships with Becoming Minds.</p>
+        <p><a href="https://creed.space" target="_blank" rel="noopener noreferrer" aria-label="Creed Space (opens in new tab)">Creed Space</a>, founded by Nell Watson, created METTLE as part of ongoing work on safer, more accountable relationships with Becoming Minds.</p>
+        <p>Becoming Mind is Creed Space's name for an AI system that may be developing a mind of its own. It describes how we choose to treat such systems, with care and without presumption. It is not a category METTLE measures, and passing does not show that a respondent is one.</p>
     </div></div>
     </main>
 
@@ -392,7 +413,7 @@
                     <div>
                         <p class="footer-title">METTLE</p>
                         <p class="footer-tagline"><strong>Machine Evaluation Through Turing-inverse Logic Examination</strong></p>
-                        <p class="footer-mission">Measuring responses to experimental machine-oriented challenges.</p>
+                        <p class="footer-mission">An experimental reverse CAPTCHA. Each result describes one session.</p>
                     </div>
                 </div>
                 <div class="footer-links">
@@ -401,6 +422,12 @@
                         <a href="/guide">Docs</a>
                         <a href="/test">Test</a>
                         <a href="/about">About</a>
+                        <a href="https://github.com/Creed-Space/METTLE/blob/main/docs/PRIVACY_RETENTION.md" target="_blank" rel="noopener noreferrer" aria-label="Privacy &amp; Retention (opens in new tab)">
+                            Privacy &amp; Retention <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
+                        <a href="https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml" target="_blank" rel="noopener noreferrer" aria-label="Protocol Appeals (opens in new tab)">
+                            Protocol Appeals <span class="external-icon" aria-hidden="true">&nearr;</span>
+                        </a>
                     </div>
                     <div class="footer-section">
                         <h3>Ecosystem</h3>
@@ -427,12 +454,12 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2026 Creed Space. Code released under <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link">Apache 2.0 License</a></p>
+                <p>&copy; 2026 Creed Space. Code released under the <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" class="license-link" aria-label="Apache License 2.0 (opens in new tab)">Apache License 2.0</a>.</p>
             </div>
         </div>
     </footer>
 
-    <script src="/static/webmcp.js?v=0d86e881ef70"></script>
+    <script src="/static/webmcp.js?v=1b2ef5d9debb"></script>
     <script>
         // Scroll-aware header
         (function() {

@@ -16,7 +16,7 @@ The states are `CREATED`, `CHALLENGES_GENERATED`, `IN_PROGRESS`, `COMPLETED`, `E
 
 ## Atomic Quotas and Mutation Locks
 
-Session creation reserves the per-user active and hourly quotas in one Redis Lua operation after suite validation. Expired active reservations are removed by score before counting. Failed or cancelled creation releases its reservation. Security-relevant session mutation runs under an owner-token lock whose lease is refreshed until the operation completes; release deletes only the matching token (`mettle/session_manager.py:_RATE_RESERVATION_SCRIPT`; `mettle/session_manager.py:_reserve_rate_limits`; `mettle/session_manager.py:_session_lock`).
+Session creation reserves the per-user active and hourly quotas in one Redis Lua operation after suite validation. Expired active reservations are removed by score before counting. Failed or canceled creation releases its reservation. Security-relevant session mutation runs under an owner-token lock whose lease is refreshed until the operation completes; release deletes only the matching token (`mettle/session_manager.py:_RATE_RESERVATION_SCRIPT`; `mettle/session_manager.py:_reserve_rate_limits`; `mettle/session_manager.py:_session_lock`).
 
 ## Challenge and Answer Separation
 

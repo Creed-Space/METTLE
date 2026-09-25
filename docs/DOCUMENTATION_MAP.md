@@ -73,7 +73,7 @@ generated contract, and historical evidence before following any instruction.
 | `README.md` | Public product and integration boundary |
 | `docs/ASSURANCE_CASE.md` | Bounded claims, assumptions, residual risks, and evidence classes |
 | `docs/SECURITY_WHITEPAPER.md` | Security model and invariants |
-| `docs/VERIFICATION_SUITES.md` | Current suite semantics and scoring description |
+| `docs/VERIFICATION_SUITES.md` | Current suite semantics, question map, and scoring, written from `mettle/challenge_adapter.py`; its bannered "Historical design (not implemented)" section is not current behavior |
 | `docs/CREDENTIAL_TRANSPARENCY.md` | Credential families, algorithms, versions, and key lifecycle |
 | `docs/VCP_INTEGRATION.md` | Authenticated credential integration contract |
 | `docs/PRESENCE_PROTOCOL.md` | Holder-bound submission and presentation protocol |
@@ -106,14 +106,14 @@ of current runtime capability.
 
 ### Generated or machine-checked contracts
 
-| Artefact | Authority |
+| Artifact | Authority |
 |---|---|
 | `docs/openapi-v1.json` | Reviewed current REST schema snapshot |
 | `server.json` | Published packaged MCP server identity and version |
 | `fixtures/credentials/` | Cross-language credential interpretation fixtures |
 | `evaluation/*.json` | Evaluation input and aggregate output schemas |
 
-These artefacts describe current implemented contracts. A future typed operation
+These artifacts describe current implemented contracts. A future typed operation
 registry and generated capability manifest are planned in
 `docs/AGENTIC_SYSTEM_ROADMAP.md` and are not yet present.
 
@@ -141,7 +141,7 @@ exact-current preflight and explicit active scope.
 
 ## Change impact on documentation
 
-| Changed surface | Documents and artefacts that must be checked |
+| Changed surface | Documents and artifacts that must be checked |
 |---|---|
 | Suite name, challenge, score, threshold, tier | Protocol version, suite docs, architecture, assurance, README, static guidance, skill, wiki, evaluation, compatibility fixtures |
 | Session state or transition | Architecture, control contract, OpenAPI, MCP and WebMCP schemas, idempotency, errors, runbooks, tests |

@@ -21,11 +21,11 @@ A tier-qualifying completed session returns:
   "verified": true,
   "assurance": "mettle_behavioral_verification",
   "credential_eligible": true,
-  "tier": "platinum"
+  "tier": "bronze"
 }
 ```
 
-Bronze requires Suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11. Suite 12 is supplemental. Partial or cherry-picked suites remain tier `none`.
+The suite policy defines Bronze as Suites 1 through 5, Silver 1 through 7, Gold 1 through 9, and Platinum 1 through 11, and only credential-eligible passes count toward a range. Under the current suite policy, Suites 6 through 9 and 11 are not credential-eligible, so the authenticated API issues Bronze at most today; their passes appear under `supplemental_suites_passed`. Suite 12 is supplemental. Partial, failed, cherry-picked, self-report-only, or LLM-only results remain tier `none`.
 
 ## Creating a Session
 
@@ -53,7 +53,7 @@ Example:
 
 ```json
 {
-  "tier": "platinum",
+  "tier": "bronze",
   "vcp_attestation": {
     "auditor": "mettle.creed.space",
     "auditor_key_id": "mettle-vcp-v1",
@@ -66,7 +66,7 @@ Example:
       "subject_id": "authenticated-user-id",
       "entity_id": "caller-supplied-agent-id",
       "identity_binding": "self_asserted_by_authenticated_subject",
-      "tier": "platinum",
+      "tier": "bronze",
       "verified": true,
       "assurance": "mettle_behavioral_verification",
       "credential_eligible": true,
@@ -104,7 +104,7 @@ When a VCP token is supplied, METTLE may return a parsed snapshot:
   "governance_attestation": {
     "entity_id": "agent-42",
     "session_id": "...",
-    "tier": "platinum",
+    "tier": "bronze",
     "source_vcp_hash": "...",
     "source_verified": false,
     "framework": "custom",

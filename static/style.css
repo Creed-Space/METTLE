@@ -464,6 +464,12 @@ a:hover {
     line-height: var(--leading-relaxed);
 }
 
+/* A section's claim boundary: centered like the description, but in body ink. */
+.section-boundary {
+    color: var(--color-text);
+    margin-bottom: var(--space-md);
+}
+
 /* =============================================
    Explainer Video
    ============================================= */
@@ -2355,6 +2361,7 @@ a:hover {
 
     .footer-section a {
         display: inline-block;
+        margin-inline: 0.625rem;
     }
 }
 

@@ -38,7 +38,10 @@ reconstructing the rule from prose.
 A schema `1.1` credential records a bounded session result, tier, passed and
 failed suites, difficulty, subject, self-asserted entity if supplied, revocable
 identifier, status endpoint, issuance time, expiry, schema, and suite policy.
-Authenticated tiers require every suite in the corresponding contiguous range.
+Authenticated tiers require every suite in the corresponding contiguous range to
+pass and to be credential-eligible. Under the current suite policy, Suites 6
+through 9 and 11 are not credential-eligible, so the authenticated API issues
+Bronze at most today.
 The result endpoint atomically caches the first signed credential for a session,
 so concurrent retries return the same envelope. Unsigned evidence does not
 reserve the issuance slot.

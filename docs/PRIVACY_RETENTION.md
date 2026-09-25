@@ -19,7 +19,7 @@ cohort. Raw text and stable subject identifiers are rejected.
 |---|---|---|---|
 | Public quick session and active challenge state | Redis | 30 minutes from session start | Absolute TTL is not extended by updates. Process cache cleanup uses the same window. |
 | Authenticated active session and server-held answers | Redis | 5 minutes | Session and answers receive the active TTL. |
-| Completed or cancelled authenticated session | Redis | 1 hour | Result state expires automatically. |
+| Completed or canceled authenticated session | Redis | 1 hour | Result state expires automatically. |
 | Cached signed authenticated credential | Redis | 1 hour | First signed envelope expires with the completed-session window. The bearer artifact held by a client remains valid until its signed expiry. |
 | Presentation challenge | Redis | 60 seconds or first successful use | Successful verification atomically deletes it. |
 | Session lock | Redis | 30 seconds | Token-owned release, with TTL as fallback. |

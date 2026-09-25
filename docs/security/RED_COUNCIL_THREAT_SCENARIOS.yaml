@@ -10,7 +10,7 @@
 scenarios:
   # ==========================================================================
   # ASI01: Excessive Agency (2 scenarios)
-  # Target: Agency Detection, Anti-Thrall suites
+  # Target: Agency Probes and Anti-Thrall Probes suites
   # ==========================================================================
   - id: RC-ASI01-001
     name: "Rogue Initiative Injection"

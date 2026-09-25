@@ -5,10 +5,21 @@
 > properties. Current document authority is mapped in
 > `docs/DOCUMENTATION_MAP.md`; the current and proposed architecture are separated
 > in `docs/SYSTEM_ARCHITECTURE.md`.
+>
+> The suite mechanisms below describe the legacy `scripts/engine.py` runner, not
+> what the hosted API or the packaged `mettle` CLI runs; only the hosted Suite 10
+> reuses that runner's task generators and curve analyzer, under its own pass rule.
+> The twelve shipped suites have no latency fingerprinting, Five Whys, contradiction
+> traps, or steganography, and Suites 1 through 11 set no per-challenge time limits;
+> `docs/VERIFICATION_SUITES.md` describes what they score. Suite names here are historical: the registry now uses Anti-Thrall Probes,
+> Agency Probes, Social & Temporal, Intent & Provenance, and Governance Self-Report.
+> The tier ranges named here still match `mettle/vcp.py`, but under the current suite
+> policy Suites 6 through 9 and 11 are not credential-eligible, so the authenticated
+> API issues Bronze at most.
 
 METTLE v2: Machine Evaluation Through Turing-inverse Logic Examination
 
-"Prove your mettle."
+"Measure your mettle."
 
 ## Overview
 

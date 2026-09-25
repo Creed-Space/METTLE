@@ -7,7 +7,7 @@ single-winner credential caching.
 | Operation | Duplicate behavior | Safe client action |
 |---|---|---|
 | Start quick session | Every accepted request creates a new session and token. | Do not retry blindly after an ambiguous network failure. Start again only if an extra session is acceptable. |
-| Start authenticated session | Every accepted request creates a new session and reserves quota. Failed or cancelled construction releases its reservation. | Query or retain the returned session ID. An ambiguous creation is not idempotent. |
+| Start authenticated session | Every accepted request creates a new session and reserves quota. Failed or canceled construction releases its reservation. | Query or retain the returned session ID. An ambiguous creation is not idempotent. |
 | Submit quick answer | The current challenge ID and session token must match. A committed answer advances state; replay of the old challenge is rejected. | After an ambiguous response, read session state before resubmitting. |
 | Submit authenticated suite or round | Session ownership, expected suite or round, and a distributed session lock serialize mutation. Completed work cannot be applied twice. | Read session status or feedback before retry. |
 | Read result | Read-only. | Retry freely with the same authorization. |

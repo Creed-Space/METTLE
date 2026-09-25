@@ -3,7 +3,7 @@
 <!-- wiki:type = system -->
 <!-- wiki:scope = mettle -->
 <!-- wiki:created = 2026-05-23 -->
-<!-- wiki:updated = 2026-08-14 -->
+<!-- wiki:updated = 2026-09-24 -->
 <!-- wiki:status = active -->
 
 ## Summary
@@ -24,7 +24,7 @@ Basic sessions contain the first three types. Full sessions contain all five. Th
 
 ## Authenticated Suite Registry
 
-The hosted registry contains twelve suites. Suite labels name research hypotheses. Suites 6 through 9 and 11 score submitted statements or response patterns; those scores do not establish freedom, agency, authenticity, intent, safety, governance, or operator identity. Suite 12 uses an external model evaluator, requires explicit per-session acknowledgement that candidate responses are sent to Anthropic, and cannot raise a credential tier (`mettle/challenge_adapter.py:71-121`; `mettle/session_manager.py:create_session`; `mettle/vcp.py:TIER_RANGES`).
+The hosted registry contains twelve suites. Suite labels name research hypotheses. Suites 6 through 9 send fixed prompts, and Suites 6 through 9 and 11 score submitted statements with simple heuristics; those scores do not establish freedom, agency, authenticity, intent, safety, governance, or operator identity, and those suites are not credential-eligible. Suite 12 uses an external model evaluator, requires explicit per-session acknowledgment that candidate responses are sent to Anthropic, and cannot raise a credential tier (`mettle/challenge_adapter.py:SUITE_REGISTRY`; `mettle/session_manager.py:create_session`; `mettle/vcp.py:TIER_RANGES`).
 
 Novel-reasoning material is released sequentially. Session creation exposes only the first round, and each accepted round can release the next. The final-round accuracy threshold is mandatory in addition to the curve score (`mettle/challenge_adapter.py:generate_novel_reasoning`; `mettle/session_manager.py:submit_round`; `mettle/session_manager.py:_analyze_iteration_curve`).
 
@@ -34,8 +34,8 @@ Generators return public challenge data and server-held evaluation material sepa
 
 ## Security Boundary
 
-Cryptographic randomness prevents simple PRNG seed prediction. It does not prevent source-aware solving, model assistance, relaying, training leakage, or imitation. Timing is a policy input and network-dependent observation, not a human or machine classifier. A result is valid only as evidence that the named challenge policy passed (`README.md`; `docs/SECURITY_WHITEPAPER.md`).
+Cryptographic randomness prevents simple PRNG seed prediction. It does not prevent source-aware solving, model assistance, relaying, training leakage, or imitation. Timing is a policy input and network-dependent observation, not a human or machine classifier. A result is valid only as evidence that one session met the named challenge policy (`README.md`; `docs/SECURITY_WHITEPAPER.md`).
 
 ## Provenance
 
-Sources last checked on 2026-08-14: `mettle/challenger.py`, `mettle/challenge_adapter.py`, `mettle/session_manager.py`, `mettle/verifier.py`, `mettle/vcp.py`, and `docs/ASSURANCE_CASE.md`.
+Sources last checked on 2026-09-24: `mettle/challenger.py`, `mettle/challenge_adapter.py`, `mettle/session_manager.py`, `mettle/verifier.py`, `mettle/vcp.py`, and `docs/ASSURANCE_CASE.md`.

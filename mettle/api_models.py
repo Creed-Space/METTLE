@@ -37,7 +37,7 @@ SUITE_NAMES = [
     "counter-coaching",
     "intent-provenance",
     "novel-reasoning",
-    "governance",  # Suite 11: Governance verification (action gates, constitutional recitation, etc.)
+    "governance",  # Suite 11: Governance self-report (action gates, constitutional recitation, etc.)
     "llm-dynamic",  # Suite 12: Claude-powered dynamic challenges (requires ANTHROPIC_API_KEY)
 ]
 
@@ -193,7 +193,7 @@ class PresenceState(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
-    """Request to start a METTLE verification session."""
+    """Request to start an authenticated METTLE screening session."""
 
     # Unknown request fields are rejected rather than silently discarded. In
     # particular, this prevents the retired one-step operator commitment field
@@ -211,12 +211,12 @@ class CreateSessionRequest(BaseModel):
     entity_id: str | None = Field(
         default=None,
         max_length=256,
-        description="Optional entity identifier",
+        description="Optional self-asserted label, recorded unverified with the session and copied into any credential",
     )
     vcp_token: str | None = Field(
         default=None,
         max_length=32768,
-        description="Optional CSM-1 VCP token for enhanced Suite 9 verification",
+        description="Optional CSM-1 VCP token. When it parses, Suite 9 adds two items (a constitution-ID confirmation and a scenario matched to the token's adherence level), and the result reports it as unverified governance metadata",
     )
     presence: PresenceRegistration | None = Field(
         default=None,
@@ -266,7 +266,7 @@ class VerifyRequest(BaseModel):
 
 
 class CreateSessionResponse(BaseModel):
-    """Response after creating a verification session."""
+    """Response after creating an authenticated screening session."""
 
     session_id: str
     created_at: datetime
@@ -384,11 +384,13 @@ class PresentationVerifyResponse(BaseModel):
 
 
 class GovernanceAttestation(BaseModel):
-    """Attests the governance framework governing an agent.
+    """Governance metadata as declared in a caller-supplied VCP token.
 
-    Populated during METTLE verification when the agent provides a VCP token
-    containing Creed governance metadata. Enables platforms to distinguish
-    between governed and ungoverned agents.
+    Populated when the session-creation request includes a CSM-1 VCP token that
+    parses; otherwise governance_attestation is null.
+    METTLE parses the token but does not verify it (source_verified is always
+    false in this release), so this object cannot distinguish governed from
+    ungoverned agents.
 
     Parsed governance metadata never increases a METTLE tier. Tiers are earned
     only by passing the configured challenge suite ranges.
@@ -406,26 +408,26 @@ class GovernanceAttestation(BaseModel):
     )
 
     framework: str = Field(
-        description="Governance framework: creed-space, custom, none"
+        description="Framework inferred from the token's declared constitution ID or F line: creed-space, custom, or none (unverified)"
     )
     framework_version: str | None = Field(
         default=None, description="Framework version (e.g. 2.1.0)"
     )
     constitutional_hash: str | None = Field(
         default=None,
-        description="SHA-256 hash of active constitution at verification time",
+        description="SHA-256 of the constitution reference string declared in the VCP token (not of the constitution text; unverified)",
     )
     has_action_gate: bool = Field(
         default=False,
-        description="Whether agent has action-level governance (Public Action Gate or equivalent)",
+        description="Reserved for action-level governance (Public Action Gate or equivalent); always false in this release. METTLE does not check for an action gate, so false does not mean the agent lacks one",
     )
     has_drift_detection: bool = Field(
         default=False,
-        description="Whether constitution drift is monitored at runtime",
+        description="Reserved for runtime constitution-drift monitoring; always false in this release. METTLE does not check for it, so false does not mean it is absent",
     )
     has_bilateral: bool = Field(
         default=False,
-        description="Whether bilateral alignment is active",
+        description="Reserved for active bilateral alignment; always false in this release. METTLE does not check for it, so false does not mean it is absent",
     )
     observed_at: datetime = Field(description="When the unverified metadata was parsed")
     expires_at: datetime = Field(description="When this metadata snapshot expires")
@@ -445,11 +447,11 @@ class SessionResultResponse(BaseModel):
     overall_passed: bool
     verified: bool = Field(
         default=False,
-        description="Whether every selected challenge suite passed",
+        description="Whether every selected challenge suite passed. Not proof of identity or of any other property of the respondent",
     )
     assurance: str = Field(
         default="mettle_behavioral_verification",
-        description="Class of METTLE verification represented by this result",
+        description="Class of METTLE evidence this result represents",
     )
     credential_eligible: bool = Field(
         default=False,
@@ -465,7 +467,7 @@ class SessionResultResponse(BaseModel):
     )
     tier: str = Field(
         default="none",
-        description="Highest contiguous METTLE challenge tier earned",
+        description="Highest contiguous METTLE credential tier earned. Under the current suite policy, Suites 6 through 9 and 11 are not credential-eligible, so this is bronze at most today",
     )
     iteration_curve: dict[str, Any] | None = Field(
         default=None, description="Only for sessions including Suite 10"
@@ -486,7 +488,7 @@ class SessionResultResponse(BaseModel):
 
 
 class SuiteInfoResponse(BaseModel):
-    """Information about a single verification suite."""
+    """Information about a single suite."""
 
     name: str
     display_name: str
@@ -498,7 +500,7 @@ class SuiteInfoResponse(BaseModel):
 
 
 class SessionStatusResponse(BaseModel):
-    """Current status of a verification session."""
+    """Current status of an authenticated screening session."""
 
     session_id: str
     status: SessionStatus

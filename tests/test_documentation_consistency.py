@@ -24,6 +24,8 @@ PUBLIC_CLAIM_SURFACES = (
     "static/test.html",
     "README.md",
     "server.json",
+    "docs/openapi-v1.json",
+    "main.py",
     "skill/SKILL.md",
     "scripts/engine.py",
     "scripts/engine_legacy.py",
@@ -215,6 +217,7 @@ def test_video_states_no_absolute_certainty_claims() -> None:
             "a coached agent can't fake",
             "mettle verifies: ai",
             "malicious agent detection",
+            "prove your mettle",
         ):
             assert banned not in text, f"{surface} makes an absolute claim: {banned!r}"
 

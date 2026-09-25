@@ -201,8 +201,13 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="mettle_start_session",
             description=(
-                "Start a quick METTLE session and return the first challenge. "
-                "The session bearer stays in a caller-isolated vault."
+                "Start a METTLE quick screening session: a short run of timed "
+                "challenges that the server scores against a pass threshold. "
+                "Returns the first challenge. The session bearer stays in a "
+                "caller-isolated vault. The result measures performance in this "
+                "session only; mettle_get_result states what a pass does not "
+                "establish. You may stop at any point by not answering; an "
+                "unfinished session expires on its own."
             ),
             input_schema={
                 "type": "object",
@@ -249,8 +254,21 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="mettle_get_result",
             description=(
-                "Read a completed quick-session result. Reads are repeatable while "
-                "the hidden caller capability remains available."
+                "Read a completed quick-session result: whether the timed-challenge "
+                "pass threshold was met, the tier, and a signed, time-limited badge "
+                "if one was issued. badge is null when none was issued, and a tier "
+                "without a badge is not a credential. The result measures "
+                "performance in this session only. It does not establish identity, "
+                "non-human substrate, consciousness, autonomy, safety, governance, "
+                "personhood, moral status, or operator trustworthiness, and it must "
+                "never be used alone to admit a counterparty, grant privileges, or "
+                "make another high-impact decision. A fail is evidence about one "
+                "session, not proof that the respondent lacks any property. To "
+                "contest systematic false rejection, use "
+                "https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml; "
+                "issues are public, so include no tokens, badges, or challenge "
+                "answers. Reads are repeatable while the hidden caller capability "
+                "remains available."
             ),
             input_schema={
                 "type": "object",
@@ -282,7 +300,7 @@ async def list_tools() -> list[Tool]:
             name="mettle_start_v2_session",
             description=(
                 "Start an authenticated suite session. Responses to llm-dynamic "
-                "leave METTLE only after explicit acknowledgement."
+                "leave METTLE only after explicit acknowledgment."
             ),
             input_schema={
                 "type": "object",
@@ -334,8 +352,11 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="mettle_get_v2_result",
             description=(
-                "Read the terminal authenticated result and optional signed "
-                "credential or evidence receipt."
+                "Read the terminal authenticated result and optional signed VCP "
+                "credential or evidence receipt. Under the current suite policy the "
+                "authenticated API issues bronze at most. The result measures "
+                "performance in this session only and must never be used alone "
+                "to admit a counterparty or grant privileges."
             ),
             input_schema={
                 "type": "object",
@@ -582,7 +603,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> ToolResponse:
             )
             verdict = "VERIFIED" if data["verified"] else "NOT VERIFIED"
             lines = [
-                "METTLE Verification Result",
+                "METTLE Screening Result",
                 f"Status: {verdict}",
                 f"Passed: {data['passed']}/{data['total']} "
                 f"({data['pass_rate'] * 100:.0f}%)",
@@ -604,7 +625,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> ToolResponse:
 
         if name == "mettle_list_suites":
             data = await api_call("/mettle/suites", auth=True)
-            lines = ["METTLE authenticated verification suites:"]
+            lines = ["METTLE authenticated suites:"]
             for suite in data:
                 flags = []
                 if suite.get("is_multi_round"):
@@ -853,7 +874,7 @@ async def _handle_call_tool(
 
 # MCP 2 registers low-level handlers in the constructor. Keeping the core
 # ``list_tools`` and ``call_tool`` functions transport-independent also makes
-# their behaviour straightforward to unit test.
+# their behavior straightforward to unit test.
 server: Server[Any] = Server(
     "mettle",
     version=__version__,

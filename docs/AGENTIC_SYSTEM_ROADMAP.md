@@ -19,7 +19,7 @@ standing, durability, and exact-candidate assurance.
 
 ## Definition of done
 
-The programme is done when all of these are true:
+The program is done when all of these are true:
 
 1. Quick and authenticated sessions are policy profiles over one application
    state model.
@@ -437,6 +437,30 @@ inferences enter telemetry or long-lived evidence.
 **Prevention:** retain only protocol versions, coded outcomes, aggregate metrics,
 hashes where necessary, and explicit review receipts. Enforce retention tests.
 
+## Open policy item: tiers above Bronze
+
+Current state: Suites 6 through 9 and 11 return `credential_eligible=False`
+(`mettle/challenge_adapter.py`), the router computes a tier only from
+credential-eligible passes (`mettle/router.py`), and every range above Bronze in
+`mettle/vcp.py:TIER_RANGES` contains Suite 6 or 7. The authenticated suite API
+therefore issues Bronze at most today, and public copy says so.
+
+Making Silver, Gold, or Platinum reachable is a suite-policy change, not a copy fix.
+It needs suites in those ranges whose evidence does not rest on self-report
+(invariant 6): new measured suites for the questions that Suites 6 through 9 and 11
+now ask by self-report, or ranges redefined around suites that already carry
+measured evidence. Either route needs a new suite policy version, updated
+`TIER_RANGES` and fixtures, the checks in the "Suite or score policy" row of the change-impact
+table in `CLAUDE.md`, and a re-stated public claim. Making the current self-report suites
+credential-eligible is ruled out by invariant 6. Mechanisms from the archived suite
+design (see `docs/VERIFICATION_SUITES.md`, Historical design) enter scope only
+through this item.
+
+Working if: every public surface that names Silver, Gold, or Platinum for the
+authenticated API also states the Bronze ceiling, and
+`tests/test_security_scan_20260814.py::test_self_report_suites_are_never_tier_evidence`
+stays green until a reviewed policy change replaces it.
+
 ## Decisions intentionally deferred
 
 These questions require evidence from Phase 1 or Phase 2:
@@ -470,6 +494,6 @@ merely because nearby code is old or large.
 | 3 | Manifest and generated adapter diff | Semantic parity and example execution | Client migration feedback | Not started |
 | 4 | Common-kernel diff and characterization mapping | Equivalence, resilience, performance, full CI | Staging and production migration receipts | Not started |
 | 5 | Project-control and receipt diff | Invalidation, redaction, aggregate gate tests | Maintainer and reviewer usability | Not started |
-| 6 | Evaluation and disposition artefacts | Reproducible aggregate evaluation | Independent, rights, bilateral, accessibility, publication | Not started |
+| 6 | Evaluation and disposition artifacts | Reproducible aggregate evaluation | Independent, rights, bilateral, accessibility, publication | Not started |
 
 Update status only with the evidence class named in the relevant acceptance gate.

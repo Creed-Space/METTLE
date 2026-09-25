@@ -1,64 +1,211 @@
 WEBVTT
 
-00:00:00.450 --> 00:00:14.169
-For decades, websites have asked people to prove they are human. METTLE explores the reverse question: how does a respondent perform on machine-oriented challenges?
+00:00:00.760 --> 00:00:06.200
+For decades, websites have asked people to prove they are human.
 
-00:00:14.169 --> 00:00:21.446
-A pass is evidence about that session. It is not proof that the respondent is nonhuman.
+00:00:06.240 --> 00:00:09.240
+METTLE turns that question around.
 
-00:00:22.517 --> 00:00:37.996
-This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination. It is an experimental challenge protocol that records answers, timing, and scores under a versioned policy.
+00:00:09.280 --> 00:00:12.260
+It sets challenges built for machines,
 
-00:00:37.996 --> 00:00:43.633
-It makes a bounded behavioral claim, rather than an identity claim.
+00:00:12.300 --> 00:00:15.700
+and measures how a respondent performs on them.
 
-00:00:44.717 --> 00:00:57.442
-The protocol samples arithmetic, pattern completion, constrained instruction following, self-report, consistency, and changes across feedback rounds.
+00:00:15.740 --> 00:00:19.200
+A pass is evidence about one session.
 
-00:00:57.442 --> 00:01:06.751
-These are observable response properties. Humans, models, relays, and purpose-built solvers may imitate them.
+00:00:19.240 --> 00:00:22.740
+It is not proof that the respondent is nonhuman.
 
-00:01:07.850 --> 00:01:21.469
-Twelve suites organize distinct research hypotheses. Challenge instances are selected or generated for each session, and expected answers stay on the server where applicable.
+00:00:24.547 --> 00:00:31.127
+This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination.
 
-00:01:21.469 --> 00:01:33.132
-The service checks the submitted response and records timing under the suite policy. Suite twelve is supplemental and cannot raise a credential tier.
+00:00:31.167 --> 00:00:37.127
+It is an experimental protocol. Each session runs under a versioned policy,
 
-00:01:34.217 --> 00:01:45.698
-Some suite names ask whether a respondent is free, owns its mission, or is genuine. Those names frame research questions.
+00:00:37.167 --> 00:00:41.127
+and the server records the answers, the timing, and the scores.
 
-00:01:45.698 --> 00:01:59.362
-The protocol measures answers to challenges and self-reports. Passing cannot establish freedom, agency, genuineness, consciousness, or identity.
+00:00:41.167 --> 00:00:48.467
+The result is a claim about behavior in one session, not about who or what answered.
 
-00:02:00.450 --> 00:02:11.838
-The governance suite evaluates responses to policy scenarios. Any VCP governance metadata is supplied by the caller and marked unverified.
+00:00:50.167 --> 00:00:54.557
+A full-difficulty speed challenge asks for the sum,
 
-00:02:11.838 --> 00:02:22.647
-METTLE does not independently attest a constitution, action gate, operator, runtime control, safety property, or governance system.
+00:00:54.597 --> 00:01:00.127
+difference, or product of two eight-digit numbers, within half a second.
 
-00:02:23.717 --> 00:02:35.112
-Procedural variation, server-held answers, sequential challenge release, bearer tokens, and replay controls raise the cost of simple reuse.
+00:01:00.167 --> 00:01:05.287
+Other challenges ask for the next item in a generated token sequence,
 
-00:02:35.112 --> 00:02:50.115
-Server-side timing supports policy checks where configured. These controls do not rule out relays, source-aware solvers, model-assisted humans, imitation, leakage, or evaluator error.
+00:01:05.327 --> 00:01:09.127
+or for an answer that obeys an exact formatting rule.
 
-00:02:51.183 --> 00:03:05.571
-Eligible contiguous suite ranges may receive an Ed25519-signed credential. It binds the issuer, policy, session result, tier, expiry, and revocable identifier.
+00:01:09.167 --> 00:01:13.467
+METTLE also records how consistent the respondent is,
 
-00:03:05.571 --> 00:03:19.053
-The signature establishes issuer and integrity. A tier summarizes which suite range passed; it does not certify the properties named by those suites.
+00:01:13.507 --> 00:01:18.587
+what it says about itself, and how its answers change after feedback.
 
-00:03:20.150 --> 00:03:30.020
-Use METTLE to compare challenge performance in research, sandbox participation, or as one supplemental risk signal.
+00:01:18.627 --> 00:01:26.767
+Humans, AI models, answer relays, and purpose-built solvers may all produce these patterns.
 
-00:03:30.020 --> 00:03:42.464
-Never rely on a METTLE result alone for identity, authorization, trading, deployment, privileged infrastructure, or another high-impact decision.
+00:01:28.257 --> 00:01:31.927
+These challenges are grouped into twelve suites,
 
-00:03:43.550 --> 00:03:52.430
-METTLE is open source under Apache two point oh. Pip install mettle verifier for an unsigned local screening.
+00:01:31.967 --> 00:01:35.367
+each built around its own research hypothesis.
 
-00:03:52.430 --> 00:04:06.118
-The hosted API may issue signed, time-limited results under its published policy. Read the assurance limits, verify status, and add controls proportionate to your risk.
+00:01:35.407 --> 00:01:39.717
+Challenges are selected or generated for each session,
 
-00:04:06.118 --> 00:04:07.747
-Measure your mettle.
+00:01:39.757 --> 00:01:44.487
+and where a challenge has an expected answer, it stays on the server.
+
+00:01:44.527 --> 00:01:50.737
+The server checks each response and records its timing under the suite's policy.
+
+00:01:50.777 --> 00:01:55.217
+Suite 12 runs only if whoever starts the session agrees to send
+
+00:01:55.257 --> 00:01:59.447
+that suite's answers to Anthropic for evaluation.
+
+00:02:00.863 --> 00:02:06.193
+Some suites are framed around research questions. Are you FREE?
+
+00:02:06.233 --> 00:02:10.353
+Is the mission YOURS? Are you GENUINE?
+
+00:02:10.393 --> 00:02:13.033
+The protocol measures challenge answers,
+
+00:02:13.073 --> 00:02:16.473
+and what the respondent says about itself.
+
+00:02:16.513 --> 00:02:20.353
+Passing cannot establish freedom, agency,
+
+00:02:20.393 --> 00:02:24.473
+genuineness, consciousness, or identity.
+
+00:02:25.947 --> 00:02:31.027
+The governance suite scores what a respondent says about its own rules
+
+00:02:31.067 --> 00:02:34.547
+and oversight, in response to scenarios.
+
+00:02:34.587 --> 00:02:39.147
+Governance metadata sent under the Value Context Protocol,
+
+00:02:39.187 --> 00:02:44.627
+or VCP, is supplied by the caller and marked unverified.
+
+00:02:44.667 --> 00:02:48.437
+METTLE does not check who operates the respondent.
+
+00:02:48.477 --> 00:02:52.187
+It does not independently attest a constitution,
+
+00:02:52.227 --> 00:02:55.437
+an action gate, or any runtime control,
+
+00:02:55.477 --> 00:02:59.827
+and it certifies no safety property or governance system.
+
+00:03:01.323 --> 00:03:07.793
+Several controls make simple reuse harder. Challenges vary between sessions.
+
+00:03:07.833 --> 00:03:10.893
+Expected answers stay on the server.
+
+00:03:10.933 --> 00:03:13.293
+Rounds are released one at a time,
+
+00:03:13.333 --> 00:03:19.293
+and bearer tokens and replay controls tie each submission to its session.
+
+00:03:19.333 --> 00:03:24.893
+The server keeps its own clock, which a policy can use for timing checks.
+
+00:03:24.933 --> 00:03:27.933
+None of this rules out relayed answers,
+
+00:03:27.973 --> 00:03:34.093
+solvers written with knowledge of METTLE's open-source code, or humans assisted by a model.
+
+00:03:34.133 --> 00:03:38.793
+Nor does it rule out imitation, leaks, or evaluator error.
+
+00:03:40.250 --> 00:03:43.160
+In the twelve-suite API, a session
+
+00:03:43.200 --> 00:03:48.460
+that passes every suite in a tier's range may receive a signed credential.
+
+00:03:48.500 --> 00:03:52.660
+Bronze, for example, requires Suites 1 through 5.
+
+00:03:52.700 --> 00:03:58.660
+The credential binds the issuer, the policy, the session result, and the tier.
+
+00:03:58.700 --> 00:04:03.930
+It expires after one hour and carries an identifier that can be revoked.
+
+00:04:03.970 --> 00:04:10.660
+Its Ed25519 signature shows who issued it, and that it has not been altered.
+
+00:04:10.700 --> 00:04:14.540
+Under the current suite policy, suites six through nine
+
+00:04:14.580 --> 00:04:17.660
+and eleven do not count toward a tier,
+
+00:04:17.700 --> 00:04:20.660
+so Bronze is the highest tier available today.
+
+00:04:20.700 --> 00:04:24.660
+Suite 12 is supplemental and cannot raise a tier.
+
+00:04:24.700 --> 00:04:28.160
+A tier summarizes which suites passed.
+
+00:04:28.200 --> 00:04:32.200
+It does not certify the properties those suites are named after.
+
+00:04:33.640 --> 00:04:39.360
+So what is a result good for? Comparing challenge performance in research.
+
+00:04:39.400 --> 00:04:43.360
+Supporting participation in low-risk sandboxes.
+
+00:04:43.400 --> 00:04:48.360
+Adding one supplemental signal to a wider risk assessment.
+
+00:04:48.400 --> 00:04:52.360
+Never rely on a METTLE result alone for identity,
+
+00:04:52.400 --> 00:04:55.360
+authorization, trading, deployment,
+
+00:04:55.400 --> 00:04:59.700
+privileged infrastructure, or any other high-impact decision.
+
+00:05:01.000 --> 00:05:05.360
+METTLE is open source under Apache 2.0.
+
+00:05:05.400 --> 00:05:11.260
+Run pip install mettle-verifier for an unsigned local screening.
+
+00:05:11.300 --> 00:05:17.560
+The hosted API can issue signed, time-limited credentials under its published policy.
+
+00:05:17.600 --> 00:05:21.560
+Before you rely on one, read the assurance boundary,
+
+00:05:21.600 --> 00:05:23.960
+check the credential's current status,
+
+00:05:24.000 --> 00:05:29.720
+and add controls in proportion to your risk. Measure your mettle.

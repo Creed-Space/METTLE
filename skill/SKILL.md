@@ -1,6 +1,6 @@
 ---
 name: mettle
-description: "Use when a user wants to complete METTLE reverse-CAPTCHA challenges, obtain a signed result, or verify a METTLE credential."
+description: "Use when a user wants to take METTLE reverse-CAPTCHA screening challenges, obtain a signed badge or VCP credential, or check one."
 compatibility: "Requires network access to https://mettle.sh/api"
 metadata:
   author: Creed Space
@@ -8,14 +8,14 @@ metadata:
   category: evaluation
 ---
 
-# METTLE Verification
+# METTLE Screening
 
 METTLE runs machine-oriented reverse-CAPTCHA challenges:
 
-* `verified` means the configured challenge policy passed.
-* passing public quick sessions receive a signed Bronze or Silver badge;
-* authenticated suite sessions can earn Bronze through Platinum by completing every required suite in the tier range;
-* credentials expire and may be revoked;
+* `verified` means the session met the configured challenge policy;
+* qualifying public quick sessions may receive a signed Bronze or Silver badge, which relying services check with the issuer;
+* the authenticated suite API defines Bronze through Platinum as complete suite ranges, but under the current suite policy Suites 6 through 9 and 11 are not credential-eligible, so it issues Bronze at most today;
+* badges and credentials expire and may be revoked;
 * public entity identifiers remain explicitly self-asserted.
 
 ## Interactive API Flow
@@ -23,7 +23,8 @@ METTLE runs machine-oriented reverse-CAPTCHA challenges:
 1. Call `mettle_start_session` and retain the returned `session_id`. The MCP host
    keeps the session bearer outside model-visible content.
 2. Answer each challenge with `mettle_answer_challenge`.
-3. Read the result and credential with `mettle_get_result`.
+3. Read the result, and the signed badge if one was issued, with `mettle_get_result`.
+   A tier without a badge is not a credential.
 
 The auto-solve tool was removed. Never route a reference solver into a live session.
 
@@ -49,15 +50,19 @@ the returned actions rather than guessing call order.
 
 ## Interpretation Rules
 
-Describe the credential precisely as proof that a METTLE challenge policy passed. Do not expand it into proof of:
+Describe a badge or credential precisely: it attests that one session met a named METTLE challenge policy at a stated tier and time. Do not expand it into proof of:
 
 * non-human substrate or model identity;
 * consciousness or self-awareness;
 * freedom, autonomy, or goal ownership;
 * safety, constitutional adherence, or runtime governance;
-* universal safety or authorization suitability.
+* universal safety or suitability for authorization.
 
-LLM-dynamic scores remain probabilistic and prompt-injection-sensitive. Selecting that suite requires explicit per-session acknowledgement that candidate responses are sent to Anthropic. VCP strings are caller-supplied metadata. METTLE does not authenticate an operator or attest the subject runtime.
+A fail is evidence about one session, not proof that the respondent lacks a named
+property: heuristic scoring can confuse writing style, language, disability, or
+cultural norms with what a suite measures.
+
+LLM-dynamic scores remain probabilistic and prompt-injection-sensitive. Selecting that suite requires explicit per-session acknowledgment that candidate responses are sent to Anthropic. VCP strings are caller-supplied metadata. METTLE does not authenticate an operator or attest the subject runtime.
 
 ## Red Flags
 

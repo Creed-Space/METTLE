@@ -647,7 +647,7 @@ class TestWebhookEndpoints:
             headers={"X-API-Key": "free-webhook-key"},
         )
         assert response.status_code == 403
-        assert "pro or enterprise" in response.json()["detail"]
+        assert "pro or enterprise" in response.json()["detail"].lower()
         assert "free-entity" not in webhooks
 
     def test_unregister_webhook_endpoint(self, client):

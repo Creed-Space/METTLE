@@ -148,7 +148,7 @@ session quota or generating live expected answers.
 ```
 
 A plan for `llm-dynamic` names Anthropic as the data destination, describes which
-candidate content leaves METTLE, and requires an explicit acknowledgement. A plan
+candidate content leaves METTLE, and requires an explicit acknowledgment. A plan
 for Presence names the holder key and audience requirements. A plan that cannot
 earn the requested tier says so before session creation.
 
@@ -476,7 +476,7 @@ The control plane is complete only when:
 7. stale or duplicate submissions return deterministic typed outcomes;
 8. an interrupted caller can resume from a handle without re-sending a secret;
 9. MCP, WebMCP, REST, CLI, server metadata, docs, and the skill pass semantic parity;
-10. the plan exposes third-party data egress and requires explicit acknowledgement;
+10. the plan exposes third-party data egress and requires explicit acknowledgment;
 11. every terminal state distinguishes completion, pass, eligibility, issuance,
     validity, and authorization;
 12. after manifest caching, successful flows use no more median calls than the
