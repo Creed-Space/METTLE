@@ -1,5 +1,45 @@
 # METTLE release notes
 
+## [0.5.3]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged.
+Credential issuance and verification are unchanged.
+
+### Suite policy
+
+Challenge generation, scoring, response windows, and tier eligibility remain
+unchanged from `0.5.2`. Suite names and descriptions now state what each suite
+asks for and how it is scored; heuristic self-report suites are labelled as
+probes or self-reports rather than detection or verification.
+
+### Public key changes
+
+No signing key, discovery format, or verification-key rotation is included.
+
+### Compatibility
+
+Python 3.10 through 3.14, the eleven public MCP tools, stable error codes, and
+existing API contracts remain compatible. Human-readable error details, OpenAPI
+descriptions, and MCP tool descriptions use revised wording; clients that match
+on error codes rather than detail text are unaffected. The MCP lock pins
+`httpx2`/`httpcore2` 2.13.1 to clear PYSEC-2026-3846, 3848, and 3849.
+
+### Website and documentation
+
+* Replace the explainer with a re-scripted 5:30 narrated render, with
+  word-aligned captions, a matching transcript, and a refreshed poster.
+* Use plain-language, bounded-claim wording across the site, README, docs,
+  skill, and wiki.
+* Daily-limit and storage error messages now say what happened and when to retry.
+
+### Known limitations
+
+The verification and access limitations documented in `0.5.1` remain unchanged.
+This copy and presentation release makes no new credential, identity, or
+discrimination claims.
+
 ## [0.5.2]
 
 ### Credential schema
