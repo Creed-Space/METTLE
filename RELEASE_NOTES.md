@@ -1,5 +1,43 @@
 # METTLE release notes
 
+## [0.5.4]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged.
+Credential issuance and verification are unchanged.
+
+### Suite policy
+
+Challenge generation, scoring, response windows, and tier eligibility remain
+unchanged from `0.5.3`. Suite 12 keeps its sampling settings (0.9 for
+generation, 0.0 for evaluation) under the anthropic 1.x SDK, which removed
+`temperature` from `messages.create()`; the value now travels in the request
+body instead of raising `TypeError` when an API key is configured.
+
+### Public key changes
+
+No signing key, discovery format, or verification-key rotation is included.
+
+### Compatibility
+
+Python 3.10 through 3.14, the eleven public MCP tools, stable error codes, and
+existing API contracts remain compatible. The production lock moves anthropic
+from 0.122.0 to 1.8.0, which adds `httpx2`, `httpcore2`, and `truststore` and
+drops `distro`; cryptography, PyJWT, pydantic, SQLAlchemy, psycopg2-binary,
+idna, click, python-dotenv, and other runtime pins take patch or minor bumps.
+Both hash locks are regenerated with pip-compile on Python 3.11.
+
+### Website and documentation
+
+No website or documentation changes.
+
+### Known limitations
+
+The verification and access limitations documented in `0.5.1` remain unchanged.
+This dependency release makes no new credential, identity, or discrimination
+claims.
+
 ## [0.5.3]
 
 ### Credential schema
