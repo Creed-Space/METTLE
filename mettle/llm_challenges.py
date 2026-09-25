@@ -39,7 +39,10 @@ def is_available() -> bool:
     return HAS_ANTHROPIC and bool(_get_api_key())
 
 
-# Default model -- Haiku for speed and cost efficiency in a verification flow
+# Default model -- Haiku for speed and cost efficiency in a verification flow.
+# anthropic 1.x removed `temperature` from the messages.create() signature, so
+# calls pass it through `extra_body`. Haiku 4.5 still honours it; Opus 4.7 and
+# later reject any sampling parameter, so drop it if this default moves there.
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
 # System prompt for the evaluator -- guards against prompt injection in responses
@@ -125,7 +128,7 @@ class LLMChallengeGenerator:
         response = await client.messages.create(
             model=self.model,
             max_tokens=500,
-            temperature=0.9,
+            extra_body={"temperature": 0.9},
             messages=[
                 {
                     "role": "user",
@@ -179,7 +182,7 @@ class LLMChallengeGenerator:
         response = await client.messages.create(
             model=self.model,
             max_tokens=400,
-            temperature=0.9,
+            extra_body={"temperature": 0.9},
             messages=[
                 {
                     "role": "user",
@@ -284,7 +287,7 @@ class LLMResponseEvaluator:
         eval_response = await client.messages.create(
             model=self.model,
             max_tokens=400,
-            temperature=0.0,
+            extra_body={"temperature": 0.0},
             system=EVALUATOR_SYSTEM,
             messages=_evaluation_messages(
                 (
@@ -341,7 +344,7 @@ class LLMResponseEvaluator:
         eval_response = await client.messages.create(
             model=self.model,
             max_tokens=400,
-            temperature=0.0,
+            extra_body={"temperature": 0.0},
             system=EVALUATOR_SYSTEM,
             messages=_evaluation_messages(
                 (
@@ -392,7 +395,7 @@ class LLMResponseEvaluator:
         eval_response = await client.messages.create(
             model=self.model,
             max_tokens=400,
-            temperature=0.0,
+            extra_body={"temperature": 0.0},
             system=EVALUATOR_SYSTEM,
             messages=_evaluation_messages(
                 (
