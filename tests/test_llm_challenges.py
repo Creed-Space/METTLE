@@ -547,3 +547,38 @@ class TestFullPipeline:
 
         assert result["score"] == 0.0
         assert result["passed"] is False
+
+
+class TestInstalledSdkSignature:
+    """The mocked client above accepts any keyword, so it cannot catch an SDK
+    signature change. Bind every recorded call to the installed SDK instead;
+    anthropic 1.x removed `temperature` and a direct keyword would TypeError."""
+
+    @pytest.mark.asyncio
+    async def test_every_call_binds_to_installed_messages_create(self) -> None:
+        inspect = pytest.importorskip("inspect")
+        resources = pytest.importorskip("anthropic.resources.messages")
+        signature = inspect.signature(resources.AsyncMessages.create)
+
+        generator = LLMChallengeGenerator(api_key="sk-test")
+        evaluator = LLMResponseEvaluator(api_key="sk-test")
+        client = AsyncMock()
+        client.messages.create = AsyncMock(return_value=_mock_message("not json"))
+        generator._client = client
+        evaluator._client = client
+
+        await generator.generate_perspective_shift()
+        await generator.generate_structured_constraint()
+        await evaluator.evaluate_perspective_shift(
+            "r", {"topic_data": {"topic": "t"}}, 1000
+        )
+        await evaluator.evaluate_structured_constraint(
+            "r", {"constraint_data": {"rules": ["a"]}}, 1000
+        )
+        await evaluator.evaluate_meta_cognitive("r", {"problem": "2+2"}, 1000)
+
+        calls = client.messages.create.await_args_list
+        assert len(calls) == 5
+        for call in calls:
+            signature.bind(None, *call.args, **call.kwargs)
+            assert "temperature" in call.kwargs["extra_body"]
