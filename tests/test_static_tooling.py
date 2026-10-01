@@ -182,3 +182,29 @@ def test_dynamic_api_responses_are_not_cacheable(client) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_public_llms_description_get_head_and_static_contract(client) -> None:
+    expected = (ROOT / "static/llms.txt").read_bytes()
+    assert expected.startswith(b"# METTLE\n\n> ")
+    assert b"## Overview\n" in expected
+    assert b"github.com" not in expected
+
+    response = client.get("/llms.txt")
+    assert response.status_code == 200
+    assert response.content == expected
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["cache-control"] == "no-store"
+
+    head = client.head("/llms.txt")
+    assert head.status_code == 200
+    assert head.content == b""
+    assert head.headers["content-type"] == response.headers["content-type"]
+    assert head.headers["content-length"] == str(len(expected))
+
+    static = client.get("/static/llms.txt")
+    assert static.status_code == 200
+    assert static.content == expected
+    assert static.headers["content-type"] == response.headers["content-type"]
+    assert "/llms.txt" not in client.get("/openapi.json").json()["paths"]

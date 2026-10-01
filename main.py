@@ -3641,6 +3641,14 @@ async def serve_test():
     return RedirectResponse(url="/")
 
 
+# === Public site description ===
+@app.get("/llms.txt", include_in_schema=False)
+@app.head("/llms.txt", include_in_schema=False)
+async def llms():
+    """Serve the committed public site description as plain text."""
+    return FileResponse(str(_static_dir / "llms.txt"), media_type="text/plain")
+
+
 # === SEO Endpoints ===
 @app.get("/sitemap.xml", include_in_schema=False)
 @app.head("/sitemap.xml", include_in_schema=False)

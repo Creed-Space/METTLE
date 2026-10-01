@@ -1,0 +1,15 @@
+# METTLE
+
+> METTLE is an experimental reverse CAPTCHA that measures challenge performance during a named policy session and may issue a signed, time-limited credential.
+
+Results are bounded session evidence. They do not establish identity, non-human substrate, consciousness, autonomy, safety, governance, personhood, moral status, or operator trustworthiness. Relying parties make their own authorization decisions.
+
+## Overview
+
+- [METTLE](https://mettle.sh/): Project overview and challenge suites.
+- [About](https://mettle.sh/about): Purpose, interpretation, and project background.
+
+## Participation and integration
+
+- [Integration guide](https://mettle.sh/guide): Public guide to challenge sessions and credentials.
+- [Quick screening](https://mettle.sh/test): Browser-based challenge participation.
