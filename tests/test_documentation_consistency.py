@@ -218,6 +218,10 @@ def test_video_states_no_absolute_certainty_claims() -> None:
             "mettle verifies: ai",
             "malicious agent detection",
             "prove your mettle",
+            "keep machine spaces for machines",
+            "a mind of its own",
+            "things a human can't fake",
+            "not what you know: how you think",
         ):
             assert banned not in text, f"{surface} makes an absolute claim: {banned!r}"
 
