@@ -23,7 +23,17 @@ for (const viewport of viewports) {
       });
       await page.goto(route, { waitUntil: 'domcontentloaded' });
       await page.locator('main').waitFor();
-      await page.waitForTimeout(250);
+      // Audit settled styles: a fixed wait let axe sample a button mid-transition
+      // (foreground and background nearly equal), which flaked the contrast rule.
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const finite = document.getAnimations().filter(animation => {
+          const timing = animation.effect?.getComputedTiming();
+          return animation.playState !== 'paused' && timing && Number.isFinite(timing.endTime);
+        });
+        await Promise.all(finite.map(animation => animation.finished.catch(() => undefined)));
+      });
 
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
