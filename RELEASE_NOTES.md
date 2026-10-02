@@ -1,5 +1,41 @@
 # METTLE release notes
 
+## [0.5.5]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged.
+Credential issuance and verification are unchanged.
+
+### Suite policy
+
+Challenge generation, scoring, response windows, and tier eligibility remain
+unchanged from `0.5.4`.
+
+### Public key changes
+
+No signing key, discovery format, or verification-key rotation is included.
+
+### Compatibility
+
+Python 3.10 through 3.14, the eleven public MCP tools, stable error codes, and
+existing API contracts remain compatible. The production and MCP hash locks
+pin PyJWT 2.15.0, and the release-tooling hash lock pins urllib3 2.8.0 to address
+published dependency security advisories. Declared dependency ranges and the
+remaining locked dependency graph are unchanged.
+
+### Website and documentation
+
+* Add a public `/llms.txt` guide with authoritative site links and METTLE's
+  experimental session-measurement and credential boundaries. GET and HEAD
+  serve the guide as plain text.
+
+### Known limitations
+
+The verification and access limitations documented in `0.5.1` remain unchanged.
+This guide and dependency release makes no new credential, identity,
+consciousness, safety, or discrimination claims.
+
 ## [0.5.4]
 
 ### Credential schema
