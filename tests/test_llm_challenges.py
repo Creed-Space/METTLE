@@ -407,3 +407,33 @@ class TestFullPipeline:
              patch("mettle.llm_challenges._get_api_key", return_value=None):
             with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
                 await evaluate_llm_challenges({}, {})
+
+
+@pytest.mark.parametrize(
+    "hosted_env",
+    [{"METTLE_ENVIRONMENT": "production"}, {"RENDER": "true"}, {"RENDER_SERVICE_ID": "srv-x"}],
+)
+def test_hosted_service_never_reads_a_server_key(monkeypatch, hosted_env):
+    """Creed Space never pays for provider calls (BYOK or local only): hosted METTLE holds no key."""
+    from mettle import llm_challenges
+
+    for name in ("METTLE_ENVIRONMENT", "RENDER", "RENDER_SERVICE_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-platform-sentinel")
+    monkeypatch.setenv("METTLE_ANTHROPIC_API_KEY", "sk-ant-platform-sentinel")
+    for name, value in hosted_env.items():
+        monkeypatch.setenv(name, value)
+
+    assert llm_challenges._get_api_key() is None
+    assert llm_challenges.is_available() is False
+    assert llm_challenges.LLMChallengeGenerator().api_key is None
+
+
+def test_cli_user_key_still_works_locally(monkeypatch):
+    from mettle import llm_challenges
+
+    for name in ("METTLE_ENVIRONMENT", "RENDER", "RENDER_SERVICE_ID", "METTLE_ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-user-own-key")
+
+    assert llm_challenges._get_api_key() == "sk-ant-user-own-key"

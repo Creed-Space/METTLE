@@ -106,7 +106,8 @@ class SessionManager:
             if suite == LLM_DYNAMIC_SUITE:
                 if not llm_available():
                     raise ValueError(
-                        "llm-dynamic suite requires ANTHROPIC_API_KEY and anthropic package"
+                        "llm-dynamic suite needs your own Anthropic key: run it with the METTLE CLI "
+                        "(the hosted service holds no model key)"
                     )
                 llm_dynamic_pending = True
                 continue
