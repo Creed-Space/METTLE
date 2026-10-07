@@ -158,7 +158,15 @@ When a session includes an `operator_commitment` with a valid Ed25519 signature,
 }
 ```
 
-The operator signs the message `I accept accountability for agent {entity_id}` with their Ed25519 private key. Even pseudonymous operators provide a verifiable accountability chain — the public key fingerprint links future actions to the same operator.
+The operator requests a single-use challenge (`POST /api/mettle/operator/challenge`) and signs the
+returned message — `METTLE-OPERATOR-COMMITMENT-v1|{nonce}|{entity_id}|{expires_at}` — with their
+Ed25519 private key, submitting the signature plus the `challenge_nonce`. Even pseudonymous
+operators provide a verifiable accountability chain: the public key fingerprint links future actions
+to the same operator, and the nonce proves they were live at the time.
+
+> **Changed 2026-07-12.** The message used to be the static string
+> `I accept accountability for agent {entity_id}`, which made a captured commitment replayable
+> forever. The nonce is single-use, entity-bound, and expiring.
 
 ---
 

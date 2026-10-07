@@ -57,11 +57,42 @@ class OperatorCommitment(BaseModel):
 
     operator_pseudonym: str = Field(description="Operator identifier (can be pseudonymous)")
     operator_public_key: str = Field(description="Ed25519 public key (PEM format)")
+    challenge_nonce: str = Field(
+        description=(
+            "Single-use nonce from POST /operator/challenge. Binds the signature to a live "
+            "exchange so a captured commitment cannot be replayed."
+        )
+    )
     signed_commitment: str = Field(
-        description="Base64-encoded Ed25519 signature over: 'I accept accountability for agent {entity_id}'"
+        description=(
+            "Base64-encoded Ed25519 signature over "
+            "'METTLE-OPERATOR-COMMITMENT-v1|{nonce}|{entity_id}|{expires_at}' "
+            "(build it with mettle.signing.operator_commitment_message)."
+        )
     )
     contact_method: str = Field(description="Contact method type: email_hash, platform_handle, legal_entity")
     contact_hash: str = Field(description="SHA-256 of actual contact info (verifiable without revealing)")
+    challenge_expires_at: str | None = Field(
+        default=None,
+        description="Server-populated after the nonce is consumed. Ignored on input.",
+    )
+
+
+class OperatorChallengeRequest(BaseModel):
+    """Request a single-use challenge nonce to sign an operator commitment."""
+
+    entity_id: str = Field(description="The agent this commitment will cover")
+
+
+class OperatorChallengeResponse(BaseModel):
+    """A server-issued, single-use, entity-bound challenge."""
+
+    nonce: str = Field(description="Single-use nonce. Valid once, until expires_at.")
+    entity_id: str = Field(description="The entity the nonce is bound to")
+    expires_at: str = Field(description="ISO-8601 UTC expiry")
+    message_to_sign: str = Field(
+        description="The EXACT string to Ed25519-sign. Sign these bytes verbatim; do not rebuild it yourself."
+    )
 
 
 class CreateSessionRequest(BaseModel):
@@ -177,7 +208,12 @@ class OperatorAttestation(BaseModel):
     operator_pseudonym: str = Field(description="Operator identifier (can be pseudonymous)")
     operator_public_key: str = Field(description="Ed25519 public key (PEM format)")
     operator_signed_commitment: str = Field(
-        description="Operator signs: 'I accept accountability for agent {entity_id}'"
+        description=(
+            "Operator signs a nonce-bound commitment: "
+            "'METTLE-OPERATOR-COMMITMENT-v1|{nonce}|{entity_id}|{expires_at}'. "
+            "The single-use nonce is what proves the operator was live, not merely that their key "
+            "once signed a string."
+        )
     )
     commitment_timestamp: datetime = Field(description="When commitment was signed")
     contact_method: str = Field(

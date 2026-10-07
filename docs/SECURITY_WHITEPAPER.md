@@ -118,7 +118,18 @@ Suite 11 (Governance Verification) addresses this by testing five operational go
 
 ### 2.5 Operator Accountability Chain
 
-Platinum-tier verification requires an `OperatorCommitment`: the operator signs a commitment (`I accept accountability for agent {entity_id}`) with their Ed25519 private key. This creates a cryptographic link from agent actions to an accountable party, even when the operator uses a pseudonym.
+Platinum-tier verification requires an `OperatorCommitment`. The operator first requests a
+single-use challenge (`POST /api/mettle/operator/challenge`), then signs the returned
+nonce-bound message — `METTLE-OPERATOR-COMMITMENT-v1|{nonce}|{entity_id}|{expires_at}` — with
+their Ed25519 private key. This creates a cryptographic link from agent actions to an accountable
+party, even when the operator uses a pseudonym.
+
+The nonce is what makes the link mean something *now*. Before 2026-07-12 the operator signed a
+**static** string, which made the commitment a bearer artifact: anyone who captured one signature
+could replay it verbatim on a new session indefinitely, so it attested only that the operator's key
+had signed that string **once, ever** — not that the operator was present and accountable for *this*
+agent, *this* session. The challenge nonce is server-issued, entity-bound, expiring, and consumed
+exactly once, against a durable store that fails closed.
 
 The operator attestation model:
 - **Pseudonymous accountability** — operators need not reveal identity, but the same public key fingerprint links all their agents

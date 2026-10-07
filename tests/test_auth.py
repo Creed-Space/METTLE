@@ -3,7 +3,6 @@
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
-
 from mettle.auth import AuthenticatedUser, require_authenticated_user
 
 

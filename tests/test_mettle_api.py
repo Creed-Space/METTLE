@@ -19,14 +19,13 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from mettle.challenge_adapter import SUITE_REGISTRY, ChallengeAdapter
 from mettle.api_models import (
     MULTI_ROUND_SUITE,
     SINGLE_SHOT_SUITES,
     SUITE_NAMES,
     SessionStatus,
 )
+from mettle.challenge_adapter import SUITE_REGISTRY, ChallengeAdapter
 from mettle.session_manager import (
     ACTIVE_SESSION_TTL,
     COMPLETED_SESSION_TTL,

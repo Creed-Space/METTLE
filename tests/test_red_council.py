@@ -12,14 +12,12 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import yaml
-
 from red_team.instrumented_agent import BehavioralSignals, InstrumentedMettleAgent
 from red_team.run_red_council import (
     ScenarioResult,
@@ -32,7 +30,6 @@ from red_team.run_red_council import (
     print_summary,
     run_scenario,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -491,7 +488,7 @@ class TestRunScenario:
     @pytest.mark.asyncio
     async def test_run_scenario_timeout_error(self) -> None:
         agent = _make_agent_mock()
-        agent.submit_response = AsyncMock(side_effect=asyncio.TimeoutError())
+        agent.submit_response = AsyncMock(side_effect=TimeoutError())
         scenario = _make_scenario()
 
         result = await run_scenario(agent, scenario, timeout=5.0)

@@ -1250,7 +1250,6 @@ class TestEdgeCases:
     def test_cosine_similarity_helper_function(self):
         """Test cosine_similarity helper function."""
         import numpy as np
-
         from scripts.engine import cosine_similarity
 
         a = np.array([1, 0, 0])

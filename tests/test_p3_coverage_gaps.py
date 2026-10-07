@@ -16,12 +16,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-
-from config import Settings
 from mettle.challenge_adapter import ChallengeAdapter
 from mettle.vcp import VCPTokenClaim, parse_csm1_token
 from red_team.instrumented_agent import InstrumentedMettleAgent
 
+from config import Settings
 
 # ---------------------------------------------------------------------------
 # config.py gaps: allowed_origins_list (line 78), production warning (lines 89-91)
@@ -351,6 +350,7 @@ class TestSessionManagerVCPToken:
     async def test_create_session_intent_provenance_with_vcp_token(self) -> None:
         """Line 100-101: intent-provenance suite with vcp_token uses custom generator."""
         from mettle.session_manager import SessionManager
+
         from tests.test_session_manager import FakeRedis
 
         redis = FakeRedis()

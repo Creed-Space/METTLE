@@ -28,7 +28,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from mettle.challenge_adapter import SUITE_REGISTRY, ChallengeAdapter
@@ -85,7 +85,7 @@ def build_credential(
     """Build and sign a self-signed METTLE credential."""
     private_key, public_pem = load_or_create_cli_keypair()
 
-    issued_at = datetime.now(tz=timezone.utc).isoformat()
+    issued_at = datetime.now(tz=UTC).isoformat()
     claims: dict[str, Any] = {
         "mettle_version": METTLE_VERSION,
         "credential_type": "mettle-self-signed",

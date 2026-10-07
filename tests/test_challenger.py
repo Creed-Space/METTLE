@@ -1,6 +1,6 @@
 """Tests for METTLE challenge generation."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from mettle.challenger import (
     generate_chained_reasoning_challenge,
@@ -55,7 +55,7 @@ class TestSpeedMathChallenge:
     def test_expires_in_future(self):
         """Test that challenge expiry is in the future."""
         challenge = generate_speed_math_challenge(Difficulty.BASIC)
-        assert challenge.expires_at > datetime.now(timezone.utc)
+        assert challenge.expires_at > datetime.now(UTC)
 
     def test_math_operations(self):
         """Test that math operations are correct."""

@@ -20,10 +20,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from mettle.api_models import SessionStatus
 from mettle.session_manager import SessionManager
-
 
 # ---------------------------------------------------------------------------
 # FakeRedis (same pattern as test_api_coverage.py / test_mettle_api.py)

@@ -11,8 +11,8 @@ import ipaddress
 import os
 import secrets
 import time
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -116,8 +116,152 @@ def add_with_limit(store: dict, key: str, value: Any, max_size: int) -> None:
 # In-memory storage
 sessions: dict[str, MettleSession] = {}
 challenges: dict[str, tuple[Challenge, float]] = {}
-revoked_badges: dict[str, float] = {}  # JTI -> revocation timestamp (bounded dict)
+# In-memory REPLICA of the durable revocation set. JTI -> a "prune after" unix ts (the
+# badge's own expiry when known, else a conservative revoked_at + badge_expiry bound;
+# float("inf") if neither is known). It is refreshed from the DB every
+# settings.revocation_refresh_seconds so that verify_badge answers with NO per-request DB
+# call and stays available during a DB outage. Authoritative for verification once
+# _revocation_replica_loaded is True; before that (cold start, DB unreachable) we have
+# zero revocation knowledge and must fail closed.
+revoked_badges: dict[str, float] = {}
 revocation_audit: list[dict[str, Any]] = []  # Audit trail
+
+# With no DB the in-memory set is the only store, so it is trivially "the source of truth".
+# With a DB it starts unloaded and becomes True after the first successful replica load.
+_revocation_replica_loaded: bool = db is None
+
+
+def _prune_expired_revocations(now: float | None = None) -> None:
+    """Drop revocations only for badges that have themselves already expired.
+
+    SECURITY: a revoked JTI only needs to be remembered until the badge's own ``exp``
+    passes, because ``verify_badge`` rejects an expired badge regardless. Pruning by
+    badge expiry keeps this store bounded WITHOUT ever un-revoking a still-valid badge.
+
+    This replaces an LRU eviction (``add_with_limit``) that could silently reverse a
+    revocation: once the cap was reached, the oldest revoked JTI was dropped and that
+    badge verified as VALID again. Eviction is never a safe policy for a revocation
+    list, and the DoS rationale did not apply here anyway — revocation is admin-only.
+
+    THREAD-SAFETY: the background refresh (``refresh_revocation_replica`` via
+    ``asyncio.to_thread``) can run this concurrently with a ``revoke_badge`` write on the
+    event-loop thread. Snapshot the items with ``list(...)`` first (an atomic C-level
+    materialization that never yields the GIL mid-way) so we never iterate the live dict --
+    a Python-level comprehension over ``.items()`` could raise "dictionary changed size
+    during iteration". ``pop(..., None)`` tolerates a key another thread already removed.
+    """
+    current = time.time() if now is None else now
+    for jti, badge_exp in list(revoked_badges.items()):
+        if badge_exp <= current:
+            revoked_badges.pop(jti, None)
+
+
+class RevocationStoreUnavailable(Exception):
+    """Revocation status is UNKNOWN: the replica has never loaded from the durable store."""
+
+
+def _parse_iso_ts(value: str | None) -> float | None:
+    """Parse an ISO-8601 timestamp to a unix ts; None if absent/unparseable.
+
+    SECURITY: the DB stores ``revoked_at`` in a NAIVE (tz-less) ``DATETIME`` column, so
+    its ISO string has no offset and is UTC by construction. A naive ``datetime``'s
+    ``.timestamp()`` is interpreted in the SERVER's local TZ; on any non-UTC instance that
+    shifts the computed prune bound by the UTC offset and could drop a revocation hours
+    before the badge truly expires (a revoked badge would then verify as valid). Treat a
+    naive value as UTC so parsing is deployment-TZ-independent.
+    """
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.timestamp()
+
+
+def _revocation_replica_ready() -> bool:
+    """True when verification may answer from the in-memory replica.
+
+    With no DB, the in-memory set is the source of truth. With a DB, the replica must have
+    loaded at least once; before that we have no revocation knowledge and must fail closed.
+    """
+    return db is None or _revocation_replica_loaded
+
+
+def refresh_revocation_replica() -> bool:
+    """Rebuild the in-memory revocation replica from the durable store.
+
+    UNIONS the durable set into ``revoked_badges`` (never dropping a locally-recorded
+    revocation -- those are written DB-first, so each is or will be in the DB) and prunes
+    expired entries. Returns True on success. On failure the replica keeps its last-good
+    contents and ``_revocation_replica_loaded`` is left unchanged, so a DB outage serves
+    stale -- and, because a revocation WRITE also requires the DB, complete-as-of-the-last-
+    successful-refresh -- data rather than failing open. Cross-instance propagation of a
+    new revocation is bounded by the refresh interval.
+    """
+    global _revocation_replica_loaded
+    if db is None:
+        return True
+    try:
+        # Load the full live set (the strict loader's generous default cap), not just
+        # MAX_REVOKED_BADGES: a fresh instance must not silently miss the oldest live
+        # revocations. Admin-only revocation with a bounded badge TTL keeps this small.
+        rows = db.get_all_revoked_badges_strict()
+    except Exception as exc:
+        logger.error("revocation_replica_refresh_failed", error=str(exc))
+        return False
+    keep_for = settings.badge_expiry_seconds
+    for row in rows:
+        jti = row.get("jti")
+        if not jti:
+            continue
+        # The DB does not store the badge's own exp. A revoked badge cannot outlive
+        # revoked_at + badge_expiry_seconds (it was issued before it was revoked), so that
+        # is a conservative prune bound: it never forgets a still-valid badge. Only ever
+        # raise an existing bound (never shorten one an exact local revoke recorded).
+        revoked_at = _parse_iso_ts(row.get("revoked_at"))
+        prune_after = (revoked_at + keep_for) if revoked_at is not None else float("inf")
+        if prune_after > revoked_badges.get(jti, 0.0):
+            revoked_badges[jti] = prune_after
+    _prune_expired_revocations()
+    _revocation_replica_loaded = True
+    if len(revoked_badges) >= MAX_REVOKED_BADGES:
+        logger.warning("revocation_replica_large", size=len(revoked_badges), soft_limit=MAX_REVOKED_BADGES)
+    return True
+
+
+async def _revocation_refresh_loop() -> None:
+    """Background: periodically refresh the revocation replica from the durable store."""
+    if db is None:
+        return
+    interval = max(5, settings.revocation_refresh_seconds)
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await asyncio.to_thread(refresh_revocation_replica)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # a refresh error must never kill the loop
+            logger.error("revocation_refresh_loop_error", error=str(exc))
+
+
+def _is_badge_revoked(jti: str) -> bool:
+    """Is this JTI revoked, per the in-memory replica of the durable revocation set?
+
+    Does NO per-request DB read: the replica is refreshed in the background
+    (``refresh_revocation_replica``), so verification is fast and stays AVAILABLE during a
+    DB outage -- a signature + expiry check needs no DB, and the replica answers revocation
+    from its last-good, outage-complete snapshot.
+
+    Fails CLOSED in exactly one case: the replica has never successfully loaded (cold start
+    with the DB unreachable), i.e. zero revocation knowledge -- we cannot prove a badge is
+    unrevoked, so we must not accept it. Once loaded, later outages serve the replica.
+    """
+    if not _revocation_replica_ready():
+        raise RevocationStoreUnavailable(jti)
+    return jti in revoked_badges
 
 # Collusion detection - track verification patterns
 verification_graph: dict[str, list[dict[str, Any]]] = {}  # entity_id -> list of verifications
@@ -177,7 +321,7 @@ class RateTier:
 
         # Track usage
         if api_key and api_key in api_keys:
-            today = datetime.now(timezone.utc).date().isoformat()
+            today = datetime.now(UTC).date().isoformat()
             key_data = api_keys[api_key]
 
             if key_data.get("usage_date") != today:
@@ -201,7 +345,7 @@ class RateTier:
         key_data = {
             "tier": tier,
             "entity_id": entity_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "usage_date": None,
             "usage_count": 0,
         }
@@ -221,7 +365,7 @@ class CollusionDetector:
     SYNC_THRESHOLD = 5  # Max verifications in window to be suspicious
 
     @staticmethod
-    def record_verification(entity_id: str, ip_address: str, passed: bool) -> None:
+    def record_verification(entity_id: str | None, ip_address: str, passed: bool) -> None:
         """Record a verification for pattern analysis."""
         if not entity_id:
             return
@@ -373,7 +517,7 @@ def verify_admin_key(provided_key: str | None, ip_address: str | None = None) ->
 
 
 # Track startup time
-startup_time: datetime = datetime.now(timezone.utc)
+startup_time: datetime = datetime.now(UTC)
 
 
 # === Security Headers Middleware ===
@@ -423,11 +567,18 @@ async def cleanup_expired_sessions():
             del sessions[sid]
         for cid in expired_challenges:
             del challenges[cid]
-        if expired_sessions or expired_challenges:
+
+        # Operator-challenge nonces are DURABLE (a table, not a dict), so nothing evicts them
+        # implicitly. Without this the table grows without bound. Best-effort by design: the
+        # purge never raises, so housekeeping cannot take down the cleanup loop.
+        expired_nonces = db.purge_expired_operator_challenges() if db is not None else 0
+
+        if expired_sessions or expired_challenges or expired_nonces:
             logger.info(
                 "cleanup_expired",
                 sessions_removed=len(expired_sessions),
                 challenges_removed=len(expired_challenges),
+                operator_nonces_purged=expired_nonces,
             )
 
 
@@ -436,7 +587,7 @@ async def cleanup_expired_sessions():
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
     global startup_time
-    startup_time = datetime.now(timezone.utc)
+    startup_time = datetime.now(UTC)
 
     # Validate production config
     if settings.is_production and not settings.secret_key:
@@ -472,7 +623,16 @@ async def lifespan(app: FastAPI):
 
         init_signing()
     except ImportError:
-        pass
+        logger.warning("vcp_signing_unavailable")
+
+    # Load the revocation replica before serving, then refresh it periodically. Until the
+    # first successful load, verify_badge fails closed (zero revocation knowledge); after
+    # it, verification needs no per-request DB read and survives a DB outage.
+    if db is not None:
+        loaded = await asyncio.to_thread(refresh_revocation_replica)
+        if not loaded:
+            logger.warning("revocation_replica_initial_load_failed")
+    revocation_task = asyncio.create_task(_revocation_refresh_loop())
 
     # Start cleanup task
     cleanup_task = asyncio.create_task(cleanup_expired_sessions())
@@ -480,15 +640,15 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown Redis
-    if getattr(app.state, "redis", None):
-        await app.state.redis.aclose()
+    redis = getattr(app.state, "redis", None)
+    if redis is not None:
+        await redis.aclose()
 
-    # Shutdown cleanup task
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
+    # Shutdown background tasks
+    for task in (cleanup_task, revocation_task):
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
     logger.info("mettle_shutdown")
 
 
@@ -710,7 +870,7 @@ async def api_root():
 )
 async def health():
     """Health check endpoint with detailed status."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     uptime = (now - startup_time).total_seconds()
 
     return {
@@ -1156,7 +1316,7 @@ def generate_signed_badge(
         - expires_at: ISO timestamp of expiry
         - freshness_nonce: Nonce for freshness verification
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now.timestamp() + settings.badge_expiry_seconds
     freshness_nonce = secrets.token_hex(8)
 
@@ -1192,7 +1352,7 @@ def generate_signed_badge(
     token = jwt.encode(payload, settings.secret_key, algorithm="HS256")
     return {
         "token": token,
-        "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
+        "expires_at": datetime.fromtimestamp(expires_at, tz=UTC).isoformat(),
         "freshness_nonce": freshness_nonce,
         "signed": True,
         "jti": payload["jti"],
@@ -1223,20 +1383,31 @@ async def verify_badge(request: Request, token: str):
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
 
-        # Check revocation (will be implemented in Task 3)
+        # Check revocation against the durable store, not just this process's memory.
         jti = payload.get("jti")
-        if jti and jti in revoked_badges:
-            return BadgeVerifyResponse(
-                valid=False,
-                error="Badge has been revoked",
-                revoked=True,
-            )
+        if jti:
+            try:
+                revoked = _is_badge_revoked(jti)
+            except RevocationStoreUnavailable:
+                # SECURITY: fail CLOSED. We cannot prove this badge is NOT revoked, so we
+                # must not accept it. Returning valid=True here would let a revoked badge
+                # through for the duration of a revocation-store outage.
+                return BadgeVerifyResponse(
+                    valid=False,
+                    error="Revocation status unavailable; badge not accepted",
+                )
+            if revoked:
+                return BadgeVerifyResponse(
+                    valid=False,
+                    error="Badge has been revoked",
+                    revoked=True,
+                )
 
         # Extract expiry info
         exp = payload.get("exp")
         expires_at = None
         if exp:
-            expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).isoformat()
+            expires_at = datetime.fromtimestamp(exp, tz=UTC).isoformat()
 
         return BadgeVerifyResponse(
             valid=True,
@@ -1251,8 +1422,8 @@ async def verify_badge(request: Request, token: str):
 
 # === Revocation Endpoints ===
 
-# Audit trail for revocations
-revocation_audit: list[dict[str, Any]] = []
+# NOTE: revocation_audit and revoked_badges are defined once, at module top. A second
+# `revocation_audit = []` used to sit here and silently rebound the module-level list.
 
 
 class RevokeBadgeRequest(BaseModel):
@@ -1328,19 +1499,54 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
     if not jti:
         raise HTTPException(status_code=400, detail="Badge has no revocable ID (jti)")
 
-    if jti in revoked_badges:
+    try:
+        already_revoked = _is_badge_revoked(jti)
+    except RevocationStoreUnavailable as exc:
+        # Cannot tell whether it is already revoked, and cannot persist reliably either.
+        raise HTTPException(
+            status_code=503,
+            detail="Revocation store unavailable; badge is NOT revoked. Retry.",
+        ) from exc
+
+    if already_revoked:
         return RevokeBadgeResponse(
             revoked=False,
             jti=jti,
             message="Badge already revoked",
         )
 
-    # Add to revocation dict with memory limit
-    add_with_limit(revoked_badges, jti, time.time(), MAX_REVOKED_BADGES)
+    # SECURITY: never evict a live revocation. Prune only badges that have already
+    # expired (verify_badge rejects those anyway), then record this one keyed by the
+    # badge's own expiry. The previous LRU eviction could silently un-revoke the oldest
+    # revoked badge once the cap was hit, making it verify as VALID again.
+    # Persist FIRST: the durable store is the source of truth. If we cached in memory
+    # before persisting, a failed write would leave this process reporting the badge as
+    # revoked (and telling the admin so) while a restart -- or any other instance --
+    # still accepted it. Worse, the retry would short-circuit on "already revoked" and
+    # never re-drive the write. So: durable write, then cache; on failure, cache nothing
+    # and fail the request so the caller can retry.
+    if db is not None and not db.add_revoked_badge(jti, payload.get("entity_id"), body.reason, body.evidence):
+        logger.error("revocation_not_persisted", jti=jti)
+        raise HTTPException(
+            status_code=503,
+            detail="Revocation could not be persisted; badge is NOT revoked. Retry.",
+        )
+
+    _prune_expired_revocations()
+    badge_exp = payload.get("exp")
+    revoked_badges[jti] = float(badge_exp) if badge_exp else float("inf")
+    if len(revoked_badges) > MAX_REVOKED_BADGES:
+        # Alarm rather than silently drop a revocation. Bounded naturally by the badge
+        # expiry window, and revocation is admin-authenticated, so this should not occur.
+        logger.error(
+            "revocation_store_over_capacity",
+            size=len(revoked_badges),
+            limit=MAX_REVOKED_BADGES,
+        )
 
     # Create audit record with memory limit
     audit_record = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "jti": jti,
         "entity_id": payload.get("entity_id"),
         "reason": body.reason,
@@ -1590,7 +1796,7 @@ class WebhookManager:
 
         webhook_payload = {
             "event": event,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "entity_id": entity_id,
             "data": payload,
         }
@@ -1637,7 +1843,7 @@ class WebhookManager:
                         return False
                 except (socket.gaierror, ValueError):
                     # DNS resolution failed or invalid IP - allow (external hostname)
-                    pass
+                    logger.debug("webhook_dns_unresolved", entity_id=entity_id, url=url[:50])
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(url, json=webhook_payload)
@@ -1664,7 +1870,7 @@ class WebhookManager:
             "url": url,
             "events": events_list,
             "secret": secret,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
         add_with_limit(webhooks, entity_id, config, MAX_WEBHOOKS)
         # Persist to database if enabled
@@ -1954,7 +2160,9 @@ if _static_dir.exists():
 app.include_router(api_router)
 
 # === Mount METTLE Router (10-suite sessions, VCP attestation, Ed25519 signing) ===
-from mettle.router import router as mettle_router  # noqa: E402 — intentional late import; router depends on app being fully constructed
+from mettle.router import (  # noqa: E402  (intentional late import: router depends on the app being fully constructed)
+    router as mettle_router,
+)
 
 app.include_router(mettle_router)
 

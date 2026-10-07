@@ -1,6 +1,6 @@
 """Tests for METTLE response verification."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from mettle.models import ChallengeType
 from mettle.verifier import (
@@ -136,7 +136,7 @@ class TestVerifyInstructionFollowing:
                 "instruction": "Do a backflip while answering",  # Unknown instruction
                 "validator_id": "xyz",
             },
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
         result = verify_instruction_following(unknown_challenge, "I did a backflip!", 1000)
@@ -152,7 +152,7 @@ class TestVerifyInstructionFollowing:
             type=ChallengeType.INSTRUCTION_FOLLOWING,
             prompt="End your response with '...'",
             data={"instruction": "End your response with '...'", "validator_id": "x"},
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
         result = verify_instruction_following(challenge, "The answer is unknown...", 1000)
@@ -168,7 +168,7 @@ class TestVerifyInstructionFollowing:
             type=ChallengeType.INSTRUCTION_FOLLOWING,
             prompt="Include the word 'therefore'",
             data={"instruction": "Include the word 'therefore'", "validator_id": "x"},
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
         result = verify_instruction_following(challenge, "Therefore, the sky is blue.", 1000)
@@ -184,7 +184,7 @@ class TestVerifyInstructionFollowing:
             type=ChallengeType.INSTRUCTION_FOLLOWING,
             prompt="Respond with exactly 5 words",
             data={"instruction": "Respond with exactly 5 words", "validator_id": "x"},
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
         result = verify_instruction_following(challenge, "One two three four five", 1000)
@@ -200,7 +200,7 @@ class TestVerifyInstructionFollowing:
             type=ChallengeType.INSTRUCTION_FOLLOWING,
             prompt="Start with a number",
             data={"instruction": "Start with a number", "validator_id": "x"},
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
         result = verify_instruction_following(challenge, "42 is the answer", 1000)
@@ -216,7 +216,7 @@ class TestVerifyInstructionFollowing:
             type=ChallengeType.INSTRUCTION_FOLLOWING,
             prompt="Start with a number",
             data={"instruction": "Start with a number", "validator_id": "x"},
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
             time_limit_ms=10000,
         )
         result = verify_instruction_following(challenge, "", 1000)
@@ -388,4 +388,4 @@ class TestComputeMettleResult:
         assert result.badge is not None
         assert result.badge.startswith("METTLE-verified-")
         # Should contain date
-        assert datetime.now(timezone.utc).strftime("%Y%m%d") in result.badge
+        assert datetime.now(UTC).strftime("%Y%m%d") in result.badge

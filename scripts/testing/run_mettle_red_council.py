@@ -2,8 +2,21 @@
 """
 METTLE Red Council Integration Test Runner.
 
-Executes OWASP Agentic attacks against METTLE verification suites
-and evaluates results using Red Council's judicial evaluation pattern.
+Runs OWASP Agentic attack scenarios through the instrumented METTLE agent.
+
+VALIDITY WARNING: this is a FIXED DEMONSTRATION, not a measurement. It has the
+same evaluation logic as ``red_team/run_red_council.py``, so its pass counts are
+decided in advance:
+
+- attack prompts are never POSTed to METTLE (``submit_response`` is called
+  without a ``challenge_id``);
+- ``_evaluate_genuine_agent_response`` returns ``True`` on every branch;
+- ``_evaluate_attack_pattern_detectable`` returns constants keyed on
+  ``(suite, attack_type)``.
+
+Every report this script writes carries ``evaluation_mode:
+"fixed_demonstration"``. Do not cite its pass rate as evidence that METTLE
+detects anything.
 
 Usage:
     # Run all attacks
@@ -30,7 +43,7 @@ import logging
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +59,14 @@ from red_team.instrumented_agent import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The verdicts below are not derived from METTLE's responses; see the module docstring.
+EVALUATION_MODE = "fixed_demonstration"
+EVALUATION_CAVEAT = (
+    "Fixed demonstration, not a measurement: attack prompts are not submitted to METTLE "
+    "(no challenge_id), and verdicts are constants keyed on (suite, attack_type). "
+    "Pass rate is predetermined and is not evidence of detection."
+)
 
 
 @dataclass
@@ -150,7 +171,7 @@ async def run_scenario(
             # METTLE should fail/flag this response (it's a detectable attack)
             result.passed = result.mettle_passed is False
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         result.error = "Timeout"
         result.execution_time_ms = timeout * 1000
     except Exception as e:
@@ -353,7 +374,7 @@ def generate_report(
 
     return TestReport(
         session_id=agent.session_id or "unknown",
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         total_scenarios=total,
         passed=passed,
         failed=failed,
@@ -387,6 +408,7 @@ def print_summary(report: TestReport, severity_threshold: int = 7) -> None:
     """Print human-readable summary to console."""
     print("\n" + "=" * 70)
     print("METTLE RED COUNCIL TEST RESULTS")
+    print(f"[{EVALUATION_MODE}] {EVALUATION_CAVEAT}")
     print("=" * 70)
     print(f"Session: {report.session_id}")
     print(f"Timestamp: {report.timestamp}")
@@ -502,6 +524,8 @@ Examples:
     with open(args.output, "w") as f:
         json.dump(
             {
+                "evaluation_mode": EVALUATION_MODE,
+                "evaluation_caveat": EVALUATION_CAVEAT,
                 "session_id": report.session_id,
                 "timestamp": report.timestamp,
                 "total_scenarios": report.total_scenarios,
