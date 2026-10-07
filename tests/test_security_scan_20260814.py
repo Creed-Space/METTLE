@@ -108,7 +108,7 @@ def test_retired_pseudo_gates_and_manual_oidc_publisher_are_absent() -> None:
     retired = (
         ROOT / ".github/workflows/red-council.yml",
         ROOT / ".github/workflows/mcp-registry-publish.yml",
-        ROOT / "scripts/testing/run_mettle_red_council.py",
+        ROOT / "red_team/instrumented_agent.py",
     )
 
     assert all(not path.exists() for path in retired)

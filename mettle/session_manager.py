@@ -158,7 +158,8 @@ class SessionManager:
         )
         if LLM_DYNAMIC_SUITE in resolved_suites and not llm_available():
             raise ValueError(
-                "llm-dynamic suite requires ANTHROPIC_API_KEY and anthropic package"
+                "llm-dynamic is unavailable: the hosted service holds no model key. "
+                "Select a supported deterministic suite."
             )
 
         # Reserve both active and hourly quota atomically before doing expensive

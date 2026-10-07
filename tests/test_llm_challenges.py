@@ -582,3 +582,49 @@ class TestInstalledSdkSignature:
         for call in calls:
             signature.bind(None, *call.args, **call.kwargs)
             assert "temperature" in call.kwargs["extra_body"]
+
+
+@pytest.mark.parametrize(
+    "hosted_env",
+    [
+        {"METTLE_ENVIRONMENT": "production"},
+        {"RENDER": "true"},
+        {"RENDER_SERVICE_ID": "srv-x"},
+    ],
+)
+def test_hosted_service_never_reads_a_server_key(monkeypatch, hosted_env):
+    """Creed Space never pays for provider calls (BYOK or local only): hosted METTLE holds no key."""
+    from mettle import llm_challenges
+
+    for name in ("METTLE_ENVIRONMENT", "RENDER", "RENDER_SERVICE_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-platform-sentinel")
+    monkeypatch.setenv("METTLE_ANTHROPIC_API_KEY", "sk-ant-platform-sentinel")
+    for name, value in hosted_env.items():
+        monkeypatch.setenv(name, value)
+
+    assert llm_challenges._get_api_key() is None
+    assert llm_challenges.is_available() is False
+    generator = llm_challenges.LLMChallengeGenerator()
+    evaluator = llm_challenges.LLMResponseEvaluator()
+    assert generator.api_key is None
+    assert evaluator.api_key is None
+    if llm_challenges.HAS_ANTHROPIC:
+        for instance in (generator, evaluator):
+            with pytest.raises(RuntimeError, match="server-key fallback is disabled"):
+                instance._get_client()
+
+
+def test_cli_user_key_still_works_locally(monkeypatch):
+    from mettle import llm_challenges
+
+    for name in (
+        "METTLE_ENVIRONMENT",
+        "RENDER",
+        "RENDER_SERVICE_ID",
+        "METTLE_ANTHROPIC_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-user-own-key")
+
+    assert llm_challenges._get_api_key() == "sk-ant-user-own-key"
