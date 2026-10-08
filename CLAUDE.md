@@ -141,8 +141,10 @@ Use the pinned `.venv` for Python tooling.
 .venv/bin/ruff check . --ignore E501
 .venv/bin/ruff format --check .
 
-# Main test gate with the repository threshold
-.venv/bin/python -m pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-fail-under=90
+# Main test gate with the same runtime scope and threshold as CI
+.venv/bin/python -m pytest tests/ -v --tb=short \
+  --cov=main --cov=config --cov=database --cov=mettle --cov=scripts.engine \
+  --cov-report=term-missing --cov-fail-under=90
 
 # Agent-facing and static contract checks
 npm run check:js
@@ -151,6 +153,9 @@ npm run check:openapi
 npm run check:fixtures
 npm run design:check
 ```
+
+Working if: the local command and CI measure the same runtime modules, run the
+full test suite, and retain the 90% coverage threshold.
 
 CI, security, reproducibility, packaging, browser, multi-worker, resilience, release,
 and deployment gates remain distinct. Consult `.github/workflows/ci.yml` and
