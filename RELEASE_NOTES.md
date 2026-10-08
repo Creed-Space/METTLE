@@ -33,7 +33,10 @@ receipt identifies incomplete recovery without exposing transport details.
 
 Both retired Red Council runners identify their historical output as a fixed
 demonstration. They execute no scenarios and support no detection claims.
-The existing experimental measurement and credential limitations remain.
+Passing results do not prove identity, substrate, or suitability for access.
+Independent protocol, cryptographic, privacy, adversarial ML, accessibility,
+and bilateral reviews remain pending. Rights-cleared held-out evaluation and
+deployment-specific key, recovery, and deletion receipts are still required.
 
 ## [0.5.5]
 
