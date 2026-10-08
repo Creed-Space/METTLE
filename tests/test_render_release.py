@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import http.client
+import inspect
 import urllib.error
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 
 from scripts import deploy_render_release as release
 
@@ -453,3 +456,119 @@ def test_malformed_response_is_a_recoverable_secret_safe_api_error(
     with pytest.raises(release.RenderAPIError, match="malformed JSON") as raised:
         release._request_json("/services/srv-api/deploys", "secret-token")
     assert "secret-token" not in str(raised.value)
+
+
+@pytest.mark.parametrize("pending_visible", [False, True])
+def test_retry_lost_response_cannot_use_a_historical_failed_attempt(
+    monkeypatch: pytest.MonkeyPatch, pending_visible: bool
+) -> None:
+    posts: list[str] = []
+
+    def request(
+        path: str,
+        _token: str,
+        *,
+        method: str = "GET",
+        payload: dict[str, object] | None = None,
+    ) -> tuple[int, object]:
+        del payload
+        service = "api" if "srv-api" in path else "mcp"
+        if method == "GET":
+            previous = _live(f"dep-{service}-previous")
+            previous["commit"] = {"id": "0" * 40}
+            deployments = [{"deploy": previous}]
+            if service == "api" and posts:
+                deployments.insert(0, {"deploy": _live("dep-api-release")})
+            if service == "mcp":
+                old = _live("dep-mcp-old-failure")
+                old.update(status="build_failed", createdAt="2026-10-07T00:00:00Z")
+                deployments.insert(0, {"deploy": old})
+                if pending_visible and "/services/srv-mcp/deploys" in posts:
+                    pending = _live("dep-mcp-new-attempt")
+                    pending.update(status="building", createdAt="2026-10-08T00:00:00Z")
+                    deployments.insert(0, {"deploy": pending})
+            return 200, deployments
+        posts.append(path)
+        if path == "/services/srv-mcp/deploys":
+            raise urllib.error.URLError("secret-token: accepted trigger response lost")
+        if path.endswith("/rollback"):
+            restored = _live(f"dep-{service}-rollback")
+            restored["commit"] = {"id": "0" * 40}
+            restored["trigger"] = "rollback"
+            return 201, restored
+        return 201, _live("dep-api-release")
+
+    monkeypatch.setattr(release, "_request_json", request)
+    with pytest.raises(
+        release.RenderPromotionError, match="services restored"
+    ) as raised:
+        release.promote_release(
+            _contract(), SOURCE_REVISION, "v0.5.6", "secret-token", poll_seconds=0
+        )
+    assert posts == [
+        "/services/srv-api/deploys",
+        "/services/srv-mcp/deploys",
+        "/services/srv-mcp/rollback",
+        "/services/srv-api/rollback",
+    ]
+    assert [item["action"] for item in raised.value.rollbacks] == [
+        "rollback",
+        "rollback",
+    ]
+    assert "secret-token" not in repr(raised.value.rollbacks)
+
+
+def test_queued_retry_waits_for_a_new_deployment_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queued: set[str] = set()
+    observations: dict[str, int] = {"api": 0, "mcp": 0}
+
+    def request(
+        path: str,
+        _token: str,
+        *,
+        method: str = "GET",
+        payload: dict[str, object] | None = None,
+    ) -> tuple[int, object | None]:
+        del payload
+        service = "api" if "srv-api" in path else "mcp"
+        if method == "POST":
+            assert path.endswith("/deploys")
+            queued.add(service)
+            return 202, None
+        previous = _live(f"dep-{service}-previous")
+        previous["commit"] = {"id": "0" * 40}
+        old = _live(f"dep-{service}-old-failure")
+        old["status"] = "build_failed"
+        deployments = [{"deploy": old}, {"deploy": previous}]
+        if service in queued:
+            observations[service] += 1
+            if observations[service] == 2:
+                deployments.insert(0, {"deploy": _live(f"dep-{service}-new-attempt")})
+        return 200, deployments
+
+    monkeypatch.setattr(release, "_request_json", request)
+    receipt = release.promote_release(
+        _contract(), SOURCE_REVISION, "v0.5.6", "secret-token", poll_seconds=0
+    )
+    services = receipt["services"]
+    assert isinstance(services, list)
+    assert [item["deploy_id"] for item in services] == [
+        "dep-api-new-attempt",
+        "dep-mcp-new-attempt",
+    ]
+    assert observations == {"api": 2, "mcp": 2}
+
+
+def test_production_job_reserves_time_for_both_promotions_and_rollbacks() -> None:
+    workflow = yaml.safe_load(
+        (
+            Path(__file__).resolve().parents[1] / ".github/workflows/release.yml"
+        ).read_text()
+    )
+    operation_seconds = (
+        inspect.signature(release.promote_release).parameters["timeout_seconds"].default
+    )
+    job_minutes = workflow["jobs"]["deploy-render-production"]["timeout-minutes"]
+    assert job_minutes * 60 >= 4 * operation_seconds + 15 * 60

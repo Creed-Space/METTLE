@@ -28,6 +28,9 @@ compatible. Package, API, CLI, OpenAPI, and registry versions advance together.
 Transport failures during release promotion trigger rollback of every attempted
 service. Recovery continues if one service's rollback fails, and the failure
 receipt identifies incomplete recovery without exposing transport details.
+Retry recovery identifies the exact attempted deployment; queued retries ignore
+pre-existing deployment IDs. The production job allows both promotion and
+recovery waits, with time reserved for setup and receipt upload.
 
 ### Known limitations
 
