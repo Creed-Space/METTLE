@@ -36,7 +36,7 @@ def load_example(issuer: str) -> dict:
     if match is None:
         raise RuntimeError("Published quick API example was not found")
     namespace: dict = {}
-    exec(compile(html.unescape(match[1]), "quickstart-python", "exec"), namespace)  # noqa: S102
+    exec(compile(html.unescape(match[1]), "<quickstart-python>", "exec"), namespace)  # noqa: S102
     namespace["ISSUER"] = issuer
     return namespace
 

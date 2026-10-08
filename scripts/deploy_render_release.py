@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import re
 import sys
@@ -80,11 +81,13 @@ def _request_json(
         raise RenderAPIError(
             f"Render API {method} {path.split('?', 1)[0]} returned HTTP {exc.code}"
         ) from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise RenderAPIError("Render API transport failed") from exc
     if not body:
         return status, None
     try:
         return status, json.loads(body)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise RenderAPIError("Render API returned malformed JSON") from exc
 
 
@@ -388,7 +391,7 @@ def promote_release(
             if len(services) != prepared_index + 1:
                 raise RenderAPIError("Render promotion bookkeeping is inconsistent")
             services[prepared_index] = completed
-    except (RenderAPIError, TimeoutError) as promotion_error:
+    except (RenderAPIError, OSError, http.client.HTTPException) as promotion_error:
         rollbacks: list[dict[str, object]] = []
         rollback_failed = False
         for promoted in reversed(services):
@@ -401,7 +404,11 @@ def promote_release(
                         poll_seconds=poll_seconds,
                     )
                 )
-            except (RenderAPIError, TimeoutError) as rollback_error:
+            except (
+                RenderAPIError,
+                OSError,
+                http.client.HTTPException,
+            ) as rollback_error:
                 rollback_failed = True
                 rollbacks.append(
                     {

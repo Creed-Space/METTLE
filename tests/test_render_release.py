@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import http.client
+import urllib.error
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -332,3 +335,121 @@ def test_timeout_after_deploy_trigger_rolls_back_the_current_service(
 def test_render_bearer_cannot_be_sent_outside_fixed_origin(path: str) -> None:
     with pytest.raises(ValueError, match="fixed HTTPS origin"):
         release._request_json(path, "secret-token")
+
+
+@pytest.mark.parametrize(
+    "error_type", [urllib.error.URLError, OSError, http.client.HTTPException]
+)
+@pytest.mark.parametrize("rollback_fails", [False, True])
+def test_transport_failure_recovers_every_attempted_service(
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[Exception],
+    rollback_fails: bool,
+) -> None:
+    posts: list[str] = []
+    original_request = release._request_json
+
+    def request(
+        path: str,
+        _token: str,
+        *,
+        method: str = "GET",
+        payload: dict[str, object] | None = None,
+    ) -> tuple[int, object]:
+        del payload
+        service = "api" if "srv-api" in path else "mcp"
+        if method == "GET":
+            previous = _live(f"dep-{service}-previous")
+            previous["commit"] = {"id": "0" * 40}
+            deployments = [{"deploy": previous}]
+            if service == "api" and posts:
+                deployments.insert(0, {"deploy": _live("dep-api-release")})
+            return 200, deployments
+        posts.append(path)
+        if path == "/services/srv-mcp/deploys":
+            if issubclass(error_type, http.client.HTTPException):
+                # A truncated response must cross the real request boundary.
+                return original_request(path, _token, method=method)
+            raise error_type("secret-token: connection lost after trigger")
+        if path.endswith("/rollback"):
+            if service == "mcp" and rollback_fails:
+                raise error_type("secret-token: rollback connection lost")
+            restored = _live(f"dep-{service}-rollback")
+            restored["commit"] = {"id": "0" * 40}
+            restored["trigger"] = "rollback"
+            return 201, restored
+        return 201, _live("dep-api-release")
+
+    class TruncatedResponse:
+        status = 201
+
+        def __enter__(self) -> TruncatedResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def geturl(self) -> str:
+            return release.RENDER_API + "/services/srv-mcp/deploys"
+
+        def read(self) -> bytes:
+            raise http.client.IncompleteRead(b"secret-token", 32)
+
+    monkeypatch.setattr(
+        release._HTTPS_OPENER, "open", lambda *_a, **_kw: TruncatedResponse()
+    )
+    monkeypatch.setattr(release, "_request_json", request)
+    outcome = "rollback incomplete" if rollback_fails else "services restored"
+    with pytest.raises(release.RenderPromotionError, match=outcome) as raised:
+        release.promote_release(
+            _contract(), SOURCE_REVISION, "v0.5.6", "secret-token", poll_seconds=0
+        )
+
+    assert posts == [
+        "/services/srv-api/deploys",
+        "/services/srv-mcp/deploys",
+        "/services/srv-mcp/rollback",
+        "/services/srv-api/rollback",
+    ]
+    assert [item["name"] for item in raised.value.rollbacks] == [
+        "mettle-mcp",
+        "mettle-api",
+    ]
+    assert [item["status"] for item in raised.value.rollbacks] == [
+        "error" if rollback_fails else "live",
+        "live",
+    ]
+    assert "secret-token" not in str(raised.value)
+    assert "secret-token" not in repr(raised.value.rollbacks)
+
+
+@pytest.mark.parametrize(
+    "error_type", [urllib.error.URLError, OSError, http.client.HTTPException]
+)
+def test_transport_errors_are_secret_safe(
+    monkeypatch: pytest.MonkeyPatch, error_type: type[Exception]
+) -> None:
+    def fail_open(*_args: object, **_kwargs: object) -> None:
+        raise error_type("secret-token: internal transport detail")
+
+    monkeypatch.setattr(release._HTTPS_OPENER, "open", fail_open)
+    with pytest.raises(release.RenderAPIError, match="transport failed") as raised:
+        release._request_json("/services/srv-api/deploys", "secret-token")
+    assert "secret-token" not in str(raised.value)
+
+
+@pytest.mark.parametrize("body", [b"\xff", b"{secret-token"])
+def test_malformed_response_is_a_recoverable_secret_safe_api_error(
+    monkeypatch: pytest.MonkeyPatch, body: bytes
+) -> None:
+    response = MagicMock()
+    response.status = 201
+    response.geturl.return_value = release.RENDER_API + "/services/srv-api/deploys"
+    response.read.return_value = body
+    opener = MagicMock()
+    opener.return_value.__enter__.return_value = response
+    monkeypatch.setattr(release._HTTPS_OPENER, "open", opener)
+
+    with pytest.raises(release.RenderAPIError, match="malformed JSON") as raised:
+        release._request_json("/services/srv-api/deploys", "secret-token")
+    assert "secret-token" not in str(raised.value)
