@@ -30,7 +30,24 @@ except ImportError:
     AsyncAnthropic = None  # type: ignore[assignment,misc]  # noqa: N816
 
 
+def _is_hosted_service() -> bool:
+    """The hosted METTLE API (Render), as opposed to the CLI on a user's own machine."""
+    return (
+        os.getenv("METTLE_ENVIRONMENT", "").strip().lower() == "production"
+        or bool(os.getenv("RENDER"))
+        or bool(os.getenv("RENDER_SERVICE_ID"))
+    )
+
+
 def _get_api_key() -> str | None:
+    """The CLI user's own key; never a server-held key on the hosted service.
+
+    Creed Space never pays for provider calls: every model call is the user's own key
+    (BYOK) or a local model (Rewind CLAUDE.md §Core Stack). The hosted API therefore
+    offers no LLM-dynamic suite unless a caller-supplied key is passed explicitly.
+    """
+    if _is_hosted_service():
+        return None
     return os.getenv("METTLE_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
 
 
@@ -114,6 +131,10 @@ class LLMChallengeGenerator:
         if self._client is None:
             if not HAS_ANTHROPIC:
                 raise ImportError("anthropic package required: pip install anthropic")
+            if not self.api_key:
+                raise RuntimeError(
+                    "An explicit user model key is required; server-key fallback is disabled"
+                )
             self._client = AsyncAnthropic(api_key=self.api_key)  # type: ignore[misc]
         return self._client
 
@@ -271,6 +292,10 @@ class LLMResponseEvaluator:
         if self._client is None:
             if not HAS_ANTHROPIC:
                 raise ImportError("anthropic package required: pip install anthropic")
+            if not self.api_key:
+                raise RuntimeError(
+                    "An explicit user model key is required; server-key fallback is disabled"
+                )
             self._client = AsyncAnthropic(api_key=self.api_key)  # type: ignore[misc]
         return self._client
 
