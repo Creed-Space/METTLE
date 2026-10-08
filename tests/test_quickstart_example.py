@@ -47,7 +47,7 @@ def example(monkeypatch):
 
     monkeypatch.setattr(httpx, "Client", lambda **_: LocalClient())
     namespace: dict[str, Any] = {}
-    exec(compile(parser.code, "quickstart-python", "exec"), namespace)  # noqa: S102
+    exec(compile(parser.code, "<quickstart-python>", "exec"), namespace)  # noqa: S102
     yield namespace
     transport.close()
 

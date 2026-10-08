@@ -338,7 +338,8 @@ jobs:
     name: Promote exact release commit to Render
     needs: [publish-github-release, render-drift]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Two 30-minute promotions plus two 30-minute recovery waits and receipt headroom.
+    timeout-minutes: 150
     environment:
       name: production
       url: https://mettle.sh

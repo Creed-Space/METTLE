@@ -1,5 +1,46 @@
 # METTLE release notes
 
+## [0.5.6]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged.
+
+### Suite policy
+
+Deterministic challenge generation, scoring, and credential policy remain
+unchanged from `0.5.5`. The hosted service refuses `llm-dynamic` sessions
+and ignores server-held model keys; local CLI use can still use the operator's key.
+
+### Public key changes
+
+No signing key, discovery format, or verification-key rotation is included.
+
+### Compatibility
+
+Bring the operator-liveness branch into the scoped `0.5.5` security release.
+This release introduces no active operator-liveness protocol.
+The eleven public MCP tools and existing deterministic API contracts remain
+compatible. Package, API, CLI, OpenAPI, and registry versions advance together.
+
+### Deployment recovery
+
+Transport failures during release promotion trigger rollback of every attempted
+service. Recovery continues if one service's rollback fails, and the failure
+receipt identifies incomplete recovery without exposing transport details.
+Retry recovery identifies the exact attempted deployment; queued retries ignore
+pre-existing deployment IDs. The production job allows both promotion and
+recovery waits, with time reserved for setup and receipt upload.
+
+### Known limitations
+
+Both retired Red Council runners identify their historical output as a fixed
+demonstration. They execute no scenarios and support no detection claims.
+Passing results do not prove identity, substrate, or suitability for access.
+Independent protocol, cryptographic, privacy, adversarial ML, accessibility,
+and bilateral reviews remain pending. Rights-cleared held-out evaluation and
+deployment-specific key, recovery, and deletion receipts are still required.
+
 ## [0.5.5]
 
 ### Credential schema

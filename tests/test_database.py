@@ -8,6 +8,7 @@ import hashlib
 import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from threading import Barrier
 from unittest.mock import patch
@@ -171,8 +172,8 @@ class TestInitDb:
         source_engine.dispose()
 
         with (
-            sqlite3.connect(source_path) as source,
-            sqlite3.connect(restored_path) as restored,
+            closing(sqlite3.connect(source_path)) as source,
+            closing(sqlite3.connect(restored_path)) as restored,
         ):
             source.backup(restored)
 

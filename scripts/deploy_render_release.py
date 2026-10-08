@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import re
 import sys
@@ -80,11 +81,13 @@ def _request_json(
         raise RenderAPIError(
             f"Render API {method} {path.split('?', 1)[0]} returned HTTP {exc.code}"
         ) from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise RenderAPIError("Render API transport failed") from exc
     if not body:
         return status, None
     try:
         return status, json.loads(body)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise RenderAPIError("Render API returned malformed JSON") from exc
 
 
@@ -148,9 +151,16 @@ def _wait_for_queued_deploy(
     *,
     deadline: float,
     poll_seconds: float,
+    existing_deploy_ids: set[str],
 ) -> dict[str, Any]:
     while time.monotonic() < deadline:
-        match = _matching_deploy(_list_deploys(service_id, token), source_revision)
+        deployments = [
+            deployment
+            for deployment in _list_deploys(service_id, token)
+            if isinstance(deployment.get("id"), str)
+            and deployment["id"] not in existing_deploy_ids
+        ]
+        match = _matching_deploy(deployments, source_revision)
         if match is not None:
             return match
         time.sleep(poll_seconds)
@@ -203,10 +213,11 @@ def promote_service(
 ) -> dict[str, object]:
     """Deploy one exact commit and return a nonsecret provider receipt."""
     service_id = target["service_id"]
+    existing_deployments = _list_deploys(service_id, token)
     previous = next(
         (
             deployment
-            for deployment in _list_deploys(service_id, token)
+            for deployment in existing_deployments
             if deployment.get("status") == "live"
         ),
         None,
@@ -248,9 +259,15 @@ def promote_service(
             token,
             deadline=deadline,
             poll_seconds=poll_seconds,
+            existing_deploy_ids={
+                item["id"]
+                for item in existing_deployments
+                if isinstance(item.get("id"), str)
+            },
         )
     else:
         raise RenderAPIError("Render deploy trigger returned an unexpected shape")
+    prepared["deploy_id"] = deployment.get("id")
     live = _wait_until_live(
         service_id,
         deployment,
@@ -305,11 +322,14 @@ def rollback_service(
         None,
     )
     attempted_commit_id = promoted.get("commit_id")
+    attempted_deploy_id = promoted.get("deploy_id")
     terminal_attempt = next(
         (
             deployment
             for deployment in deployments
-            if isinstance(attempted_commit_id, str)
+            if isinstance(attempted_deploy_id, str)
+            and deployment.get("id") == attempted_deploy_id
+            and isinstance(attempted_commit_id, str)
             and isinstance(deployment.get("commit"), dict)
             and deployment["commit"].get("id") == attempted_commit_id
             and deployment.get("status") in FAILURE_STATUSES
@@ -388,7 +408,7 @@ def promote_release(
             if len(services) != prepared_index + 1:
                 raise RenderAPIError("Render promotion bookkeeping is inconsistent")
             services[prepared_index] = completed
-    except (RenderAPIError, TimeoutError) as promotion_error:
+    except (RenderAPIError, OSError, http.client.HTTPException) as promotion_error:
         rollbacks: list[dict[str, object]] = []
         rollback_failed = False
         for promoted in reversed(services):
@@ -401,7 +421,11 @@ def promote_release(
                         poll_seconds=poll_seconds,
                     )
                 )
-            except (RenderAPIError, TimeoutError) as rollback_error:
+            except (
+                RenderAPIError,
+                OSError,
+                http.client.HTTPException,
+            ) as rollback_error:
                 rollback_failed = True
                 rollbacks.append(
                     {
