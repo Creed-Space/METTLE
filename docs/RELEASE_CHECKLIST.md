@@ -11,7 +11,7 @@
   an absent or malformed source identity.
 * [ ] Working tree is clean, or every intentional generated artifact is bound by
   a recorded digest and publication remains blocked.
-* [ ] No staged or recent-history file exceeds 50 MB.
+* [ ] No staged or recent-history file exceeds 100 MB (100,000,000 bytes).
 
 ## Protocol and credentials
 

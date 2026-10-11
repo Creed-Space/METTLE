@@ -233,7 +233,7 @@ for (const width of [320, 1440]) {
   });
 }
 
-test('media has a poster, captions, transcript, and intent-gated payload', async ({ page }) => {
+test('media has a poster, captions, transcript, and preloaded intent-gated playback', async ({ page }) => {
   const videoRequests = [];
   page.on('request', request => {
     if (request.url().includes('mettle-explainer.mp4')) videoRequests.push(request);
@@ -244,17 +244,13 @@ test('media has a poster, captions, transcript, and intent-gated payload', async
   const source = video.locator('source');
   await expect(video).toHaveAttribute('poster', /mettle-explainer-poster\.webp\?v=/);
   await expect(video.locator('track[kind="captions"]')).toHaveAttribute('src', /\.vtt\?v=/);
-  await expect(source).not.toHaveAttribute('src', /.+/);
-  await expect(source).toHaveAttribute('data-src', /mettle-explainer\.mp4\?v=/);
-  await expect(page.getByText('Read the video transcript')).toBeVisible();
-  await page.waitForTimeout(3000);
-  expect(videoRequests).toHaveLength(0);
-
-  const requestStarted = page.waitForRequest(request =>
-    request.url().includes('mettle-explainer.mp4'),
-  );
-  await page.getByRole('button', { name: 'Play the METTLE explainer video' }).click();
-  await requestStarted;
+  await expect(video).toHaveAttribute('preload', 'auto');
   await expect(source).toHaveAttribute('src', /mettle-explainer\.mp4\?v=/);
-  expect(videoRequests).toHaveLength(1);
+  await expect(page.getByText('Read the video transcript')).toBeVisible();
+  await expect.poll(() => videoRequests.length).toBeGreaterThan(0);
+  await page.waitForFunction(() => document.getElementById('explainer-video').readyState >= 2);
+  expect(await video.evaluate(element => element.paused)).toBe(true);
+  await page.getByRole('button', { name: 'Play the METTLE explainer video' }).click();
+  await page.waitForFunction(() => !document.getElementById('explainer-video').paused);
+  await video.evaluate(element => element.pause());
 });

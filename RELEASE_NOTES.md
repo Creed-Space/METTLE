@@ -1,5 +1,36 @@
 # METTLE release notes
 
+## [0.5.7]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged.
+
+### Suite policy
+
+Challenge generation, scoring, response windows, and tier eligibility remain
+unchanged from `0.5.6`.
+
+### Public key changes
+
+No signing key, discovery format, or verification-key rotation is included.
+
+### Compatibility
+
+The explainer video preloads automatically so playback can begin promptly.
+Playback still requires the visitor to activate the play button. The video,
+captions, transcript, and other website copy remain unchanged. The media transfer
+budget allows the existing video to preload while preserving critical-page budgets.
+Python 3.10 through 3.14, the eleven public MCP tools, and API contracts remain
+compatible. Package, API, CLI, OpenAPI, and registry versions advance together.
+
+### Known limitations
+
+Passing results do not prove identity, substrate, or suitability for access.
+Independent protocol, cryptographic, privacy, adversarial ML, accessibility,
+and bilateral reviews remain pending. Rights-cleared held-out evaluation and
+deployment-specific key, recovery, and deletion receipts are still required.
+
 ## [0.5.6]
 
 ### Credential schema
