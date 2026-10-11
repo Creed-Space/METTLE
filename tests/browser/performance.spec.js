@@ -42,6 +42,10 @@ test('landing page stays inside the committed lab performance budget', async ({ 
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.locator('main').waitFor();
+  await expect(page.locator('#explainer-video')).toHaveAttribute('preload', 'auto');
+  await expect(page.locator('#explainer-video source')).toHaveAttribute('src', /mettle-explainer\.mp4/);
+  await page.waitForFunction(() => document.getElementById('explainer-video').readyState >= 2);
+  expect(await page.locator('#explainer-video').evaluate(video => video.paused)).toBe(true);
   await page.waitForTimeout(500);
 
   const metrics = await page.evaluate(() => {
@@ -98,4 +102,9 @@ test('landing page stays inside the committed lab performance budget', async ({ 
   expect(metrics.initialVideoTransferBytes).toBeLessThanOrEqual(
     budget.initial_video_transfer_bytes_max,
   );
+
+  await page.locator('#explainer-overlay').click();
+  await expect(page.locator('#explainer-overlay')).toHaveClass(/hidden/);
+  await page.waitForFunction(() => !document.getElementById('explainer-video').paused);
+  await page.locator('#explainer-video').evaluate(video => video.pause());
 });

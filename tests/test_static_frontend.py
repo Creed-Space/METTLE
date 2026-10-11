@@ -90,3 +90,26 @@ def test_static_html_local_assets_exist(html_file: Path) -> None:
         asset for asset in set(parser.local_assets) if not (STATIC / asset).is_file()
     )
     assert not missing
+
+
+def test_explainer_preloads_without_starting_playback() -> None:
+    """The source is immediately available while playback needs user intent."""
+
+    class VideoParser(HTMLParser):
+        video_count = 0
+        source_count = 0
+
+        def handle_starttag(self, tag, attrs_list):
+            attrs = dict(attrs_list)
+            if tag == "video":
+                self.video_count += 1
+                assert attrs.get("preload") == "auto"
+                assert "autoplay" not in attrs
+            if tag == "source" and attrs.get("type") == "video/mp4":
+                self.source_count += 1
+                assert attrs.get("src", "").startswith("/static/mettle-explainer.mp4?")
+                assert "data-src" not in attrs
+
+    parser = VideoParser()
+    parser.feed((STATIC / "index.html").read_text(encoding="utf-8"))
+    assert parser.video_count == parser.source_count == 1

@@ -4,9 +4,9 @@
   "inp_ms_max": 300,
   "cls_max": 0.1,
   "critical_transfer_bytes_max": 800000,
-  "initial_video_transfer_bytes_max": 300000,
+  "initial_video_transfer_bytes_max": 15000000,
   "notes": [
-    "The video is excluded from critical bytes and may fetch only bounded metadata before user intent.",
+    "The video is excluded from critical bytes and preloads automatically; its full transfer stays within the 15 MB media budget.",
     "Production edge measurements remain a separate release gate because local lab values do not include Render or CDN behavior."
   ]
 }

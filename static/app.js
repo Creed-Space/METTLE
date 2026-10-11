@@ -540,20 +540,14 @@ if (elements.startBtn) {
 })();
 
 /**
- * Explainer Video - strict click-to-load and click-to-play gate
- * The large MP4 stays absent from the request graph until user intent.
+ * Explainer Video - preload for prompt playback; play only on user intent.
  */
 (function initExplainerVideo() {
     const video = document.getElementById('explainer-video');
     const overlay = document.getElementById('explainer-overlay');
-    const source = video?.querySelector('source[data-src]');
-    if (!video || !overlay || !source) return;
+    if (!video || !overlay) return;
 
     overlay.addEventListener('click', () => {
-        if (!source.hasAttribute('src')) {
-            source.setAttribute('src', source.dataset.src);
-            video.load();
-        }
         overlay.classList.add('hidden');
         video.controls = true;
         video.play().catch(() => {
