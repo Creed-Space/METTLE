@@ -120,7 +120,7 @@ def test_all_release_version_declarations_agree() -> None:
     openapi = json.loads(_read("docs/openapi-v1.json"))
     version = project["version"]
 
-    assert version == "0.5.7"
+    assert version == "0.5.8"
     assert len(server["description"]) <= 100
     assert (
         __version__

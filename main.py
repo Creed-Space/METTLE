@@ -3649,6 +3649,13 @@ async def llms():
     return FileResponse(str(_static_dir / "llms.txt"), media_type="text/plain")
 
 
+@app.get("/indexnow-key.txt", include_in_schema=False)
+@app.head("/indexnow-key.txt", include_in_schema=False)
+async def indexnow_key():
+    """Serve the public search-engine ownership-verification file."""
+    return FileResponse(str(_static_dir / "indexnow-key.txt"), media_type="text/plain")
+
+
 # === SEO Endpoints ===
 @app.get("/sitemap.xml", include_in_schema=False)
 @app.head("/sitemap.xml", include_in_schema=False)
