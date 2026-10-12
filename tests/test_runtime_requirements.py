@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from packaging.requirements import Requirement
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,7 +56,14 @@ def test_mcp_container_uses_hashed_lock() -> None:
     assert 'ENTRYPOINT ["/usr/local/bin/mettle-mcp-entrypoint"]' in dockerfile
     assert '"mcp>=2.0,<3"' in pyproject
     assert "mcp>=2.0,<3" in requirements
-    assert "mcp==2.0.0" in lock
+    locked_versions = {
+        line.split("==", 1)[0]: line.split("==", 1)[1].split()[0]
+        for line in lock.splitlines()
+        if "==" in line and not line.startswith("#")
+    }
+    assert Requirement("mcp>=2.0,<3").specifier.contains(locked_versions["mcp"])
+    assert locked_versions["mcp-types"] == locked_versions["mcp"]
+    assert Requirement("click>=8.5.0").specifier.contains(locked_versions["click"])
     assert lock.count("--hash=sha256:") >= 10
 
 
