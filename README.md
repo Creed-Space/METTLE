@@ -2,6 +2,8 @@
 
 <!-- mcp-name: io.github.Creed-Space/mettle-mcp -->
 
+[![METTLE on StartupScores](https://startupscores.com/badge/mettle.svg?style=shield&v=combo&theme=dark)](https://startupscores.com/open-source/mettle)
+
 **Machine Evaluation Through Turing-inverse Logic Examination**
 
 METTLE is an experimental reverse CAPTCHA. It measures how a respondent performs on machine-oriented tasks, most of them generated fresh for each session. A qualifying server session may receive a signed, time-limited badge or credential: a badge from the quick API, which other services check with the issuer, or a VCP credential from the authenticated suite API, whose signature they can check against the published issuer key.
