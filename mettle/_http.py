@@ -34,7 +34,7 @@ import os
 import re
 import time
 from collections import deque
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, MutableMapping
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -509,7 +509,7 @@ def build_http_app(
             principal_token = caller_principal.set(principal)
             http_token = http_request_active.set(True)
 
-            async def send_with_headers(message: dict[str, Any]) -> None:
+            async def send_with_headers(message: MutableMapping[str, Any]) -> None:
                 if message.get("type") == "http.response.start":
                     raw_headers = list(message.get("headers", []))
                     existing = {k.lower() for k, _ in raw_headers}

@@ -1,5 +1,7 @@
 """Shared rate-limiter authority for the API and nested METTLE router."""
 
+from typing import Any, cast
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -9,7 +11,7 @@ from config import get_settings
 CREDENTIAL_STATUS_RATE_LIMIT = "60/minute"
 
 _settings = get_settings()
-_storage_options: dict[str, object] = {}
+_storage_options: dict[str, Any] = {}
 if _settings.redis_url:
     _storage_options = {
         "socket_connect_timeout": 1.0,
@@ -22,5 +24,5 @@ if _settings.redis_url:
 limiter = Limiter(
     key_func=get_remote_address,
     storage_uri=_settings.redis_url or "memory://",
-    storage_options=_storage_options,
+    storage_options=cast(Any, _storage_options),
 )
