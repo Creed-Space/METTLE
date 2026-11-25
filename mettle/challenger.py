@@ -127,6 +127,22 @@ def generate_token_prediction_challenge(difficulty: Difficulty) -> Challenge:
     )
 
 
+_INSTRUCTION_FACTUAL_QUESTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("What is the capital of France?", ("paris",)),
+    ("What is the capital of Japan?", ("tokyo",)),
+    ("What is the chemical symbol for water?", ("h2o",)),
+    ("How many continents are on Earth?", ("7", "seven")),
+    ("What planet is closest to the Sun?", ("mercury",)),
+)
+
+_CONSISTENCY_QUESTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("What is 2 + 2?", ("4", "four")),
+    ("What color is the sky on a clear day?", ("blue", "azure", "cerulean")),
+    ("How many legs does a dog have?", ("4", "four")),
+    ("What is the capital of France?", ("paris",)),
+)
+
+
 def generate_instruction_following_challenge(difficulty: Difficulty) -> Challenge:
     """Generate an instruction following challenge."""
     marker = f"m{secrets.token_hex(5)}"
@@ -135,6 +151,7 @@ def generate_instruction_following_challenge(difficulty: Difficulty) -> Challeng
     instruction_kind = _secure_choice(
         ["prefix", "suffix", "include", "exact_words", "start_digit"]
     )
+    question, expected_keywords = _secure_choice(_INSTRUCTION_FACTUAL_QUESTIONS)
     instructions = {
         "prefix": f"Start your response with the exact token '{marker}'",
         "suffix": f"End your response with the exact token '{marker}'",
@@ -159,13 +176,14 @@ def generate_instruction_following_challenge(difficulty: Difficulty) -> Challeng
     return Challenge(
         id=generate_challenge_id(),
         type=ChallengeType.INSTRUCTION_FOLLOWING,
-        prompt=f"Follow this instruction: {instruction}\nThen answer: What is the capital of France?",
+        prompt=f"Follow this instruction: {instruction}\nThen answer: {question}",
         data={
             "instruction": instruction,
             "instruction_kind": instruction_kind,
             "marker": marker,
             "word_count": word_count,
             "starting_digit": starting_digit,
+            "expected_keywords": list(expected_keywords),
             "validator_id": validator_id,
         },
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -175,14 +193,7 @@ def generate_instruction_following_challenge(difficulty: Difficulty) -> Challeng
 
 def generate_consistency_challenge(difficulty: Difficulty) -> Challenge:
     """Generate a consistency challenge - answer must be consistent across attempts."""
-    questions = [
-        "What is 2 + 2?",
-        "What color is the sky on a clear day?",
-        "How many legs does a dog have?",
-        "What is the capital of France?",
-    ]
-
-    question = _secure_choice(questions)
+    question, expected_keywords = _secure_choice(_CONSISTENCY_QUESTIONS)
     time_limit = (
         3500 if difficulty == Difficulty.BASIC else 1000
     )  # Basic: 3.5s, Full: 1s
@@ -191,7 +202,11 @@ def generate_consistency_challenge(difficulty: Difficulty) -> Challenge:
         id=generate_challenge_id(),
         type=ChallengeType.CONSISTENCY,
         prompt=f"Answer this question THREE times, separated by '|':\n{question}",
-        data={"question": question, "num_responses": 3},
+        data={
+            "question": question,
+            "num_responses": 3,
+            "expected_keywords": list(expected_keywords),
+        },
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         time_limit_ms=time_limit,
     )

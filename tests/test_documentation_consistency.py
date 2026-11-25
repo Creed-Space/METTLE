@@ -14,7 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 # it lived outside this net for its whole life, which is exactly how it came to
 # claim "Bronze confirms AI substrate" on a page that says passing proves no such
 # thing, and a 100ms budget for an 800ms challenge. It is covered now.
-VIDEO_SURFACES = ("video/build.py", "static/mettle-explainer.vtt")
+VIDEO_SURFACES = (
+    "video/remaster/brief.json",
+    "video/build.py",  # Historical recipe remains subject to the claim guards.
+    "static/mettle-explainer.vtt",
+)
 PUBLIC_CLAIM_SURFACES = (
     *VIDEO_SURFACES,
     "CLAUDE.md",
@@ -57,13 +61,9 @@ def _read(relative_path: str) -> str:
 
 
 def _video_narration() -> str:
-    """The narration the video build would speak, straight from the scene list."""
-    import sys
-
-    sys.path.insert(0, str(ROOT / "video"))
-    import build  # type: ignore[import-not-found]
-
-    return "\n".join(scene["narration"] for scene in build.SCENES)
+    """The canonical remaster narration, straight from its production brief."""
+    brief = json.loads(_read("video/remaster/brief.json"))
+    return "\n".join(beat["text"] for beat in brief["beats"])
 
 
 def test_public_homepage_matches_registered_suite_count() -> None:
@@ -120,7 +120,7 @@ def test_all_release_version_declarations_agree() -> None:
     openapi = json.loads(_read("docs/openapi-v1.json"))
     version = project["version"]
 
-    assert version == "0.5.8"
+    assert version == "0.5.9"
     assert len(server["description"]) <= 100
     assert (
         __version__
@@ -159,23 +159,27 @@ def test_mcp_surface_does_not_expose_an_automatic_solver() -> None:
 
 
 def test_shipped_captions_match_the_current_narration_script() -> None:
-    """The rendered VTT must match `video/build.py`.
+    """The complete rendered VTT must match the canonical remaster script.
 
     Editing the script without re-running the build ships a video whose audio and
     captions state the old claims. This is the check that makes a stale render a
     test failure rather than a silent regression.
     """
     caption_text = _read("static/mettle-explainer.vtt")
-    spoken = " ".join(caption_text.split("\n"))
+    cues = []
+    for block in caption_text.strip().split("\n\n"):
+        lines = block.splitlines()
+        timing = next((i for i, line in enumerate(lines) if " --> " in line), None)
+        if timing is not None:
+            cues.extend(lines[timing + 1 :])
 
-    for scene_narration in _video_narration().split("\n"):
-        # Captions are re-flowed into cues, so compare on a distinctive fragment
-        # of each scene rather than the whole paragraph.
-        opening = " ".join(scene_narration.split()[:6])
-        assert opening in " ".join(spoken.split()), (
-            f"Caption track is stale: {opening!r} is in video/build.py but not in "
-            f"the rendered VTT. Re-run `python3 video/build.py`."
-        )
+    def lexical(value: str) -> list[str]:
+        return re.findall(r"[a-z]+|\d+", value.lower())
+
+    assert lexical(" ".join(cues)) == lexical(_video_narration()), (
+        "Caption track is stale or incomplete relative to video/remaster/brief.json. "
+        "Regenerate from measured audio and install only the accepted remaster."
+    )
 
 
 def test_video_states_no_absolute_certainty_claims() -> None:
@@ -300,6 +304,30 @@ def test_video_credential_tiers_match_the_tier_registry() -> None:
     assert TIER_RANGES["gold"] == (1, 9)
     assert "Gold</b><span>complete suite range 1 through 9" in script
     assert "constitutionally bound" not in script
+
+    current = _video_narration()
+    assert "Bronze is the highest available tier" in current
+    assert "complete suite range that passed" in current
+    assert "one hour" in current and "revoked" in current
+
+
+def test_legacy_video_builder_cannot_overwrite_the_remaster() -> None:
+    """Historical provenance must not silently replace the accepted site film."""
+    script = _read("video/build.py")
+    assert 'STATIC = WORK / "legacy-export"' in script
+    assert 'FONTS = REPO / "static" / "fonts"' in script
+
+
+def test_remaster_preserves_the_two_api_and_source_assurance_boundaries() -> None:
+    spoken = _video_narration()
+    assert "The quick API" in spoken
+    assert "The separate authenticated API" in spoken
+    assert "server API supports signed, time-limited credentials" in spoken
+    assert "caller-provided and marked unverified" in spoken
+    assert (
+        "A suite score cannot establish freedom, agency, consciousness or identity"
+        in spoken
+    )
 
 
 def test_governance_and_operations_contracts_are_present() -> None:

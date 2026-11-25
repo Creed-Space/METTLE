@@ -195,7 +195,7 @@ def test_public_llms_description_get_head_and_static_contract(client) -> None:
     assert response.content == expected
     assert response.headers["content-type"] == "text/plain; charset=utf-8"
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["cache-control"] == "public, max-age=0, must-revalidate"
 
     head = client.head("/llms.txt")
     assert head.status_code == 200

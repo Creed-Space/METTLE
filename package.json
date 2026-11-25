@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "check:js": "node --check static/app.js && node --check static/webmcp.js && node --check examples/javascript_example.js && node --check examples/verify_credential_fixture.js",
+    "check:js": "node --check static/app.js && node --check static/site.js && node --check static/webmcp.js && node --check examples/javascript_example.js && node --check examples/verify_credential_fixture.js",
     "design:check": "impeccable detect static",
     "vendor:fontawesome": "python3 scripts/vendor_fontawesome.py",
     "check:static": "python3 scripts/vendor_fontawesome.py --check && python3 scripts/update_asset_fingerprints.py --check && python3 scripts/check_static_site.py",

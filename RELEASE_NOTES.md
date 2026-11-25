@@ -1,5 +1,27 @@
 # METTLE release notes
 
+## [0.5.9]
+
+### Credential schema
+
+Credential schema `1.1` and suite policy `2026-08-14` remain unchanged.
+
+### Suite policy
+
+Tier eligibility and response windows remain unchanged from `0.5.8`. Single-shot challenge evaluation closes scoring loopholes in Suite 1 (`chained_reasoning` hides intermediate values and rejects boolean integers), Suite 2 (`batch_coherence` randomizes eight-letter target words and rejects single-letter responses), Suite 3 (`introspective_consistency` requires substantive multi-word responses), Suite 4 (`style_locking` requires substantive text beyond the session marker), and Quick API `instruction_following` and `consistency` challenges (randomized factual prompts, keyword checks, and stripped solver hints in `Challenge.sanitized()`). Suite 10 (`novel-reasoning`) resets its standalone clock after earlier single-shot suites in multi-suite sessions.
+
+### Public key changes
+
+No signing key, discovery format, or verification-key rotation is included.
+
+### Compatibility
+
+All public API routes, credential formats, Python 3.10 through 3.14 support, and the eleven public MCP tools remain compatible. `/api/session/start` now accepts configured `METTLE_API_KEYS` with a dedicated daily quota bucket; `POST /api/security/collusion/check` inspects the target entity's observed IPs and accepts an optional `ip_address` query parameter; `BatchStartRequest.entity_ids` enforces 1 to 128 entries and rejects unknown API keys with HTTP 401; database outages during API-key lookup return HTTP 503. Middleware layers run as pure ASGI middleware with strict CSP (no `'unsafe-inline'`), webhook secrets are encrypted at rest with AES-256-GCM (schema migration v4), and the remastered 6:11 explainer video, poster, and measured caption track ship within the 15 MB media budget. Package, API, CLI, OpenAPI, and registry versions advance together.
+
+### Known limitations
+
+Passing results do not prove identity, substrate, or suitability for access. Independent protocol, cryptographic, privacy, adversarial ML, accessibility, and bilateral reviews remain pending. Rights-cleared held-out evaluation and deployment-specific key, recovery, and deletion receipts are still required.
+
 ## [0.5.8]
 
 ### Credential schema

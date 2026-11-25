@@ -128,6 +128,32 @@ def _presentation_rate_key(user_id: str) -> str:
     return f"{settings.redis_namespace}:presentation-rate:{user_id}:{minute}"
 
 
+def _compute_session_elapsed_ms(session: dict[str, Any]) -> int:
+    """Compute elapsed milliseconds, frozen once a session reaches a terminal state."""
+    start_time = session.get("start_time")
+    if not start_time:
+        return 0
+    end_ts: float | None = None
+    if session.get("status") in (
+        SessionStatus.COMPLETED.value,
+        SessionStatus.CANCELLED.value,
+        SessionStatus.EXPIRED.value,
+    ):
+        raw_ended = session.get("ended_at")
+        if isinstance(raw_ended, (int, float)):
+            end_ts = float(raw_ended)
+        else:
+            completed_at = session.get("completed_at")
+            if isinstance(completed_at, str):
+                try:
+                    end_ts = datetime.fromisoformat(completed_at).timestamp()
+                except ValueError:
+                    end_ts = None
+    if end_ts is None:
+        end_ts = time.time()
+    return max(0, int((end_ts - float(start_time)) * 1000))
+
+
 class SessionManager:
     """Manages METTLE verification sessions backed by Redis."""
 
@@ -366,9 +392,11 @@ class SessionManager:
             return False
 
         session["status"] = SessionStatus.CANCELLED.value
+        session["ended_at"] = time.time()
         await self.redis.setex(
             _key(session_id), COMPLETED_SESSION_TTL, json.dumps(session)
         )
+        await self._delete_session_answers(session_id)
         await self._remove_active_session(user_id, session_id)
         return True
 
@@ -462,11 +490,25 @@ class SessionManager:
         session["suites_completed"].append(suite)
         session["suite_results"][suite] = result
 
+        # In multi-suite sessions that include Suite 10 (novel-reasoning),
+        # reset Suite 10's standalone clock after earlier single-shot suites
+        # complete so prior suite latency does not fail Suite 10's 20-45s budget.
+        if (
+            MULTI_ROUND_SUITE in session["suites"]
+            and session.get("current_round", 0) == 0
+            and not session.get("presence")
+        ):
+            suite_finished_at = time.time()
+            session["novel_started_at"] = suite_finished_at
+            session["round_started_at"] = suite_finished_at
+
         # Check if all suites completed
         completed = set(session["suites_completed"]) == set(session["suites"])
         if completed:
+            now_dt = datetime.now(tz=timezone.utc)
             session["status"] = SessionStatus.COMPLETED.value
-            session["completed_at"] = datetime.now(tz=timezone.utc).isoformat()
+            session["completed_at"] = now_dt.isoformat()
+            session["ended_at"] = now_dt.timestamp()
             ttl = COMPLETED_SESSION_TTL
         else:
             ttl = self._remaining_active_ttl(session)
@@ -492,9 +534,10 @@ class SessionManager:
         )
         await self.redis.setex(_key(session_id), ttl, json.dumps(session))
         if completed:
-            # Persistence is the authority for completion. Release quota only
-            # after it succeeds, so a signer or Redis failure leaves the active
-            # reservation conservatively intact rather than undercounting work.
+            # Persistence is the authority for completion. Release quota and
+            # purge server-side answers only after it succeeds, so a signer or
+            # Redis failure leaves the active reservation conservatively intact.
+            await self._delete_session_answers(session_id)
             await self._remove_active_session(session["user_id"], session_id)
         response = dict(result)
         response["presence"] = response_presence
@@ -557,12 +600,17 @@ class SessionManager:
         evaluation_answers = dict(answers)
         evaluation_answers.pop(CONTINUITY_ANSWER_KEY, None)
 
-        # Server-side timing enforcement. Keep total elapsed time for the
-        # authoritative budget, but record this round's duration for curve
+        # Server-side timing enforcement. Measure Suite 10 against its own
+        # start boundary (when issued in Presence mode or after prior suites in
+        # multi-suite sessions), while `_enforce_time_budget` still caps the
+        # overall session wall clock. Record each round's duration for curve
         # analysis rather than cumulative session age.
         answered_at = time.time()
-        elapsed_ms = (answered_at - session["start_time"]) * 1000
-        round_started_at = float(session.get("round_started_at", session["start_time"]))
+        novel_started_at = float(
+            session.get("novel_started_at") or session["start_time"]
+        )
+        elapsed_ms = max(0.0, (answered_at - novel_started_at) * 1000)
+        round_started_at = float(session.get("round_started_at", novel_started_at))
         round_response_ms = max(0.0, (answered_at - round_started_at) * 1000)
 
         server_answers = await self.get_session_answers(session_id)
@@ -643,8 +691,10 @@ class SessionManager:
 
             # Check if all suites completed
             if set(session["suites_completed"]) == set(session["suites"]):
+                now_dt = datetime.now(tz=timezone.utc)
                 session["status"] = SessionStatus.COMPLETED.value
-                session["completed_at"] = datetime.now(tz=timezone.utc).isoformat()
+                session["completed_at"] = now_dt.isoformat()
+                session["ended_at"] = now_dt.timestamp()
 
         ttl = (
             COMPLETED_SESSION_TTL
@@ -683,6 +733,7 @@ class SessionManager:
             # Keep the reservation if any presence or persistence step fails.
             # A later ZREM failure can only overcount, which is the safe side of
             # the active-session quota invariant.
+            await self._delete_session_answers(session_id)
             await self._remove_active_session(session["user_id"], session_id)
 
         return {
@@ -720,10 +771,7 @@ class SessionManager:
         if session["status"] != SessionStatus.COMPLETED.value:
             return None
 
-        elapsed_ms = 0
-        if session["start_time"]:
-            now = time.time()
-            elapsed_ms = int((now - session["start_time"]) * 1000)
+        elapsed_ms = _compute_session_elapsed_ms(session)
 
         # Check overall pass
         results = session.get("suite_results", {})
@@ -800,6 +848,10 @@ class SessionManager:
                 if suite == MULTI_ROUND_SUITE
                 else f"suite:{suite}"
             )
+            if suite == MULTI_ROUND_SUITE and session.get("current_round", 0) == 0:
+                issued_at = time.time()
+                session["novel_started_at"] = issued_at
+                session["round_started_at"] = issued_at
             return {
                 suite: attach_continuity_challenge(
                     presence,
@@ -898,20 +950,14 @@ class SessionManager:
 
         # Format round data for the analyzer
         analyzer_rounds = []
-        for rd in round_data:
+        for idx, rd in enumerate(round_data):
+            prev_accuracy = round_data[idx - 1]["accuracy"] if idx > 0 else 0
             analyzer_rounds.append(
                 {
                     "round": rd["round"],
                     "response_time_ms": rd["response_time_ms"],
                     "accuracy": rd["accuracy"],
-                    "structural_change": abs(
-                        rd["accuracy"]
-                        - (
-                            round_data[round_data.index(rd) - 1]["accuracy"]
-                            if round_data.index(rd) > 0
-                            else 0
-                        )
-                    ),
+                    "structural_change": abs(rd["accuracy"] - prev_accuracy),
                     "error_magnitude": 1.0 - rd["accuracy"],
                 }
             )
@@ -1163,15 +1209,24 @@ class SessionManager:
         if start_time is None:
             start_time = datetime.fromisoformat(session["created_at"]).timestamp()
             session["start_time"] = start_time
-        elapsed_ms = (time.time() - float(start_time)) * 1000
+        now_ts = time.time()
+        elapsed_ms = (now_ts - float(start_time)) * 1000
         if elapsed_ms <= float(session["time_budget_ms"]):
             return
 
         session["status"] = SessionStatus.EXPIRED.value
+        session["ended_at"] = now_ts
         await self.redis.setex(
             _key(session["session_id"]),
             COMPLETED_SESSION_TTL,
             json.dumps(session),
         )
+        await self._delete_session_answers(session["session_id"])
         await self._remove_active_session(session["user_id"], session["session_id"])
         raise ValueError("Session time budget exceeded")
+
+    async def _delete_session_answers(self, session_id: str) -> None:
+        """Remove server-side expected answers immediately once a session terminates."""
+        delete = getattr(self.redis, "delete", None)
+        if callable(delete):
+            await delete(_key(session_id, "answers"))

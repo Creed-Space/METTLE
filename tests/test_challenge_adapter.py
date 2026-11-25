@@ -203,10 +203,12 @@ class TestGenerateNative:
         assert "ground_truth" in server["calibrated_uncertainty"]
 
     def test_target_message_consistency(self):
+        from mettle.challenge_adapter import _BATCH_COHERENCE_TARGETS
+
         client, server = ChallengeAdapter.generate_native()
-        # target in server should match target_message in client (both derived from "VERIFIED")
         target = server["batch_coherence"]["target"]
-        assert target == "VERIFIED"[: len(target)]
+        assert target == client["challenges"]["batch_coherence"]["target_message"]
+        assert any(word.startswith(target) for word in _BATCH_COHERENCE_TARGETS)
 
     def test_ground_truth_values(self):
         client, server = ChallengeAdapter.generate_native()

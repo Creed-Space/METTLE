@@ -123,7 +123,10 @@ def test_public_api_rejects_oversized_request_bodies(client) -> None:
     )
 
     assert response.status_code == 413
-    assert response.json() == {"detail": "Request body is too large"}
+    assert response.json() == {
+        "detail": "Request body is too large",
+        "code": "request_too_large",
+    }
 
     streamed = client.post(
         "/api/session/start",
@@ -131,7 +134,10 @@ def test_public_api_rejects_oversized_request_bodies(client) -> None:
         headers={"Content-Type": "application/json"},
     )
     assert streamed.status_code == 413, streamed.text
-    assert streamed.json() == {"detail": "Request body is too large"}
+    assert streamed.json() == {
+        "detail": "Request body is too large",
+        "code": "request_too_large",
+    }
 
 
 def test_third_party_interactive_api_consoles_are_disabled(client) -> None:

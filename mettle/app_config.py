@@ -5,16 +5,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MettleSettings(BaseSettings):
-    redis_url: str = "redis://localhost:6379"
+    redis_url: str = Field(default="redis://localhost:6379", repr=False)
     redis_namespace: str = Field(
         default="mettle",
         pattern=r"^[A-Za-z0-9][A-Za-z0-9:_-]{0,63}$",
     )
-    api_keys: str = ""
+    api_keys: str = Field(default="", repr=False)
     dev_mode: bool = False
     cors_origins: str = "*"
     credential_issuance_enabled: bool = True
-    vcp_signing_key: str = ""
+    vcp_signing_key: str = Field(default="", repr=False)
     vcp_signing_key_id: str = Field(
         default="mettle-vcp-v1",
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",

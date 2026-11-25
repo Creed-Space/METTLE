@@ -35,9 +35,20 @@ class Challenge(BaseModel):
     time_limit_ms: int = Field(..., description="Maximum allowed response time in ms")
 
     def sanitized(self) -> "Challenge":
-        """Return a copy with sensitive data (answers) removed for client response."""
-        # Keys that contain answers - never expose to client
-        secret_keys = {"expected_answer", "chain", "instructions"}
+        """Return a copy with answers and structured solver hints removed."""
+        secret_keys = {
+            "expected_answer",
+            "expected_keywords",
+            "chain",
+            "instructions",
+            "a",
+            "b",
+            "op",
+            "instruction_kind",
+            "marker",
+            "word_count",
+            "starting_digit",
+        }
         clean_data = {k: v for k, v in self.data.items() if k not in secret_keys}
         return Challenge(
             id=self.id,

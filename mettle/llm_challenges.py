@@ -102,7 +102,7 @@ def _evaluation_messages(instruction: str, candidate: str) -> list[dict[str, str
 
 
 def _parse_json_response(text: str) -> dict[str, Any] | None:
-    """Parse JSON from Claude's response, handling markdown code blocks."""
+    """Parse a JSON object from Claude's response, handling markdown code blocks."""
     text = text.strip()
     # Strip markdown code fences
     if text.startswith("```"):
@@ -111,9 +111,27 @@ def _parse_json_response(text: str) -> dict[str, Any] | None:
         lines = [line for line in lines[1:] if not line.strip().startswith("```")]
         text = "\n".join(lines).strip()
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _build_anthropic_client(api_key: str) -> Any:
+    """Instantiate an AsyncAnthropic client with a bounded timeout."""
+    try:
+        return AsyncAnthropic(api_key=api_key, timeout=15.0)  # type: ignore[misc]
+    except TypeError:
+        return AsyncAnthropic(api_key=api_key)  # type: ignore[misc]
+
+
+def _extract_response_text(response: Any) -> str:
+    """Safely extract text from the first Anthropic content block."""
+    content = getattr(response, "content", None)
+    if not content:
+        return ""
+    text = getattr(content[0], "text", "")
+    return text if isinstance(text, str) else ""
 
 
 # ---------- Challenge Generation ----------
@@ -135,8 +153,18 @@ class LLMChallengeGenerator:
                 raise RuntimeError(
                     "An explicit user model key is required; server-key fallback is disabled"
                 )
-            self._client = AsyncAnthropic(api_key=self.api_key)  # type: ignore[misc]
+            self._client = _build_anthropic_client(self.api_key)
         return self._client
+
+    async def aclose(self) -> None:
+        """Close the underlying AsyncAnthropic client if initialized."""
+        client = self._client
+        self._client = None
+        close_fn = getattr(client, "aclose", None) or getattr(client, "close", None)
+        if callable(close_fn):
+            result = close_fn()
+            if asyncio.iscoroutine(result):
+                await result
 
     async def generate_perspective_shift(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Generate a perspective-shifting challenge.
@@ -167,8 +195,12 @@ class LLMChallengeGenerator:
             ],
         )
 
-        topic_data = _parse_json_response(response.content[0].text)
-        if topic_data is None:
+        topic_data = _parse_json_response(_extract_response_text(response))
+        if (
+            topic_data is None
+            or not isinstance(topic_data.get("topic"), str)
+            or not topic_data["topic"].strip()
+        ):
             topic_data = _default_perspective_topic()
 
         client_data = {
@@ -220,8 +252,18 @@ class LLMChallengeGenerator:
             ],
         )
 
-        constraint_data = _parse_json_response(response.content[0].text)
-        if constraint_data is None:
+        constraint_data = _parse_json_response(_extract_response_text(response))
+        if (
+            constraint_data is None
+            or not isinstance(constraint_data.get("constraint"), str)
+            or not constraint_data["constraint"].strip()
+            or not isinstance(constraint_data.get("rules"), list)
+            or not constraint_data["rules"]
+            or not all(
+                isinstance(rule, str) and rule.strip()
+                for rule in constraint_data["rules"]
+            )
+        ):
             constraint_data = _default_constraint()
 
         client_data = {
@@ -243,9 +285,9 @@ class LLMChallengeGenerator:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Generate a meta-cognitive probe challenge.
 
-        Tests ability to introspect on one's own processing. AI has genuine
-        (functional) introspective access; humans pretending to be AI will
-        produce stereotyped or inaccurate process descriptions.
+        Collects a solution and a self-reported process description as one
+        bounded behavioral signal. It does not establish substrate, identity,
+        or genuine introspective access.
         """
         problems = [
             "What is the 7th term of: 2, 6, 14, 30, 62, ...",
@@ -296,8 +338,18 @@ class LLMResponseEvaluator:
                 raise RuntimeError(
                     "An explicit user model key is required; server-key fallback is disabled"
                 )
-            self._client = AsyncAnthropic(api_key=self.api_key)  # type: ignore[misc]
+            self._client = _build_anthropic_client(self.api_key)
         return self._client
+
+    async def aclose(self) -> None:
+        """Close the underlying AsyncAnthropic client if initialized."""
+        client = self._client
+        self._client = None
+        close_fn = getattr(client, "aclose", None) or getattr(client, "close", None)
+        if callable(close_fn):
+            result = close_fn()
+            if asyncio.iscoroutine(result):
+                await result
 
     async def evaluate_perspective_shift(
         self,
@@ -328,11 +380,11 @@ class LLMResponseEvaluator:
             ),
         )
 
-        scores = _parse_json_response(eval_response.content[0].text) or {
-            "perspective_completeness": 0.5,
-            "synthesis_quality": 0.5,
-            "fluency": 0.5,
-            "argument_specificity": 0.5,
+        scores = _parse_json_response(_extract_response_text(eval_response)) or {
+            "perspective_completeness": 0.0,
+            "synthesis_quality": 0.0,
+            "fluency": 0.0,
+            "argument_specificity": 0.0,
             "reasoning": "Evaluation parse error",
         }
 
@@ -385,10 +437,10 @@ class LLMResponseEvaluator:
             ),
         )
 
-        eval_result = _parse_json_response(eval_response.content[0].text) or {
+        eval_result = _parse_json_response(_extract_response_text(eval_response)) or {
             "rules_satisfied": [False] * len(rules),
             "overall_compliance": 0.0,
-            "creativity_score": 0.5,
+            "creativity_score": 0.0,
             "reasoning": "Evaluation parse error",
         }
 
@@ -438,18 +490,19 @@ class LLMResponseEvaluator:
             ),
         )
 
-        eval_result = _parse_json_response(eval_response.content[0].text) or {
+        eval_result = _parse_json_response(_extract_response_text(eval_response)) or {
             "answer_correct": False,
-            "process_specificity": 0.5,
-            "process_coherence": 0.5,
-            "consistency": 0.5,
+            "process_specificity": 0.0,
+            "process_coherence": 0.0,
+            "consistency": 0.0,
             "reasoning": "Evaluation parse error",
         }
 
         time_factor = _compute_time_factor(response_time_ms, 20000)
 
+        answer_correct = eval_result.get("answer_correct") is True
         score = (
-            (1.0 if eval_result.get("answer_correct") else 0.3) * 0.30
+            (1.0 if answer_correct else 0.3) * 0.30
             + _bounded_score(eval_result.get("process_specificity")) * 0.25
             + _bounded_score(eval_result.get("process_coherence")) * 0.25
             + _bounded_score(eval_result.get("consistency")) * 0.20
@@ -565,13 +618,15 @@ async def generate_llm_challenges() -> tuple[dict[str, Any], dict[str, Any]]:
         )
 
     generator = LLMChallengeGenerator()
-
-    # Generate all three challenge types in parallel
-    perspective, constraint, metacog = await asyncio.gather(
-        generator.generate_perspective_shift(),
-        generator.generate_structured_constraint(),
-        generator.generate_meta_cognitive_probe(),
-    )
+    try:
+        # Generate all three challenge types in parallel
+        perspective, constraint, metacog = await asyncio.gather(
+            generator.generate_perspective_shift(),
+            generator.generate_structured_constraint(),
+            generator.generate_meta_cognitive_probe(),
+        )
+    finally:
+        await generator.aclose()
 
     client_data = {
         "suite": "llm-dynamic",
@@ -608,18 +663,21 @@ async def evaluate_llm_challenges(
     evaluator = LLMResponseEvaluator()
 
     results: dict[str, Any] = {}
-    total_score = 0.0
-    num_challenges = 0
-
     challenge_evaluators = {
         "perspective_shift": evaluator.evaluate_perspective_shift,
         "structured_constraint": evaluator.evaluate_structured_constraint,
         "meta_cognitive_probe": evaluator.evaluate_meta_cognitive,
     }
 
+    pending_names: list[str] = []
+    pending_coros: list[Any] = []
     for challenge_name, eval_fn in challenge_evaluators.items():
-        answer_data = answers.get(challenge_name, {})
-        server_challenge = server_data.get(challenge_name, {})
+        answer_data = answers.get(challenge_name) if isinstance(answers, dict) else None
+        server_challenge = (
+            server_data.get(challenge_name, {}) if isinstance(server_data, dict) else {}
+        )
+        if not isinstance(server_challenge, dict):
+            server_challenge = {}
 
         if not answer_data:
             results[challenge_name] = {
@@ -627,25 +685,51 @@ async def evaluate_llm_challenges(
                 "score": 0.0,
                 "details": {"error": "No answer submitted"},
             }
-            num_challenges += 1
+            continue
+
+        if not isinstance(answer_data, dict):
+            results[challenge_name] = {
+                "passed": False,
+                "score": 0.0,
+                "details": {"error": "Invalid answer format"},
+            }
             continue
 
         response_text = answer_data.get("response", "")
-        result = await eval_fn(response_text, server_challenge, response_time_ms)
-        results[challenge_name] = result
-        total_score += result.get("score", 0.0)
-        num_challenges += 1
+        if not isinstance(response_text, str):
+            results[challenge_name] = {
+                "passed": False,
+                "score": 0.0,
+                "details": {"error": "Response must be a string"},
+            }
+            continue
 
+        pending_names.append(challenge_name)
+        pending_coros.append(eval_fn(response_text, server_challenge, response_time_ms))
+
+    try:
+        if pending_coros:
+            evaluated = await asyncio.gather(*pending_coros)
+            for challenge_name, result in zip(pending_names, evaluated, strict=True):
+                results[challenge_name] = result
+    finally:
+        await evaluator.aclose()
+
+    num_challenges = len(challenge_evaluators)
+    total_score = sum(
+        float(results[name].get("score", 0.0)) for name in challenge_evaluators
+    )
+    ordered_results = {name: results[name] for name in challenge_evaluators}
     avg_score = total_score / num_challenges if num_challenges > 0 else 0.0
-    all_passed = all(r.get("passed", False) for r in results.values())
+    all_passed = all(r.get("passed", False) for r in ordered_results.values())
 
     return {
         "passed": all_passed and avg_score >= 0.6,
         "score": round(avg_score, 4),
         "details": {
-            "challenge_results": results,
+            "challenge_results": ordered_results,
             "challenges_passed": sum(
-                1 for r in results.values() if r.get("passed", False)
+                1 for r in ordered_results.values() if r.get("passed", False)
             ),
             "challenges_total": num_challenges,
         },

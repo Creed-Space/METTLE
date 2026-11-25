@@ -655,7 +655,10 @@ class RequestBodyLimitMiddleware:
         content_length = headers.get(b"content-length")
         if content_length is not None:
             try:
-                if int(content_length) > self.maximum_bytes:
+                declared_bytes = int(content_length)
+                if declared_bytes < 0:
+                    raise ValueError
+                if declared_bytes > self.maximum_bytes:
                     response = JSONResponse(
                         {"detail": "Request body is too large"}, status_code=413
                     )

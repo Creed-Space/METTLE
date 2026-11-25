@@ -353,7 +353,7 @@ jobs:
       - name: Install exact browser tooling
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chrome
       - name: Validate static publication contract
         run: npm run check:static
       - name: Run browser acceptance

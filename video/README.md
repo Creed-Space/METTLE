@@ -1,10 +1,28 @@
-# METTLE Explainer Video Pipeline
+# METTLE explainer video
 
-Builds `static/mettle-explainer.mp4` (1080p30, about five minutes) plus
-`mettle-explainer.vtt` captions and `mettle-explainer-poster.webp`. The running
-time depends on the narration, so after each render read it from the file
-(`ffprobe`) and update the duration label and play-button `aria-label` in
-`static/index.html` to match.
+The canonical cinematic remaster is in [`remaster/`](remaster/README.md).
+Its grounded narration and 16:9 production brief are in `remaster/brief.json`.
+The local 1080p30 film is approximately 6 minutes 11 seconds, with Gemini 3.8 expressive
+professor narration, Sunburst reference images, Veo/Seedance motion, native
+Manim/Motion Canvas graphics, an actual Hyperframes brand bridge and an original
+Lyria instrumental score. ElevenLabs music access returned 401; the user approved
+OpenRouter fallback.
+
+Final captions derive from actual measured MAI-Transcribe 2 word timings and
+reviewed spelling adjudications. The portable local bundle retains media,
+reference originals, provider receipts, caption data and a read-back-validated
+OpenTimelineIO edit. Delivery and acceptance evidence are under
+`video/build/remaster/`; retain the bundle before cleaning intermediate media.
+No publication or deployment is included.
+
+Working if: the exact film and captions pass their source/audio hash checks,
+complete decode, visual/motion/audio review and local static-site gates.
+
+## Historical pipeline
+
+`build.py` and its cached earlier Gemini 3.1 narration remain for provenance.
+That builder now writes only to `video/build/legacy-export/`, preserving the
+accepted website film. Its older recipe and usage follow.
 
 The SaferAgenticAI and Psychopathia explainers used the same recipe (Gemini
 Flash TTS narration over branded motion slides) but their pipelines were never

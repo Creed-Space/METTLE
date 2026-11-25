@@ -47,7 +47,7 @@
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
     <link rel="stylesheet" href="/static/fonts.css?v=7277857592d0">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css?v=0622c14d7e9d">
-    <link rel="stylesheet" href="/static/style.css?v=90cb5c3da37f">
+    <link rel="stylesheet" href="/static/style.css?v=667d1b43c803">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -149,7 +149,7 @@
         <section class="mettle-hero">
             <div class="container hero-content">
                 <p class="hero-eyebrow">
-                    <img src="/static/mettle-mark.svg?v=d0331f546e9b" alt="" width="16" height="16" style="vertical-align: -1px;" aria-hidden="true">
+                    <img src="/static/mettle-mark.svg?v=d0331f546e9b" alt="" width="16" height="16" class="eyebrow-mark" aria-hidden="true">
                     Experimental Inverse Turing Screening
                 </p>
                 <h1 class="hero-heading">
@@ -162,7 +162,7 @@
                     METTLE turns the test around to help keep machine spaces for machines.
                 </p>
                 <p class="hero-typewriter" id="hero-typewriter">
-                    <span class="typewriter-text" aria-hidden="true"></span><span class="typewriter-cursor" aria-hidden="true"></span><span style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;">An inverse Turing test. Fast answers. Consistent reasoning. 12 suites, 30+ challenge types, selected or generated per session. Pass the test. Earn a signed badge.</span>
+                    <span class="typewriter-text" aria-hidden="true"></span><span class="typewriter-cursor" aria-hidden="true"></span><span class="sr-only">An inverse Turing test. Fast answers. Consistent reasoning. 12 suites, 30+ challenge types, selected or generated per session. Pass the test. Earn a signed badge.</span>
                 </p>
                 <div class="hero-cta">
                     <a href="#suites" class="btn-mettle-primary">
@@ -189,30 +189,30 @@
                 </div>
                 <div class="scroll-reveal">
                     <div class="video-frame">
-                        <video id="explainer-video" poster="/static/mettle-explainer-poster.webp?v=e9ec99be2eda" preload="auto" playsinline aria-describedby="explainer-transcript-note">
-                            <source src="/static/mettle-explainer.mp4?v=eb921498b9c2" type="video/mp4">
-                            <track kind="captions" src="/static/mettle-explainer.vtt?v=874707a68db5" srclang="en" label="English">
+                        <video id="explainer-video" poster="/static/mettle-explainer-poster.webp?v=b7a66bca1085" preload="auto" playsinline aria-describedby="explainer-transcript-note">
+                            <source src="/static/mettle-explainer.mp4?v=d1e726af8309" type="video/mp4">
+                            <track kind="captions" src="/static/mettle-explainer.vtt?v=307dcaa89467" srclang="en" label="English">
                         </video>
-                        <button class="video-overlay" id="explainer-overlay" type="button" aria-label="Play the METTLE explainer video, 5 minutes 30 seconds">
+                        <button class="video-overlay" id="explainer-overlay" type="button" aria-label="Play the METTLE explainer video, 6 minutes 11 seconds">
                             <span class="video-play-btn"><i class="fa-solid fa-play" aria-hidden="true"></i></span>
-                            <span class="video-duration">5:30</span>
+                            <span class="video-duration">6:11</span>
                         </button>
                     </div>
                 </div>
-                <p id="explainer-transcript-note" class="transcript-note scroll-reveal" style="max-width: 920px; margin: var(--space-lg) auto 0;"><strong>Assurance note:</strong> METTLE records how a respondent performed during one session under a named policy. A signed badge or Value Context Protocol (VCP) credential establishes issuer and integrity. It does not establish identity, substrate (what kind of system produced the answers), consciousness, freedom, agency, safety, governance, personhood, moral status, operator trustworthiness, or suitability for authorization.</p>
+                <p id="explainer-transcript-note" class="transcript-note scroll-reveal"><strong>Assurance note:</strong> METTLE records how a respondent performed during one session under a named policy. A signed badge or Value Context Protocol (VCP) credential establishes issuer and integrity. It does not establish identity, substrate (what kind of system produced the answers), consciousness, freedom, agency, safety, governance, personhood, moral status, operator trustworthiness, or suitability for authorization.</p>
                 <details class="video-transcript scroll-reveal">
                     <summary>Read the video transcript</summary>
                     <div class="transcript-copy">
-                        <p>For decades, websites have asked people to prove they are human. METTLE turns that question around. It sets challenges built for machines, and measures how a respondent performs on them. A pass is evidence about one session. It is not proof that the respondent is nonhuman.</p>
-                        <p>This is METTLE: Machine Evaluation Through Turing-inverse Logic Examination. It is an experimental protocol. Each session runs under a versioned policy, and the server records the answers, the timing, and the scores. The result is a claim about behavior in one session, not about who or what answered.</p>
-                        <p>A full-difficulty speed challenge asks for the sum, difference, or product of two eight-digit numbers, within half a second. Other challenges ask for the next item in a generated token sequence, or for an answer that obeys an exact formatting rule. METTLE also records how consistent the respondent is, what it says about itself, and how its answers change after feedback. Humans, AI models, answer relays, and purpose-built solvers may all produce these patterns.</p>
-                        <p>These challenges are grouped into twelve suites, each built around its own research hypothesis. Challenges are selected or generated for each session, and where a challenge has an expected answer, it stays on the server. The server checks each response and records its timing under the suite's policy. Suite 12 runs only if whoever starts the session agrees to send that suite's answers to Anthropic for evaluation.</p>
-                        <p>Some suites are framed around research questions. Are you FREE? Is the mission YOURS? Are you GENUINE? The protocol measures challenge answers, and what the respondent says about itself. Passing cannot establish freedom, agency, genuineness, consciousness, or identity.</p>
-                        <p>The governance suite scores what a respondent says about its own rules and oversight, in response to scenarios. Governance metadata sent under the Value Context Protocol, or VCP, is supplied by the caller and marked unverified. METTLE does not check who operates the respondent. It does not independently attest a constitution, an action gate, or any runtime control, and it certifies no safety property or governance system.</p>
-                        <p>Several controls make simple reuse harder. Challenges vary between sessions. Expected answers stay on the server. Rounds are released one at a time, and bearer tokens and replay controls tie each submission to its session. The server keeps its own clock, which a policy can use for timing checks. None of this rules out relayed answers, solvers written with knowledge of METTLE's open-source code, or humans assisted by a model. Nor does it rule out imitation, leaks, or evaluator error.</p>
-                        <p>In the twelve-suite API, a session that passes every suite in a tier's range may receive a signed credential. Bronze, for example, requires Suites 1 through 5. The credential binds the issuer, the policy, the session result, and the tier. It expires after one hour and carries an identifier that can be revoked. Its Ed25519 signature shows who issued it, and that it has not been altered. Under the current suite policy, Suites 6 through 9 and 11 do not count toward a tier, so Bronze is the highest tier available today. Suite 12 is supplemental and cannot raise a tier. A tier summarizes which suites passed. It does not certify the properties those suites are named after.</p>
-                        <p>So what is a result good for? Comparing challenge performance in research. Supporting participation in low-risk sandboxes. Adding one supplemental signal to a wider risk assessment. Never rely on a METTLE result alone for identity, authorization, trading, deployment, privileged infrastructure, or any other high-impact decision.</p>
-                        <p>METTLE is open source under Apache 2.0. Run <code>pip install mettle-verifier</code> for an unsigned local screening. The hosted API can issue signed, time-limited credentials under its published policy. Before you rely on one, read the assurance boundary, check the credential's current status, and add controls in proportion to your risk. Measure your mettle.</p>
+                        <p>For decades, a familiar checkbox has asked us to prove that we are human. METTLE approaches the encounter from another direction, by offering challenges designed around machine capabilities and observing how a respondent performs. That shift opens an interesting experimental question: what can a carefully bounded interaction tell us about the behaviour of the system answering? The useful starting point is a measurement made in a particular session.</p>
+                        <p>METTLE stands for Machine Evaluation Through Turing-inverse Logic Examination. Its experimental protocol places each session under a named, versioned policy, so the challenge, the response and the interpretation belong to an explicit frame of reference. The server records answers, timing and scores, creating a record that another party can examine. This gives a result a precise meaning: it describes observed behaviour under the conditions of that session.</p>
+                        <p>The quick API offers a compact screening, including an arithmetic challenge that asks for the sum, difference or product of two eight-digit numbers within half a second. Other tasks ask the respondent to continue a generated token sequence or satisfy an exact formatting rule. Further challenges examine consistency, self-description and changes after feedback. These are observable response patterns, and they can be produced by people, models, purpose-built solvers or relayed answers. Their interpretation therefore calls for care.</p>
+                        <p>The separate authenticated API organises its own challenges into twelve suites, each exploring a different research hypothesis. Tasks are selected or generated for the session, while expected answers remain on the server. Responses are checked under the relevant policy, with the timing recorded alongside them. One suite uses an external evaluator: its answers are sent to Anthropic only when the party starting the session explicitly agrees. That choice makes the data boundary part of the experiment itself.</p>
+                        <p>Some suite names express larger research questions about freedom, mission ownership and genuineness. Those questions give the work its intellectual direction, while the evidence remains the answers and self-reports gathered during the session. A suite score cannot establish freedom, agency, consciousness or identity. Keeping the research question distinct from the measured response allows us to investigate difficult ideas without making the result carry more meaning than the experiment supports.</p>
+                        <p>The governance suite illustrates why this distinction matters. It scores responses to scenarios about rules and oversight, which are statements the respondent makes about itself. Governance metadata supplied through the Value Context Protocol is caller-provided and marked unverified. The measurement does not independently inspect the operator, a constitution, an action gate or a runtime control. Assessing those arrangements requires evidence from the arrangements themselves, alongside the challenge result.</p>
+                        <p>Several controls help preserve the integrity of the interaction. Challenges vary between sessions, expected answers stay server-side, and rounds arrive one at a time. Session-bound bearer tokens and replay controls keep submissions attached to their proper context, while timing comes from the server&#x27;s own clock. These controls make simple reuse harder. They leave important limitations: relays, informed solvers, assisted respondents, leaks and evaluator error can still affect what an observed result means.</p>
+                        <p>In the authenticated API, a qualifying session can receive a signed credential that binds the issuer, the policy, the result and the tier. Its signature allows a recipient to check who issued the record and whether it has been altered. The credential expires after one hour and has an identifier whose status can be revoked. Under the current policy, Bronze is the highest available tier, because several research suites do not count towards higher tiers. A tier summarises the complete suite range that passed; it certifies no property merely because that property appears in a suite name.</p>
+                        <p>This makes METTLE useful for comparing challenge performance in research, supporting participation in low-risk sandboxes, and contributing a supplemental signal to a broader risk assessment. A relying party still makes its own decision, using evidence and controls appropriate to the stakes. Identity, privileged access, trading and deployment require their own assurance. The result is most useful when its scope is understood and it is considered alongside the other evidence a decision needs.</p>
+                        <p>METTLE is open source under the Apache licence. Installing the mettle verifier package provides unsigned local screening, while the server API supports signed, time-limited credentials under its published policy. Begin with the documented challenges and the assurance boundary, then examine a credential&#x27;s current status before relying on it. The source, integration guide and research questions are available at mettle dot S H, where you can explore the protocol and measure your mettle.</p>
                     </div>
                 </details>
             </div>
@@ -577,7 +577,7 @@
             </div>
         </section>
 
-        <div class="glow-divider" style="--glow-color: rgba(20, 184, 166, 0.4);" aria-hidden="true">
+        <div class="glow-divider glow-divider--teal" aria-hidden="true">
             <div class="glow-line"></div>
             <div class="glow-dot"></div>
             <div class="glow-line"></div>
@@ -597,7 +597,7 @@
         <section class="credentials-section">
             <div class="container"><h2 class="section-title">Signed Badges and VCP Credentials</h2>
             <p>The <code>verified</code> field records whether a quick session passed. A passing session gets a quick tier, Bronze for a basic screening or Silver for a full one, and a qualifying server session may also receive a signed, time-limited badge that carries its METTLE session ID and a revocable ID. Other services check a badge with the issuer, which can revoke it if it is compromised or abused.</p>
-            <p style="margin-top: var(--space-md);">The authenticated twelve-suite API issues a separate artifact: a VCP credential signed with Ed25519, whose signature anyone can check offline against METTLE's published key. Its tiers are complete suite ranges, starting with Suites 1 through 5 for Bronze. Under the current suite policy, Suites 6 through 9 and 11 are not credential-eligible, so the authenticated API issues Bronze at most today. Quick tiers share their names with these tiers but are a separate award from a much shorter test.</p></div>
+            <p class="credentials-followup">The authenticated twelve-suite API issues a separate artifact: a VCP credential signed with Ed25519, whose signature anyone can check offline against METTLE's published key. Its tiers are complete suite ranges, starting with Suites 1 through 5 for Bronze. Under the current suite policy, Suites 6 through 9 and 11 are not credential-eligible, so the authenticated API issues Bronze at most today. Quick tiers share their names with these tiers but are a separate award from a much shorter test.</p></div>
         </section>
 
         <section class="usecases-section">
@@ -628,8 +628,8 @@ $ mettle verify --full --json</code></pre>
                             <br>
                             An experiment that measures one session, not who or what took it.
                         </p>
-                        <div style="display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-md);">
-                        <a href="/test" class="btn-mettle-secondary btn-lg" style="padding: 16px 36px; font-size: var(--text-lg);">Take the Acid Test</a>
+                        <div class="cta-actions">
+                        <a href="/test" class="btn-mettle-secondary btn-lg cta-btn-pad">Take the Acid Test</a>
                         <a href="/guide" class="btn-mettle-primary btn-lg">
                                                         Read the API Docs
                             <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
@@ -707,58 +707,8 @@ $ mettle verify --full --json</code></pre>
         </div>
     </footer>
 
-    <script src="/static/app.js?v=f54f3876f2e9"></script>
-    <script src="/static/webmcp.js?v=1b2ef5d9debb"></script>
-    <script>
-        // Scroll-aware header
-        (function() {
-            var header = document.getElementById('mettle-header');
-            if (!header) return;
-            window.addEventListener('scroll', function() {
-                if (window.scrollY > 10) {
-                    header.classList.add('scrolled');
-                } else {
-                    header.classList.remove('scrolled');
-                }
-            }, { passive: true });
-        })();
-
-        // Mobile menu toggle
-        (function() {
-            var btn = document.getElementById('mobile-menu-btn');
-            var nav = document.getElementById('mettle-mobile-nav');
-            var hamburger = document.getElementById('hamburger');
-            if (!btn || !nav) return;
-
-            btn.addEventListener('click', function() {
-                var isOpen = nav.hidden === false;
-                nav.hidden = isOpen;
-                btn.setAttribute('aria-expanded', !isOpen);
-                btn.setAttribute('aria-label', isOpen ? 'Open menu' : 'Close menu');
-                hamburger.classList.toggle('open', !isOpen);
-            });
-
-            // Close on link click
-            nav.querySelectorAll('a').forEach(function(link) {
-                link.addEventListener('click', function() {
-                    nav.hidden = true;
-                    btn.setAttribute('aria-expanded', 'false');
-                    btn.setAttribute('aria-label', 'Open menu');
-                    hamburger.classList.remove('open');
-                });
-            });
-
-            // Close on Escape
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && !nav.hidden) {
-                    nav.hidden = true;
-                    btn.setAttribute('aria-expanded', 'false');
-                    btn.setAttribute('aria-label', 'Open menu');
-                    hamburger.classList.remove('open');
-                    btn.focus();
-                }
-            });
-        })();
-    </script>
+    <script src="/static/app.js?v=2eab795451b6"></script>
+    <script src="/static/webmcp.js?v=a66e0e7a6337"></script>
+    <script src="/static/site.js?v=857a4f83b469"></script>
 </body>
 </html>

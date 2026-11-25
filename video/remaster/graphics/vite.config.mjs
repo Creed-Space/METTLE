@@ -1,0 +1,2 @@
+import {defineConfig} from 'vite';import motionCanvas from '@motion-canvas/vite-plugin';import {fileURLToPath} from 'node:url';
+export default defineConfig({plugins:[motionCanvas.default({project:fileURLToPath(new URL('./project.ts',import.meta.url)),output:fileURLToPath(new URL('../../build/remaster/graphics',import.meta.url))})],server:{host:'127.0.0.1',fs:{allow:['/Users/nellwatson/Documents/GitHub/METTLE','/Users/nellwatson/Documents/GitHub/AI Guardian/tmp/trailer-remaster-20260929/graphics']}}});

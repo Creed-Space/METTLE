@@ -17,6 +17,18 @@ class AuthenticatedUser(BaseModel):
     user_id: str
 
 
+def is_configured_api_key(api_key: str | None) -> bool:
+    """Return whether ``api_key`` matches one of the configured ``METTLE_API_KEYS``."""
+    if not api_key:
+        return False
+    valid_keys = [
+        key.strip()
+        for key in os.getenv("METTLE_API_KEYS", "").split(",")
+        if key.strip()
+    ]
+    return any(secrets.compare_digest(api_key, key) for key in valid_keys)
+
+
 async def require_authenticated_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> AuthenticatedUser:
@@ -32,12 +44,7 @@ async def require_authenticated_user(
         os.getenv("METTLE_DEV_MODE", "false").lower() == "true"
         and environment != "production"
     )
-    valid_keys = [
-        key.strip()
-        for key in os.getenv("METTLE_API_KEYS", "").split(",")
-        if key.strip()
-    ]
-    valid = dev_mode or any(secrets.compare_digest(api_key, key) for key in valid_keys)
+    valid = dev_mode or is_configured_api_key(api_key)
     if valid:
         key_fingerprint = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
         return AuthenticatedUser(user_id=f"key:{key_fingerprint}")

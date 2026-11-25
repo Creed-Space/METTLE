@@ -29,11 +29,13 @@ import contextlib
 import hashlib
 import ipaddress
 import json
+import logging
 import os
 import re
 import time
 from collections import deque
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -49,6 +51,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+logger = logging.getLogger(__name__)
 
 # JSON-RPC 2.0 error codes (mcp.types mirrors these; inlined to keep this
 # module importable without pulling the type module in for two constants).
@@ -108,9 +112,11 @@ def _jsonrpc_error(code: int, message: str, status_code: int, **kwargs) -> JSONR
     ``str()`` — exception text can embed file paths and dependency versions
     (CWE-209: information exposure through an error message).
     """
+    headers = {**_NO_STORE_SECURITY_HEADERS, **(kwargs.pop("headers", None) or {})}
     return JSONResponse(
         {"jsonrpc": "2.0", "error": {"code": code, "message": message}, "id": None},
         status_code=status_code,
+        headers=headers,
         **kwargs,
     )
 
@@ -198,15 +204,33 @@ def _host_allowed(hostname: str, allowed: set[str]) -> bool:
     return False
 
 
-async def _validate_bearer_upstream(token: str) -> bool:
+_NO_STORE_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
+}
+
+
+async def _validate_bearer_upstream(
+    token: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> bool:
     """Validate an HTTP caller against the canonical METTLE API authority."""
     api_url = os.environ.get("METTLE_API_URL", "https://mettle.sh/api").rstrip("/")
     try:
-        async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
+        if client is not None:
             response = await client.get(
                 f"{api_url}/mettle/suites",
                 headers={"Authorization": f"Bearer {token}"},
             )
+        else:
+            async with httpx.AsyncClient(
+                timeout=5.0, follow_redirects=False
+            ) as temp_client:
+                response = await temp_client.get(
+                    f"{api_url}/mettle/suites",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
     except httpx.HTTPError as exc:
         raise RuntimeError("MCP authentication authority is unavailable") from exc
     if response.status_code == 200:
@@ -303,7 +327,16 @@ def build_http_app(
         json_response=True,
         stateless=True,
     )
-    validate_bearer = bearer_validator or _validate_bearer_upstream
+    auth_http_client: httpx.AsyncClient | None = (
+        None
+        if bearer_validator is not None
+        else httpx.AsyncClient(timeout=5.0, follow_redirects=False)
+    )
+
+    async def _default_validate_bearer(token: str) -> bool:
+        return await _validate_bearer_upstream(token, client=auth_http_client)
+
+    validate_bearer = bearer_validator or _default_validate_bearer
     accepted_hosts = {
         item.lower()
         for item in (
@@ -475,8 +508,21 @@ def build_http_app(
             key_token = caller_api_key.set(token)
             principal_token = caller_principal.set(principal)
             http_token = http_request_active.set(True)
+
+            async def send_with_headers(message: dict[str, Any]) -> None:
+                if message.get("type") == "http.response.start":
+                    raw_headers = list(message.get("headers", []))
+                    existing = {k.lower() for k, _ in raw_headers}
+                    for key, value in _NO_STORE_SECURITY_HEADERS.items():
+                        if key.lower().encode("latin-1") not in existing:
+                            raw_headers.append(
+                                (key.lower().encode("latin-1"), value.encode("latin-1"))
+                            )
+                    message = {**message, "headers": raw_headers}
+                await send(message)
+
             try:
-                await manager.handle_request(scope, _replay(body), send)
+                await manager.handle_request(scope, _replay(body), send_with_headers)
             finally:
                 http_request_active.reset(http_token)
                 caller_principal.reset(principal_token)
@@ -492,20 +538,37 @@ def build_http_app(
                     global_active -= 1
 
     async def health(_request: Request) -> JSONResponse:
-        return JSONResponse({"status": "ok"})
+        return JSONResponse({"status": "ok"}, headers=_NO_STORE_SECURITY_HEADERS)
 
     async def server_card(_request: Request) -> JSONResponse:
         return JSONResponse(
             build_server_card(await tool_provider()),
-            headers={"Cache-Control": "public, max-age=300"},
+            headers={
+                "Cache-Control": "public, max-age=300",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: Starlette) -> AsyncGenerator[None]:
         # run() sets up the manager's task group; it must live for the app's
         # lifetime and may only be entered once per instance.
-        async with manager.run():
-            yield
+        try:
+            async with manager.run():
+                yield
+        finally:
+            if auth_http_client is not None:
+                await auth_http_client.aclose()
+            try:
+                from mettle import mcp_server as _mcp_server
+
+                shared_client = getattr(_mcp_server, "http_client", None)
+                if shared_client is not None and not getattr(
+                    shared_client, "is_closed", True
+                ):
+                    await shared_client.aclose()
+            except Exception:
+                logger.debug("Shared MCP HTTP client close failed", exc_info=True)
 
     # Mount at /mcp. The middleware maps the documented bare path internally
     # so a TLS-terminating proxy cannot turn Starlette's slash redirect into an

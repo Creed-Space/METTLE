@@ -163,6 +163,8 @@
           "entity_ids": {
             "description": "Self-asserted entity labels, one session each (max 50); copied unverified into each result",
             "items": {
+              "maxLength": 128,
+              "minLength": 1,
               "type": "string"
             },
             "maxItems": 50,
@@ -1946,7 +1948,7 @@
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
     },
     "title": "METTLE",
-    "version": "0.5.8"
+    "version": "0.5.9"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2883,6 +2885,22 @@
             "schema": {
               "title": "Entity Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ip_address",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ip Address"
             }
           }
         ],

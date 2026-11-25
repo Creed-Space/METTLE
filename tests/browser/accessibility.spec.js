@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('../browser-fixtures');
 const AxeBuilder = require('@axe-core/playwright').default;
 
 const pages = ['/', '/test', '/guide', '/about'];

@@ -1447,7 +1447,11 @@ class TestSecurityHeaders:
 
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
         assert response.headers.get("X-Frame-Options") == "DENY"
-        assert response.headers.get("X-XSS-Protection") == "1; mode=block"
+        assert response.headers.get("X-XSS-Protection") is None
+        csp = response.headers.get("Content-Security-Policy", "")
+        assert "'unsafe-inline'" not in csp
+        assert "media-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
         assert response.headers.get("Permissions-Policy") == (
             "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
         )

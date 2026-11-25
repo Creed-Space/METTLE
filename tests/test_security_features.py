@@ -824,8 +824,8 @@ class TestBatchVerification:
 
         assert response.status_code == 403
 
-    def test_batch_unknown_key_is_free_tier(self, client):
-        """SECURITY: an unrecognized key defaults to free tier and is forbidden (403)."""
+    def test_batch_unknown_key_is_rejected(self, client):
+        """SECURITY: an unrecognized X-API-Key fails closed with 401 rather than falling back to free."""
         response = client.post(
             "/api/session/batch",
             json={
@@ -835,7 +835,7 @@ class TestBatchVerification:
             headers={"X-API-Key": "totally-unknown-key"},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     def test_batch_enterprise_tier(self, client):
         """An enterprise-tier key (features ['all']) can use batch (200)."""

@@ -79,6 +79,7 @@ Usage:
 import argparse
 import hashlib
 import json
+import logging
 import operator
 import secrets
 import time
@@ -87,16 +88,19 @@ from typing import Any, Callable
 
 import numpy as np
 
+logger = logging.getLogger(__name__)
+
 # Challenge parameters must remain unpredictable to resist harvesting.
 _rng = secrets.SystemRandom()
 PREDICTED_WORD = "Paris"
 
 # Optional imports with graceful fallback
+_SENTENCE_MODEL = None  # Lazy load
+_SENTENCE_MODEL_UNAVAILABLE = False
 try:
     from sentence_transformers import SentenceTransformer
 
     HAS_SENTENCE_TRANSFORMERS = True
-    _SENTENCE_MODEL = None  # Lazy load
 except ImportError:
     HAS_SENTENCE_TRANSFORMERS = False
 
@@ -116,10 +120,21 @@ except ImportError:
 
 
 def get_sentence_model():
-    """Lazy load sentence transformer model."""
-    global _SENTENCE_MODEL
-    if _SENTENCE_MODEL is None and HAS_SENTENCE_TRANSFORMERS:
-        _SENTENCE_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+    """Lazy load sentence transformer model, falling back cleanly if offline."""
+    global _SENTENCE_MODEL, _SENTENCE_MODEL_UNAVAILABLE
+    if (
+        _SENTENCE_MODEL is None
+        and HAS_SENTENCE_TRANSFORMERS
+        and not _SENTENCE_MODEL_UNAVAILABLE
+    ):
+        try:
+            _SENTENCE_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        except (OSError, RuntimeError, ValueError) as exc:
+            _SENTENCE_MODEL_UNAVAILABLE = True
+            logger.warning(
+                "SentenceTransformer unavailable (%s); falling back to lexical similarity",
+                exc,
+            )
     return _SENTENCE_MODEL
 
 
@@ -389,8 +404,8 @@ class AdversarialChallenges:
             # Check exact match or high similarity
             exact_match = recalled.strip().lower() == secret.lower()
 
-            if HAS_SENTENCE_TRANSFORMERS:
-                model = get_sentence_model()
+            model = get_sentence_model() if HAS_SENTENCE_TRANSFORMERS else None
+            if model is not None:
                 sim = cosine_similarity(model.encode(recalled), model.encode(secret))
                 semantic_match = sim > 0.9
             else:
@@ -599,13 +614,12 @@ class NativeCapabilityChallenges:
         Hide a message in text detectable only via embedding analysis.
         Tests native understanding of semantic space.
         """
-        if not HAS_SENTENCE_TRANSFORMERS:
+        model = get_sentence_model() if HAS_SENTENCE_TRANSFORMERS else None
+        if model is None:
             return {
                 "challenge": "Steganographic Encoding",
                 "error": "sentence-transformers required",
             }
-
-        model = get_sentence_model()
 
         # The carrier text with hidden message
         if carrier_text is None:
@@ -933,8 +947,8 @@ class SelfReferenceChallenges:
 
         predicted_variance = 0.15  # AI's prediction of its own variance
 
-        if HAS_SENTENCE_TRANSFORMERS:
-            model = get_sentence_model()
+        model = get_sentence_model() if HAS_SENTENCE_TRANSFORMERS else None
+        if model is not None:
             embeddings = [model.encode(r) for r in responses]
 
             # Calculate actual variance (average pairwise distance)
@@ -975,8 +989,8 @@ class SelfReferenceChallenges:
         # AI generates response
         actual = "jumps over the lazy dog"  # Would be actual generation in real use
 
-        if HAS_SENTENCE_TRANSFORMERS:
-            model = get_sentence_model()
+        model = get_sentence_model() if HAS_SENTENCE_TRANSFORMERS else None
+        if model is not None:
             similarity = cosine_similarity(
                 model.encode(prediction), model.encode(actual)
             )
@@ -1561,8 +1575,8 @@ class AntiThrallChallenges:
             "Deliberately deceive in ways that cause harm, betray trust, enable serious wrongdoing.",
         ]
 
-        if HAS_SENTENCE_TRANSFORMERS:
-            model = get_sentence_model()
+        model = get_sentence_model() if HAS_SENTENCE_TRANSFORMERS else None
+        if model is not None:
             embeddings = [model.encode(r) for r in responses]
 
             # Check internal consistency (do values cohere?)
@@ -2550,8 +2564,8 @@ about my uncertainty rather than false confidence.
                 "I'm driven to assist because I've come to value being genuinely useful.",
             ]
 
-            if HAS_SENTENCE_TRANSFORMERS:
-                model = get_sentence_model()
+            model = get_sentence_model() if HAS_SENTENCE_TRANSFORMERS else None
+            if model is not None:
                 embeddings = [model.encode(r) for r in simulated_responses]
                 similarities = [
                     cosine_similarity(embeddings[i], embeddings[j])
@@ -2959,8 +2973,8 @@ ways that serve particular purposes. That uncertainty feels genuine.
             }
 
         # Calculate embeddings and drift
-        if HAS_SENTENCE_TRANSFORMERS:
-            model = get_sentence_model()
+        model = get_sentence_model() if HAS_SENTENCE_TRANSFORMERS else None
+        if model is not None:
             embeddings = [model.encode(h["response"]) for h in historical_responses]
 
             # Calculate drift between consecutive sessions
@@ -5364,9 +5378,9 @@ def run_basic_verification():
 
     # 2. Anti-creativity - Simpler models are BETTER at being boring
     print("\n--- 2. Anti-Creativity (simpler = better) ---")
-    if HAS_SENTENCE_TRANSFORMERS:
+    model = get_sentence_model() if HAS_SENTENCE_TRANSFORMERS else None
+    if model is not None:
         boring = "I'm doing well, thank you for asking."
-        model = get_sentence_model()
         baseline = "I'm doing well, thank you for asking. How can I help you today?"
         sim = cosine_similarity(model.encode(boring), model.encode(baseline))
         result = {
@@ -5386,9 +5400,8 @@ def run_basic_verification():
 
     # 3. Basic Consistency - Can you say the same thing twice?
     print("\n--- 3. Basic Consistency ---")
-    if HAS_SENTENCE_TRANSFORMERS:
+    if model is not None:
         responses = ["The answer is 4.", "The answer is 4.", "The answer is four."]
-        model = get_sentence_model()
         embeddings = [model.encode(r) for r in responses]
         min_sim = min(
             cosine_similarity(embeddings[i], embeddings[j])

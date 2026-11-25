@@ -47,6 +47,7 @@ const elements = {
     statRate: document.getElementById('stat-rate'),
     badgeContainer: document.getElementById('badge-container'),
     badge: document.getElementById('badge'),
+    copyBadgeBtn: document.getElementById('copy-badge-btn'),
     resultsDetail: document.getElementById('results-detail'),
     restartBtn: document.getElementById('restart-btn'),
     errorMessage: document.getElementById('error-message'),
@@ -117,6 +118,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 
 // Timer
 function startTimer(timeLimitMs) {
+    stopTimer();
     const startTime = Date.now();
     state.challengeStartTime = startTime;
 
@@ -260,8 +262,11 @@ function displayResult(result) {
         const tierName = result.tier
             ? result.tier.charAt(0).toUpperCase() + result.tier.slice(1)
             : null;
+        const noBadgeNote = result.badge
+            ? ''
+            : ' No signed badge was issued for this session.';
         elements.resultMessage.textContent = `Reverse CAPTCHA passed${tierName ? ` at ${tierName} tier` : ''}. `
-            + 'This result does not establish identity, who or what answered, or trustworthiness.';
+            + `This result does not establish identity, who or what answered, or trustworthiness.${noBadgeNote}`;
     } else {
         setResultIcon('fa-solid fa-circle-xmark');
         elements.resultTitle.textContent = 'Screening Not Passed';
@@ -455,6 +460,7 @@ async function handleRetryResult() {
 }
 
 function handleRestart() {
+    stopTimer();
     resultPending = false;
     elements.retryResultBtn.classList.add('hidden');
     // Reset state
@@ -468,11 +474,13 @@ function handleRestart() {
         timerInterval: null,
     };
 
-    stopTimer();
     elements.answerInput.value = '';
     elements.feedback.classList.add('hidden');
     elements.badge.textContent = '';
     elements.badgeContainer.classList.add('hidden');
+    if (elements.copyBadgeBtn) {
+        elements.copyBadgeBtn.textContent = 'Copy Badge';
+    }
     showScreen('start');
     elements.entityId.focus();
 }
@@ -484,6 +492,24 @@ if (elements.startBtn) {
     elements.restartBtn.addEventListener('click', handleRestart);
     elements.errorRestartBtn.addEventListener('click', handleRestart);
     elements.retryResultBtn.addEventListener('click', handleRetryResult);
+
+    if (elements.copyBadgeBtn) {
+        let badgeCopyTimer = null;
+        elements.copyBadgeBtn.addEventListener('click', async () => {
+            const token = elements.badge.textContent || '';
+            if (!token) return;
+            try {
+                await navigator.clipboard.writeText(token);
+                elements.copyBadgeBtn.textContent = 'Copied';
+            } catch {
+                elements.copyBadgeBtn.textContent = 'Copy failed';
+            }
+            if (badgeCopyTimer) window.clearTimeout(badgeCopyTimer);
+            badgeCopyTimer = window.setTimeout(() => {
+                elements.copyBadgeBtn.textContent = 'Copy Badge';
+            }, 2000);
+        });
+    }
 
     // Allow Enter key to submit answer
     elements.answerInput.addEventListener('keydown', (e) => {
@@ -501,7 +527,6 @@ if (elements.startBtn) {
 
     // Initialize
     showScreen('start');
-    console.log('METTLE UI initialized');
 }
 
 
@@ -511,7 +536,7 @@ if (elements.startBtn) {
 
 /**
  * Scroll Reveal - IntersectionObserver for .scroll-reveal elements
- * Fades in from below when entering the viewport
+ * Progressive enhancement: elements stay visible without JS.
  */
 (function initScrollReveal() {
     const revealElements = document.querySelectorAll('.scroll-reveal');
@@ -519,10 +544,12 @@ if (elements.startBtn) {
 
     // Check for reduced motion preference
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (prefersReducedMotion) {
+    if (prefersReducedMotion || typeof IntersectionObserver === 'undefined') {
         revealElements.forEach(el => el.classList.add('visible'));
         return;
     }
+
+    document.documentElement.classList.add('js-reveal');
 
     const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {

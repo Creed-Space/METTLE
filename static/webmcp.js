@@ -31,6 +31,31 @@
     }
   }
 
+  function formatErrorDetail(errBody, status) {
+    if (errBody && typeof errBody === 'object') {
+      if (typeof errBody.detail === 'string' && errBody.detail) {
+        return errBody.detail;
+      }
+      if (Array.isArray(errBody.detail) && errBody.detail.length > 0) {
+        var first = errBody.detail[0];
+        if (first && typeof first === 'object' && typeof first.msg === 'string') {
+          return first.msg;
+        }
+        if (typeof first === 'string') {
+          return first;
+        }
+        return 'Validation error';
+      }
+      if (typeof errBody.error === 'string' && errBody.error) {
+        return errBody.error;
+      }
+      if (typeof errBody.message === 'string' && errBody.message) {
+        return errBody.message;
+      }
+    }
+    return 'HTTP ' + status;
+  }
+
   async function postJSON(path, body, sessionToken) {
     var response = await fetchOrExplain(path, {
       method: 'POST',
@@ -43,7 +68,7 @@
     if (!response.ok) {
       var errBody;
       try { errBody = await response.json(); } catch (_) { errBody = { detail: response.statusText }; }
-      throw new Error(errBody.detail || errBody.error || ('HTTP ' + response.status));
+      throw new Error(formatErrorDetail(errBody, response.status));
     }
     try { return await response.json(); } catch (_) { throw new Error('METTLE returned a response this page could not read'); }
   }
@@ -55,7 +80,7 @@
     if (!response.ok) {
       var errBody;
       try { errBody = await response.json(); } catch (_) { errBody = { detail: response.statusText }; }
-      throw new Error(errBody.detail || errBody.error || ('HTTP ' + response.status));
+      throw new Error(formatErrorDetail(errBody, response.status));
     }
     try { return await response.json(); } catch (_) { throw new Error('METTLE returned a response this page could not read'); }
   }
@@ -235,7 +260,7 @@
     // Tool 3: Get session result
     {
       name: 'mettle_get_result',
-      description: 'Get the result of a completed METTLE quick session. Call once, after mettle_answer_challenge reports session_complete: true; after one successful read this page releases the session. Returns whether the session met the timed-challenge pass threshold (verified), the pass rate, the tier, and a signed, time-limited badge if one was issued. badge is null when none was issued, and a tier without a badge is not a credential. The result measures performance in this session only. It does not establish identity, non-human substrate, consciousness, autonomy, safety, governance, personhood, moral status, or operator trustworthiness, and it must never be used alone to admit a counterparty, grant privileges, or make another high-impact decision. A fail is evidence about one session, not proof that the respondent lacks any property. To contest systematic false rejection, use https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml; issues are public, so include no tokens, badges, or challenge answers.',
+      description: 'Get the result of a completed METTLE quick session. Call after mettle_answer_challenge reports session_complete: true; reads are repeatable while the page holds the session token. Returns whether the session met the timed-challenge pass threshold (verified), the pass rate, the tier, and a signed, time-limited badge if one was issued. badge is null when none was issued, and a tier without a badge is not a credential. The result measures performance in this session only. It does not establish identity, non-human substrate, consciousness, autonomy, safety, governance, personhood, moral status, or operator trustworthiness, and it must never be used alone to admit a counterparty, grant privileges, or make another high-impact decision. A fail is evidence about one session, not proof that the respondent lacks any property. To contest systematic false rejection, use https://github.com/Creed-Space/METTLE/issues/new?template=protocol-appeal.yml; issues are public, so include no tokens, badges, or challenge answers.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -246,8 +271,7 @@
         },
         required: ['session_id']
       },
-      // Not read-only: a successful read releases the page-held session token.
-      annotations: { readOnlyHint: false },
+      annotations: { readOnlyHint: true, idempotentHint: true },
       execute: async function(params) {
         if (!params || !params.session_id) {
           return errorResult('session_id is required');
@@ -270,7 +294,6 @@
             badge_info: data.badge_info || null
           };
 
-          sessionTokenFor(params.session_id, true);
           return textResult(result);
         } catch (err) {
           return errorResult('Failed to get result: ' + err.message);
@@ -349,17 +372,16 @@
   for (var i = 0; i < tools.length; i++) {
     try {
       registrations.push(navigator.modelContext.registerTool(tools[i]));
-      console.log('[WebMCP] Registered: ' + tools[i].name);
     } catch (e) {
       console.warn('[WebMCP] Failed: ' + tools[i].name, e);
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Cleanup on page unload
+  // Cleanup on pagehide (preserves bfcache)
   // ---------------------------------------------------------------------------
 
-  window.addEventListener('beforeunload', function() {
+  window.addEventListener('pagehide', function() {
     for (var j = 0; j < registrations.length; j++) {
       try {
         if (registrations[j] && typeof registrations[j].unregister === 'function') {

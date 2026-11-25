@@ -28,14 +28,14 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from mettle import __version__ as METTLE_VERSION
 from mettle.challenge_adapter import SUITE_REGISTRY, ChallengeAdapter
 from mettle.challenger import generate_challenge_set
 from mettle.models import Difficulty
 from mettle.vcp import compute_tier
 from mettle.verifier import compute_mettle_result, verify_response
 
-METTLE_VERSION = "0.5.8"
-# Suites without a deterministic single-pass CLI path (handled via hosted API).
+# Suites without a deterministic single-pass CLI path (handled via server API).
 _LLM_SUITE = "llm-dynamic"
 
 
@@ -200,7 +200,7 @@ def run_suite(
     Raises:
         ValueError: If the suite cannot be run in single-pass CLI mode.
     """
-    generators = {
+    generators: dict[str, Any] = {
         "adversarial": ChallengeAdapter.generate_adversarial,
         "native": ChallengeAdapter.generate_native,
         "self-reference": ChallengeAdapter.generate_self_reference,
@@ -217,8 +217,8 @@ def run_suite(
     if gen is None:
         raise ValueError(
             f"Suite '{suite}' cannot be run in single-pass CLI mode. "
-            "Multi-round and LLM-dynamic suites require a server session on "
-            "the hosted API."
+            "Multi-round sessions require a server API; llm-dynamic requires a "
+            "self-hosted server configured with your own Anthropic API key."
         )
 
     client_data, server_answers = gen()
@@ -266,7 +266,7 @@ def run_suite(
         suites_failed=suites_failed,
         tier=tier,
         verified=passed,
-        pass_rate=1.0 if passed else float(evaluation.get("score", 0.0)),
+        pass_rate=float(evaluation.get("score", 1.0 if passed else 0.0)),
         details={
             "suite": suite,
             "score": evaluation.get("score"),
@@ -325,7 +325,7 @@ def _print_suites() -> None:
     for name, (display, description, number) in sorted(
         SUITE_REGISTRY.items(), key=lambda kv: kv[1][2]
     ):
-        sys.stdout.write(f"{number:>2}. {name:<18} {display} — {description}\n")
+        sys.stdout.write(f"{number:>2}. {name:<18} {display}: {description}\n")
 
 
 def _human_summary(credential: dict[str, Any]) -> None:
@@ -359,17 +359,6 @@ def main(argv: list[str] | None = None) -> int:
         valid = ", ".join(sorted(SUITE_REGISTRY))
         sys.stderr.write(f"Unknown suite: {args.suite!r}. Valid suites: {valid}\n")
         return 2
-
-    # LLM-dynamic guard mirrors llm_challenges_available().
-    if args.suite == _LLM_SUITE:
-        from mettle.llm_challenges import is_available as llm_available
-
-        if not llm_available():
-            sys.stderr.write(
-                "Suite 'llm-dynamic' requires ANTHROPIC_API_KEY (and the anthropic package). "
-                "Skipping.\n"
-            )
-            return 2
 
     try:
         if args.suite is not None:

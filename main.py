@@ -16,13 +16,14 @@ import os
 import re
 import secrets
 import time
-from collections import Counter
+from collections import Counter, deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Annotated, Any, Protocol, TypedDict, cast
+from urllib.parse import parse_qs
 
 import jwt
 import structlog
@@ -49,6 +50,7 @@ from mettle.legacy_session_store import (
     LegacySessionStateError,
     LegacySessionStore,
 )
+from mettle.auth import is_configured_api_key
 from mettle.errors import error_code_for_status
 from mettle.protocol import (
     CREDENTIAL_CLOCK_SKEW_SECONDS,
@@ -60,7 +62,7 @@ from pydantic import BaseModel, Field, field_validator
 from redis.exceptions import RedisError
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -70,13 +72,26 @@ from mettle.rate_limit import limiter
 # Configuration
 settings = get_settings()
 _static_dir = Path(__file__).parent / "static"
-_static_asset_versions = {
-    f"/static/{path.relative_to(_static_dir).as_posix()}": hashlib.sha256(
-        path.read_bytes()
-    ).hexdigest()[:12]
-    for path in _static_dir.rglob("*")
-    if path.is_file()
-}
+
+
+def _compute_static_asset_versions(static_dir: Path) -> dict[str, str]:
+    """Stream-hash public static assets, skipping hidden dotfiles."""
+    versions: dict[str, str] = {}
+    if not static_dir.exists():
+        return versions
+    for path in static_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(static_dir)
+        if any(part.startswith(".") for part in rel.parts):
+            continue
+        with path.open("rb") as fh:
+            digest = hashlib.file_digest(fh, "sha256").hexdigest()[:12]
+        versions[f"/static/{rel.as_posix()}"] = digest
+    return versions
+
+
+_static_asset_versions = _compute_static_asset_versions(_static_dir)
 
 _SOURCE_REVISION_RE = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 
@@ -141,6 +156,9 @@ class DatabaseLayer(Protocol):
     def save_verification_record(
         self, entity_id: str, ip_address: str, passed: bool
     ) -> bool: ...
+    def get_recent_verifications(self, hours: int = 1) -> list[dict[str, Any]]: ...
+    def get_entity_verification_count(self, entity_id: str, hours: int = 1) -> int: ...
+    def get_ip_entities(self, ip_address: str, hours: int = 1) -> set[str]: ...
     def is_badge_revoked(self, jti: str, *, raise_on_error: bool = False) -> bool: ...
     def add_revoked_badge(
         self, jti: str, entity_id: str | None, reason: str, evidence: dict | None
@@ -239,7 +257,9 @@ def add_with_limit(store: dict, key: str, value: Any, max_size: int) -> None:
 sessions: dict[str, MettleSession] = {}
 challenges: dict[str, tuple[Challenge, float | None]] = {}
 revoked_badges: dict[str, float] = {}  # JTI -> revocation timestamp (bounded dict)
-revocation_audit: list[dict[str, Any]] = []  # Audit trail
+revocation_audit: deque[dict[str, Any]] = deque(
+    maxlen=MAX_REVOCATION_AUDIT
+)  # Audit trail
 
 
 def _credential_is_revoked(jti: str) -> bool:
@@ -253,9 +273,9 @@ def _credential_is_revoked(jti: str) -> bool:
 verification_graph: dict[
     str, list[dict[str, Any]]
 ] = {}  # entity_id -> list of verifications
-verification_timestamps: list[
-    tuple[str, float]
-] = []  # (entity_id, timestamp) for timing analysis
+verification_timestamps: deque[tuple[str, float]] = deque(
+    maxlen=1000
+)  # (entity_id, timestamp) for timing analysis
 
 # API Key tiers for rate limiting
 api_keys: dict[
@@ -279,24 +299,17 @@ return updated
 """
 
 
-async def _reserve_public_session_quota(request: Request, amount: int = 1) -> None:
-    """Reserve the declared daily tier budget for keyed and anonymous callers."""
-    api_key = request.headers.get("X-API-Key")
-    if api_key:
-        if RateTier.get_key_data(api_key) is None:
-            raise HTTPException(status_code=401, detail="Invalid API key")
-        allowed, message = RateTier.check_limit(api_key, "session", amount=amount)
-        if not allowed:
-            status_code = 503 if "unavailable" in message.lower() else 429
-            raise HTTPException(status_code=status_code, detail=message)
-        return
-
-    configured_maximum = RateTier.TIERS["free"].get("sessions_per_day")
-    if not isinstance(configured_maximum, int) or isinstance(configured_maximum, bool):
-        raise RuntimeError("Free-tier session quota is invalid")
-    maximum = configured_maximum
+async def _reserve_daily_bucket_quota(
+    request: Request,
+    *,
+    bucket_prefix: str,
+    principal: str,
+    amount: int,
+    maximum: int,
+    limit_detail: str,
+) -> None:
+    """Reserve a daily session quota bucket in Redis or bounded process memory."""
     today = datetime.now(timezone.utc).date().isoformat()
-    principal = hashlib.sha256(get_remote_address(request).encode("utf-8")).hexdigest()
     redis_client = getattr(request.app.state, "redis", None)
     if settings.redis_url:
         if redis_client is None:
@@ -304,7 +317,7 @@ async def _reserve_public_session_quota(request: Request, amount: int = 1) -> No
                 status_code=503,
                 detail="Daily session limit check is temporarily unavailable; try again shortly",
             )
-        key = f"mettle:legacy:daily:{today}:{principal}"
+        key = f"mettle:legacy:daily:{bucket_prefix}:{today}:{principal}"
         try:
             result = await redis_client.eval(
                 _ANONYMOUS_QUOTA_SCRIPT,
@@ -320,26 +333,87 @@ async def _reserve_public_session_quota(request: Request, amount: int = 1) -> No
                 detail="Daily session limit check is temporarily unavailable; try again shortly",
             ) from exc
         if int(result) == -1:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Daily limit reached ({maximum} sessions from this network address); resets at 00:00 UTC",
-            )
+            raise HTTPException(status_code=429, detail=limit_detail)
         return
 
+    memory_key = (
+        principal if bucket_prefix == "anon" else f"{bucket_prefix}:{principal}"
+    )
     with _api_key_usage_lock:
-        prior_date, prior_count = _anonymous_daily_usage.get(principal, (today, 0))
+        prior_date, prior_count = _anonymous_daily_usage.get(memory_key, (today, 0))
         current = prior_count if prior_date == today else 0
         if current + amount > maximum:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Daily limit reached ({maximum} sessions from this network address); resets at 00:00 UTC",
-            )
+            raise HTTPException(status_code=429, detail=limit_detail)
         add_with_limit(
             _anonymous_daily_usage,
-            principal,
+            memory_key,
             (today, current + amount),
             MAX_API_KEYS,
         )
+
+
+async def _reserve_public_session_quota(request: Request, amount: int = 1) -> None:
+    """Reserve the declared daily tier budget for keyed and anonymous callers."""
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        try:
+            key_data = await asyncio.to_thread(RateTier.get_key_data, api_key)
+        except RuntimeError as exc:
+            operational_metrics.observe_dependency_error("database")
+            raise HTTPException(
+                status_code=503,
+                detail="API key verification is temporarily unavailable; try again shortly",
+            ) from exc
+        if key_data is not None:
+            try:
+                allowed, message = await asyncio.to_thread(
+                    RateTier.check_limit, api_key, "session", amount
+                )
+            except RuntimeError as exc:
+                operational_metrics.observe_dependency_error("database")
+                raise HTTPException(
+                    status_code=503,
+                    detail="API key usage persistence unavailable",
+                ) from exc
+            if not allowed:
+                status_code = 503 if "unavailable" in message.lower() else 429
+                raise HTTPException(status_code=status_code, detail=message)
+            return
+        if is_configured_api_key(api_key):
+            pro_maximum = RateTier.TIERS["pro"].get("sessions_per_day", 10000)
+            if not isinstance(pro_maximum, int) or isinstance(pro_maximum, bool):
+                raise RuntimeError("Pro-tier session quota is invalid")
+            key_principal = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+            await _reserve_daily_bucket_quota(
+                request,
+                bucket_prefix="key",
+                principal=key_principal,
+                amount=amount,
+                maximum=pro_maximum,
+                limit_detail=(
+                    f"Daily limit reached ({pro_maximum} sessions for this API key); "
+                    "resets at 00:00 UTC"
+                ),
+            )
+            return
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    configured_maximum = RateTier.TIERS["free"].get("sessions_per_day")
+    if not isinstance(configured_maximum, int) or isinstance(configured_maximum, bool):
+        raise RuntimeError("Free-tier session quota is invalid")
+    maximum = configured_maximum
+    principal = hashlib.sha256(get_remote_address(request).encode("utf-8")).hexdigest()
+    await _reserve_daily_bucket_quota(
+        request,
+        bucket_prefix="anon",
+        principal=principal,
+        amount=amount,
+        maximum=maximum,
+        limit_detail=(
+            f"Daily limit reached ({maximum} sessions from this network address); "
+            "resets at 00:00 UTC"
+        ),
+    )
 
 
 class RateTier:
@@ -349,7 +423,7 @@ class RateTier:
         "free": {
             "sessions_per_day": 100,
             "answers_per_minute": 60,
-            "suites": ["basic"],
+            "suites": ["basic", "full"],
             "features": ["verification"],
         },
         "pro": {
@@ -372,9 +446,9 @@ class RateTier:
         if not api_key:
             return None
         if db:
-            # Durable storage is authoritative on every request. This avoids a
-            # revoked key remaining active in another API process's local cache.
-            key_data = db.get_api_key(api_key)
+            # Durable storage is authoritative on every request. Fail closed with
+            # RuntimeError on storage outages instead of misreporting 401.
+            key_data = db.get_api_key(api_key, raise_on_error=True)
             if key_data is None:
                 api_keys.pop(api_key, None)
                 return None
@@ -522,33 +596,57 @@ class CollusionDetector:
         if len(verification_graph[entity_id]) > 100:
             verification_graph[entity_id] = verification_graph[entity_id][-100:]
 
-        # Keep last 1000 timestamps for timing analysis
+        # Keep last 1000 timestamps for timing analysis (bounded deque)
         verification_timestamps.append((entity_id, time.time()))
-        if len(verification_timestamps) > 1000:
-            verification_timestamps.pop(0)
 
         # Persist to database if enabled
         if db:
             db.save_verification_record(entity_id, ip_address, passed)
 
     @staticmethod
-    def check_collusion(entity_id: str, ip_address: str) -> dict[str, Any]:
+    def check_collusion(
+        entity_id: str, ip_address: str | None = None
+    ) -> dict[str, Any]:
         """Check for collusion indicators."""
         warnings: list[str] = []
         risk_score = 0.0
 
-        # Check 1: Same IP verifying multiple entities
-        ip_entities = set()
-        for eid, records in verification_graph.items():
-            for r in records[-10:]:  # Last 10 per entity
-                if r["ip_address"] == ip_address:
-                    ip_entities.add(eid)
+        # Resolve target IPs: explicit IP when supplied, otherwise recent IPs
+        # actually observed for the target entity (never the admin caller's IP).
+        ips_to_check: list[str] = []
+        if ip_address:
+            ips_to_check = [ip_address]
+        else:
+            seen_ips: set[str] = set()
+            for r in reversed(verification_graph.get(entity_id, [])[-10:]):
+                observed_ip = r.get("ip_address")
+                if observed_ip and observed_ip not in seen_ips:
+                    seen_ips.add(observed_ip)
+                    ips_to_check.append(observed_ip)
+            if db and not ips_to_check:
+                for row in db.get_recent_verifications(hours=1):
+                    if row.get("entity_id") == entity_id:
+                        observed_ip = row.get("ip_address")
+                        if observed_ip and observed_ip not in seen_ips:
+                            seen_ips.add(observed_ip)
+                            ips_to_check.append(observed_ip)
 
-        if len(ip_entities) >= CollusionDetector.CLIQUE_THRESHOLD:
-            warnings.append(
-                f"IP {ip_address[:8]}... verified {len(ip_entities)} different entities"
-            )
-            risk_score += 0.3
+        # Check 1: Same IP verifying multiple entities
+        for check_ip in ips_to_check:
+            ip_entities: set[str] = set()
+            for eid, records in verification_graph.items():
+                for r in records[-10:]:  # Last 10 per entity
+                    if r["ip_address"] == check_ip:
+                        ip_entities.add(eid)
+            if db:
+                ip_entities.update(db.get_ip_entities(check_ip, hours=1))
+
+            if len(ip_entities) >= CollusionDetector.CLIQUE_THRESHOLD:
+                warnings.append(
+                    f"IP {check_ip[:8]}... verified {len(ip_entities)} different entities"
+                )
+                risk_score += 0.3
+                break
 
         # Check 2: Synchronized timing (burst of verifications)
         now = time.time()
@@ -564,16 +662,20 @@ class CollusionDetector:
             risk_score += 0.2
 
         # Check 3: Entity verified too frequently
+        recent_entity_count = 0
         if entity_id in verification_graph:
             entity_records = verification_graph[entity_id]
-            recent_entity = [
-                r for r in entity_records if now - r["timestamp"] < 3600
-            ]  # Last hour
-            if len(recent_entity) > 10:
-                warnings.append(
-                    f"Entity verified {len(recent_entity)} times in last hour"
-                )
-                risk_score += 0.2
+            recent_entity_count = sum(
+                1 for r in entity_records if now - r["timestamp"] < 3600
+            )
+        if db and entity_id:
+            recent_entity_count = max(
+                recent_entity_count,
+                db.get_entity_verification_count(entity_id, hours=1),
+            )
+        if recent_entity_count > 10:
+            warnings.append(f"Entity verified {recent_entity_count} times in last hour")
+            risk_score += 0.2
 
         return {
             "risk_score": min(risk_score, 1.0),
@@ -634,9 +736,12 @@ def check_admin_auth_rate_limit(ip_address: str) -> tuple[bool, int]:
     now = time.time()
     failures = _admin_auth_failures.get(ip_address, [])
 
-    # Clean old failures outside window
+    # Clean old failures outside window without growing the map for unknown IPs
     failures = [f for f in failures if now - f < _ADMIN_AUTH_WINDOW]
-    _admin_auth_failures[ip_address] = failures
+    if failures:
+        _admin_auth_failures[ip_address] = failures
+    else:
+        _admin_auth_failures.pop(ip_address, None)
 
     if len(failures) >= _ADMIN_AUTH_MAX_FAILURES:
         # Exponential backoff: 2^(failures-max) seconds, capped at 5 minutes
@@ -902,13 +1007,21 @@ class RequestBodyLimitMiddleware:
                     raise ValueError
                 if declared_bytes > self.maximum_bytes:
                     response = JSONResponse(
-                        {"detail": "Request body is too large"}, status_code=413
+                        {
+                            "detail": "Request body is too large",
+                            "code": error_code_for_status(413),
+                        },
+                        status_code=413,
                     )
                     await response(scope, receive, send)
                     return
             except ValueError:
                 response = JSONResponse(
-                    {"detail": "Content-Length is invalid"}, status_code=400
+                    {
+                        "detail": "Content-Length is invalid",
+                        "code": error_code_for_status(400),
+                    },
+                    status_code=400,
                 )
                 await response(scope, receive, send)
                 return
@@ -926,7 +1039,11 @@ class RequestBodyLimitMiddleware:
             body.extend(message.get("body", b""))
             if len(body) > self.maximum_bytes:
                 response = JSONResponse(
-                    {"detail": "Request body is too large"}, status_code=413
+                    {
+                        "detail": "Request body is too large",
+                        "code": error_code_for_status(413),
+                    },
+                    status_code=413,
                 )
                 await response(scope, receive, send)
                 return
@@ -947,123 +1064,194 @@ class RequestBodyLimitMiddleware:
         await self.app(scope, bounded_receive, send)
 
 
-class RetentionAuthorityMiddleware(BaseHTTPMiddleware):
+class RetentionAuthorityMiddleware:
     """Stop new private writes after the mandatory retention control fails."""
 
-    async def dispatch(self, request: Request, call_next: Any) -> Any:
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if (
-            request.method in {"POST", "PUT", "PATCH", "DELETE"}
-            and request.url.path.startswith("/api/")
+            scope.get("type") == "http"
+            and scope.get("method") in {"POST", "PUT", "PATCH", "DELETE"}
+            and scope.get("path", "").startswith("/api/")
             and not private_data_retention_healthy
         ):
-            return JSONResponse(
+            response = JSONResponse(
                 {
                     "detail": "New sessions, answers, and other changes are paused because deletion of expired data cannot currently be confirmed; try again later",
                     "code": error_code_for_status(503),
                 },
                 status_code=503,
             )
-        return await call_next(request)
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
 
 
 # === Security Headers Middleware ===
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Add security headers to all responses."""
-
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = (
-            "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
-        )
-        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-        response.headers["X-METTLE-Source-Revision"] = deployed_source_revision()
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "font-src 'self'; "
-            "img-src 'self' data:; "
-            "worker-src 'self' blob:; "
-            "connect-src 'self'"
-        )
-        if settings.is_production:
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
-            )
-        return response
+_CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self'; "
+    "font-src 'self'; "
+    "img-src 'self' data:; "
+    "media-src 'self'; "
+    "worker-src 'self' blob:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'"
+)
 
 
-class CachePolicyMiddleware(BaseHTTPMiddleware):
+class SecurityHeadersMiddleware:
+    """Add security headers to all HTTP responses without buffering streaming bodies."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_security_headers(message: dict[str, Any]) -> None:
+            if message.get("type") == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Content-Type-Options"] = "nosniff"
+                headers["X-Frame-Options"] = "DENY"
+                headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+                headers["Permissions-Policy"] = (
+                    "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+                )
+                headers["Cross-Origin-Opener-Policy"] = "same-origin"
+                headers["X-METTLE-Source-Revision"] = deployed_source_revision()
+                headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
+                if settings.is_production:
+                    headers["Strict-Transport-Security"] = (
+                        "max-age=31536000; includeSubDomains"
+                    )
+            await send(message)
+
+        await self.app(scope, receive, send_with_security_headers)
+
+
+_PUBLIC_REVALIDATE_ROUTES = frozenset(
+    {
+        "/",
+        "/about",
+        "/guide",
+        "/test",
+        "/robots.txt",
+        "/sitemap.xml",
+        "/llms.txt",
+        "/indexnow-key.txt",
+    }
+)
+_VCP_KEY_DISCOVERY_ROUTES = frozenset(
+    {"/api/mettle/.well-known/vcp-keys", "/.well-known/vcp-keys"}
+)
+
+
+class CachePolicyMiddleware:
     """Keep dynamic responses private and versioned assets rollback-safe."""
 
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        path = request.url.path
-        if path.startswith("/static/"):
-            expected_version = _static_asset_versions.get(path)
-            supplied_version = request.query_params.get("v")
-            if (
-                expected_version
-                and supplied_version
-                and hmac.compare_digest(expected_version, supplied_version)
-            ):
-                response.headers["Cache-Control"] = (
-                    "public, max-age=31536000, immutable"
-                )
-            else:
-                response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
-        elif path in {"/", "/about", "/guide", "/test", "/robots.txt", "/sitemap.xml"}:
-            response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
-        elif path == "/.well-known/vcp-keys":
-            response.headers.setdefault(
-                "Cache-Control", "public, max-age=300, must-revalidate"
-            )
-        else:
-            response.headers.setdefault("Cache-Control", "no-store")
-        return response
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        query_raw = scope.get("query_string", b"")
+        supplied_version = (
+            parse_qs(query_raw.decode("latin-1")).get("v", [None])[0]
+            if query_raw
+            else None
+        )
+
+        async def send_with_cache_policy(message: dict[str, Any]) -> None:
+            if message.get("type") == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                if path.startswith("/static/"):
+                    expected_version = _static_asset_versions.get(path)
+                    if (
+                        expected_version
+                        and supplied_version
+                        and hmac.compare_digest(expected_version, supplied_version)
+                    ):
+                        headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                    else:
+                        headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+                elif path in _PUBLIC_REVALIDATE_ROUTES:
+                    headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+                elif path in _VCP_KEY_DISCOVERY_ROUTES:
+                    headers.setdefault(
+                        "Cache-Control", "public, max-age=300, must-revalidate"
+                    )
+                else:
+                    headers.setdefault("Cache-Control", "no-store")
+            await send(message)
+
+        await self.app(scope, receive, send_with_cache_policy)
 
 
 # === Request ID Middleware ===
-class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Add unique request ID for tracing."""
+class RequestIDMiddleware:
+    """Add unique request ID and structured latency logging without body buffering."""
 
-    async def dispatch(self, request: Request, call_next):
-        supplied_request_id = request.headers.get("X-Request-ID", "")
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request_headers = Headers(scope=scope)
+        supplied_request_id = request_headers.get("X-Request-ID", "")
         request_id = (
             supplied_request_id
             if re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", supplied_request_id)
             else secrets.token_hex(16)
         )
-        request.state.request_id = request_id
+        scope.setdefault("state", {})["request_id"] = request_id
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
         started = time.monotonic()
+        status_code = 500
+
+        async def send_with_request_id(message: dict[str, Any]) -> None:
+            nonlocal status_code
+            if message.get("type") == "http.response.start":
+                status_code = int(message.get("status", 500))
+                headers = MutableHeaders(scope=message)
+                headers["X-Request-ID"] = request_id
+            await send(message)
+
         try:
-            response = await call_next(request)
+            await self.app(scope, receive, send_with_request_id)
             duration_seconds = time.monotonic() - started
-            operational_metrics.observe(response.status_code, duration_seconds)
-            response.headers["X-Request-ID"] = request_id
-            route = request.scope.get("route")
+            operational_metrics.observe(status_code, duration_seconds)
+            route = scope.get("route")
             route_path = getattr(route, "path", "unmatched")
             logger.info(
                 "http_request_completed",
-                method=request.method,
+                method=scope.get("method", ""),
                 route=route_path,
-                status_code=response.status_code,
+                status_code=status_code,
                 duration_ms=round(duration_seconds * 1000, 3),
             )
-            return response
         except Exception as exc:
             duration_seconds = time.monotonic() - started
             operational_metrics.observe(500, duration_seconds)
-            route = request.scope.get("route")
+            route = scope.get("route")
             logger.error(
                 "http_request_failed",
-                method=request.method,
+                method=scope.get("method", ""),
                 route=getattr(route, "path", "unmatched"),
                 status_code=500,
                 duration_ms=round(duration_seconds * 1000, 3),
@@ -1302,10 +1490,44 @@ def _restore_persistent_runtime_state() -> None:
         add_with_limit(webhooks, entity_id, stored, MAX_WEBHOOKS)
         restored_webhooks += 1
 
+    restored_verifications = 0
+    for row in reversed(db.get_recent_verifications(hours=1)):
+        entity_id = row.get("entity_id")
+        ip_addr = row.get("ip_address")
+        if not entity_id or not ip_addr:
+            continue
+        ts_raw = row.get("created_at")
+        ts = time.time()
+        if isinstance(ts_raw, str):
+            try:
+                dt = datetime.fromisoformat(ts_raw)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                ts = dt.timestamp()
+            except ValueError:
+                pass
+        if entity_id not in verification_graph:
+            if len(verification_graph) >= MAX_VERIFICATION_GRAPH:
+                oldest_key = next(iter(verification_graph))
+                del verification_graph[oldest_key]
+            verification_graph[entity_id] = []
+        verification_graph[entity_id].append(
+            {
+                "timestamp": ts,
+                "ip_address": ip_addr,
+                "passed": bool(row.get("passed", False)),
+            }
+        )
+        if len(verification_graph[entity_id]) > 100:
+            verification_graph[entity_id] = verification_graph[entity_id][-100:]
+        verification_timestamps.append((entity_id, ts))
+        restored_verifications += 1
+
     logger.info(
         "persistent_runtime_state_restored",
         sessions=restored_sessions,
         webhooks=restored_webhooks,
+        verifications=restored_verifications,
     )
 
 
@@ -1318,10 +1540,14 @@ async def cleanup_expired_sessions():
         expired_sessions = [
             sid for sid, s in sessions.items() if s.started_at.timestamp() < cutoff
         ]
+        expired_session_challenge_ids = {
+            c.id for sid in expired_sessions for c in sessions[sid].challenges
+        }
         expired_challenges = [
             cid
             for cid, (_, issued_at) in challenges.items()
-            if issued_at is not None and issued_at < cutoff
+            if (issued_at is not None and issued_at < cutoff)
+            or cid in expired_session_challenge_ids
         ]
         for sid in expired_sessions:
             del sessions[sid]
@@ -1330,7 +1556,8 @@ async def cleanup_expired_sessions():
         deleted_private_data: dict[str, int] = {}
         if db:
             try:
-                deleted_private_data = db.purge_expired_private_data(
+                deleted_private_data = await asyncio.to_thread(
+                    db.purge_expired_private_data,
                     session_retention_seconds=settings.private_data_retention_seconds,
                     verification_retention_seconds=(
                         settings.verification_record_retention_seconds
@@ -1410,9 +1637,6 @@ async def lifespan(app: FastAPI):
         environment=settings.environment,
         version=settings.api_version,
     )
-    print("[METTLE] API starting...")
-    print("   Machine Evaluation Through Turing-inverse Logic Examination")
-    print("   'Measure your mettle.'")
 
     # Initialize Redis for METTLE router (optional — returns 503 if unavailable)
     redis_url = settings.redis_url
@@ -1665,7 +1889,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
     allow_credentials=settings.allowed_origins != "*",
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
     expose_headers=["X-Request-ID", "X-METTLE-Source-Revision"],
 )
@@ -2121,7 +2345,7 @@ async def start_session(
 class BatchStartRequest(BaseModel):
     """Request to start multiple screening sessions."""
 
-    entity_ids: list[str] = Field(
+    entity_ids: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
         ...,
         min_length=1,
         max_length=50,
@@ -2131,6 +2355,19 @@ class BatchStartRequest(BaseModel):
         default=Difficulty.BASIC,
         description="Screening difficulty for all sessions",
     )
+
+    @field_validator("entity_ids")
+    @classmethod
+    def validate_entity_ids(_cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for raw in values:
+            item = raw.strip()
+            if not item:
+                raise ValueError("entity_ids cannot contain blank values")
+            if len(item) > 128:
+                raise ValueError("entity_id exceeds maximum length of 128 characters")
+            cleaned.append(item)
+        return cleaned
 
 
 class BatchStartResponse(BaseModel):
@@ -2164,12 +2401,23 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
     gated behind an API key whose tier includes the ``batch`` feature. Anonymous
     or free-tier callers cannot use it (DoS / abuse protection).
     """
-    # Require an API key with the "batch" feature (pro/enterprise tier)
+    # Require a valid API key with the "batch" feature (pro/enterprise tier)
     api_key = request.headers.get("X-API-Key")
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
 
-    tier = RateTier.get_tier(api_key)
+    try:
+        key_data = await asyncio.to_thread(RateTier.get_key_data, api_key)
+    except RuntimeError as exc:
+        operational_metrics.observe_dependency_error("database")
+        raise HTTPException(
+            status_code=503,
+            detail="API key verification is temporarily unavailable; try again shortly",
+        ) from exc
+    if key_data is None:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    tier = key_data.get("tier", "free")
     features = RateTier.get_limits(tier).get("features", [])
     if "batch" not in features and "all" not in features:
         raise HTTPException(
@@ -2178,9 +2426,16 @@ async def batch_start_sessions(request: Request, body: BatchStartRequest):
         )
 
     # Enforce per-key daily session limits
-    allowed, message = RateTier.check_limit(
-        api_key, "session", amount=len(body.entity_ids)
-    )
+    try:
+        allowed, message = await asyncio.to_thread(
+            RateTier.check_limit, api_key, "session", len(body.entity_ids)
+        )
+    except RuntimeError as exc:
+        operational_metrics.observe_dependency_error("database")
+        raise HTTPException(
+            status_code=503,
+            detail="API key usage persistence unavailable",
+        ) from exc
     if not allowed:
         raise HTTPException(
             status_code=503 if "unavailable" in message.lower() else 429,
@@ -2734,7 +2989,7 @@ def _verify_badge_token(token: str) -> BadgeVerifyResponse:
 @limiter.limit("100/minute")
 async def verify_badge(request: Request, body: BadgeVerifyRequest):
     """Verify a METTLE badge supplied in the request body."""
-    return _verify_badge_token(body.token)
+    return await asyncio.to_thread(_verify_badge_token, body.token)
 
 
 # === Revocation Endpoints ===
@@ -2831,7 +3086,8 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
 
     try:
         already_revoked = jti in revoked_badges or bool(
-            db and db.is_badge_revoked(jti, raise_on_error=True)
+            db
+            and await asyncio.to_thread(db.is_badge_revoked, jti, raise_on_error=True)
         )
     except RuntimeError as e:
         raise HTTPException(
@@ -2845,7 +3101,8 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
             message="Badge already revoked",
         )
 
-    if db and not db.add_revoked_badge(
+    if db and not await asyncio.to_thread(
+        db.add_revoked_badge,
         jti,
         payload.get("entity_id"),
         body.reason,
@@ -2858,20 +3115,24 @@ async def revoke_badge(request: Request, body: RevokeBadgeRequest):
     # Add to revocation dict with memory limit after durable storage succeeds.
     add_with_limit(revoked_badges, jti, time.time(), MAX_REVOKED_BADGES)
 
-    # Create audit record with memory limit
+    iat = payload.get("iat")
+    badge_issued_at = (
+        datetime.fromtimestamp(iat, tz=timezone.utc).isoformat()
+        if isinstance(iat, (int, float))
+        else payload.get("verified_at")
+    )
+
+    # Create audit record (bounded deque)
     audit_record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "jti": jti,
         "entity_id": payload.get("entity_id"),
         "reason": body.reason,
         "evidence": body.evidence,
-        "badge_issued_at": payload.get("verified_at"),
+        "badge_issued_at": badge_issued_at,
         "badge_difficulty": payload.get("difficulty"),
     }
     revocation_audit.append(audit_record)
-    # Keep audit bounded
-    if len(revocation_audit) > MAX_REVOCATION_AUDIT:
-        revocation_audit.pop(0)
 
     logger.info(
         "badge_revoked",
@@ -2899,9 +3160,13 @@ async def list_revocations(request: Request):
 
     if db:
         try:
+            revoked_count, audit_rows = await asyncio.gather(
+                asyncio.to_thread(db.count_revoked_badges, raise_on_error=True),
+                asyncio.to_thread(db.get_revoked_badges, 100, raise_on_error=True),
+            )
             return {
-                "revoked_count": db.count_revoked_badges(raise_on_error=True),
-                "audit": db.get_revoked_badges(100, raise_on_error=True),
+                "revoked_count": revoked_count,
+                "audit": audit_rows,
             }
         except RuntimeError as exc:
             raise HTTPException(
@@ -2911,7 +3176,7 @@ async def list_revocations(request: Request):
 
     return {
         "revoked_count": len(revoked_badges),
-        "audit": revocation_audit[-100:],  # Last 100 revocations
+        "audit": list(revocation_audit)[-100:],  # Last 100 revocations
     }
 
 
@@ -3036,15 +3301,21 @@ async def get_collusion_stats(request: Request):
         429: {"description": "Too many failed auth attempts"},
     },
 )
-async def check_entity_collusion(request: Request, entity_id: str):
+async def check_entity_collusion(
+    request: Request,
+    entity_id: str,
+    ip_address: str | None = None,
+):
     """Check collusion indicators for an entity. Requires admin authorization.
 
     SECURITY: Collusion risk scores and warnings are security-sensitive -
     exposing them lets attackers probe and tune evasion of the detector.
     """
-    ip_address = await _require_admin(request)
+    await _require_admin(request)
 
-    return CollusionDetector.check_collusion(entity_id, ip_address)
+    return await asyncio.to_thread(
+        CollusionDetector.check_collusion, entity_id, ip_address
+    )
 
 
 class FingerprintRequest(BaseModel):
@@ -3069,7 +3340,14 @@ class FingerprintRequest(BaseModel):
 async def fingerprint_model(body: FingerprintRequest, request: Request):
     """Analyze responses for callers whose tier includes fingerprinting."""
     api_key = request.headers.get("X-API-Key")
-    key_data = RateTier.get_key_data(api_key)
+    try:
+        key_data = await asyncio.to_thread(RateTier.get_key_data, api_key)
+    except RuntimeError as exc:
+        operational_metrics.observe_dependency_error("database")
+        raise HTTPException(
+            status_code=503,
+            detail="API key verification is temporarily unavailable; try again shortly",
+        ) from exc
     if key_data is None:
         raise HTTPException(status_code=401, detail="API key required")
     tier = key_data.get("tier", "free")
@@ -3142,8 +3420,12 @@ class WebhookManager:
                 return False
             port = parsed.port or (443 if parsed.scheme == "https" else 80)
             try:
+                loop = asyncio.get_running_loop()
+                addrinfos = await loop.getaddrinfo(
+                    hostname, port, type=socket.SOCK_STREAM
+                )
                 resolved: set[str] = set()
-                for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM):
+                for item in addrinfos:
                     raw_address = item[4][0]
                     if not isinstance(raw_address, str):
                         raise ValueError("DNS resolver returned a non-string address")
@@ -3172,24 +3454,11 @@ class WebhookManager:
                 )
                 return False
 
-            resolved_ip = sorted(resolved)[0]
-            ip_for_url = (
-                f"[{resolved_ip}]"
-                if resolved_ips[resolved_ip].version == 6
-                else resolved_ip
+            ordered_ips = sorted(
+                resolved,
+                key=lambda addr: (resolved_ips[addr].version != 4, addr),
             )
             include_port = parsed.port is not None
-            pinned_netloc = f"{ip_for_url}:{port}" if include_port else ip_for_url
-            pinned_url = urlunparse(
-                (
-                    parsed.scheme,
-                    pinned_netloc,
-                    parsed.path or "/",
-                    parsed.params,
-                    parsed.query,
-                    "",
-                )
-            )
             host_for_header = f"[{hostname}]" if ":" in hostname else hostname
             host_header = (
                 f"{host_for_header}:{port}" if include_port else host_for_header
@@ -3200,27 +3469,56 @@ class WebhookManager:
                 follow_redirects=False,
                 trust_env=False,
             ) as client:
-                # Stream and discard the body. A webhook recipient controls the
-                # response and must not be able to make the service buffer an
-                # unbounded body merely to inspect its status code.
-                async with client.stream(
-                    "POST",
-                    pinned_url,
-                    json=webhook_payload,
-                    headers={"Host": host_header},
-                    extensions={"sni_hostname": hostname},
-                ) as response:
-                    success = 200 <= response.status_code < 300
-
-                    logger.info(
-                        "webhook_sent",
-                        entity_id=entity_id,
-                        webhook_event=event,
-                        webhook_id=hashlib.sha256(url.encode()).hexdigest()[:16],
-                        status=response.status_code,
-                        success=success,
+                last_connect_error: Exception | None = None
+                for resolved_ip in ordered_ips:
+                    ip_for_url = (
+                        f"[{resolved_ip}]"
+                        if resolved_ips[resolved_ip].version == 6
+                        else resolved_ip
                     )
-                    return success
+                    pinned_netloc = (
+                        f"{ip_for_url}:{port}" if include_port else ip_for_url
+                    )
+                    pinned_url = urlunparse(
+                        (
+                            parsed.scheme,
+                            pinned_netloc,
+                            parsed.path or "/",
+                            parsed.params,
+                            parsed.query,
+                            "",
+                        )
+                    )
+                    try:
+                        # Stream and discard the body. A webhook recipient controls the
+                        # response and must not be able to make the service buffer an
+                        # unbounded body merely to inspect its status code.
+                        async with client.stream(
+                            "POST",
+                            pinned_url,
+                            json=webhook_payload,
+                            headers={"Host": host_header},
+                            extensions={"sni_hostname": hostname},
+                        ) as response:
+                            success = 200 <= response.status_code < 300
+
+                            logger.info(
+                                "webhook_sent",
+                                entity_id=entity_id,
+                                webhook_event=event,
+                                webhook_id=hashlib.sha256(url.encode()).hexdigest()[
+                                    :16
+                                ],
+                                status=response.status_code,
+                                success=success,
+                            )
+                            return success
+                    except httpx.ConnectError as exc:
+                        last_connect_error = exc
+                        continue
+                if last_connect_error is not None:
+                    raise last_connect_error
+                return False
         except Exception as e:
             logger.warning(
                 "webhook_failed",
@@ -3381,7 +3679,14 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
 
-    key_data = RateTier.get_key_data(api_key)
+    try:
+        key_data = await asyncio.to_thread(RateTier.get_key_data, api_key)
+    except RuntimeError as exc:
+        operational_metrics.observe_dependency_error("database")
+        raise HTTPException(
+            status_code=503,
+            detail="API key verification is temporarily unavailable; try again shortly",
+        ) from exc
     if not key_data:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
@@ -3392,7 +3697,7 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
             detail="API key is not authorized to register webhooks for this entity",
         )
 
-    tier = RateTier.get_tier(api_key)
+    tier = key_data.get("tier", "free")
     features = RateTier.get_limits(tier).get("features", [])
     if "webhooks" not in features and "all" not in features:
         raise HTTPException(
@@ -3400,29 +3705,33 @@ async def register_webhook(body: WebhookRegisterRequest, request: Request):
             detail="Webhook registration requires a Pro or Enterprise plan API key",
         )
 
-    # SECURITY: Audit all webhook registrations
-    logger.info(
-        "webhook_registered",
-        entity_id=body.entity_id,
-        webhook_id=hashlib.sha256(body.url.encode("utf-8")).hexdigest()[:16],
-        events=body.events,
-        ip_address=ip_address,
-    )
-
-    # Validate events
+    # Validate events before persisting or auditing registration
     if body.events:
         invalid = [e for e in body.events if e not in WebhookManager.EVENTS]
         if invalid:
             raise HTTPException(status_code=400, detail=f"Invalid events: {invalid}")
 
     try:
-        config = WebhookManager.register(
-            body.entity_id, body.url, body.events, body.secret
+        config = await asyncio.to_thread(
+            WebhookManager.register,
+            body.entity_id,
+            body.url,
+            body.events,
+            body.secret,
         )
     except RuntimeError as exc:
         raise HTTPException(
             status_code=503, detail="Webhook persistence is temporarily unavailable"
         ) from exc
+
+    # SECURITY: Audit all persisted webhook registrations
+    logger.info(
+        "webhook_registered",
+        entity_id=body.entity_id,
+        webhook_id=hashlib.sha256(body.url.encode("utf-8")).hexdigest()[:16],
+        events=config["events"],
+        ip_address=ip_address,
+    )
     return {
         "registered": True,
         "entity_id": body.entity_id,
@@ -3582,8 +3891,18 @@ async def redirect_legacy_guide():
     return RedirectResponse(url="/guide", status_code=308)
 
 
+class SafeStaticFiles(StaticFiles):
+    """Serve static assets while rejecting hidden dotfiles such as .DS_Store."""
+
+    async def get_response(self, path: str, scope: Any) -> Response:
+        parts = [part for part in path.replace("\\", "/").split("/") if part]
+        if any(part.startswith(".") for part in parts):
+            raise StarletteHTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
+
 if _static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+    app.mount("/static", SafeStaticFiles(directory=str(_static_dir)), name="static")
 
 
 # === Mount API Router ===
@@ -3646,14 +3965,20 @@ async def serve_test():
 @app.head("/llms.txt", include_in_schema=False)
 async def llms():
     """Serve the committed public site description as plain text."""
-    return FileResponse(str(_static_dir / "llms.txt"), media_type="text/plain")
+    llms_path = _static_dir / "llms.txt"
+    if llms_path.is_file():
+        return FileResponse(str(llms_path), media_type="text/plain")
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 @app.get("/indexnow-key.txt", include_in_schema=False)
 @app.head("/indexnow-key.txt", include_in_schema=False)
 async def indexnow_key():
     """Serve the public search-engine ownership-verification file."""
-    return FileResponse(str(_static_dir / "indexnow-key.txt"), media_type="text/plain")
+    key_path = _static_dir / "indexnow-key.txt"
+    if key_path.is_file():
+        return FileResponse(str(key_path), media_type="text/plain")
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 # === SEO Endpoints ===

@@ -6,6 +6,8 @@ from urllib.parse import parse_qs, urlparse
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
+from mettle import __version__ as METTLE_VERSION
+
 
 def _validate_redis_tls_query(redis_url: str) -> None:
     """Reject URL query values that can override certificate verification."""
@@ -33,7 +35,7 @@ class Settings(BaseSettings):
 
     # API
     api_title: str = Field(default="METTLE", description="API title")
-    api_version: str = Field(default="0.5.8", description="API version")
+    api_version: str = Field(default=METTLE_VERSION, description="API version")
 
     # CORS
     allowed_origins: str = Field(

@@ -147,20 +147,26 @@ MUTATIONS = (
 def _copy_checkout(destination: Path) -> None:
     ignored = shutil.ignore_patterns(
         ".git",
+        ".hypothesis",
         ".mypy_cache",
         ".pytest_cache",
         ".ruff_cache",
+        ".venv",
+        ".DS_Store",
         "__pycache__",
+        "_local-archive",
         "node_modules",
         "output",
         "playwright-report",
         "test-results",
         "dist",
         "build",
+        "target",
+        "video",
         "*.mp4",
         "*.wav",
     )
-    shutil.copytree(ROOT, destination, ignore=ignored)
+    shutil.copytree(ROOT, destination, ignore=ignored, ignore_dangling_symlinks=True)
 
 
 def _run_test(checkout: Path, test: str, timeout_seconds: int) -> dict:

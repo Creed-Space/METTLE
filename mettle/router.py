@@ -7,6 +7,7 @@ SECURITY: Every endpoint except credential status and issuer-key discovery requi
 authentication. Expected answers are never sent to clients.
 """
 
+import asyncio
 import logging
 from inspect import isawaitable
 from datetime import datetime, timedelta, timezone
@@ -50,8 +51,24 @@ from mettle.challenge_adapter import SUITE_REGISTRY
 from mettle.llm_challenges import is_available as llm_challenges_available
 from mettle.presence import issuer_signed_session_presence
 from mettle.rate_limit import CREDENTIAL_STATUS_RATE_LIMIT, limiter
-from mettle.session_manager import SessionManager, SessionRateLimitError
 from redis.exceptions import RedisError
+
+from mettle.session_manager import (
+    SessionManager,
+    SessionRateLimitError,
+    _compute_session_elapsed_ms,
+)
+
+
+async def _check_revoked(checker: Any, jti: str) -> bool:
+    """Invoke the revocation checker without blocking the event loop."""
+    if asyncio.iscoroutinefunction(checker):
+        return bool(await checker(jti))
+    result = await asyncio.to_thread(checker, jti)
+    if isawaitable(result):
+        result = await result
+    return bool(result)
+
 
 logger = logging.getLogger(__name__)
 
@@ -256,11 +273,7 @@ async def get_session_status(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not your session"
         )
 
-    import time
-
-    elapsed_ms = 0
-    if session.get("start_time"):
-        elapsed_ms = int((time.time() - session["start_time"]) * 1000)
+    elapsed_ms = _compute_session_elapsed_ms(session)
 
     return SessionStatusResponse(
         session_id=session_id,
@@ -495,7 +508,7 @@ async def get_credential_status(
             detail="Credential revocation service is unavailable",
         )
     try:
-        revoked = bool(checker(body.credential_jti))
+        revoked = await _check_revoked(checker, body.credential_jti)
         from mettle.signing import get_public_key_info
         from mettle.vcp import build_credential_status_receipt
 
@@ -718,7 +731,7 @@ async def verify_credential_presentation(
             detail="Credential revocation service is unavailable",
         )
     try:
-        revoked = bool(checker(jti))
+        revoked = await _check_revoked(checker, jti)
     except Exception as exc:
         logger.error("Credential revocation check failed", exc_info=True)
         raise HTTPException(
@@ -755,7 +768,7 @@ async def verify_credential_presentation(
     # is a separate durable authority, so the earlier check alone leaves a race
     # in which a credential can be revoked while holder proof is being verified.
     try:
-        revoked_after_verification = bool(checker(jti))
+        revoked_after_verification = await _check_revoked(checker, jti)
     except Exception as exc:
         logger.error("Credential revocation recheck failed", exc_info=True)
         raise HTTPException(

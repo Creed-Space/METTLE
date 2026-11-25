@@ -140,7 +140,7 @@ class TestInitDb:
                         text("SELECT version FROM schema_migrations ORDER BY version")
                     ).scalars()
                 )
-                assert versions == [1, 2, 3]
+                assert versions == [1, 2, 3, 4]
         legacy_engine.dispose()
 
     def test_sqlite_backup_restores_sessions_and_revocations(

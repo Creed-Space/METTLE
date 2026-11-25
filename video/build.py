@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""METTLE explainer video builder.
+"""Legacy METTLE explainer video builder.
+
+The canonical cinematic remaster is in video/remaster/. This historical
+recipe exports to video/build/legacy-export, never over the accepted site film.
 
 Pipeline: narration script -> Gemini TTS (voice: Sadaltager) -> whisper word
 alignment -> animated HTML scenes whose reveals are keyed to the spoken words ->
@@ -18,8 +21,7 @@ Usage:
 Requires: GOOGLE_API_KEY (uncached narration only), google-genai, ffmpeg,
 whisper-cli with ggml-base.en (uncached alignment only), Python Playwright with
 its Chromium, Pillow.
-Outputs: static/mettle-explainer.mp4, static/mettle-explainer.vtt,
-         static/mettle-explainer-poster.webp
+Outputs: video/build/legacy-export/mettle-explainer.mp4, captions and poster.
 """
 
 import argparse
@@ -41,8 +43,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 WORK = REPO / "video" / "build"
 CACHE = REPO / "video" / "tts-cache"
-STATIC = REPO / "static"
-FONTS = STATIC / "fonts"
+STATIC = WORK / "legacy-export"
+FONTS = REPO / "static" / "fonts"
 
 TTS_MODEL = "gemini-3.1-flash-tts-preview"
 TTS_VOICE = "Sadaltager"
@@ -1012,7 +1014,7 @@ def render_frames(job):
 
     step = 1 / FPS
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(channel="chrome", chromium_sandbox=True)
         page = browser.new_page(
             viewport={"width": 1920, "height": 1080}, device_scale_factor=SCALE
         )
@@ -1250,7 +1252,7 @@ def main():
     args = ap.parse_args()
 
     scenes_dir, frames_root, clips = WORK / "scenes", WORK / "frames", WORK / "clips"
-    for d in (CACHE, scenes_dir, frames_root, clips):
+    for d in (CACHE, scenes_dir, frames_root, clips, STATIC):
         d.mkdir(parents=True, exist_ok=True)
     for scene in SCENES:
         if scene["id"] in args.regen:

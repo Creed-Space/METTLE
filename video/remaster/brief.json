@@ -1,0 +1,176 @@
+{
+  "title": "METTLE, a bounded experiment",
+  "date": "2026-10-02",
+  "aspect_ratio": "16:9",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "target_seconds": 372,
+  "duration_policy": "Approximately six minutes, natural professor-style narration governs timing; generated speech and scene pads currently total about 6m11. No audio speed-up.",
+  "output": "Local remaster and accessible website assets; publication requires a separate explicit request.",
+  "audience": "Curious technical and research audiences, first encounter with METTLE",
+  "style": "Cinematic editorial science film. Midnight teal, ivory, warm brass accents, exquisite glass and light. Restrained, meaningful motion. Typography and factual diagrams grounded in the website and source. No slide-deck grids, stock sci-fi holograms, robot faces, invented product UI, noisy numbers, or generic uplift.",
+  "speech_model": "google/gemini-3.8-flash-tts",
+  "voice": "Sadaltager",
+  "voice_direction": "Narrate like a university professor who is an unusually gifted public lecturer: a natural British accent, warm intellectual curiosity, patient clarity and quiet confidence. Use connected, flowing sentences, varied intonation and gentle emphasis on the ideas that matter. Around 130 words per minute, with breathing space at conceptual transitions. Opening curious and inviting; experiment precise and engaged; limitations thoughtful rather than alarmed; close gently assured. Avoid Claudisms, short punchy advertising delivery, serial numerical emphasis, portentous trailer cadence, robotic regularity and exaggerated cheer. Read the input verbatim, no ad-libs, no spoken directions. Pronounce METTLE as metal and Turing as tour-ing.",
+  "image_model": "openai/gpt-image-2.5-sunburst",
+  "asr_model": "microsoft/mai-transcribe-2",
+  "critic_model": "google/gemini-3.8-flash",
+  "keychain": {
+    "openrouter": {
+      "service": "openrouter",
+      "account": "api-key"
+    },
+    "elevenlabs": {
+      "service": "aiguardians-elevenlabs",
+      "account": "api-key"
+    }
+  },
+  "authorization": {
+    "source": "User requested remaster with OpenRouter, Gemini TTS, Sunburst, Veo/Seedance, animation tools, ElevenLabs, captions and critic; up to $100 OpenRouter; Modal optional.",
+    "reference_uploads": "Project brand references and new generated keyframes for this explainer only.",
+    "publication": false,
+    "openrouter_limit_usd": 100,
+    "effective_production_budget_usd": 40,
+    "elevenlabs": "Existing credential tried, music route rejected401. User explicitly authorises OpenRouter fallback and top-up if needed, up to original$100 budget; no unnecessary purchase.",
+    "credential_state": "Use pre-existing Keychain credentials only. User-pasted values are not copied, saved or consumed. Key rotation recommended.",
+    "paid_generation_authorized": true
+  },
+  "spend_allocation_usd": {
+    "narration": 4,
+    "keyframes": 4,
+    "video": 20,
+    "asr": 1,
+    "critic": 4,
+    "reserve": 7
+  },
+  "identity_locks": {
+    "palette": [
+      "#071b1b",
+      "#1cd6ba",
+      "#f3f0e5",
+      "#b89a6a"
+    ],
+    "materials": "clear and smoked glass, black anodised metal, fine brass edges",
+    "recurring_motif": "a bounded luminous specimen and a traceable record, creative visual metaphors for measurement",
+    "no_claim": "Abstract cinematic environments are illustrative, never presented as an implemented METTLE interface or certification of cognition."
+  },
+  "grounding": [
+    "CLAUDE.md:Project boundary",
+    "docs/SYSTEM_ARCHITECTURE.md:Purpose and boundary",
+    "docs/VERIFICATION_SUITES.md",
+    "docs/ASSURANCE_CASE.md",
+    "mettle/challenge_adapter.py:SUITE_REGISTRY",
+    "mettle/vcp.py:TIER_RANGES",
+    "video/build.py:existing approved factual script"
+  ],
+  "beats": [
+    {
+      "id": "01-hook",
+      "chapter": "The reverse question",
+      "headline": "What can we measure?",
+      "text": "For decades, a familiar checkbox has asked us to prove that we are human. METTLE approaches the encounter from another direction, by offering challenges designed around machine capabilities and observing how a respondent performs. That shift opens an interesting experimental question: what can a carefully bounded interaction tell us about the behaviour of the system answering? The useful starting point is a measurement made in a particular session.",
+      "visual": "cinematic measurement instrument opening, evolving into a single bounded specimen"
+    },
+    {
+      "id": "02-what",
+      "chapter": "A bounded experiment",
+      "headline": "One session. A clear record.",
+      "text": "METTLE stands for Machine Evaluation Through Turing-inverse Logic Examination. Its experimental protocol places each session under a named, versioned policy, so the challenge, the response and the interpretation belong to an explicit frame of reference. The server records answers, timing and scores, creating a record that another party can examine. This gives a result a precise meaning: it describes observed behaviour under the conditions of that session.",
+      "visual": "Hyperframes policy, challenge, response and observed record, reveal in spoken order"
+    },
+    {
+      "id": "03-challenges",
+      "chapter": "Inside a challenge",
+      "headline": "Fresh tasks. Observed responses.",
+      "text": "The quick API offers a compact screening, including an arithmetic challenge that asks for the sum, difference or product of two eight-digit numbers within half a second. Other tasks ask the respondent to continue a generated token sequence or satisfy an exact formatting rule. Further challenges examine consistency, self-description and changes after feedback. These are observable response patterns, and they can be produced by people, models, purpose-built solvers or relayed answers. Their interpretation therefore calls for care.",
+      "visual": "Manim fresh arithmetic inputs and exact response, then formatting and feedback traces"
+    },
+    {
+      "id": "04-suites",
+      "chapter": "Twelve research lenses",
+      "headline": "A family of experiments",
+      "text": "The separate authenticated API organises its own challenges into twelve suites, each exploring a different research hypothesis. Tasks are selected or generated for the session, while expected answers remain on the server. Responses are checked under the relevant policy, with the timing recorded alongside them. One suite uses an external evaluator: its answers are sent to Anthropic only when the party starting the session explicitly agrees. That choice makes the data boundary part of the experiment itself.",
+      "visual": "Motion Canvas twelve research lenses arriving as a connected constellation, server boundary and consent"
+    },
+    {
+      "id": "05-questions",
+      "chapter": "Questions and evidence",
+      "headline": "A question invites investigation.",
+      "text": "Some suite names express larger research questions about freedom, mission ownership and genuineness. Those questions give the work its intellectual direction, while the evidence remains the answers and self-reports gathered during the session. A suite score cannot establish freedom, agency, consciousness or identity. Keeping the research question distinct from the measured response allows us to investigate difficult ideas without making the result carry more meaning than the experiment supports.",
+      "visual": "editorial typographic research questions, then the observed response in a smaller evidence frame"
+    },
+    {
+      "id": "06-governance",
+      "chapter": "Reading a governance claim",
+      "headline": "Self-report has a boundary.",
+      "text": "The governance suite illustrates why this distinction matters. It scores responses to scenarios about rules and oversight, which are statements the respondent makes about itself. Governance metadata supplied through the Value Context Protocol is caller-provided and marked unverified. The measurement does not independently inspect the operator, a constitution, an action gate or a runtime control. Assessing those arrangements requires evidence from the arrangements themselves, alongside the challenge result.",
+      "visual": "split self-report and independent runtime evidence, restrained brass boundary"
+    },
+    {
+      "id": "07-controls",
+      "chapter": "Protecting the experiment",
+      "headline": "A fresh challenge, securely bound",
+      "text": "Several controls help preserve the integrity of the interaction. Challenges vary between sessions, expected answers stay server-side, and rounds arrive one at a time. Session-bound bearer tokens and replay controls keep submissions attached to their proper context, while timing comes from the server's own clock. These controls make simple reuse harder. They leave important limitations: relays, informed solvers, assisted respondents, leaks and evaluator error can still affect what an observed result means.",
+      "visual": "Motion Canvas session packet travels through challenge, response and server-clock gates"
+    },
+    {
+      "id": "08-credentials",
+      "chapter": "A portable result",
+      "headline": "Signed. Time-limited. Checkable.",
+      "text": "In the authenticated API, a qualifying session can receive a signed credential that binds the issuer, the policy, the result and the tier. Its signature allows a recipient to check who issued the record and whether it has been altered. The credential expires after one hour and has an identifier whose status can be revoked. Under the current policy, Bronze is the highest available tier, because several research suites do not count towards higher tiers. A tier summarises the complete suite range that passed; it certifies no property merely because that property appears in a suite name.",
+      "visual": "cinematic glass ledger then Hyperframes signature, expiry, revocation and tier explanation"
+    },
+    {
+      "id": "09-uses",
+      "chapter": "Putting evidence to work",
+      "headline": "One signal in a wider assessment",
+      "text": "This makes METTLE useful for comparing challenge performance in research, supporting participation in low-risk sandboxes, and contributing a supplemental signal to a broader risk assessment. A relying party still makes its own decision, using evidence and controls appropriate to the stakes. Identity, privileged access, trading and deployment require their own assurance. The result is most useful when its scope is understood and it is considered alongside the other evidence a decision needs.",
+      "visual": "purposeful evidence composition for research, sandbox and wider assessment"
+    },
+    {
+      "id": "10-close",
+      "chapter": "Explore METTLE",
+      "headline": "Measure your mettle.",
+      "text": "METTLE is open source under the Apache licence. Installing the mettle verifier package provides unsigned local screening, while the server API supports signed, time-limited credentials under its published policy. Begin with the documented challenges and the assurance boundary, then examine a credential's current status before relying on it. The source, integration guide and research questions are available at mettle dot S H, where you can explore the protocol and measure your mettle.",
+      "visual": "cinematic instrument closes into METTLE wordmark, readable package and website invitation"
+    }
+  ],
+  "music_prompt": "Original instrumental science documentary score, sophisticated and unobtrusive. Warm felt piano, soft brushed texture, delicate glass harmonics, sustained low strings and a gentle airy pulse. Patient intellectual curiosity, gradually developing a memorable four-note motif. Midnight teal and warm brass atmosphere, thoughtful rather than dramatic. No vocals, no lyrics, no voice-like pads, no percussion hits under speech, no generic corporate uplift, no trailer booms. Broad dynamic restraint and plenty of room for a warm university-professor narration. Gentle opening, subtle development, graceful resolved ending. About five and a half minutes.",
+  "remaining_acceptance": [],
+  "deviations": [
+    "The user did not specify a hard runtime. Natural generated narration is about6m11 with breathing space; retain its clarity instead of accelerating speech.",
+    "ElevenLabs music access returns401 while account read succeeds. User explicitly authorised OpenRouter music fallback and independent top-up if needed; use Lyria3 Pro without unnecessary account mutation.",
+    "Whisper produced56 quantised point timestamps. Independent MAI-Transcribe2 supplies737 positive measured word intervals, with spelling/name ambiguities hash-bound to actual-audio review. Original Whisper receipts retained.",
+    "The first instrument Veo job failed terminally with service unavailable. The known failed ID and receipt are retained before one explicit verified-failure retry; completed jobs are never resubmitted.",
+    "Motion review found geometry instability in the first12-second Seedance observatory take. Retain it as rejected; a gentler8-second constant-focal-length replacement uses a new paid job identity.",
+    "Installed FFmpeg has neither drawtext nor libass. Transparent authored typography/caption strips use existing Pillow, then FFmpeg overlay; no system tooling installation.",
+    "Final native04 viewport clipping was reproduced as Puppeteer.connect resetting800x600. Helpers fixed with defaultViewport:null; isolated recapture asserted1920x1080 on every frame and all1133 decoded frames passed headline audit."
+  ],
+  "music_model": "google/lyria-3-pro-preview",
+  "music_edit_policy": "Two generated 3-minute movements crossfade 6s and slow music only to 371.2s. Speech remains unchanged.",
+  "audio_mix": {
+    "narration_loudness_lufs": -16,
+    "narration_true_peak_dbtp": -1.5,
+    "music_gain": 0.28,
+    "sidechain_threshold": 0.07,
+    "sidechain_ratio": 4,
+    "attack_ms": 20,
+    "release_ms": 350,
+    "limiter_linear": 0.83,
+    "selection": "Opening actual-audio A/B preferred B. Full final mixed audio and full captioned film accepted; original soundtrack retained bit-identically after picture repair."
+  },
+  "completed_acceptance": [
+    "Grounded script and source boundaries reviewed.",
+    "Gemini3.8 TTS10takes reviewed and actual final audio independently transcribed.",
+    "Sunburst reference keyframes and repaired animatic reviewed before full motion generation.",
+    "Veo/Seedance motion reviewed; rejected and failed jobs retained.",
+    "Manim, MotionCanvas, Hyperframes and native1080p30 HTML motion rendered.",
+    "Original Lyria instrumental fallback and final mix reviewed.",
+    "737 positive measured ASR word intervals,125 cues, complete script match and final-media hash binding.",
+    "Both delivered variants fully decoded; native scene/transition frames and complete audiovisual critic accepted.",
+    "Exact local site assets, transcript,6:11 label and fingerprints installed; affected local gates passed."
+  ],
+  "actual_seconds": 371.0666667,
+  "completion_evidence": "video/build/remaster/review/final-acceptance.json"
+}

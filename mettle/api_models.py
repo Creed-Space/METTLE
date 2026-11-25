@@ -361,13 +361,11 @@ class PresentationVerifyRequest(BaseModel):
     def validate_attestation(_cls, value: dict[str, Any]) -> dict[str, Any]:
         if len(value) > 32:
             raise ValueError("Attestation contains too many top-level fields")
-        try:
-            encoded = json.dumps(value, separators=(",", ":")).encode("utf-8")
-        except (TypeError, ValueError) as exc:
-            raise ValueError("Attestation must be JSON serializable") from exc
-        if len(encoded) > MAX_ATTESTATION_BYTES:
-            raise ValueError(f"Attestation exceeds {MAX_ATTESTATION_BYTES} bytes")
-        return value
+        return validate_bounded_json(
+            value,
+            max_bytes=MAX_ATTESTATION_BYTES,
+            label="Attestation",
+        )
 
 
 class PresentationVerifyResponse(BaseModel):

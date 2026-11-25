@@ -1,0 +1,1 @@
+import {makeProject} from '@motion-canvas/core';import constellation from './constellation?scene';import packet from './packet?scene';import pipe from './frame-exporter';export default makeProject({scenes:[new URLSearchParams(location.search).get('scene')==='packet'?packet:constellation],plugins:[pipe]});

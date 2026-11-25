@@ -711,7 +711,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> ToolResponse:
                 params={"include_vcp": str(include_vcp).lower()},
                 auth=True,
             )
-            snapshot = _authenticated_snapshot(data, session_id)
+            snapshot_data = {
+                **data,
+                "suites": (
+                    data.get("suites")
+                    or sorted(data.get("results", {}).keys())
+                    or list(data.get("suites_completed", []))
+                ),
+            }
+            snapshot = _authenticated_snapshot(snapshot_data, session_id)
             verdict = "PASSED" if data.get("overall_passed") else "NOT PASSED"
             text = (
                 "METTLE authenticated result\n"

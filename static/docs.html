@@ -41,14 +41,12 @@
     <link rel="manifest" href="/static/site.webmanifest">
     <meta name="theme-color" content="#14b8a6">
 
-    <!-- Preconnect -->
-
     <!-- Stylesheets -->
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
     <link rel="stylesheet" href="/static/fonts.css?v=7277857592d0">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css?v=0622c14d7e9d">
-    <link rel="stylesheet" href="/static/style.css?v=90cb5c3da37f">
-    <link rel="stylesheet" href="/static/docs.css?v=b81795ba43b3">
+    <link rel="stylesheet" href="/static/style.css?v=667d1b43c803">
+    <link rel="stylesheet" href="/static/docs.css?v=f27b93ca75b7">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -76,7 +74,7 @@
         <div class="container header-inner">
             <a href="/" class="mettle-logo" aria-label="METTLE Home">
                 <span class="mettle-logo-icon" aria-hidden="true">
-                    <img src="/static/mettle-mark.svg?v=d0331f546e9b" alt="" width="28" height="28" />
+                    <img src="/static/mettle-mark.svg?v=d0331f546e9b" alt="" width="32" height="32" />
                 </span>
                 <span class="mettle-logo-text">
                     <span class="mettle-logo-highlight">METTLE</span>
@@ -100,7 +98,7 @@
             </button>
         </div>
         <nav id="mettle-mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
-            <a href="/guide" class="mobile-nav-link">Docs</a>
+            <a href="/guide" class="mobile-nav-link active" aria-current="page">Docs</a>
             <a href="/test" class="mobile-nav-link">Test</a>
             <a href="/about" class="mobile-nav-link">About</a>
             <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link" aria-label="GitHub (opens in new tab)">
@@ -120,7 +118,7 @@
             <!-- Sidebar TOC -->
             <nav class="toc-sidebar" aria-label="Table of contents">
                 <div class="toc-list">
-                    <a href="#getting-started" class="toc-item active"><i class="fa-solid fa-rocket" aria-hidden="true"></i> <span>Getting Started</span></a>
+                    <a href="#getting-started" class="toc-item active" aria-current="location"><i class="fa-solid fa-rocket" aria-hidden="true"></i> <span>Getting Started</span></a>
                     <a href="#quickstart" class="toc-item"><i class="fa-solid fa-terminal" aria-hidden="true"></i> <span>Quick Start</span></a>
                     <a href="#concepts" class="toc-item"><i class="fa-solid fa-lightbulb" aria-hidden="true"></i> <span>Concepts</span></a>
                     <a href="#authentication" class="toc-item"><i class="fa-solid fa-key" aria-hidden="true"></i> <span>Authentication</span></a>
@@ -265,6 +263,13 @@ def check_badge(badge):
 
                     <h3>Suite Information</h3>
                     <table class="endpoint-table">
+                        <thead class="sr-only">
+                            <tr>
+                                <th scope="col">Method</th>
+                                <th scope="col">Endpoint</th>
+                                <th scope="col">Description</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             <tr>
                                 <td><code>GET</code></td>
@@ -281,6 +286,13 @@ def check_badge(badge):
 
                     <h3>Sessions</h3>
                     <table class="endpoint-table">
+                        <thead class="sr-only">
+                            <tr>
+                                <th scope="col">Method</th>
+                                <th scope="col">Endpoint</th>
+                                <th scope="col">Description</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             <tr>
                                 <td><code>POST</code></td>
@@ -302,6 +314,13 @@ def check_badge(badge):
 
                     <h3>Single-Shot Suites (all suites except Suite 10)</h3>
                     <table class="endpoint-table">
+                        <thead class="sr-only">
+                            <tr>
+                                <th scope="col">Method</th>
+                                <th scope="col">Endpoint</th>
+                                <th scope="col">Description</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             <tr>
                                 <td><code>POST</code></td>
@@ -313,6 +332,13 @@ def check_badge(badge):
 
                     <h3>Multi-Round (Suite 10: Novel Reasoning)</h3>
                     <table class="endpoint-table">
+                        <thead class="sr-only">
+                            <tr>
+                                <th scope="col">Method</th>
+                                <th scope="col">Endpoint</th>
+                                <th scope="col">Description</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             <tr>
                                 <td><code>POST</code></td>
@@ -329,6 +355,13 @@ def check_badge(badge):
 
                     <h3>Results</h3>
                     <table class="endpoint-table">
+                        <thead class="sr-only">
+                            <tr>
+                                <th scope="col">Method</th>
+                                <th scope="col">Endpoint</th>
+                                <th scope="col">Description</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             <tr>
                                 <td><code>GET</code></td>
@@ -345,6 +378,13 @@ def check_badge(badge):
 
                     <h3>Credential Status and Presentation</h3>
                     <table class="endpoint-table">
+                        <thead class="sr-only">
+                            <tr>
+                                <th scope="col">Method</th>
+                                <th scope="col">Endpoint</th>
+                                <th scope="col">Description</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             <tr>
                                 <td><code>POST</code></td>
@@ -366,6 +406,13 @@ def check_badge(badge):
 
                     <h3>Issuer Key Discovery</h3>
                     <table class="endpoint-table">
+                        <thead class="sr-only">
+                            <tr>
+                                <th scope="col">Method</th>
+                                <th scope="col">Endpoint</th>
+                                <th scope="col">Description</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             <tr>
                                 <td><code>GET</code></td>
@@ -426,7 +473,7 @@ def check_badge(badge):
                     </div>
 
                     <div class="challenge-type-doc">
-                        <h3>Suite 10: <code>novel-reasoning</code> &middot; Novel Reasoning <span style="background: #0f766e; color: #f8fafc; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">MULTI-ROUND</span></h3>
+                        <h3>Suite 10: <code>novel-reasoning</code> &middot; Novel Reasoning <span class="multi-round-badge">MULTI-ROUND</span></h3>
                         <p><strong>Q6: Can you THINK?</strong> Tasks drawn from pattern synthesis, constraint satisfaction, encoding puzzles, graph inference, and compositional logic. Two or three rounds with feedback, depending on difficulty. Iteration curves are experimental behavioral signals and do not identify substrate.</p>
                         <pre class="code-block-new" tabindex="0"><code>// Iteration Curve Scoring
 Time trend (30%)        &middot; response time falls across rounds
@@ -443,7 +490,7 @@ Anti-script (15%)       &middot; round 1 is not suspiciously perfect</code></pre
 
                     <div class="challenge-type-doc">
                         <h3>Suite 12: <code>llm-dynamic</code> &middot; LLM-Dynamic Verification</h3>
-                        <p><strong>Q6: Can you THINK? (supplemental)</strong> Claude-powered semantic evaluation. The server needs an Anthropic API key (<code>ANTHROPIC_API_KEY</code> or <code>METTLE_ANTHROPIC_API_KEY</code>), and the session request must set <code>allow_third_party_llm: true</code>, because the respondent's answers are sent to Anthropic for evaluation. Without that flag, or without a server key, <code>suites: ["all"]</code> leaves Suite 12 out. Scoring is probabilistic and prompt-injection-sensitive, and Suite 12 is supplemental: it never raises a tier.</p>
+                        <p><strong>Q6: Can you THINK? (supplemental)</strong> Claude-powered semantic evaluation, available only on self-hosted or local METTLE API servers configured with your own Anthropic API key (<code>ANTHROPIC_API_KEY</code> or <code>METTLE_ANTHROPIC_API_KEY</code>). The hosted METTLE service holds no model key and disables Suite 12. Where enabled, the session request must set <code>allow_third_party_llm: true</code>, because the respondent's answers are sent to Anthropic for evaluation. Without that flag, or without a local key, <code>suites: ["all"]</code> leaves Suite 12 out. Scoring is probabilistic and prompt-injection-sensitive, and Suite 12 is supplemental: it never raises a tier.</p>
                     </div>
                 </section>
 
@@ -822,8 +869,8 @@ impl MettleClient {
                             </tr>
                             <tr>
                                 <td><code>ANTHROPIC_API_KEY</code></td>
-                                <td><em>optional</em></td>
-                                <td>Enables Suite 12 (<code>llm-dynamic</code>). <code>METTLE_ANTHROPIC_API_KEY</code> is also accepted and takes precedence.</td>
+                                <td><em>optional (self-hosted/local only)</em></td>
+                                <td>Enables Suite 12 (<code>llm-dynamic</code>) on non-hosted deployments; ignored in production/Render. <code>METTLE_ANTHROPIC_API_KEY</code> is also accepted and takes precedence.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1126,98 +1173,7 @@ export METTLE_API_KEY=your_key</code></pre>
         </div>
     </footer>
 
-    <script src="/static/webmcp.js?v=1b2ef5d9debb"></script>
-    <script>
-        // Scroll-aware header
-        (function() {
-            var header = document.getElementById('mettle-header');
-            if (!header) return;
-            window.addEventListener('scroll', function() {
-                if (window.scrollY > 10) {
-                    header.classList.add('scrolled');
-                } else {
-                    header.classList.remove('scrolled');
-                }
-            }, { passive: true });
-        })();
-
-        // Mobile menu toggle
-        (function() {
-            var btn = document.getElementById('mobile-menu-btn');
-            var nav = document.getElementById('mettle-mobile-nav');
-            var hamburger = document.getElementById('hamburger');
-            if (!btn || !nav) return;
-
-            btn.addEventListener('click', function() {
-                var isOpen = nav.hidden === false;
-                nav.hidden = isOpen;
-                btn.setAttribute('aria-expanded', !isOpen);
-                btn.setAttribute('aria-label', isOpen ? 'Open menu' : 'Close menu');
-                hamburger.classList.toggle('open', !isOpen);
-            });
-
-            nav.querySelectorAll('a').forEach(function(link) {
-                link.addEventListener('click', function() {
-                    nav.hidden = true;
-                    btn.setAttribute('aria-expanded', 'false');
-                    btn.setAttribute('aria-label', 'Open menu');
-                    hamburger.classList.remove('open');
-                });
-            });
-
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && !nav.hidden) {
-                    nav.hidden = true;
-                    btn.setAttribute('aria-expanded', 'false');
-                    btn.setAttribute('aria-label', 'Open menu');
-                    hamburger.classList.remove('open');
-                    btn.focus();
-                }
-            });
-        })();
-
-        // Scroll-spy: highlight TOC item matching visible section
-        (function() {
-            var tocItems = document.querySelectorAll('.toc-item');
-            if (!tocItems.length) return;
-
-            var sectionIds = [];
-            tocItems.forEach(function(item) {
-                var href = item.getAttribute('href');
-                if (href && href.startsWith('#')) sectionIds.push(href.slice(1));
-            });
-
-            function updateActive() {
-                var scrollY = window.scrollY + 150;
-                var current = sectionIds[0];
-
-                // Iterate backwards so the last matching section wins
-                for (var i = sectionIds.length - 1; i >= 0; i--) {
-                    var el = document.getElementById(sectionIds[i]);
-                    if (el && el.offsetTop <= scrollY) {
-                        current = sectionIds[i];
-                        break;
-                    }
-                }
-
-                // If near bottom of page, activate last section
-                if ((window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 400)) {
-                    current = sectionIds[sectionIds.length - 1];
-                }
-
-                tocItems.forEach(function(item) {
-                    var href = item.getAttribute('href');
-                    if (href === '#' + current) {
-                        item.classList.add('active');
-                    } else {
-                        item.classList.remove('active');
-                    }
-                });
-            }
-
-            window.addEventListener('scroll', updateActive, { passive: true });
-            updateActive();
-        })();
-    </script>
+    <script src="/static/webmcp.js?v=a66e0e7a6337"></script>
+    <script src="/static/site.js?v=857a4f83b469"></script>
 </body>
 </html>

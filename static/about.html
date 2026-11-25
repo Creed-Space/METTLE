@@ -42,13 +42,11 @@
     <link rel="manifest" href="/static/site.webmanifest">
     <meta name="theme-color" content="#14b8a6">
 
-    <!-- Preconnect -->
-
     <!-- Stylesheets -->
     <!-- Typography: Space Grotesk (display) + Inter (body) + JetBrains Mono -->
     <link rel="stylesheet" href="/static/fonts.css?v=7277857592d0">
     <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css?v=0622c14d7e9d">
-    <link rel="stylesheet" href="/static/style.css?v=90cb5c3da37f">
+    <link rel="stylesheet" href="/static/style.css?v=667d1b43c803">
 
     <!-- Structured Data -->
     <script type="application/ld+json">
@@ -73,261 +71,6 @@
       }
     }
     </script>
-    <style>
-        /* About page hero */
-        .about-hero {
-            text-align: center;
-            padding: 6rem 1rem 0.75rem;
-        }
-
-        .about-hero .hero-eyebrow {
-            margin-bottom: var(--space-lg);
-            color: #99f6e4;
-            background: rgba(20, 184, 166, 0.12);
-            animation: none;
-            filter: none;
-            opacity: 1;
-        }
-
-        .about-hero h1 {
-            font-size: clamp(2rem, 5vw, 3.5rem);
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            line-height: 1.15;
-            margin-bottom: var(--space-lg);
-        }
-
-        .about-hero h1 .highlight {
-            color: var(--mettle-primary-hover);
-        }
-
-        .about-hero-subtitle {
-            font-size: var(--text-sm);
-            color: var(--color-text-muted);
-            max-width: 700px;
-            margin: 0 auto;
-            line-height: 1.6;
-        }
-
-        .about-hero-subtitle strong {
-            color: var(--color-text);
-        }
-
-        /* Glow divider spacing on about page */
-        .about-pullquote + .glow-divider {
-            margin: 2.5rem auto 2rem;
-        }
-        .about-principles + .glow-divider {
-            margin: 2.5rem auto 2rem;
-        }
-
-        /* Prose section */
-        .about-content {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 0.75rem var(--space-lg) var(--space-md);
-        }
-
-        .about-prose {
-            font-size: 1rem;
-            line-height: 1.75;
-            color: var(--color-text-muted);
-        }
-
-        .about-prose p {
-            margin-bottom: 1.5rem;
-        }
-
-        .about-prose strong {
-            color: var(--color-text);
-        }
-
-        .about-prose p a {
-            color: var(--mettle-primary-hover);
-            text-decoration: underline;
-            text-underline-offset: 0.18em;
-        }
-
-        /* Pullquote */
-        .about-pullquote {
-            text-align: center;
-            padding: 0.75rem var(--space-lg);
-            max-width: 700px;
-            margin: 0 auto;
-        }
-
-        .about-pullquote p {
-            font-size: clamp(1.25rem, 3vw, 1.75rem);
-            font-weight: 600;
-            color: var(--color-text);
-            line-height: 1.5;
-        }
-
-        .about-pullquote em {
-            font-style: normal;
-            color: var(--mettle-primary-hover);
-        }
-
-        /* Principles grid */
-        .about-principles {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 0.75rem var(--space-lg) var(--space-md);
-        }
-
-        .about-principles h2 {
-            text-align: center;
-            font-size: var(--text-2xl);
-            font-weight: 700;
-            margin-bottom: var(--space-xl);
-        }
-
-        .principles-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: var(--space-md);
-        }
-
-        .principle-card {
-            padding: 2rem;
-            color: #f1f5f9;
-            background: rgba(18, 18, 32, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: var(--radius-xl);
-            transition: border-color 0.3s ease, transform 0.3s ease;
-        }
-
-        .principle-card:hover {
-            border-color: rgba(20, 184, 166, 0.2);
-            transform: translateY(-2px);
-        }
-
-        .principle-icon {
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: var(--radius-lg);
-            background: rgba(20, 184, 166, 0.1);
-            color: var(--mettle-primary);
-            font-size: 1.25rem;
-            margin-bottom: var(--space-md);
-        }
-
-        .principle-card h3 {
-            font-size: var(--text-base);
-            font-weight: 700;
-            margin-bottom: var(--space-xs);
-        }
-
-        .principle-card p {
-            color: var(--color-text-muted);
-            font-size: var(--text-sm);
-            line-height: var(--leading-relaxed);
-            margin: 0;
-        }
-
-        /* Builder section */
-        .about-builder {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 0.75rem var(--space-lg) var(--space-md);
-        }
-
-        .builder-card {
-            padding: 2rem;
-            color: #f1f5f9;
-            background: rgba(18, 18, 32, 0.6);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: var(--radius-xl);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-        }
-
-        .builder-card h3 {
-            font-size: var(--text-lg);
-            font-weight: 700;
-            margin-bottom: var(--space-md);
-            display: flex;
-            align-items: center;
-            gap: var(--space-sm);
-        }
-
-        .builder-card h3 i {
-            color: var(--mettle-primary);
-        }
-
-        .builder-card p {
-            color: var(--color-text-muted);
-            font-size: var(--text-base);
-            line-height: var(--leading-relaxed);
-            margin-bottom: var(--space-md);
-        }
-
-        .builder-card p:last-of-type {
-            margin-bottom: var(--space-lg);
-        }
-
-        /* Links row */
-        .about-links {
-            display: flex;
-            justify-content: center;
-            gap: var(--space-xl);
-            flex-wrap: wrap;
-        }
-
-        .about-link {
-            display: inline-flex;
-            align-items: center;
-            gap: var(--space-sm);
-            color: var(--color-text);
-            text-decoration: none;
-            font-weight: 500;
-            font-size: var(--text-sm);
-            padding: var(--space-sm) var(--space-md);
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 100px;
-            transition: all 0.2s ease;
-        }
-
-        .about-link:hover {
-            color: var(--mettle-primary);
-            border-color: rgba(20, 184, 166, 0.3);
-            background: rgba(20, 184, 166, 0.06);
-        }
-
-        .about-link i {
-            color: var(--mettle-primary);
-            font-size: 0.875rem;
-        }
-
-        /* CTA section */
-        .about-cta {
-            text-align: center;
-            padding: var(--space-2xl) var(--space-lg);
-        }
-
-        .about-cta p {
-            color: var(--color-text-muted);
-            margin-bottom: var(--space-lg);
-            font-size: var(--text-lg);
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .principles-grid {
-                grid-template-columns: 1fr;
-                max-width: 400px;
-                margin: 0 auto;
-            }
-        }
-
-        @media (max-width: 640px) {
-            .about-hero { padding: 4rem 1rem 2rem; }
-        }
-    </style>
 </head>
 <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -336,7 +79,7 @@
         <div class="container header-inner">
             <a href="/" class="mettle-logo" aria-label="METTLE Home">
                 <span class="mettle-logo-icon" aria-hidden="true">
-                    <img src="/static/mettle-mark.svg?v=d0331f546e9b" alt="" width="28" height="28" />
+                    <img src="/static/mettle-mark.svg?v=d0331f546e9b" alt="" width="32" height="32" />
                 </span>
                 <span class="mettle-logo-text">
                     <span class="mettle-logo-highlight">METTLE</span>
@@ -362,7 +105,7 @@
         <nav id="mettle-mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
             <a href="/guide" class="mobile-nav-link">Docs</a>
             <a href="/test" class="mobile-nav-link">Test</a>
-            <a href="/about" class="mobile-nav-link">About</a>
+            <a href="/about" class="mobile-nav-link active" aria-current="page">About</a>
             <a href="https://github.com/Creed-Space/METTLE" target="_blank" rel="noopener noreferrer" class="mobile-nav-link" aria-label="GitHub (opens in new tab)">
                 <i class="fa-brands fa-github" aria-hidden="true"></i> GitHub
             </a>
@@ -459,55 +202,7 @@
         </div>
     </footer>
 
-    <script src="/static/webmcp.js?v=1b2ef5d9debb"></script>
-    <script>
-        // Scroll-aware header
-        (function() {
-            var header = document.getElementById('mettle-header');
-            if (!header) return;
-            window.addEventListener('scroll', function() {
-                if (window.scrollY > 10) {
-                    header.classList.add('scrolled');
-                } else {
-                    header.classList.remove('scrolled');
-                }
-            }, { passive: true });
-        })();
-
-        // Mobile menu toggle
-        (function() {
-            var btn = document.getElementById('mobile-menu-btn');
-            var nav = document.getElementById('mettle-mobile-nav');
-            var hamburger = document.getElementById('hamburger');
-            if (!btn || !nav) return;
-
-            btn.addEventListener('click', function() {
-                var isOpen = nav.hidden === false;
-                nav.hidden = isOpen;
-                btn.setAttribute('aria-expanded', !isOpen);
-                btn.setAttribute('aria-label', isOpen ? 'Open menu' : 'Close menu');
-                hamburger.classList.toggle('open', !isOpen);
-            });
-
-            nav.querySelectorAll('a').forEach(function(link) {
-                link.addEventListener('click', function() {
-                    nav.hidden = true;
-                    btn.setAttribute('aria-expanded', 'false');
-                    btn.setAttribute('aria-label', 'Open menu');
-                    hamburger.classList.remove('open');
-                });
-            });
-
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && !nav.hidden) {
-                    nav.hidden = true;
-                    btn.setAttribute('aria-expanded', 'false');
-                    btn.setAttribute('aria-label', 'Open menu');
-                    hamburger.classList.remove('open');
-                    btn.focus();
-                }
-            });
-        })();
-    </script>
+    <script src="/static/webmcp.js?v=a66e0e7a6337"></script>
+    <script src="/static/site.js?v=857a4f83b469"></script>
 </body>
 </html>

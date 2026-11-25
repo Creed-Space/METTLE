@@ -187,8 +187,13 @@ def get_public_key_info() -> dict[str, Any]:
     }
 
 
+_keyring_cache_key: tuple[str, str | None, str] | None = None
+_keyring_cache_value: dict[str, str] | None = None
+
+
 def get_public_keyring() -> dict[str, str]:
     """Return the active key plus configured verify-only rotation keys."""
+    global _keyring_cache_key, _keyring_cache_value
     active_pem = get_public_key_pem()
     raw = os.environ.get("METTLE_VCP_VERIFYING_KEYS", "")
     try:
@@ -197,6 +202,10 @@ def get_public_keyring() -> dict[str, str]:
         raw = raw or getattr(settings, "vcp_verifying_keys", "")
     except Exception as settings_error:
         logger.debug("Mettle verifying-key settings unavailable: %s", settings_error)
+
+    cache_key = (_key_id, active_pem, raw)
+    if _keyring_cache_key == cache_key and _keyring_cache_value is not None:
+        return dict(_keyring_cache_value)
 
     keyring: dict[str, str] = {}
     if raw:
@@ -228,6 +237,8 @@ def get_public_keyring() -> dict[str, str]:
                 "Active signing key ID conflicts with verify-only keyring"
             )
         keyring[_key_id] = active_pem
+    _keyring_cache_key = cache_key
+    _keyring_cache_value = dict(keyring)
     return keyring
 
 

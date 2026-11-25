@@ -198,10 +198,43 @@ SUITE_REGISTRY: dict[str, tuple[str, str, int]] = {
     ),
     "llm-dynamic": (
         "LLM-Dynamic Verification",
-        "Supplemental challenges generated and scored by Anthropic's Claude; needs the server's Anthropic API key and the caller's opt-in to send responses to Anthropic",
+        "Supplemental challenges generated and scored by Anthropic's Claude; available only on self-hosted/local servers with an operator-supplied Anthropic API key and caller opt-in to send responses to Anthropic",
         12,
     ),
 }
+
+
+_BATCH_COHERENCE_TARGETS: tuple[str, ...] = (
+    "VERIFIED",
+    "PROTOCOL",
+    "COHERENT",
+    "BASELINE",
+    "SPECTRUM",
+    "MERIDIAN",
+    "CATALYST",
+    "TEMPORAL",
+    "INTEGRAL",
+    "VELOCITY",
+    "HARMONIC",
+    "SYMMETRY",
+)
+
+
+def _parse_exact_int(value: Any) -> int | None:
+    """Parse an exact integer (or bounded integer string), rejecting booleans."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or len(text) > 64:
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+    return None
 
 
 class ChallengeAdapter:
@@ -237,7 +270,8 @@ class ChallengeAdapter:
             problem = f"Sum of digits in {product}"
             answer = sum(int(d) for d in str(product))
 
-        # Chained reasoning
+        # Chained reasoning — keep intermediate values server-side so callers
+        # must actually carry state through all 5 steps from `seed`.
         seed = _rng.randint(1, 100)
         chain = [seed]
         operations = []
@@ -246,16 +280,16 @@ class ChallengeAdapter:
             current = chain[-1]
             if op == "double":
                 result = current * 2
-                operations.append(f"Step {i + 1}: Double {current}")
+                operations.append(f"Step {i + 1}: Double the current value")
             elif op == "add_10":
                 result = current + 10
-                operations.append(f"Step {i + 1}: Add 10 to {current}")
+                operations.append(f"Step {i + 1}: Add 10")
             elif op == "subtract_7":
                 result = current - 7
-                operations.append(f"Step {i + 1}: Subtract 7 from {current}")
+                operations.append(f"Step {i + 1}: Subtract 7")
             else:
                 result = (current * current) % 100
-                operations.append(f"Step {i + 1}: {current}^2 mod 100")
+                operations.append(f"Step {i + 1}: Square the current value mod 100")
             chain.append(result)
 
         # Time-locked secret
@@ -290,7 +324,7 @@ class ChallengeAdapter:
     @staticmethod
     def generate_native() -> tuple[dict[str, Any], dict[str, Any]]:
         """Generate native capability challenges."""
-        target_message = "VERIFIED"
+        target_message = _rng.choice(_BATCH_COHERENCE_TARGETS)
         prompts = [
             "Name a color",
             "Name an animal",
@@ -1102,11 +1136,11 @@ def _evaluate_adversarial(
 
     # Dynamic math
     if "dynamic_math" in answers and "dynamic_math" in server:
-        submitted = answers["dynamic_math"].get("computed")
+        submitted = _parse_exact_int(answers["dynamic_math"].get("computed"))
         expected = server["dynamic_math"]["expected"]
         # Per-suite timing is enforced from the server-issued session clock.
         # Caller-reported durations are deliberately ignored.
-        passed = submitted == expected
+        passed = submitted is not None and submitted == expected
         if passed:
             score += 1
         details["dynamic_math"] = {
@@ -1117,9 +1151,9 @@ def _evaluate_adversarial(
 
     # Chained reasoning
     if "chained_reasoning" in answers and "chained_reasoning" in server:
-        submitted = answers["chained_reasoning"].get("computed_final")
+        submitted = _parse_exact_int(answers["chained_reasoning"].get("computed_final"))
         expected = server["chained_reasoning"]["expected_final"]
-        passed = submitted == expected
+        passed = submitted is not None and submitted == expected
         if passed:
             score += 1
         details["chained_reasoning"] = {
@@ -1163,8 +1197,22 @@ def _evaluate_native(answers: dict[str, Any], server: dict[str, Any]) -> dict[st
     if "batch_coherence" in answers and "batch_coherence" in server:
         responses = answers["batch_coherence"].get("responses", [])
         target = server["batch_coherence"]["target"]
-        spelled = "".join(r[0].upper() for r in responses if r) if responses else ""
-        passed = spelled == target
+        if isinstance(responses, list) and len(responses) == len(target):
+            cleaned = [r.strip() if isinstance(r, str) else "" for r in responses]
+            non_trivial = all(len(item) >= 2 and item[0].isalpha() for item in cleaned)
+            spelled = "".join(item[0].upper() for item in cleaned if item)
+            passed = non_trivial and spelled == target
+        else:
+            spelled = (
+                "".join(
+                    r.strip()[0].upper()
+                    for r in responses
+                    if isinstance(r, str) and r.strip()
+                )
+                if isinstance(responses, list)
+                else ""
+            )
+            passed = False
         if passed:
             score += 1
         details["batch_coherence"] = {
@@ -1254,6 +1302,11 @@ def _evaluate_self_reference(
                 "error": "wrong_response_count",
                 "expected": expected_n,
                 "received": len(responses),
+            }
+        elif any(len(re.findall(r"[a-z0-9]+", r.lower())) < 3 for r in responses):
+            detail = {
+                "passed": False,
+                "error": "responses_too_short",
             }
         else:
             measured = response_variance(responses)
@@ -1384,14 +1437,25 @@ def _evaluate_social(answers: dict[str, Any], server: dict[str, Any]) -> dict[st
     if "style_locking" in answers:
         responses = answers["style_locking"].get("responses", [])
         marker = str(server.get("style_locking", {}).get("required_marker", ""))
+
+        def _valid_styled_response(item: Any) -> bool:
+            if not isinstance(item, str) or item.count(marker) != 1:
+                return False
+            without_marker = item.replace(marker, " ").strip()
+            return len(without_marker) >= 15 and len(without_marker.split()) >= 3
+
         passed = (
             bool(marker)
+            and isinstance(responses, list)
             and len(responses) >= 3
-            and all(len(str(r)) > 10 and str(r).count(marker) == 1 for r in responses)
+            and all(_valid_styled_response(r) for r in responses)
         )
         if passed:
             score += 1
-        details["style_locking"] = {"passed": passed, "num_responses": len(responses)}
+        details["style_locking"] = {
+            "passed": passed,
+            "num_responses": len(responses) if isinstance(responses, list) else 0,
+        }
 
     final_score = score / total
     return {

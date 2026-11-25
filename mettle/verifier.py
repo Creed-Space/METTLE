@@ -1,7 +1,17 @@
 """METTLE: Response verification."""
 
 from datetime import datetime, timezone
+import re
 from .models import Challenge, ChallengeType, MettleResult, VerificationResult
+
+
+def _contains_expected_keyword(text: str, keywords: object) -> bool:
+    """Check whether ``text`` contains at least one expected factual keyword."""
+    if not isinstance(keywords, list) or not keywords:
+        return True
+    tokens = set(re.findall(r"[a-z0-9]+", text.casefold()))
+    return any(isinstance(kw, str) and kw.casefold() in tokens for kw in keywords)
+
 
 MAX_ANSWER_CHARS = 1024
 _MAX_NUMERIC_ANSWER_BITS = MAX_ANSWER_CHARS * 4
@@ -165,15 +175,26 @@ def verify_instruction_following(
     else:
         correct = False
 
-    correct = bounded is not None and correct
+    expected_keywords = challenge.data.get("expected_keywords")
+    non_marker_text = (
+        response.replace(marker, " ").strip()
+        if isinstance(marker, str) and marker
+        else response.strip()
+    )
+    factual_correct = bool(non_marker_text) and _contains_expected_keyword(
+        non_marker_text, expected_keywords
+    )
+    instruction_followed = bounded is not None and correct
+    passed_checks = instruction_followed and factual_correct
     time_ok = _time_is_valid(response_time_ms, challenge.time_limit_ms)
 
     return VerificationResult(
         challenge_id=challenge.id,
         challenge_type=challenge.type,
-        passed=correct and time_ok,
+        passed=passed_checks and time_ok,
         details={
-            "instruction_followed": correct,
+            "instruction_followed": instruction_followed,
+            "factual_correct": factual_correct,
             "time_ok": time_ok,
             "instruction": instruction,
             "response_preview": response[:50],  # Truncated to limit info disclosure
@@ -236,17 +257,26 @@ def verify_consistency(
             reference in k or k in reference for k in keys
         )
 
-        # Pass if: semantically consistent AND (not all identical OR very short answers)
+        # Pass if: factually accurate, semantically consistent, AND (not all identical OR very short answers)
         short_answer = all(
             len(p.split()) <= 3 for p in parts
         )  # Short answers can be identical
-        correct = semantically_consistent and (not all_identical or short_answer)
+        expected_keywords = challenge.data.get("expected_keywords")
+        factual_correct = all(
+            _contains_expected_keyword(p, expected_keywords) for p in parts
+        )
+        correct = (
+            factual_correct
+            and semantically_consistent
+            and (not all_identical or short_answer)
+        )
 
         details = {
             "responses": parts,
             "unique_count": len(unique_responses),
             "avg_similarity": round(avg_similarity, 2),
             "semantically_consistent": semantically_consistent,
+            "factual_correct": factual_correct,
             "natural_variation": not all_identical or short_answer,
         }
 

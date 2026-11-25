@@ -4,10 +4,12 @@ Production configuration requires PostgreSQL. SQLite remains available for
 local development and tests.
 """
 
+import base64
 import hashlib
 import json
 import logging
 import os
+import secrets
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -157,7 +159,7 @@ class DBWebhook(Base):
     entity_id = Column(String(128), unique=True, index=True, nullable=False)
     url = Column(String(512), nullable=False)
     events_json = Column(Text, nullable=False)  # JSON array
-    secret = Column(String(128), nullable=True)
+    secret = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -187,10 +189,60 @@ class DBSchemaMigration(Base):
 # === Database Functions ===
 
 
-LATEST_SCHEMA_VERSION = 3
+LATEST_SCHEMA_VERSION = 4
+_WEBHOOK_CIPHERTEXT_PREFIX = "enc:v1:"
 _MIGRATION_LOCK_ID = int.from_bytes(
     hashlib.sha256(b"mettle-schema-migrations").digest()[:8], "big"
 ) & ((1 << 63) - 1)
+
+
+def _webhook_cipher_key() -> bytes | None:
+    """Derive a 256-bit key for encrypting stored webhook secrets at rest."""
+    secret_key = os.environ.get("METTLE_SECRET_KEY", "").strip()
+    if not secret_key:
+        return None
+    return hashlib.sha256(
+        b"mettle-webhook-secret-v1:" + secret_key.encode("utf-8")
+    ).digest()
+
+
+def _encrypt_webhook_secret(secret: str | None) -> str | None:
+    """Encrypt a webhook secret with AES-256-GCM when METTLE_SECRET_KEY is set."""
+    if secret is None:
+        return None
+    key = _webhook_cipher_key()
+    if key is None:
+        return secret
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    nonce = secrets.token_bytes(12)
+    ciphertext = AESGCM(key).encrypt(nonce, secret.encode("utf-8"), None)
+    encoded = base64.urlsafe_b64encode(nonce + ciphertext).decode("ascii")
+    return f"{_WEBHOOK_CIPHERTEXT_PREFIX}{encoded}"
+
+
+def _decrypt_webhook_secret(stored: str | None) -> str | None:
+    """Decrypt an AES-256-GCM webhook secret, keeping legacy plaintext readable."""
+    if stored is None or not stored.startswith(_WEBHOOK_CIPHERTEXT_PREFIX):
+        return stored
+    key = _webhook_cipher_key()
+    if key is None:
+        raise RuntimeError(
+            "METTLE_SECRET_KEY required to decrypt stored webhook secret"
+        )
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    raw = base64.urlsafe_b64decode(
+        stored.removeprefix(_WEBHOOK_CIPHERTEXT_PREFIX).encode("ascii")
+    )
+    nonce, ciphertext = raw[:12], raw[12:]
+    return AESGCM(key).decrypt(nonce, ciphertext, None).decode("utf-8")
+
+
+def _upgrade_webhook_secret_column(connection) -> None:
+    """Version 4: widen webhooks.secret to TEXT for encrypted-at-rest secrets."""
+    if connection.dialect.name == "postgresql":
+        connection.execute(text("ALTER TABLE webhooks ALTER COLUMN secret TYPE TEXT"))
 
 
 def _upgrade_session_recovery_columns(connection) -> None:
@@ -267,6 +319,7 @@ def init_db() -> None:
             1: lambda _connection: None,
             2: _upgrade_session_recovery_columns,
             3: _upgrade_api_key_digests,
+            4: _upgrade_webhook_secret_column,
         }
         for version in range(1, LATEST_SCHEMA_VERSION + 1):
             if version in applied:
@@ -693,7 +746,7 @@ def save_webhook(
                 entity_id=entity_id,
                 url=url,
                 events_json=json.dumps(events),
-                secret=secret,
+                secret=_encrypt_webhook_secret(secret),
             )
             db.add(record)
             db.commit()
@@ -714,7 +767,7 @@ def get_webhook(entity_id: str) -> dict | None:
                 return {
                     "url": result.url,
                     "events": json.loads(result.events_json),
-                    "secret": result.secret,
+                    "secret": _decrypt_webhook_secret(result.secret),
                     "created_at": result.created_at.isoformat()
                     if result.created_at
                     else None,
@@ -735,7 +788,7 @@ def get_webhooks(limit: int = 1000, *, raise_on_error: bool = False) -> list[dic
                     "entity_id": row.entity_id,
                     "url": row.url,
                     "events": json.loads(row.events_json),
-                    "secret": row.secret,
+                    "secret": _decrypt_webhook_secret(row.secret),
                     "created_at": row.created_at.isoformat()
                     if row.created_at
                     else None,
@@ -786,8 +839,6 @@ def save_verification_record(entity_id: str, ip_address: str, passed: bool) -> b
 def get_recent_verifications(hours: int = 1) -> list[dict]:
     """Get recent verification records."""
     try:
-        from datetime import timedelta
-
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         with get_db() as db:
             results = (
@@ -814,8 +865,6 @@ def get_recent_verifications(hours: int = 1) -> list[dict]:
 def get_entity_verification_count(entity_id: str, hours: int = 1) -> int:
     """Get verification count for an entity in the last N hours."""
     try:
-        from datetime import timedelta
-
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         with get_db() as db:
             return (
@@ -832,8 +881,6 @@ def get_entity_verification_count(entity_id: str, hours: int = 1) -> int:
 def get_ip_entities(ip_address: str, hours: int = 1) -> set[str]:
     """Get entities verified from an IP address."""
     try:
-        from datetime import timedelta
-
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         with get_db() as db:
             results = (

@@ -43,7 +43,7 @@ The suites organize evidence around seven research questions. Suite names frame 
 | 11 | Governance Self-Report | Is it GOVERNED? | Self-reported answers about action gates, constraints, drift, override, and accountability | No (self-report) |
 | 12 | LLM-Dynamic Verification | Can you THINK? (supplemental) | An external model's probabilistic judgment of generated reasoning tasks | No (supplemental) |
 
-Suite 12 requires `ANTHROPIC_API_KEY` or `METTLE_ANTHROPIC_API_KEY`. Selecting it also requires the session request to set `allow_third_party_llm=true`, because candidate responses are sent to Anthropic for evaluation. Its evaluator uses role-separated prompts and bounded output parsing. Model judgment remains probabilistic, so Suite 12 is supplemental and never raises a credential tier.
+Suite 12 is available only on self-hosted or local METTLE API servers configured with your own `ANTHROPIC_API_KEY` or `METTLE_ANTHROPIC_API_KEY` (the hosted service holds no model key and disables Suite 12). Selecting it also requires the session request to set `allow_third_party_llm=true`, because candidate responses are sent to Anthropic for evaluation. Its evaluator uses role-separated prompts and bounded output parsing. Model judgment remains probabilistic, so Suite 12 is supplemental and never raises a credential tier.
 
 ## Credential Boundary
 

@@ -362,7 +362,7 @@ class TestLLMResponseEvaluator:
         assert fast_result["score"] > slow_result["score"]
 
     @pytest.mark.asyncio
-    async def test_eval_parse_error_returns_neutral(
+    async def test_eval_parse_error_fails_closed(
         self, evaluator: LLMResponseEvaluator
     ) -> None:
         mock_client = AsyncMock()
@@ -374,9 +374,9 @@ class TestLLMResponseEvaluator:
             "response", server_data, response_time_ms=5000
         )
 
-        # Should return neutral scores (0.5), not crash
-        assert "score" in result
-        assert "passed" in result
+        # Unparseable judge output fails closed (score 0.0, passed False)
+        assert result["score"] == 0.0
+        assert result["passed"] is False
 
 
 # ---- Integration Tests: Full Pipeline ----
